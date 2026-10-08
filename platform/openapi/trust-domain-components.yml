@@ -1,0 +1,1054 @@
+openapi: 3.0.4
+info:
+  title: Trust Domain API Components
+  version: 0.1.0
+paths: {}
+components:
+  parameters:
+    DomainId:
+      name: domainId
+      in: path
+      required: true
+      schema: { type: string, minLength: 1 }
+    AnchorId:
+      name: anchorId
+      in: path
+      required: true
+      schema: { type: string, minLength: 1 }
+    AdmissionClass:
+      name: admissionClass
+      in: path
+      required: true
+      schema: { $ref: '#/components/schemas/TrustAnchorAdmissionClass' }
+    SourceId:
+      name: sourceId
+      in: path
+      required: true
+      schema: { type: string, minLength: 1 }
+    Revision:
+      name: revision
+      in: path
+      required: true
+      schema: { type: integer, format: int64, minimum: 1 }
+    CatalogId:
+      name: catalogId
+      in: path
+      required: true
+      schema: { type: string, minLength: 1 }
+    SnapshotId:
+      name: snapshotId
+      in: path
+      required: true
+      schema: { type: string, minLength: 1 }
+    ConsumerKind:
+      name: consumerKind
+      in: path
+      required: true
+      schema: { $ref: '#/components/schemas/TrustConsumerKind' }
+    ConsumerId:
+      name: consumerId
+      in: path
+      required: true
+      schema: { type: string, minLength: 1 }
+    Usage:
+      name: usage
+      in: path
+      required: true
+      schema: { $ref: '#/components/schemas/TrustUsage' }
+    ConsumerKindQuery:
+      name: consumerKind
+      in: query
+      schema: { $ref: '#/components/schemas/TrustConsumerKind' }
+    ConsumerIdQuery:
+      name: consumerId
+      in: query
+      schema: { type: string, minLength: 1 }
+    UsageQuery:
+      name: usage
+      in: query
+      schema: { $ref: '#/components/schemas/TrustUsage' }
+    IfMatch:
+      name: If-Match
+      in: header
+      required: true
+      description: Strong entity version used for compare-and-set mutation.
+      schema: { type: string, pattern: '^"?[1-9][0-9]*"?$' }
+    LoTEIfMatch:
+      name: If-Match
+      in: header
+      required: true
+      description: |
+        Opaque entity tag of the resource being mutated, taken from the etag field of the last read.
+        Send * on a put to register a source that does not exist yet.
+      schema: { type: string, minLength: 1 }
+  responses:
+    BadRequest:
+      description: Invalid typed trust-domain request.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+    Unauthorized:
+      description: Authentication or tenant authorization failed.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+    NotFound:
+      description: The tenant-scoped resource does not exist.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+    PreconditionFailed:
+      description: The supplied entity version is stale.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+    PreconditionRequired:
+      description: The request mutates a versioned resource and carried no If-Match header.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+    Forbidden:
+      description: The caller may not act on this resource.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+    Conflict:
+      description: The resource is not in a state that allows this transition.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+    UnprocessableEntity:
+      description: |
+        The request was well formed but the artifact it refers to failed validation. The error code
+        names the check that rejected it, for example an unallowlisted host, an invalid JAdES
+        signature, a list type that does not match the configured profile, or freshness bounds
+        outside the signed window.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+  schemas:
+    TrustConsumerKind:
+      type: string
+      enum: [TENANT, OID4VCI_ISSUER, OID4VCI_ISSUANCE_TEMPLATE, OID4VCI_CREDENTIAL_CONFIGURATION, OID4VP_VERIFIER, OID4VP_DCQL_QUERY, OID4VP_VERIFIER_DCQL_BINDING, OID4VP_REQUEST_TEMPLATE, CONNECTOR_HTTP_ENDPOINT, AS]
+    TrustUsage:
+      type: string
+      enum: [CREDENTIAL_ISSUER_TRUST, WALLET_PROVIDER_ESTABLISHMENT, VERIFIER_TRUST, CATALOG_AUTHORIZATION, TLS_SERVER, AUTHORIZATION_SERVER_TRUST]
+    TrustDomainStatus:
+      type: string
+      enum: [DRAFT, ACTIVE, DISABLED]
+    TrustAnchorStatus:
+      type: string
+      enum: [ACTIVE, DISABLED, EXPIRED, REVOKED]
+    TrustEvidenceMechanism:
+      type: string
+      enum: [DID, JWK, X509, OIDFED_ENTITY, ISSUER_URI, DNS_NAME]
+    TrustAnchorOrigin:
+      type: string
+      enum: [IMPORTED, TENANT_PUBLIC]
+    TrustAnchorAdmissionClass:
+      type: string
+      enum: [CREDENTIAL_ISSUER, WALLET_PROVIDER, VERIFIER, TLS_SERVER_CA, CATALOG_SIGNER, AUTHORIZATION_SERVER_SIGNER]
+    IdentityAdmissionMode:
+      type: string
+      enum: [FAIL_CLOSED, UNRESTRICTED]
+    Instant:
+      type: string
+      format: date-time
+    StringMap:
+      type: object
+      additionalProperties: { type: string }
+    ErrorEnvelope:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code: { type: string }
+            message: { type: string }
+            details: { $ref: '#/components/schemas/StringMap' }
+    DeleteResult:
+      type: object
+      required: [deleted]
+      properties:
+        deleted: { type: boolean }
+    TrustDomain:
+      type: object
+      required: [domainId, displayName, status, version]
+      properties:
+        domainId: { type: string }
+        displayName: { type: string }
+        description: { type: string, nullable: true }
+        status: { $ref: '#/components/schemas/TrustDomainStatus' }
+        validFrom: { $ref: '#/components/schemas/Instant' }
+        validUntil: { $ref: '#/components/schemas/Instant' }
+        version: { type: integer, format: int64, minimum: 1 }
+        createdAt: { $ref: '#/components/schemas/Instant' }
+        updatedAt: { $ref: '#/components/schemas/Instant' }
+    CreateTrustDomainRequest:
+      type: object
+      required: [displayName]
+      properties:
+        domainId: { type: string, nullable: true }
+        displayName: { type: string, minLength: 1 }
+        description: { type: string, nullable: true }
+        status: { $ref: '#/components/schemas/TrustDomainStatus' }
+        validFrom: { $ref: '#/components/schemas/Instant' }
+        validUntil: { $ref: '#/components/schemas/Instant' }
+    PutTrustDomainRequest:
+      allOf:
+        - $ref: '#/components/schemas/TrustDomain'
+    TrustDomainList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/TrustDomain' }
+    TrustAnchorIdentifierSummary:
+      type: object
+      required: [anchorId, identityIdentifierId, resolved]
+      description: Enforcement-safe anchor summary retained for display and QR or PEM export.
+      properties:
+        anchorId: { type: string }
+        identityIdentifierId: { type: string }
+        resolved: { type: boolean }
+        identityId: { type: string, nullable: true }
+        identifierType: { type: string, nullable: true }
+        displayValue: { type: string, nullable: true }
+        certificatePem: { type: string, nullable: true }
+        isVerified: { type: boolean, nullable: true }
+        verifiedAt: { $ref: '#/components/schemas/Instant' }
+        validFrom: { $ref: '#/components/schemas/Instant' }
+        validUntil: { $ref: '#/components/schemas/Instant' }
+        deletedAt: { $ref: '#/components/schemas/Instant' }
+    X509AnchorPolicy:
+      type: object
+      properties:
+        permittedDnsNames:
+          type: array
+          items:
+            type: object
+            required: [dnsName, includeSubdomains]
+            properties:
+              dnsName: { type: string }
+              includeSubdomains: { type: boolean }
+        excludedDnsNames:
+          type: array
+          items: { type: object }
+        permittedUriOrigins:
+          type: array
+          items: { type: string, format: uri }
+        requiredExtendedKeyUsages:
+          type: array
+          items: { type: string }
+        requiredCertificatePolicyOids:
+          type: array
+          items: { type: string }
+        publicSuffixSnapshotId: { type: string }
+    TrustAnchor:
+      type: object
+      required: [anchorId, domainId, identityIdentifierId, evidenceMechanism, origin, status, version]
+      properties:
+        anchorId: { type: string }
+        domainId: { type: string }
+        identityIdentifierId: { type: string }
+        evidenceMechanism: { $ref: '#/components/schemas/TrustEvidenceMechanism' }
+        origin: { $ref: '#/components/schemas/TrustAnchorOrigin' }
+        organizationIdentityId: { type: string, nullable: true }
+        publicResourceRef: { type: string, nullable: true }
+        status: { $ref: '#/components/schemas/TrustAnchorStatus' }
+        validFrom: { $ref: '#/components/schemas/Instant' }
+        validUntil: { $ref: '#/components/schemas/Instant' }
+        metadata: { $ref: '#/components/schemas/StringMap' }
+        x509Policy: { $ref: '#/components/schemas/X509AnchorPolicy' }
+        version: { type: integer, format: int64, minimum: 1 }
+        createdAt: { $ref: '#/components/schemas/Instant' }
+        updatedAt: { $ref: '#/components/schemas/Instant' }
+    CreateTrustAnchorRequest:
+      type: object
+      required: [domainId, identityIdentifierId, evidenceMechanism, origin]
+      properties:
+        domainId: { type: string }
+        anchorId: { type: string, nullable: true }
+        identityIdentifierId: { type: string }
+        evidenceMechanism: { $ref: '#/components/schemas/TrustEvidenceMechanism' }
+        origin: { $ref: '#/components/schemas/TrustAnchorOrigin' }
+        organizationIdentityId: { type: string, nullable: true }
+        publicResourceRef: { type: string, nullable: true }
+        status: { $ref: '#/components/schemas/TrustAnchorStatus' }
+        validFrom: { $ref: '#/components/schemas/Instant' }
+        validUntil: { $ref: '#/components/schemas/Instant' }
+        metadata: { $ref: '#/components/schemas/StringMap' }
+        x509Policy: { $ref: '#/components/schemas/X509AnchorPolicy' }
+    PutTrustAnchorRequest:
+      allOf:
+        - $ref: '#/components/schemas/TrustAnchor'
+    TrustAnchorListItem:
+      type: object
+      required: [anchor, identifier]
+      properties:
+        anchor: { $ref: '#/components/schemas/TrustAnchor' }
+        identifier: { $ref: '#/components/schemas/TrustAnchorIdentifierSummary' }
+    TrustAnchorList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/TrustAnchorListItem' }
+    TrustAnchorAdmission:
+      type: object
+      required: [anchorId, admissionClass]
+      properties:
+        anchorId: { type: string }
+        admissionClass: { $ref: '#/components/schemas/TrustAnchorAdmissionClass' }
+        constraints: { $ref: '#/components/schemas/StringMap' }
+    PutTrustAnchorAdmissionRequest:
+      type: object
+      required: [domainId, admission, expectedAnchorVersion]
+      properties:
+        domainId: { type: string }
+        admission: { $ref: '#/components/schemas/TrustAnchorAdmission' }
+        expectedAnchorVersion: { type: integer, format: int64, minimum: 1 }
+    TrustAnchorAdmissionList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/TrustAnchorAdmission' }
+    TrustDomainConsumer:
+      type: object
+      required: [consumerKind, consumerId, usage, attachmentId]
+      properties:
+        consumerKind: { $ref: '#/components/schemas/TrustConsumerKind' }
+        consumerId: { type: string }
+        usage: { $ref: '#/components/schemas/TrustUsage' }
+        attachmentId: { type: string }
+    TrustDomainConsumerList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/TrustDomainConsumer' }
+    IdentityAdmissionPolicy:
+      type: object
+      required: [mode]
+      properties:
+        mode: { $ref: '#/components/schemas/IdentityAdmissionMode' }
+    TlsServerPolicy:
+      type: object
+      required: [expectedDnsNames]
+      properties:
+        expectedDnsNames:
+          type: array
+          items: { type: string }
+        requiredExtendedKeyUsages:
+          type: array
+          items: { type: string }
+    TrustAttachment:
+      type: object
+      required: [attachmentId, consumerKind, consumerId, usage, policy, version]
+      properties:
+        attachmentId: { type: string }
+        consumerKind: { $ref: '#/components/schemas/TrustConsumerKind' }
+        consumerId: { type: string }
+        usage: { $ref: '#/components/schemas/TrustUsage' }
+        policy:
+          oneOf:
+            - $ref: '#/components/schemas/IdentityAdmissionPolicy'
+            - $ref: '#/components/schemas/TlsServerPolicy'
+        version: { type: integer, format: int64, minimum: 1 }
+    TrustAttachmentDomain:
+      type: object
+      required: [attachmentId, domainId, order]
+      properties:
+        attachmentId: { type: string }
+        domainId: { type: string }
+        order: { type: integer, minimum: 0 }
+    TrustAttachmentAggregate:
+      type: object
+      required: [attachment, domains]
+      properties:
+        attachment: { $ref: '#/components/schemas/TrustAttachment' }
+        domains:
+          type: array
+          items: { $ref: '#/components/schemas/TrustAttachmentDomain' }
+    PutTrustAttachmentRequest:
+      type: object
+      required: [attachment]
+      properties:
+        attachment: { $ref: '#/components/schemas/TrustAttachmentAggregate' }
+    TrustAttachmentList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/TrustAttachmentAggregate' }
+    TrustEligibilityGrant:
+      type: object
+      required: [grantId, subjectConsumerKind, usage, domainIds, version]
+      properties:
+        grantId: { type: string }
+        subjectConsumerKind: { $ref: '#/components/schemas/TrustConsumerKind' }
+        usage: { $ref: '#/components/schemas/TrustUsage' }
+        domainIds:
+          type: array
+          items: { type: string }
+        version: { type: integer, format: int64, minimum: 1 }
+    PutTrustEligibilityGrantRequest:
+      type: object
+      required: [grant]
+      properties:
+        grant: { $ref: '#/components/schemas/TrustEligibilityGrant' }
+    TrustEligibilityGrantList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/TrustEligibilityGrant' }
+    TrustSource:
+      type: object
+      required: [sourceId, domainId, kind, enabled, managedBy, managedAt]
+      properties:
+        sourceId: { type: string }
+        domainId: { type: string }
+        kind: { type: string }
+        enabled: { type: boolean }
+        activeRevision: { type: integer, format: int64, nullable: true }
+        managedBy: { type: string }
+        managedAt: { $ref: '#/components/schemas/Instant' }
+    TrustSourceList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/TrustSource' }
+    EnsureEuTrustSourceRequest:
+      type: object
+      required: [enabled]
+      properties:
+        enabled: { type: boolean }
+    UpsertCustomTrustSourceRequest:
+      type: object
+      required: [url, format, schemeIdentity, signerAnchorIds, egressPolicy]
+      properties:
+        url: { type: string, format: uri }
+        format: { type: string }
+        schemeIdentity: { type: string }
+        signerAnchorIds:
+          type: array
+          minItems: 1
+          items: { type: string }
+        egressPolicy:
+          type: object
+          required: [allowedHosts, maxArtifactBytes]
+          properties:
+            allowedHosts:
+              type: array
+              minItems: 1
+              items: { type: string }
+            maxArtifactBytes: { type: integer, format: int64, minimum: 1 }
+    TrustSourceRevision:
+      type: object
+      required: [sourceId, revision, url, status]
+      properties:
+        sourceId: { type: string }
+        revision: { type: integer, format: int64, minimum: 1 }
+        url: { type: string, format: uri }
+        status: { type: string }
+        contentDigest: { type: string, nullable: true }
+    TrustSourceRevisionList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/TrustSourceRevision' }
+    ValidateTrustSourceRequest:
+      type: object
+      properties:
+        validatedBy: { type: string, nullable: true }
+    ActivateTrustSourceRequest:
+      type: object
+      properties:
+        activatedBy: { type: string, nullable: true }
+    RefreshTrustSourceRequest:
+      type: object
+      properties:
+        reason: { type: string, nullable: true }
+    TrustSourceActivationResult:
+      type: object
+      required: [source, snapshot]
+      properties:
+        source: { $ref: '#/components/schemas/TrustSource' }
+        snapshot: { $ref: '#/components/schemas/TrustSourceSnapshot' }
+    TrustSourceRefreshJob:
+      type: object
+      required: [jobId, sourceId, queuedAt]
+      properties:
+        jobId: { type: string }
+        sourceId: { type: string }
+        queuedAt: { $ref: '#/components/schemas/Instant' }
+    TrustSourceSnapshot:
+      type: object
+      required: [snapshotId, sourceId, revision, digest]
+      properties:
+        snapshotId: { type: string }
+        sourceId: { type: string }
+        revision: { type: integer, format: int64 }
+        digest: { type: string }
+    TrustSourceDerivedEntryList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            required: [entryId, identity]
+            properties:
+              entryId: { type: string }
+              identity: { type: string }
+    TrustSourceRefreshAttemptList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            required: [attemptId, status]
+            properties:
+              attemptId: { type: string }
+              status: { type: string }
+    TrustSourceDiagnostics:
+      type: object
+      required: [sourceId, ready, diagnostics]
+      properties:
+        sourceId: { type: string }
+        ready: { type: boolean }
+        diagnostics:
+          type: array
+          items:
+            type: object
+            required: [code, message]
+            properties:
+              code: { type: string }
+              message: { type: string }
+    LoTEProviderProfile:
+      type: string
+      description: Provider role a remote list of trusted entities carries, as defined by ETSI TS 119 602.
+      enum: [PID_PROVIDER, WALLET_PROVIDER, PUB_EAA_PROVIDER, ACCESS_CA, REGISTRATION_CERTIFICATE_PROVIDER]
+    LoTESourceKind:
+      type: string
+      description: |
+        How a source obtains its artifact. REMOTE fetches the signed list from url on validation
+        and refresh. INLINE carries the signed list in the revision itself and is never fetched
+        or refreshed; a new list is a new revision.
+      enum: [REMOTE, INLINE]
+    LoTERemoteRevisionState:
+      type: string
+      enum: [CANDIDATE, VALIDATED, REJECTED, SUPERSEDED]
+    LoTERemoteRefreshState:
+      type: string
+      enum: [STARTED, SUCCEEDED, FAILED]
+    LoTERemoteSource:
+      type: object
+      description: Registration of an externally published list of trusted entities that this domain consumes.
+      required: [sourceId, domainId, profile, enabled, managedBy, managedAt, etag]
+      properties:
+        sourceId: { type: string }
+        domainId: { type: string }
+        profile: { $ref: '#/components/schemas/LoTEProviderProfile' }
+        enabled: { type: boolean }
+        activeRevision: { type: integer, format: int64, nullable: true }
+        activeSnapshotId: { type: string, nullable: true, description: Snapshot the domain currently resolves against. Absent until a revision is activated. }
+        managedBy: { type: string }
+        managedAt: { $ref: '#/components/schemas/Instant' }
+        etag: { type: string, description: Entity version to send as If-Match on the next mutation of this source. }
+    LoTERemoteSourceList:
+      type: array
+      items: { $ref: '#/components/schemas/LoTERemoteSource' }
+    LoTEValidationIndication:
+      type: string
+      description: |
+        Status indication of a trusted-list processing run, as ETSI TS 119 615 models it.
+        TOTAL_FAILED means the artifact was retrieved and proven unacceptable. INDETERMINATE means
+        the run could not decide, because pinned roots, a resolver, or the artifact itself were
+        unavailable, which is a retry rather than a correction.
+      enum: [TOTAL_PASSED, TOTAL_FAILED, INDETERMINATE]
+    LoTERemoteValidation:
+      type: object
+      required: [indication, validatedBy, validatedAt]
+      properties:
+        indication: { $ref: '#/components/schemas/LoTEValidationIndication' }
+        validatedBy: { type: string }
+        validatedAt: { $ref: '#/components/schemas/Instant' }
+        snapshotId: { type: string, nullable: true }
+        subIndications:
+          description: |
+            Sub-status supplementing the indication, in TS 119 615's ERROR_ and WARNING_ naming.
+            The identifier after the prefix names the check that rejected the artifact, for example
+            ERROR_HOST_NOT_ALLOWLISTED or ERROR_SIGNATURE_INVALID.
+          type: array
+          items: { $ref: '#/components/schemas/LoTEValidationSubIndication' }
+    LoTEValidationSubIndication:
+      type: string
+      description: |
+        Check that rejected a candidate artifact, in TS 119 615's ERROR_ naming. The identifier
+        after the prefix is this product's, since TS 119 612 and TS 119 602 define no failure
+        vocabulary. ERROR_SEQUENCE_NOT_MONOTONIC is raised when the artifact's sequence number is
+        not greater than the sequence number of the snapshot the domain currently resolves against.
+        Retrieval-related values never occur for INLINE sources.
+      enum:
+        - ERROR_SOURCE_URL_NOT_HTTPS
+        - ERROR_HOST_NOT_ALLOWLISTED
+        - ERROR_BODY_LIMIT_INVALID
+        - ERROR_VERIFICATION_ROOTS_UNAVAILABLE
+        - ERROR_RESOLVER_UNAVAILABLE
+        - ERROR_ARTIFACT_SIZE_INVALID
+        - ERROR_LOCATION_NOT_APPROVED
+        - ERROR_SIGNATURE_INVALID
+        - ERROR_SERIALIZATION_NOT_COMPACT
+        - ERROR_LIST_TYPE_MISMATCH
+        - ERROR_FRESHNESS_INVALID
+        - ERROR_SCHEME_TERRITORY_INVALID
+        - ERROR_ENTITY_MATERIAL_INVALID
+        - ERROR_ENTITY_IDENTITY_DUPLICATE
+        - ERROR_SEQUENCE_NOT_MONOTONIC
+        - ERROR_RETRIEVAL_FAILED
+    LoTERemoteSourceRevision:
+      type: object
+      description: |
+        One proposed or accepted configuration of a source. Revisions are numbered per source and
+        are never edited in place. A REMOTE revision carries url and allowedHosts; an INLINE
+        revision carries neither, its artifact was supplied in the put request and artifactDigest
+        identifies it. The inline artifact itself is not returned here.
+      required: [sourceId, domainId, revision, sourceKind, profile, verificationTrustAnchorIds, maxArtifactBytes, state, etag, managedBy, managedAt]
+      properties:
+        sourceId: { type: string }
+        domainId: { type: string }
+        revision: { type: integer, format: int64, minimum: 1 }
+        sourceKind: { $ref: '#/components/schemas/LoTESourceKind' }
+        profile: { $ref: '#/components/schemas/LoTEProviderProfile' }
+        url: { type: string, format: uri, nullable: true, description: Location of the signed list. Null for INLINE revisions. }
+        verificationTrustAnchorIds:
+          type: array
+          description: Trust anchors accepted as signers of the artifact.
+          items: { type: string }
+        allowedHosts:
+          type: array
+          nullable: true
+          description: Hosts the fetch may contact. A url outside this set is rejected. Null for INLINE revisions.
+          items: { type: string }
+        maxArtifactBytes: { type: integer, format: int64, minimum: 1 }
+        artifactDigest:
+          type: string
+          nullable: true
+          pattern: '^[0-9a-f]{64}$'
+          description: Lowercase hex SHA-256 of the compact JWS artifact. Known at put time for INLINE revisions and after a successful validation for REMOTE revisions; null before that.
+        state: { $ref: '#/components/schemas/LoTERemoteRevisionState' }
+        etag: { type: string, description: Entity version to send as If-Match when validating or activating this revision. }
+        managedBy: { type: string }
+        managedAt: { $ref: '#/components/schemas/Instant' }
+        validation: { $ref: '#/components/schemas/LoTERemoteValidation' }
+    LoTERemoteSourceRevisionList:
+      type: array
+      items: { $ref: '#/components/schemas/LoTERemoteSourceRevision' }
+    PutLoTESourceRequest:
+      description: |
+        Creates the next candidate revision of a source. sourceKind selects the variant: REMOTE
+        points at a published list, INLINE carries the signed list by value. A source keeps one
+        kind across its revisions; a put with the other kind is rejected with 409. Send If-Match
+        "*" to register a source that does not exist yet.
+      oneOf:
+        - $ref: '#/components/schemas/PutLoTERemoteSourceRequest'
+        - $ref: '#/components/schemas/PutLoTEInlineSourceRequest'
+      discriminator:
+        propertyName: sourceKind
+        mapping:
+          REMOTE: '#/components/schemas/PutLoTERemoteSourceRequest'
+          INLINE: '#/components/schemas/PutLoTEInlineSourceRequest'
+    PutLoTERemoteSourceRequest:
+      type: object
+      description: Creates the next candidate revision of a remote source. The artifact is fetched from url on validation and refresh.
+      required: [sourceKind, profile, url, verificationTrustAnchorIds, allowedHosts, maxArtifactBytes]
+      properties:
+        sourceKind: { type: string, enum: [REMOTE] }
+        profile: { $ref: '#/components/schemas/LoTEProviderProfile' }
+        url: { type: string, format: uri }
+        verificationTrustAnchorIds:
+          type: array
+          items: { type: string }
+        allowedHosts:
+          type: array
+          items: { type: string }
+        maxArtifactBytes: { type: integer, format: int64, minimum: 1 }
+        enabled: { type: boolean, default: true }
+    PutLoTEInlineSourceRequest:
+      type: object
+      description: |
+        Creates the next candidate revision of an inline source from a signed list supplied by
+        value. The artifact is verified with the same JAdES, structure, freshness, sequence,
+        territory, and provider checks as a fetched list; only retrieval is skipped. Refresh does
+        not apply to inline sources.
+      required: [sourceKind, profile, artifact, verificationTrustAnchorIds, maxArtifactBytes]
+      properties:
+        sourceKind: { type: string, enum: [INLINE] }
+        profile: { $ref: '#/components/schemas/LoTEProviderProfile' }
+        artifact:
+          type: string
+          minLength: 1
+          description: The list of trusted entities as a compact-serialization JAdES JWS. Rejected with ERROR_ARTIFACT_SIZE_INVALID when longer than maxArtifactBytes.
+        verificationTrustAnchorIds:
+          type: array
+          items: { type: string }
+        maxArtifactBytes: { type: integer, format: int64, minimum: 1 }
+        enabled: { type: boolean, default: true }
+    ActivateLoTERemoteSourceRevisionRequest:
+      type: object
+      required: [snapshotId]
+      properties:
+        snapshotId: { type: string, description: Snapshot produced by validating this revision. }
+    LoTERemoteSourceValidationResult:
+      type: object
+      description: Result of fetching and verifying the artifact a candidate revision points at.
+      required: [revision, snapshotId]
+      properties:
+        revision: { $ref: '#/components/schemas/LoTERemoteSourceRevision' }
+        snapshotId: { type: string }
+    LoTERemoteSourceActivationResult:
+      type: object
+      required: [source, revision, snapshotId, activatedBy, activatedAt]
+      properties:
+        source: { $ref: '#/components/schemas/LoTERemoteSource' }
+        revision: { $ref: '#/components/schemas/LoTERemoteSourceRevision' }
+        snapshotId: { type: string }
+        activatedBy: { type: string }
+        activatedAt: { $ref: '#/components/schemas/Instant' }
+    LoTERemoteSourceRefreshResult:
+      type: object
+      description: Provenance of the snapshot stored by a refresh of the active revision.
+      required: [snapshotId, sourceId, domainId, revision, profile, artifactDigest, signedIssueTime, signedNextUpdate, sequenceNumber, storedAt]
+      properties:
+        snapshotId: { type: string }
+        sourceId: { type: string }
+        domainId: { type: string }
+        revision: { type: integer, format: int64, minimum: 1 }
+        profile: { $ref: '#/components/schemas/LoTEProviderProfile' }
+        artifactDigest: { type: string }
+        signedIssueTime: { $ref: '#/components/schemas/Instant' }
+        signedNextUpdate: { $ref: '#/components/schemas/Instant' }
+        sequenceNumber: { type: integer, format: int64 }
+        storedAt: { $ref: '#/components/schemas/Instant' }
+    LoTERemoteSnapshotSummary:
+      type: object
+      description: Display-safe provenance of the active snapshot. The signed artifact and its provider entries are not returned here.
+      required: [snapshotId, revision, profile, artifactDigest, signedIssueTime, signedNextUpdate, sequenceNumber, providerCount, storedAt]
+      properties:
+        snapshotId: { type: string }
+        revision: { type: integer, format: int64, minimum: 1 }
+        profile: { $ref: '#/components/schemas/LoTEProviderProfile' }
+        artifactDigest: { type: string }
+        signedIssueTime: { $ref: '#/components/schemas/Instant' }
+        signedNextUpdate: { $ref: '#/components/schemas/Instant' }
+        sequenceNumber: { type: integer, format: int64 }
+        providerCount: { type: integer }
+        storedAt: { $ref: '#/components/schemas/Instant' }
+    LoTERemoteRefreshAttempt:
+      type: object
+      required: [attemptId, sourceId, domainId, revision, state, startedAt]
+      properties:
+        attemptId: { type: string }
+        sourceId: { type: string }
+        domainId: { type: string }
+        revision: { type: integer, format: int64, minimum: 1 }
+        state: { $ref: '#/components/schemas/LoTERemoteRefreshState' }
+        startedAt: { $ref: '#/components/schemas/Instant' }
+        completedAt: { $ref: '#/components/schemas/Instant' }
+        resultingSnapshotId: { type: string, nullable: true }
+        diagnosticCodes:
+          type: array
+          items: { type: string }
+    LoTERemoteSourceDiagnostics:
+      type: object
+      description: Why a remote source is or is not usable, with its recent refresh history.
+      required: [sourceId, domainId]
+      properties:
+        sourceId: { type: string }
+        domainId: { type: string }
+        revision: { type: integer, format: int64, nullable: true }
+        codes:
+          type: array
+          items: { type: string }
+        refreshAttempts:
+          type: array
+          items: { $ref: '#/components/schemas/LoTERemoteRefreshAttempt' }
+        activeSnapshot: { $ref: '#/components/schemas/LoTERemoteSnapshotSummary' }
+    TrustCatalog:
+      type: object
+      required: [domainId, catalogId, displayName, qualificationProfile, publicationMode, state, version]
+      properties:
+        domainId: { type: string }
+        catalogId: { type: string }
+        displayName: { type: string }
+        qualificationProfile: { type: string }
+        publicationMode: { type: string }
+        state: { type: string, enum: [DRAFT, ACTIVE, DISABLED] }
+        activeSnapshotId: { type: string, nullable: true }
+        version: { type: integer, format: int64, minimum: 1 }
+    TrustCatalogList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/TrustCatalog' }
+    CreateTrustCatalogRequest:
+      type: object
+      required: [domainId, displayName, qualificationProfile, publicationMode]
+      properties:
+        domainId: { type: string }
+        catalogId: { type: string, nullable: true }
+        displayName: { type: string }
+        qualificationProfile: { type: string }
+        publicationMode: { type: string }
+    UpdateTrustCatalogRequest:
+      type: object
+      required: [domainId, catalogId, displayName, expectedVersion]
+      properties:
+        domainId: { type: string }
+        catalogId: { type: string }
+        displayName: { type: string }
+        expectedVersion: { type: integer, format: int64, minimum: 1 }
+    TrustCatalogSnapshot:
+      type: object
+      required: [domainId, catalogId, snapshotId, catalogVersion, digest, recordedAt]
+      properties:
+        domainId: { type: string }
+        catalogId: { type: string }
+        snapshotId: { type: string }
+        catalogVersion: { type: integer, format: int64, minimum: 1 }
+        digest: { type: string }
+        recordedAt: { $ref: '#/components/schemas/Instant' }
+        statements:
+          type: array
+          items: { type: object }
+    TrustCatalogSnapshotList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/TrustCatalogSnapshot' }
+    ValidateTrustCatalogCandidateRequest:
+      type: object
+      required: [domainId, catalogId, candidate, expectedCatalogVersion]
+      properties:
+        domainId: { type: string }
+        catalogId: { type: string }
+        candidate: { type: object }
+        expectedCatalogVersion: { type: integer, format: int64, minimum: 1 }
+    ActivateTrustCatalogSnapshotRequest:
+      type: object
+      required: [domainId, catalogId, snapshotId, expectedCatalogVersion]
+      properties:
+        domainId: { type: string }
+        catalogId: { type: string }
+        snapshotId: { type: string }
+        expectedCatalogVersion: { type: integer, format: int64, minimum: 1 }
+        expectedActiveSnapshotId: { type: string, nullable: true }
+    TrustCatalogCandidateValidationResult:
+      type: object
+      required: [snapshot, accepted]
+      properties:
+        snapshot: { $ref: '#/components/schemas/TrustCatalogSnapshot' }
+        accepted: { type: boolean }
+        diagnostics:
+          type: array
+          items: { type: string }
+    TrustCatalogActivationResult:
+      type: object
+      required: [catalog, snapshot]
+      properties:
+        catalog: { $ref: '#/components/schemas/TrustCatalog' }
+        snapshot: { $ref: '#/components/schemas/TrustCatalogSnapshot' }
+    TrustConsumerRef:
+      type: object
+      required: [kind, consumerId]
+      properties:
+        kind: { $ref: '#/components/schemas/TrustConsumerKind' }
+        consumerId: { type: string }
+    TrustPresentedEvidence:
+      type: object
+      required: [mechanism]
+      properties:
+        mechanism: { $ref: '#/components/schemas/TrustEvidenceMechanism' }
+        identifier: { type: string, nullable: true }
+        certificatePathDer:
+          type: array
+          items: { type: string, format: byte }
+    ResolveTrustAttachmentRequest:
+      type: object
+      required: [consumer, usage]
+      properties:
+        consumer: { $ref: '#/components/schemas/TrustConsumerRef' }
+        usage: { $ref: '#/components/schemas/TrustUsage' }
+        at: { $ref: '#/components/schemas/Instant' }
+    TrustPolicyDomainRevision:
+      type: object
+      required: [domainId, ordinal, version]
+      description: The exact domain revision that took part in the decision.
+      properties:
+        domainId: { type: string, minLength: 1 }
+        ordinal: { type: integer, minimum: 0 }
+        version: { type: integer, format: int64, minimum: 1 }
+    TrustSourceSnapshotReference:
+      type: object
+      required: [sourceId, revision, snapshotId]
+      properties:
+        sourceId: { type: string, minLength: 1 }
+        revision: { type: integer, format: int64 }
+        snapshotId: { type: string, minLength: 1 }
+    TrustDecisionDiagnostic:
+      type: object
+      required: [code, message]
+      properties:
+        code: { type: string }
+        message: { type: string }
+    ResolvedTrustAttachment:
+      type: object
+      required: [attachment, domains, evidenceMechanisms, policyDigest]
+      properties:
+        attachment: { $ref: '#/components/schemas/TrustAttachment' }
+        domains:
+          type: array
+          items: { $ref: '#/components/schemas/TrustPolicyDomainRevision' }
+        evidenceMechanisms:
+          type: array
+          items: { $ref: '#/components/schemas/TrustEvidenceMechanism' }
+        sourceSnapshots:
+          type: array
+          items: { $ref: '#/components/schemas/TrustSourceSnapshotReference' }
+        policyDigest: { type: string }
+        diagnostics:
+          type: array
+          items: { $ref: '#/components/schemas/TrustDecisionDiagnostic' }
+    ResolveTrustAuthenticationMaterialRequest:
+      type: object
+      required: [consumer, presentedEvidence]
+      properties:
+        consumer: { $ref: '#/components/schemas/TrustConsumerRef' }
+        presentedEvidence: { $ref: '#/components/schemas/TrustPresentedEvidence' }
+        at: { $ref: '#/components/schemas/Instant' }
+    ResolvedTrustAuthenticationMaterial:
+      type: object
+      required: [trusted, mechanism, diagnostics]
+      properties:
+        trusted: { type: boolean }
+        mechanism: { $ref: '#/components/schemas/TrustEvidenceMechanism' }
+        diagnostics:
+          type: array
+          items: { type: object }
+    EvaluationRequestBase:
+      type: object
+      required: [consumer, presentedEvidence]
+      properties:
+        consumer: { $ref: '#/components/schemas/TrustConsumerRef' }
+        presentedEvidence: { $ref: '#/components/schemas/TrustPresentedEvidence' }
+        at: { $ref: '#/components/schemas/Instant' }
+    EvaluateCredentialIssuerTrustRequest:
+      allOf: [{ $ref: '#/components/schemas/EvaluationRequestBase' }]
+    EvaluateWalletProviderTrustRequest:
+      allOf:
+        - $ref: '#/components/schemas/EvaluationRequestBase'
+        - type: object
+          required: [walletUnitEvidenceSatisfied]
+          properties:
+            walletUnitEvidenceSatisfied: { type: boolean }
+    EvaluateVerifierTrustRequest:
+      allOf: [{ $ref: '#/components/schemas/EvaluationRequestBase' }]
+    EvaluateCatalogAuthorizationRequest:
+      type: object
+      required: [consumer, attestationType, authorityEvidenceId]
+      properties:
+        consumer: { $ref: '#/components/schemas/TrustConsumerRef' }
+        attestationType: { type: object }
+        authorityEvidenceId: { type: string }
+        at: { $ref: '#/components/schemas/Instant' }
+    TrustEvaluationResult:
+      type: object
+      required: [trusted, diagnostics]
+      properties:
+        trusted: { type: boolean }
+        diagnostics:
+          type: array
+          items:
+            type: object
+            required: [code, message]
+            properties:
+              code: { type: string }
+              message: { type: string }
+    ResolveTlsServerTrustMaterialRequest:
+      allOf: [{ $ref: '#/components/schemas/EvaluationRequestBase' }]
+    TlsServerTrustMaterialResult:
+      type: object
+      required: [trusted, certificateAuthorities, diagnostics]
+      properties:
+        trusted: { type: boolean }
+        certificateAuthorities:
+          type: array
+          items: { type: string, format: byte }
+        diagnostics:
+          type: array
+          items: { type: object }
+    MdocVicalSourceConfiguration:
+      type: object
+      required: [url, signerAnchorIds]
+      description: >-
+        An ISO 18013-5 Annex C VICAL: a signed CBOR/COSE list of issuing-authority certificates.
+        This is a different artifact from an ETSI TS 119 612 or TS 119 602 trust list and is
+        evaluated on its own path.
+      example:
+        url: "https://issuer.example.com/mdoc/vical"
+        signerAnchorIds: ["anchor-vical-signer"]
+        issuerAnchorIds: ["anchor-iaca-example"]
+        requiredCertificateProfiles: ["mdoc-dsc"]
+        enabled: true
+      properties:
+        url:
+          type: string
+          format: uri
+          description: Absolute HTTPS URL of the VICAL artifact. Userinfo and fragments are rejected.
+        signerAnchorIds:
+          type: array
+          minItems: 1
+          description: Anchors admitted as MDOC_VICAL_SIGNER that verify the artifact signature.
+          items: { type: string }
+        issuerAnchorIds:
+          type: array
+          description: Anchors admitted as CREDENTIAL_ISSUER that the artifact is allowed to carry.
+          items: { type: string }
+        requiredCertificateProfiles:
+          type: array
+          items: { type: string }
+        enabled: { type: boolean, default: true }
+    MdocVicalConfiguration:
+      type: object
+      required: [domainId, anchorId]
+      properties:
+        domainId: { type: string }
+        anchorId: { type: string }
+        source:
+          type: object
+          allOf:
+            - $ref: '#/components/schemas/MdocVicalSourceConfiguration'
+          nullable: true
+          description: Absent when the anchor carries no VICAL yet.

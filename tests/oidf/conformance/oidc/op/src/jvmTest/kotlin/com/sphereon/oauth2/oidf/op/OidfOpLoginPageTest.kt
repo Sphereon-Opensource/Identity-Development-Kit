@@ -1,5 +1,5 @@
 /*
- * © 2026 Sphereon International B.V.
+ * Â© 2026 Sphereon International B.V.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@ package com.sphereon.oauth2.oidf.op
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.request.get
+import io.ktor.client.request.parameter
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpStatusCode
 import kotlinx.coroutines.test.runTest
@@ -41,7 +42,7 @@ class OidfOpLoginPageTest {
     @BeforeTest
     fun setUp() {
         fixture = OidfOpServerFixture()
-        client = HttpClient(CIO)
+        client = HttpClient(CIO) { followRedirects = true }
     }
 
     @AfterTest
@@ -53,10 +54,24 @@ class OidfOpLoginPageTest {
     @Test
     fun loginPageRendersUsernameAndPasswordForm() =
         runTest {
-            val response =
-                client.get(
-                    "${fixture.baseUrl}/login?session_id=test-session&return_url=${fixture.baseUrl}/",
+            val verifier = "oidf-op-conformance-pkce-verifier-fixture-2026-A"
+            val challenge =
+                java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(
+                    java.security.MessageDigest
+                        .getInstance("SHA-256")
+                        .digest(verifier.encodeToByteArray()),
                 )
+            // The normal authorize endpoint creates the verified pending session and redirects to login.
+            val response =
+                client.get("${fixture.baseUrl}/authorize") {
+                    parameter("response_type", "code")
+                    parameter("client_id", "oidf-op-basic")
+                    parameter("redirect_uri", "http://localhost:8080/test-callback")
+                    parameter("scope", "openid")
+                    parameter("state", "login-page-form")
+                    parameter("code_challenge", challenge)
+                    parameter("code_challenge_method", "S256")
+                }
             assertEquals(HttpStatusCode.OK, response.status, "login page must return 200")
             val contentType = response.headers["Content-Type"]
             assertNotNull(contentType, "login page must declare a Content-Type")

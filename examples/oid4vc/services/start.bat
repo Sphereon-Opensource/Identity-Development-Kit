@@ -39,10 +39,14 @@ if not defined PROFILE_NAME ( echo Failed to resolve conformance profile. & exit
 echo PROFILE=!PROFILE_NAME!
 if defined COMPOSE_PROFILE_ARGS if not "!COMPOSE_PROFILE_ARGS!"=="" echo PROFILE_ENV_FILES=!COMPOSE_PROFILE_ARGS!
 
-REM Version resolution: env var > IDK gradle.properties (if present) > "latest"
+REM Version resolution: env var > platform-version.properties > gradle.properties > "latest"
 if not defined IDK_VERSION (
+    set "PF=%~dp0..\..\..\platform-version.properties"
     set "GP=%~dp0..\..\..\gradle.properties"
-    if exist "!GP!" (
+    if exist "!PF!" (
+        for /f "tokens=2 delims==" %%v in ('findstr /b /c:"platformVersion=" "!PF!"') do set IDK_VERSION=%%v
+        echo IDK_VERSION=!IDK_VERSION! ^(resolved from !PF!^)
+    ) else if exist "!GP!" (
         for /f "tokens=2 delims==" %%v in ('findstr /b /c:"version=" "!GP!"') do set IDK_VERSION=%%v
         echo IDK_VERSION=!IDK_VERSION! ^(resolved from !GP!^)
     ) else (
@@ -51,6 +55,7 @@ if not defined IDK_VERSION (
     )
 ) else (
     echo IDK_VERSION=%IDK_VERSION% ^(from environment^)
+)
 )
 
 (

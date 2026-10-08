@@ -1,0 +1,1016 @@
+openapi: 3.0.4
+info:
+  title: KMS API Components
+  version: 0.1.0
+  description: Entity schemas, enums, and path parameters for the KMS REST Server API.
+paths: {}
+components:
+  parameters:
+    ProviderId:
+      name: providerId
+      in: path
+      required: true
+      schema:
+        type: string
+      description: >
+        Identifier of the key provider, as configured server-side (for example
+        `testsoftware` for the bundled software provider, or a UUID such as
+        `4895d0cf-2061-41cb-8fd4-13af5724569e` for a generated id).
+      style: simple
+      example: "testsoftware"
+
+    AliasOrKid:
+      name: aliasOrKid
+      in: path
+      required: true
+      schema:
+        type: string
+      description: >
+        Either a key alias (a human-chosen name, for example
+        `my-signing-key`) or a key id / kid (for example
+        `00-qTBov6GxjPSuMNxnk876cMP0JKjbwl4ZyN_sY2tE`). The KMS tries to match by either.
+      style: simple
+      example: "my-signing-key"
+
+    ResolverId:
+      name: resolverId
+      in: path
+      required: true
+      schema:
+        type: string
+      description: >
+        Identifier of the key resolver, as configured server-side. The default
+        deployment exposes `jose_cose_resolver`.
+      style: simple
+      example: "jose_cose_resolver"
+
+
+  schemas:
+    AwsClientConfiguration:
+      description: Optional advanced AWS SDK client settings.
+      type: object
+      properties:
+        connectionTimeoutInMillis:
+          type: integer
+          format: int32
+          description: Amount of time (in milliseconds) to wait when initially establishing a connection before giving up.
+          example: 2000
+        socketTimeoutInMillis:
+          type: integer
+          format: int32
+          description: Amount of time (in milliseconds) to wait for data to be transferred over an established, open connection before timing out.
+          example: 5000
+
+    AwsKmsSetting:
+      description: >-
+        Configuration settings specific to the AWS_KMS provider type.
+        Tenant credentials are represented only by an opaque tenant-scoped secret ID.
+      type: object
+      required:
+        - region
+        - credentialsSecretId
+      properties:
+        region:
+          type: string
+          description: The AWS region where the KMS keys reside (e.g., 'us-east-1', 'eu-west-1').
+          example: "eu-west-1"
+        credentialsSecretId:
+          type: string
+          pattern: '^sec_[A-Za-z0-9_-]{16,128}$'
+          description: Opaque tenant-scoped secret ID for a strict AWS access credential bundle.
+        clientConfiguration:
+          $ref: '#/components/schemas/AwsClientConfiguration'
+
+    AzureClientSecretCredentialOpts:
+      description: Azure Service Principal credentials using a client secret.
+      type: object
+      required:
+        - clientId
+        - clientSecretId
+      properties:
+        clientId:
+          type: string
+          description: The Application (client) ID of the Azure service principal.
+          example: "cfa45c7f-1212-7a59-ac45-aa82acec4364343"
+        clientSecretId:
+          type: string
+          pattern: '^sec_[A-Za-z0-9_-]{16,128}$'
+          description: Opaque tenant-scoped secret ID for the client secret.
+
+    AzureCredentialOpts:
+      description: Azure credential options for authenticating to Key Vault. Currently assumes Service Principal with Client Secret.
+      type: object
+      properties:
+        clientSecretCredentialOpts:
+          $ref: '#/components/schemas/AzureClientSecretCredentialOpts'
+
+    AzureKeyVaultSetting:
+      description: Configuration settings specific to the Azure KeyVault provider type.
+      type: object
+      required:
+        - keyvaultUrl
+        - tenantId
+        - credentialOpts
+      properties:
+        keyvaultUrl:
+          type: string
+          format: uri
+          description: The URL of the Azure Key Vault or Managed HSM instance.
+          example: 'https://example-vault.vault.azure.net/'
+        tenantId:
+          type: string
+          description: The Azure Active Directory tenant (directory) ID.
+          example: "a3b42c5a-5512-4379-bc27-4682acec459a"
+        credentialOpts:
+          $ref: '#/components/schemas/AzureCredentialOpts'
+        applicationId:
+          type: string
+          description: An optional identifier for your application using the Key Vault.
+          example: "my-kms-rest-app"
+
+    CoseKeyPair:
+      type: object
+      description: Represents a cryptographic key pair for COSE (CBOR Object Signing and Encryption) operations.
+      required:
+        - publicCoseKey
+      properties:
+        privateCoseKey:
+          $ref: '#/components/schemas/CoseKey'
+        publicCoseKey:
+          $ref: '#/components/schemas/CoseKey'
+
+    CryptoAlg:
+      type: string
+      description: Cryptographic algorithm type.
+      enum:
+        - RSA
+        - SHA256_WITH_RSA
+        - ECDSA
+        - X25519
+        - X448
+        - ED25519
+        - ED448
+        - HMAC
+      example: ECDSA
+
+    Curve:
+      type: string
+      description: Elliptic curve identifier.
+      enum:
+        - P-256
+        - P-384
+        - P-521
+        - secp256k1
+        - Ed25519
+        - Ed448
+        - X25519
+        - X448
+      example: P-256
+
+    DigestAlg:
+      type: string
+      description: Cryptographic digest (hash) algorithm identifier.
+      enum:
+        - NONE
+        - SHA256
+        - SHA384
+        - SHA512
+        - SHA3_256
+        - SHA3_384
+        - SHA3_512
+      example: SHA256
+
+    JoseKeyPair:
+      type: object
+      description: A cryptographic key pair used with JOSE (JSON Object Signing and Encryption).
+      required:
+        - publicJwk
+      properties:
+        privateJwk:
+          $ref: '#/components/schemas/Jwk'
+        publicJwk:
+          $ref: '#/components/schemas/Jwk'
+
+    JwkUse:
+      type: string
+      description: Intended use of the key (signing or encryption).
+      enum:
+        - sig
+        - enc
+      example: sig
+
+    JwkKeyType:
+      type: string
+      description: JSON Web Key (JWK) key type parameter identifying the cryptographic algorithm family.
+      enum:
+        - EC
+        - RSA
+        - OKP
+        - oct
+      example: EC
+
+    Jwk:
+      type: object
+      description: A JSON Web Key (JWK) as defined by RFC 7517.
+      example:
+        kty: "EC"
+        kid: "00-qTBov6GxjPSuMNxnk876cMP0JKjbwl4ZyN_sY2tE"
+        alg: "ES256"
+        use: "sig"
+        key_ops: [ "sign", "verify" ]
+        crv: "P-256"
+        x: "HFL67WWh6PYWKOy1mzt9Y2ANs-CWFIyVtouR-Jx_mAM"
+        y: "9f_1x7fwUuEbEwxSNTYE3jQF-zForWpKkEMpiUp1MNI"
+      required:
+        - kty
+      properties:
+        kty:
+          $ref: '#/components/schemas/JwkKeyType'
+        kid:
+          type: string
+          description: Key identifier used to uniquely identify the key.
+          example: "00-qTBov6GxjPSuMNxnk876cMP0JKjbwl4ZyN_sY2tE"
+        alg:
+          type: string
+          description: The algorithm intended for use with the key (JWA algorithm name).
+          example: "ES256"
+        use:
+          $ref: '#/components/schemas/JwkUse'
+        key_ops:
+          type: array
+          items:
+            $ref: '#/components/schemas/KeyOperations'
+          description: The allowed cryptographic operations for the key.
+        crv:
+          $ref: '#/components/schemas/Curve'
+        x:
+          type: string
+          description: The x coordinate for elliptic curve keys (base64url-encoded).
+          example: "HFL67WWh6PYWKOy1mzt9Y2ANs-CWFIyVtouR-Jx_mAM"
+        y:
+          type: string
+          description: The y coordinate for elliptic curve keys (base64url-encoded).
+          example: "9f_1x7fwUuEbEwxSNTYE3jQF-zForWpKkEMpiUp1MNI"
+        d:
+          type: string
+          format: password
+          description: The private key parameter (base64url-encoded). Present only for private keys.
+          writeOnly: true
+          example: "P_4YEyuDj4aA4IVYVku4dm3BoDReFTKVsBwb1utoWCQ"
+        n:
+          type: string
+          description: The modulus value for RSA keys (base64url-encoded).
+        e:
+          type: string
+          description: The public exponent for RSA keys (base64url-encoded).
+          example: "AQAB"
+        p:
+          type: string
+          format: password
+          description: The first prime factor for RSA private keys (base64url-encoded).
+          writeOnly: true
+        q:
+          type: string
+          format: password
+          description: The second prime factor for RSA private keys (base64url-encoded).
+          writeOnly: true
+        dp:
+          type: string
+          format: password
+          description: The first factor CRT exponent for RSA private keys (base64url-encoded).
+          writeOnly: true
+        dq:
+          type: string
+          format: password
+          description: The second factor CRT exponent for RSA private keys (base64url-encoded).
+          writeOnly: true
+        qi:
+          type: string
+          format: password
+          description: The first CRT coefficient for RSA private keys (base64url-encoded).
+          writeOnly: true
+        k:
+          type: string
+          format: password
+          description: The symmetric key value (base64url-encoded).
+          writeOnly: true
+        x5c:
+          type: array
+          items:
+            type: string
+          description: X.509 certificate chain as base64-encoded DER certificates.
+        x5t:
+          type: string
+          description: X.509 certificate SHA-1 thumbprint (base64url-encoded).
+        x5u:
+          type: string
+          format: uri
+          description: URL pointing to X.509 certificate or certificate chain.
+        x5t#S256:
+          type: string
+          description: X.509 certificate SHA-256 thumbprint (base64url-encoded).
+
+    CoseKeyType:
+      type: integer
+      description: COSE key type parameter. 1=OKP (Octet Key Pair), 2=EC2 (Elliptic Curve), 3=RSA, 4=Symmetric.
+      enum:
+        - 1
+        - 2
+        - 3
+        - 4
+      example: 2
+
+    CoseKey:
+      type: object
+      description: Represents a COSE (CBOR Object Signing and Encryption) key in JSON format.
+      required:
+        - kty
+      properties:
+        kty:
+          $ref: '#/components/schemas/CoseKeyType'
+        kid:
+          type: string
+          description: Key identifier (base64url-encoded byte string).
+          example: "key-12345"
+        alg:
+          type: integer
+          description: The COSE algorithm identifier (e.g., -7=ES256, -35=ES384, -36=ES512, -8=EdDSA).
+          example: -7
+        key_ops:
+          type: array
+          items:
+            type: integer
+          description: The allowed COSE key operations (1=sign, 2=verify, 3=encrypt, 4=decrypt, etc.).
+        baseIV:
+          type: string
+          description: Base initialization vector (base64url-encoded).
+        crv:
+          type: integer
+          description: The COSE curve identifier (1=P-256, 2=P-384, 3=P-521, 8=secp256k1, 6=Ed25519, etc.).
+          example: 1
+        x:
+          type: string
+          description: The x coordinate (base64url-encoded byte string).
+        y:
+          type: string
+          description: The y coordinate (base64url-encoded byte string).
+        d:
+          type: string
+          format: password
+          description: The private key parameter (base64url-encoded byte string).
+          writeOnly: true
+        x5chain:
+          type: array
+          items:
+            type: string
+          description: X.509 certificate chain as base64-encoded certificates.
+
+
+
+    Origin:
+      type: string
+      description: Provenance of the referenced resource.
+      enum:
+        - external
+        - managed
+      example: external
+
+    ResourceControlMode:
+      type: string
+      description: >-
+        Controls whether the platform may mutate or delete provider material. For an externally
+        managed reference, Externally managed DELETE removes only the EDK reference. The provider
+        resource remains untouched. Platform-managed behavior remains backward compatible.
+      enum:
+        - platform_managed
+        - externally_managed
+      example: externally_managed
+
+    CertificateReferenceKind:
+      type: string
+      description: Kind of certificate reference registered in the tenant's KMS.
+      enum:
+        - trusted_certificate
+        - key_certificate_chain
+      example: key_certificate_chain
+
+    CertificateReferenceSource:
+      type: string
+      description: Source of the certificate material behind the reference.
+      enum:
+        - stored_public_material
+        - provider_native
+      example: stored_public_material
+
+    CertificateReferenceRegistrationRequest:
+      type: object
+      description: >-
+        Registers a certificate reference without creating or importing key material. The
+        stored_public_material source requires a non-empty certificateChain containing
+        Base64-encoded DER certificates and rejects provider-native material. The provider_native
+        source requires certificateChain to be omitted and resolves the certificate from provider
+        capability. A key_certificate_chain requires linkedKeyAlias or linkedKeyKid to identify
+        the key whose public material is bound to the leaf certificate.
+      required:
+        - providerId
+        - alias
+        - kind
+        - source
+      properties:
+        providerId:
+          type: string
+          description: Provider that owns or stores the certificate resource.
+          example: aws-kms
+        alias:
+          type: string
+          description: For provider_native material, the exact existing provider alias, stored unchanged. A provider-native certificate reached through a platform-shared Azure Key Vault provider must have sphereon-tenant-id set to the authenticated tenant id. For stored_public_material, this is a tenant-local reference alias.
+          example: signing-chain
+        providerCertificateId:
+          type: string
+          description: Optional provider-native certificate identifier.
+          example: cert-123
+        kind:
+          $ref: '#/components/schemas/CertificateReferenceKind'
+        source:
+          $ref: '#/components/schemas/CertificateReferenceSource'
+        linkedKeyAlias:
+          type: string
+          minLength: 1
+          description: Optional linked key selector by provider alias.
+          example: my-signing-key
+        linkedKeyKid:
+          type: string
+          minLength: 1
+          description: Optional linked key selector by provider kid.
+          example: key-123
+        certificateChain:
+          type: array
+          minItems: 1
+          description: >-
+            Required and non-empty for stored_public_material; omit for provider_native. Each
+            certificate is Base64-encoded DER.
+          items:
+            type: string
+            format: byte
+      not:
+        anyOf:
+        - title: Stored public material without a chain
+          required:
+            - source
+          properties:
+            source:
+              enum:
+                - stored_public_material
+          not:
+            required:
+              - certificateChain
+            properties:
+              certificateChain: {}
+        - title: Provider-native material with a supplied chain
+          required:
+            - source
+            - certificateChain
+          properties:
+            source:
+              enum:
+                - provider_native
+            certificateChain: {}
+        - title: Key certificate chain without a linked key selector
+          required:
+            - kind
+          properties:
+            kind:
+              enum:
+                - key_certificate_chain
+          not:
+            anyOf:
+              - required:
+                  - linkedKeyAlias
+                properties:
+                  linkedKeyAlias: {}
+              - required:
+                  - linkedKeyKid
+                properties:
+                  linkedKeyKid: {}
+
+    CertificateReferenceResponse:
+      type: object
+      description: >-
+        Certificate reference metadata. External deletion removes only the EDK reference; the
+        provider resource remains untouched. Registration never creates or imports key material.
+      required:
+        - id
+        - alias
+        - providerId
+        - kind
+        - source
+        - controlMode
+        - origin
+        - certificateFingerprint
+        - publicKeyFingerprint
+      properties:
+        id:
+          type: string
+          description: Stable EDK certificate-reference identifier.
+        alias:
+          type: string
+          description: Tenant-local alias for the certificate reference.
+        providerId:
+          type: string
+          description: Provider holding or serving the certificate resource.
+        providerCertificateId:
+          type: string
+          description: Provider-native certificate identifier when available.
+        kind:
+          $ref: '#/components/schemas/CertificateReferenceKind'
+        source:
+          $ref: '#/components/schemas/CertificateReferenceSource'
+        controlMode:
+          $ref: '#/components/schemas/ResourceControlMode'
+        origin:
+          $ref: '#/components/schemas/Origin'
+        linkedKeyReferenceId:
+          type: string
+          description: EDK key-reference identifier linked to the certificate-chain leaf.
+        certificateChain:
+          type: array
+          description: Leaf-to-root chain of Base64-encoded DER certificates when stored locally.
+          items:
+            type: string
+            format: byte
+        certificateFingerprint:
+          type: string
+          format: byte
+          description: Base64-encoded certificate fingerprint.
+        publicKeyFingerprint:
+          type: string
+          format: byte
+          description: Base64-encoded public-key fingerprint.
+
+    CertificateReferenceSummary:
+      type: object
+      additionalProperties: false
+      description: >-
+        Persisted tenant-scoped certificate relationship metadata. This projection contains no
+        certificate chain, credential, permit, private key material, or raw provider locator.
+      required:
+        - id
+        - alias
+        - providerId
+        - kind
+        - source
+        - controlMode
+        - origin
+        - certificateFingerprint
+        - publicKeyFingerprint
+      properties:
+        id:
+          type: string
+          description: Stable EDK certificate-reference identifier.
+        alias:
+          type: string
+          description: Tenant-local certificate-reference alias.
+        providerId:
+          type: string
+          description: Runtime provider identifier, distinct from any opaque resource handle.
+        providerCertificateId:
+          type: string
+          description: Public provider-native certificate identifier when one was registered.
+        kind:
+          $ref: '#/components/schemas/CertificateReferenceKind'
+        source:
+          $ref: '#/components/schemas/CertificateReferenceSource'
+        controlMode:
+          $ref: '#/components/schemas/ResourceControlMode'
+        origin:
+          $ref: '#/components/schemas/Origin'
+        linkedKeyReferenceId:
+          type: string
+          description: Tenant-scoped EDK key-reference identifier linked to the certificate leaf.
+        linkedKeyAlias:
+          type: string
+          description: Public provider-native alias of the linked key when registered.
+        linkedKeyKid:
+          type: string
+          description: Public provider-native kid of the linked key when registered.
+        certificateFingerprint:
+          type: string
+          format: byte
+          description: Base64-encoded certificate fingerprint.
+        publicKeyFingerprint:
+          type: string
+          format: byte
+          description: Base64-encoded public-key fingerprint.
+
+    CertificateReferencesResponse:
+      type: object
+      additionalProperties: false
+      required: [references]
+      properties:
+        references:
+          type: array
+          items:
+            $ref: '#/components/schemas/CertificateReferenceSummary'
+
+    KeyInfo:
+      type: object
+      description: Metadata and configuration for a cryptographic key, used to address it in cryptographic operations.
+      example:
+        kid: "00-qTBov6GxjPSuMNxnk876cMP0JKjbwl4ZyN_sY2tE"
+        alias: "my-signing-key"
+        providerId: "testsoftware"
+        signatureAlgorithm: "ECDSA_SHA256"
+        keyVisibility: "PUBLIC"
+        keyEncoding: "JOSE"
+        keyType: "EC"
+      properties:
+        kid:
+          type: string
+          description: Unique identifier (kid) for the cryptographic key. May be null when the key is addressed by alias only.
+          example: "00-qTBov6GxjPSuMNxnk876cMP0JKjbwl4ZyN_sY2tE"
+        key:
+          $ref: '#/components/schemas/Jwk'
+        signatureAlgorithm:
+          $ref: '#/components/schemas/SignatureAlgorithm'
+        keyVisibility:
+          $ref: '#/components/schemas/KeyVisibility'
+        x5c:
+          type: array
+          items:
+            type: string
+          description: X.509 certificate chain associated with the key.
+        alias:
+          type: string
+          description: A reference or alias to the key in the Key Management Service (KMS).
+          example: "my-signing-key"
+        providerId:
+          type: string
+          description: The identifier of the provider that holds the key.
+          example: "testsoftware"
+        origin:
+          $ref: '#/components/schemas/Origin'
+        controlMode:
+          $ref: '#/components/schemas/ResourceControlMode'
+        keyType:
+          $ref: '#/components/schemas/KeyType'
+        keyEncoding:
+          $ref: '#/components/schemas/KeyEncoding'
+        opts:
+          type: object
+          description: Additional configuration options as key-value pairs.
+          additionalProperties:
+            type: string
+
+    ResolvedKeyInfo:
+      type: object
+      description: A resolved key whose `key` material is guaranteed to be present.
+      example:
+        key:
+          kty: "EC"
+          kid: "00-qTBov6GxjPSuMNxnk876cMP0JKjbwl4ZyN_sY2tE"
+          alg: "ES256"
+          use: "sig"
+          key_ops: [ "sign", "verify" ]
+          crv: "P-256"
+          x: "HFL67WWh6PYWKOy1mzt9Y2ANs-CWFIyVtouR-Jx_mAM"
+          y: "9f_1x7fwUuEbEwxSNTYE3jQF-zForWpKkEMpiUp1MNI"
+        kid: "00-qTBov6GxjPSuMNxnk876cMP0JKjbwl4ZyN_sY2tE"
+        alias: "my-signing-key"
+        providerId: "testsoftware"
+        signatureAlgorithm: "ECDSA_SHA256"
+        keyVisibility: "PUBLIC"
+        keyEncoding: "JOSE"
+        keyType: "EC"
+      allOf:
+        - $ref: '#/components/schemas/KeyInfo'
+      required:
+        - key
+
+    ManagedKeyInfo:
+      type: object
+      description: A resolved key managed by the KMS; `alias` and `providerId` are always present.
+      example:
+        key:
+          kty: "EC"
+          kid: "00-qTBov6GxjPSuMNxnk876cMP0JKjbwl4ZyN_sY2tE"
+          alg: "ES256"
+          use: "sig"
+          crv: "P-256"
+          x: "HFL67WWh6PYWKOy1mzt9Y2ANs-CWFIyVtouR-Jx_mAM"
+          y: "9f_1x7fwUuEbEwxSNTYE3jQF-zForWpKkEMpiUp1MNI"
+        kid: "00-qTBov6GxjPSuMNxnk876cMP0JKjbwl4ZyN_sY2tE"
+        alias: "my-signing-key"
+        providerId: "testsoftware"
+        signatureAlgorithm: "ECDSA_SHA256"
+        keyVisibility: "PUBLIC"
+        keyEncoding: "JOSE"
+        keyType: "EC"
+      allOf:
+        - $ref: '#/components/schemas/ResolvedKeyInfo'
+      required:
+        - alias
+        - providerId
+
+    KeyProviderType:
+      type: string
+      description: >-
+        The technology backing a Key Provider. Determines the required configuration settings.
+        - SOFTWARE: An in-memory or file-backed software key store.
+        - AZURE_KEYVAULT: Microsoft Azure Key Vault or Managed HSM.
+        - AWS_KMS: Amazon Web Services Key Management Service.
+        Who owns the provider is a separate axis; see KeyProviderOwnership.
+      enum:
+        - SOFTWARE
+        - AZURE_KEYVAULT
+        - AWS_KMS
+      example: AZURE_KEYVAULT
+
+    KeyProviderOwnership:
+      type: string
+      description: >-
+        Who owns a Key Provider.
+        - PLATFORM: owned by the platform tenant and offered to tenants.
+        - TENANT: owned by the calling tenant itself.
+      enum:
+        - PLATFORM
+        - TENANT
+      example: TENANT
+
+    KeyOperations:
+      type: string
+      description: Specific operations the key is intended for.
+      enum:
+        - sign
+        - verify
+        - encrypt
+        - decrypt
+        - wrapKey
+        - unwrapKey
+        - deriveKey
+        - deriveBits
+      example: sign
+
+    KeyProvider:
+      description: Response body containing the details of a Key Provider instance.
+      type: object
+      required:
+        - providerId
+        - type
+      properties:
+        providerId:
+          type: string
+          description: The identifier of the Key Provider instance (configured server-side).
+          example: "testsoftware"
+        type:
+          $ref: '#/components/schemas/KeyProviderType'
+        displayName:
+          type: string
+          description: Human-readable name for the provider, shown in operator surfaces.
+          example: "Acme Azure Vault"
+        ownership:
+          $ref: '#/components/schemas/KeyProviderOwnership'
+        sharedFromPlatform:
+          type: boolean
+          description: >-
+            True when this provider is owned by the platform tenant and made available to the
+            calling tenant. Its configuration and credentials are never visible to the tenant.
+          example: false
+        isDefault:
+          type: boolean
+          description: True when this provider is the calling tenant's default for new keys.
+          example: false
+    #        capabilities:
+    #          $ref: '#/components/schemas/ProviderCapabilities'
+    #        azureKeyvaultSettings:
+    #          $ref: '#/components/schemas/AzureKeyVaultSetting'
+    #        awsKmsSettings:
+    #          $ref: '#/components/schemas/AwsKmsSetting'
+    #        cacheEnabled:
+    #          type: boolean
+    #          description: Whether caching is enabled for this provider.
+    #        cacheTTLInSeconds:
+    #          type: integer
+    #          format: int32
+    #          description: Time-to-live for cached keys in seconds.
+
+    KeyType:
+      type: string
+      description: Cryptographic key type identifier.
+      enum:
+        - OKP
+        - EC
+        - RSA
+        - OCT
+      example: EC
+
+    KeyVisibility:
+      type: string
+      description: Indicates the visibility status of a cryptographic key.
+      enum:
+        - PUBLIC
+        - PRIVATE
+      example: PUBLIC
+      default: PUBLIC
+
+    KeyEncoding:
+      type: string
+      description: The encoding format of the cryptographic key.
+      enum:
+        - COSE
+        - JOSE
+      example: JOSE
+
+    ManagedKeyPair:
+      type: object
+      description: A key pair held by a crypto provider, carrying both JOSE and COSE key pairs.
+      example:
+        kid: "00-qTBov6GxjPSuMNxnk876cMP0JKjbwl4ZyN_sY2tE"
+        providerId: "testsoftware"
+        alias: "my-signing-key"
+        jose:
+          publicJwk:
+            kty: "EC"
+            kid: "00-qTBov6GxjPSuMNxnk876cMP0JKjbwl4ZyN_sY2tE"
+            alg: "ES256"
+            use: "sig"
+            crv: "P-256"
+            x: "HFL67WWh6PYWKOy1mzt9Y2ANs-CWFIyVtouR-Jx_mAM"
+            y: "9f_1x7fwUuEbEwxSNTYE3jQF-zForWpKkEMpiUp1MNI"
+        cose:
+          publicCoseKey:
+            kty: 2
+            crv: 1
+            alg: -7
+            x: "HFL67WWh6PYWKOy1mzt9Y2ANs-CWFIyVtouR-Jx_mAM"
+            y: "9f_1x7fwUuEbEwxSNTYE3jQF-zForWpKkEMpiUp1MNI"
+      required:
+        - providerId
+        - alias
+        - cose
+        - jose
+      properties:
+        kid:
+          type: string
+          description: Key identifier (kid), may be null.
+          example: "00-qTBov6GxjPSuMNxnk876cMP0JKjbwl4ZyN_sY2tE"
+        providerId:
+          type: string
+          description: Identifier of the provider that holds the key.
+          example: "testsoftware"
+        alias:
+          type: string
+          description: The alias the key is stored under in the provider.
+          example: "my-signing-key"
+        cose:
+          $ref: '#/components/schemas/CoseKeyPair'
+        jose:
+          $ref: '#/components/schemas/JoseKeyPair'
+
+    MaskGenFunction:
+      type: string
+      description: Mask generation function algorithm.
+      enum:
+        - MGF1
+      example: MGF1
+
+    ProviderCapabilities:
+      type: object
+      description: A provider's supported cryptographic capabilities.
+      properties:
+        keyTypes:
+          type: array
+          description: List of key types supported by this provider.
+          items:
+            $ref: '#/components/schemas/KeyType'
+        signatureAlgorithms:
+          type: array
+          description: List of signature algorithms supported by this provider.
+          items:
+            $ref: '#/components/schemas/SignatureAlgorithm'
+        digests:
+          type: array
+          description: List of digest algorithms supported by this provider.
+          items:
+            $ref: '#/components/schemas/DigestAlg'
+        curves:
+          type: array
+          description: List of elliptic curves supported by this provider.
+          items:
+            $ref: '#/components/schemas/Curve'
+        keyOperations:
+          type: array
+          description: List of key operations supported by this provider.
+          items:
+            $ref: '#/components/schemas/KeyOperations'
+
+    Signature:
+      type: object
+      description: A cryptographic signature including the signature value and related information.
+      required:
+        - value
+        - algorithm
+      properties:
+        value:
+          type: string
+          format: byte
+          description: The signature value, encoded as a base64 string.
+        algorithm:
+          $ref: '#/components/schemas/SignatureAlgorithm'
+        keyInfo:
+          $ref: '#/components/schemas/KeyInfo'
+        metadata:
+          type: object
+          description: Additional metadata included in the signature.
+          additionalProperties: true
+
+    SignatureAlgorithm:
+      type: string
+      description: Cryptographic signature algorithm identifier.
+      enum:
+        - ED25519
+        - ECDSA_SHA256
+        - ECDSA_SHA384
+        - ECDSA_SHA512
+        - ES256K
+        - ECKA_DH_SHA256
+        - HMAC_SHA256
+        - HMAC_SHA384
+        - HMAC_SHA512
+        - RSA_SHA256
+        - RSA_SHA384
+        - RSA_SHA512
+        - RSA_SSA_PSS_SHA256_MGF1
+        - RSA_SSA_PSS_SHA384_MGF1
+        - RSA_SSA_PSS_SHA512_MGF1
+      example: ECDSA_SHA256
+
+    SignInput:
+      type: object
+      description: The input data and metadata required for creating a signature.
+      required:
+        - data
+      properties:
+        data:
+          type: string
+          format: byte
+          description: The data to be signed, encoded as a base64 string.
+        mode:
+          type: string
+          description: The signing mode to be used.
+          enum: [ DETACHED, ATTACHED ]
+          default: DETACHED
+        metadata:
+          type: object
+          description: Additional metadata to be included in the signature.
+          additionalProperties: true
+
+    SignOutput:
+      type: object
+      description: The output of a signature creation operation.
+      required:
+        - signature
+      properties:
+        signature:
+          $ref: '#/components/schemas/Signature'
+        metadata:
+          type: object
+          description: Additional metadata included in the signature output.
+          additionalProperties: true
+
+    Resolver:
+      type: object
+      description: Represents a key resolver configuration.
+      required:
+        - resolverId
+      properties:
+        resolverId:
+          type: string
+          description: Unique identifier for the resolver.
+          example: "4895d0cf-2061-41cb-8fd4-13af5724569e"
+        supportedIdentifierMethods:
+          type: array
+          items:
+            $ref: '#/components/schemas/IdentifierMethod'
+          description: List of identifier methods supported by this resolver.
+        supportedKeyTypes:
+          type: array
+          items:
+            $ref: '#/components/schemas/KeyType'
+          description: List of key types supported by this resolver.
+
+    KeyResolver:
+      type: object
+      description: Represents a key resolver instance with detailed configuration.
+      allOf:
+        - $ref: '#/components/schemas/Resolver'
+
+    IdentifierMethod:
+      type: string
+      description: Method used to identify cryptographic keys.
+      enum:
+        - JWK
+        - KID
+        - COSE_KEY
+        - X5C
+        - DID
+      example: JWK

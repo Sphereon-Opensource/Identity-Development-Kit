@@ -1,0 +1,10 @@
+openapi: 3.0.4
+info:
+  title: DID Hosting API Components
+  version: 0.1.0
+  description: >
+    Shared components for the DID Hosting REST API. This spec exposes only an inline
+    `Error` envelope and response objects with inline DID-document schemas; there are
+    no reusable entity schemas, enums, or path parameters to externalize.
+paths: {}
+components: {}

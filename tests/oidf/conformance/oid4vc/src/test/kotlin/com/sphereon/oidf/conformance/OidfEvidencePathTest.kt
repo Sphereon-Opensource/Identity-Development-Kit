@@ -24,7 +24,13 @@ class OidfEvidencePathTest {
                         "intentionally_long_dimension" to "x".repeat(400),
                     ),
             )
-        val reordered = first.copy(variant = first.variant.entries.reversed().associate { it.toPair() })
+        val reordered =
+            first.copy(
+                variant =
+                    first.variant.entries
+                        .reversed()
+                        .associate { it.toPair() }
+            )
         val different = first.copy(variant = first.variant + ("vci_grant_type" to "pre_authorization_code"))
 
         assertEquals(first.evidenceDirectoryName(), reordered.evidenceDirectoryName())

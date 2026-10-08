@@ -1,0 +1,1032 @@
+openapi: 3.0.4
+info:
+  title: Platform Admin API Components
+  version: 0.1.0
+  description: >
+    Entity schemas, enums, value objects, and path parameters for the
+    Platform Admin API. These components back the application-tenant control
+    surface, tenant lifecycle, self-service signup, tenant federation, and owner
+    onboarding operations. Secret material is created through the dedicated
+    secret-management API and represented here only by opaque server-generated
+    IDs; plaintext secrets never appear in any schema.
+paths: {}
+components:
+  parameters:
+    TenantId:
+      name: tenantId
+      in: path
+      required: true
+      description: Identifier of the tenant the operation targets.
+      schema:
+        type: string
+      example: 7b3c2d9e-1f4a-4c8b-9e2d-5a6f7c8b9d01
+    Domain:
+      name: domain
+      in: path
+      required: true
+      description: Fully qualified host attached to the tenant, lowercased and without scheme or port.
+      schema:
+        type: string
+      example: wallet.acme.example
+    PublicEndpointServiceType:
+      name: serviceType
+      in: path
+      required: true
+      description: Protocol surface the public-endpoint binding describes.
+      schema:
+        $ref: '#/components/schemas/TenantPublicEndpointServiceType'
+      example: OID4VCI_ISSUER
+    SignupRequestId:
+      name: signupRequestId
+      in: path
+      required: true
+      description: Identifier of the self-service signup request.
+      schema:
+        type: string
+      example: signup-9f12a7c4
+
+  schemas:
+    # =====================================================================
+    # Application tenant: bootstrap/status, license,
+    # onboarding policy + evaluated availability
+    # =====================================================================
+    ApplicationTenantStatus:
+      type: object
+      description: >
+        Runtime state of the application tenant. The application tenant is always
+        reachable through the platform's own hosted identity provider, so operators
+        can sign in even before any customer tenant exists.
+      required: [tenantId, status, hostedAs, canRegisterFirstRealTenant]
+      properties:
+        tenantId:
+          type: string
+          description: Identifier of the application tenant.
+        status:
+          $ref: '#/components/schemas/ApplicationTenantStatus_Status'
+        hostedAs:
+          $ref: '#/components/schemas/HostedAsStatus'
+        canRegisterFirstRealTenant:
+          type: boolean
+          description: True when the application tenant is ready to register the first customer tenant.
+      example:
+        tenantId: application
+        status: ACTIVE
+        hostedAs:
+          required: true
+          available: true
+          issuerUrl: https://auth.platform.example
+        canRegisterFirstRealTenant: true
+    ApplicationTenantStatus_Status:
+      type: string
+      description: Lifecycle state of the application tenant.
+      enum: [ACTIVE, SUSPENDED, PENDING_VERIFICATION]
+      example: ACTIVE
+    HostedAsStatus:
+      type: object
+      description: >
+        Readiness of the platform-hosted authorization server that fronts the
+        application tenant. `required` is a system invariant and is always `true`.
+      required: [required, available]
+      properties:
+        required:
+          type: boolean
+          description: Always `true`. The hosted authorization server is a system requirement.
+          enum: [true]
+        available:
+          type: boolean
+          description: True when the hosted authorization server is reachable and serving metadata.
+        issuerUrl:
+          type: string
+          format: uri
+          nullable: true
+          description: Issuer URL of the hosted authorization server when available.
+      example:
+        required: true
+        available: true
+        issuerUrl: https://auth.platform.example
+    LicenseStatusProjection:
+      type: object
+      description: >
+        Sanitized projection of the effective license. It exposes lifecycle status,
+        per-product summaries, and expiry signals; it never carries underlying
+        license material, decoded claims, entitlement keys, certificate chains,
+        or key material.
+      required: [status]
+      properties:
+        status:
+          type: string
+          description: Effective lifecycle status of the license.
+          enum: [ACTIVE, GRACE, RECOVERY, MISSING, INVALID, EXPIRED, BLOCKED]
+        productSummaries:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProductLicenseSummary'
+          default: []
+          description: One summary per licensed product.
+        quotaProjections:
+          type: array
+          items:
+            $ref: '#/components/schemas/QuotaProjection'
+          default: []
+          description: Per-quota-key value projections (limit + used) for capacity meters.
+        customerId:
+          type: string
+          nullable: true
+          description: Customer identifier from the license claims, when present.
+        installationId:
+          type: string
+          nullable: true
+          description: Installation identifier the license is bound to, when present.
+        issuer:
+          type: string
+          nullable: true
+          description: Display name or identifier of the license issuer, when present.
+        signingCertificateFingerprint:
+          type: string
+          nullable: true
+          description: Hex-encoded SHA-256 fingerprint of the leaf certificate that signed the license.
+        expiresAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: Expiry instant of the license claims, when present.
+        daysToExpiry:
+          type: integer
+          format: int64
+          nullable: true
+          description: Whole days until expiry, rounded up, when an expiry is present.
+        recoveryMode:
+          type: boolean
+          default: false
+          description: True when the deployment runs in recovery mode after repeated verification failures.
+        graceMode:
+          type: boolean
+          default: false
+          description: True when the license is expired but still inside the configured grace window.
+        warnings:
+          type: array
+          items:
+            type: string
+          default: []
+          description: Human-readable warnings about the license state.
+      example:
+        status: ACTIVE
+        productSummaries:
+          - product: vdx
+            edition: enterprise
+            modules: [tenant, party, oid4vci]
+            quotaKeys: [max-root-tenants, max-total-tenants]
+        quotaProjections:
+          - quotaKey: max-root-tenants
+            limit: 10
+            used: 4
+            window: null
+            atCap: false
+        customerId: cust-acme-001
+        installationId: 11111111-1111-4111-8111-111111111111
+        issuer: Platform Licensing
+        signingCertificateFingerprint: 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08
+        expiresAt: '2027-06-30T23:59:59Z'
+        daysToExpiry: 386
+        recoveryMode: false
+        graceMode: false
+        warnings: []
+    ProductLicenseSummary:
+      type: object
+      description: Per-product license summary - product, edition, licensed module names, quota key names, and quota value projections.
+      required: [product, edition]
+      properties:
+        product:
+          type: string
+          description: Licensed product identifier.
+        edition:
+          type: string
+          description: Licensed edition of the product.
+        modules:
+          type: array
+          items:
+            type: string
+          default: []
+          description: Names of the licensed modules. Module entitlement details are not exposed.
+        quotaKeys:
+          type: array
+          items:
+            type: string
+          default: []
+          description: Names of the quota keys the license defines; value projections are carried in quotaProjections.
+        quotaProjections:
+          type: array
+          items:
+            $ref: '#/components/schemas/QuotaProjection'
+          default: []
+          description: Per-product quota value projections (limit + used).
+      example:
+        product: vdx
+        edition: enterprise
+        modules: [tenant, party, oid4vci]
+        quotaKeys: [max-root-tenants, max-total-tenants]
+    QuotaProjection:
+      type: object
+      description: >
+        A single license quota with its hard limit and current usage. Unlike the
+        key-name-only `quotaKeys` list, this carries concrete VALUES so the admin
+        console can render capacity meters and fail-closed disable Create at cap.
+      required: [quotaKey, limit, used]
+      properties:
+        quotaKey:
+          type: string
+          description: The license quota key this projection reports (e.g. max-as-instances).
+        limit:
+          type: integer
+          format: int64
+          description: Hard cap the license grants for this quota key.
+        used:
+          type: integer
+          format: int64
+          description: Current consumption counted against the limit.
+        window:
+          type: string
+          nullable: true
+          description: Metering window for METERED quotas (e.g. P1M); null for CARDINALITY quotas.
+        atCap:
+          type: boolean
+          default: false
+          description: True when used has reached or exceeded limit.
+      example:
+        quotaKey: max-as-instances
+        limit: 5
+        used: 3
+        window: null
+        atCap: false
+    CatalogFeature:
+      type: object
+      description: >
+        A catalogued feature primitive: its stable namespaced+versioned key, its
+        typed value kind (null = boolean), a human description, and the products
+        that include it. Mirrors the backend FeatureRegistry entry.
+      required: [key, description, products]
+      properties:
+        key:
+          type: string
+          description: Stable namespaced+versioned feature key (e.g. semantic-modeling.v1).
+        valueType:
+          type: string
+          enum: [CARDINALITY, METERED]
+          nullable: true
+          description: Quota kind when the feature carries a numeric value; null for a boolean feature.
+        description:
+          type: string
+          description: Human-readable description of what the feature unlocks.
+        products:
+          type: array
+          items:
+            type: string
+          default: []
+          description: Product identifiers whose editions may include this feature.
+      example:
+        key: semantic-modeling.v1
+        valueType: null
+        description: Governed semantic modeling across data domains, object models, data products, and channels.
+        products: [vdx]
+    FeatureCatalog:
+      type: object
+      description: The full data-driven feature catalog assembled from the EDK and VDX slices.
+      required: [features]
+      properties:
+        features:
+          type: array
+          items:
+            $ref: '#/components/schemas/CatalogFeature'
+          default: []
+      example:
+        features:
+          - key: semantic-modeling.v1
+            valueType: null
+            description: Governed semantic modeling across data domains, object models, data products, and channels.
+            products: [vdx]
+          - key: tenant.instances.v1
+            valueType: CARDINALITY
+            description: Per-tenant protocol-surface instance allowance.
+            products: [vdx, edk]
+    OnboardingPolicy:
+      type: object
+      description: >
+        Onboarding policy toggles. Each toggle constrains, within what the license
+        allows, which onboarding flows are accepted.
+      required:
+        - rootTenantCreationEnabled
+        - adminInviteEnabled
+        - selfSignupEnabled
+        - subtenantSignupEnabled
+        - requireApprovalForSelfSignup
+      properties:
+        rootTenantCreationEnabled:
+          type: boolean
+          description: True when operators may register root tenants.
+        adminInviteEnabled:
+          type: boolean
+          description: True when operator-driven tenant invitations are accepted.
+        selfSignupEnabled:
+          type: boolean
+          description: True when public self-service signup is accepted.
+        subtenantSignupEnabled:
+          type: boolean
+          description: True when self-service signup under a parent tenant is accepted.
+        requireApprovalForSelfSignup:
+          type: boolean
+          description: True when an operator must approve a self-service signup after email verification.
+        updatedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: Timestamp of the last policy change, when the policy has been set.
+      example:
+        rootTenantCreationEnabled: true
+        adminInviteEnabled: true
+        selfSignupEnabled: true
+        subtenantSignupEnabled: false
+        requireApprovalForSelfSignup: true
+        updatedAt: '2026-06-08T09:15:00Z'
+    OnboardingAvailability:
+      type: object
+      description: >
+        Evaluated availability matrix. It composes license features (deny authority),
+        config toggles (deny authority within what the license allows), and runtime
+        readiness (email transport and application tenant). Reason
+        strings follow a stable `<source>_<reason-id>` convention, for example
+        `license_missing_self_signup` or `config_disabled_self_signup`.
+      required: [applicationTenant, rootTenantCreation, adminInvite, selfSignup, subtenants, email]
+      properties:
+        applicationTenant:
+          $ref: '#/components/schemas/AvailabilityApplicationTenant'
+        rootTenantCreation:
+          $ref: '#/components/schemas/AvailabilityDecision'
+        adminInvite:
+          $ref: '#/components/schemas/AvailabilityDecision'
+        selfSignup:
+          $ref: '#/components/schemas/AvailabilityDecision'
+        subtenants:
+          $ref: '#/components/schemas/AvailabilityDecision'
+        email:
+          $ref: '#/components/schemas/AvailabilityEmail'
+      example:
+        applicationTenant:
+          enabled: true
+          hostedAsAvailable: true
+        rootTenantCreation:
+          enabled: true
+          reason: null
+        adminInvite:
+          enabled: true
+          reason: null
+        selfSignup:
+          enabled: false
+          reason: config_disabled_self_signup
+        subtenants:
+          enabled: true
+          reason: null
+        email:
+          configured: true
+          healthy: true
+    AvailabilityApplicationTenant:
+      type: object
+      description: Application-tenant readiness inputs to the availability evaluation.
+      required: [enabled, hostedAsAvailable]
+      properties:
+        enabled:
+          type: boolean
+          description: True when the application tenant is active.
+        hostedAsAvailable:
+          type: boolean
+          description: True when the hosted authorization server is reachable.
+      example:
+        enabled: true
+        hostedAsAvailable: true
+    AvailabilityDecision:
+      type: object
+      description: Evaluated decision for a single onboarding flow, with an optional stable reason string.
+      required: [enabled]
+      properties:
+        enabled:
+          type: boolean
+          description: True when the flow is currently available.
+        reason:
+          type: string
+          nullable: true
+          description: Stable `<source>_<reason-id>` reason when the flow is unavailable.
+      example:
+        enabled: false
+        reason: license_missing_self_signup
+    AvailabilityEmail:
+      type: object
+      description: Email transport readiness inputs to the availability evaluation.
+      required: [configured, healthy]
+      properties:
+        configured:
+          type: boolean
+          description: True when an email transport is configured.
+        healthy:
+          type: boolean
+          description: True when the configured email transport passes its readiness probe.
+      example:
+        configured: true
+        healthy: true
+    # =====================================================================
+    # Tenants and self-service signup
+    # =====================================================================
+    Tenant:
+      type: object
+      description: A tenant in the platform control surface, including hierarchy and audit fields.
+      required: [id, tenantType, name, slug, status, system, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          description: Tenant identifier.
+        tenantType:
+          type: string
+          description: Open tenant type label.
+        name:
+          type: string
+          description: Human-readable tenant name.
+        description:
+          type: string
+          nullable: true
+          description: Optional tenant description.
+        slug:
+          type: string
+          description: Globally unique URL-safe slug, used as the platform subdomain label and resolver path segment.
+        parentTenantId:
+          type: string
+          nullable: true
+          description: Parent tenant identifier, or null for root tenants.
+        status:
+          $ref: '#/components/schemas/TenantStatus'
+        system:
+          type: boolean
+          description: True for system tenants, which are excluded from default listings and slug-based resolution.
+        ownerPartyId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Party identifier of the tenant owner, when assigned.
+        ownerEmail:
+          type: string
+          format: email
+          nullable: true
+          description: Email of the tenant owner captured at registration, when assigned. Human-readable owner contact for management surfaces.
+        ownerDisplayName:
+          type: string
+          nullable: true
+          description: Display name of the tenant owner captured at registration, when assigned.
+        createdAt:
+          type: string
+          format: date-time
+          description: Creation timestamp.
+        createdById:
+          type: string
+          format: uuid
+          nullable: true
+          description: Identifier of the principal that created the tenant.
+        updatedAt:
+          type: string
+          format: date-time
+          description: Last update timestamp.
+        updatedById:
+          type: string
+          format: uuid
+          nullable: true
+          description: Identifier of the principal that last updated the tenant.
+        deletedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: Soft-delete timestamp, when deleted.
+        deletedById:
+          type: string
+          format: uuid
+          nullable: true
+          description: Identifier of the principal that deleted the tenant.
+      example:
+        id: 7b3c2d9e-1f4a-4c8b-9e2d-5a6f7c8b9d01
+        tenantType: organization
+        name: Acme Corporation
+        description: Acme issuing and verification tenant
+        slug: acme
+        parentTenantId: null
+        status: ACTIVE
+        system: false
+        ownerPartyId: 2c4e6a80-3b5d-4f70-9a12-8c0d1e2f3a4b
+        createdAt: '2026-06-08T09:00:00Z'
+        createdById: null
+        updatedAt: '2026-06-08T09:00:00Z'
+        updatedById: null
+        deletedAt: null
+        deletedById: null
+    TenantStatus:
+      type: string
+      description: Lifecycle status of a tenant.
+      enum: [ACTIVE, SUSPENDED, PENDING_VERIFICATION]
+      example: ACTIVE
+    TenantDomain:
+      type: object
+      description: Association between a tenant and a fully qualified host that resolves to it.
+      required: [id, tenantId, domain, kind, isPrimary, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          description: Domain row identifier.
+        tenantId:
+          type: string
+          description: Tenant the domain belongs to.
+        domain:
+          type: string
+          description: Lowercased host, stored without scheme or port.
+        kind:
+          $ref: '#/components/schemas/TenantDomainKind'
+        isPrimary:
+          type: boolean
+          description: True when this is the canonical issuer host the authorization-server metadata renders.
+        verifiedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: Verification timestamp for custom domains, when verified.
+        verificationToken:
+          type: string
+          nullable: true
+          writeOnly: true
+          description: One-time DNS challenge token. Never returned in responses.
+        createdAt:
+          type: string
+          format: date-time
+          description: Creation timestamp.
+        updatedAt:
+          type: string
+          format: date-time
+          description: Last update timestamp.
+      example:
+        id: dom-acme-platform
+        tenantId: 7b3c2d9e-1f4a-4c8b-9e2d-5a6f7c8b9d01
+        domain: acme.wallet.platform.example
+        kind: PLATFORM_SUBDOMAIN
+        isPrimary: true
+        verifiedAt: '2026-06-08T09:00:00Z'
+        createdAt: '2026-06-08T09:00:00Z'
+        updatedAt: '2026-06-08T09:00:00Z'
+    TenantDomainKind:
+      type: string
+      description: >
+        Domain flavour. `PLATFORM_SUBDOMAIN` is the platform-owned `<slug>.<base>`
+        host, auto-created and verified at registration. `CUSTOM_DOMAIN` is a host
+        the customer brings; it is inserted unverified.
+      enum: [PLATFORM_SUBDOMAIN, CUSTOM_DOMAIN]
+      example: PLATFORM_SUBDOMAIN
+    TenantPublicEndpoint:
+      type: object
+      description: >
+        Public endpoint binding for a tenant-owned protocol or application surface.
+        Rows describe the externally reachable host and path that protocol metadata
+        and dispatch use for OID4VCI, OID4VP, and OAuth2/OIDC surfaces, and that the
+        browser uses for tenant-deployed business-wallet applications.
+      required: [id, tenantId, serviceType, enabled, primaryEndpoint, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          description: Public-endpoint row identifier.
+        tenantId:
+          type: string
+          description: Tenant the binding belongs to.
+        serviceType:
+          $ref: '#/components/schemas/TenantPublicEndpointServiceType'
+        instanceId:
+          type: string
+          nullable: true
+          description: >
+            Software instance this binding routes to. Null is the single default
+            binding for the tenant and service type; a non-null value lets a tenant
+            own several concurrent public endpoints for the same service type, one
+            per instance.
+        host:
+          type: string
+          nullable: true
+          description: Lowercased host without scheme or port. Null uses the runtime host or default base.
+        pathPrefix:
+          type: string
+          nullable: true
+          description: Protocol route prefix, for example `/acme/oid4vci`.
+        wellKnownPath:
+          type: string
+          nullable: true
+          description: Well-known route, for example `/.well-known/openid-credential-issuer/acme`.
+        enabled:
+          type: boolean
+          description: True when the binding is active.
+        primaryEndpoint:
+          type: boolean
+          description: True when this is the primary binding for the tenant and service type.
+        createdAt:
+          type: string
+          format: date-time
+          description: Creation timestamp.
+        updatedAt:
+          type: string
+          format: date-time
+          description: Last update timestamp.
+      example:
+        id: pep-acme-issuer
+        tenantId: 7b3c2d9e-1f4a-4c8b-9e2d-5a6f7c8b9d01
+        serviceType: OID4VCI_ISSUER
+        instanceId: null
+        host: acme.wallet.platform.example
+        pathPrefix: /acme/oid4vci
+        wellKnownPath: /.well-known/openid-credential-issuer/acme
+        enabled: true
+        primaryEndpoint: true
+        createdAt: '2026-06-08T09:00:00Z'
+        updatedAt: '2026-06-08T09:00:00Z'
+    TenantPublicEndpointServiceType:
+      type: string
+      description: Protocol surface a public-endpoint binding describes.
+      enum: [OID4VCI_ISSUER, OID4VP_VERIFIER, OAUTH2_AUTHORIZATION_SERVER, BUSINESS_WALLET]
+      example: OID4VCI_ISSUER
+    TenantOnboardingStatus:
+      type: object
+      description: >
+        Public-safe view of a tenant registration attempt. The step timeline lets a
+        UI render progress; internal recovery handles are never exposed.
+      required: [correlationId, tenantId, status, startedAt, updatedAt, steps]
+      properties:
+        correlationId:
+          type: string
+          description: Durable registration-log identifier for polling onboarding status.
+        tenantId:
+          type: string
+          description: Tenant the registration attempt targets.
+        status:
+          $ref: '#/components/schemas/TenantRegistrationStatus'
+        startedAt:
+          type: string
+          format: date-time
+          description: Timestamp the registration attempt started.
+        updatedAt:
+          type: string
+          format: date-time
+          description: Timestamp of the last registration-log update.
+        completedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: Completion timestamp, when the attempt has finished.
+        lastError:
+          type: string
+          nullable: true
+          description: Last error captured during registration or compensation.
+        steps:
+          type: array
+          description: Per-step timeline of the registration attempt.
+          items:
+            $ref: '#/components/schemas/TenantRegistrationStepRecord'
+      example:
+        correlationId: reg-acme-7f12a7c4
+        tenantId: 7b3c2d9e-1f4a-4c8b-9e2d-5a6f7c8b9d01
+        status: COMPLETED
+        startedAt: '2026-06-08T09:00:00Z'
+        updatedAt: '2026-06-08T09:00:05Z'
+        completedAt: '2026-06-08T09:00:05Z'
+        lastError: null
+        steps:
+          - step:
+              id: routing-inserted
+            startedAt: '2026-06-08T09:00:00Z'
+            completedAt: '2026-06-08T09:00:01Z'
+            error: null
+          - step:
+              id: owner-invitation-minted
+            startedAt: '2026-06-08T09:00:04Z'
+            completedAt: '2026-06-08T09:00:05Z'
+            error: null
+    TenantRegistrationStatus:
+      type: string
+      description: >
+        Lifecycle of a registration attempt. `IN_FLIGHT` may still complete or fail;
+        `COMPLETED` finished successfully; `COMPENSATED` failed and was cleanly rolled
+        back; `ORPHANED` failed and at least one rollback step also failed.
+      enum: [IN_FLIGHT, COMPLETED, COMPENSATED, ORPHANED]
+      example: COMPLETED
+    TenantRegistrationStepRecord:
+      type: object
+      description: >
+        One step entry in a registration attempt. `completedAt` is set when the step
+        side effect succeeds; `error` is set when the step fails and `completedAt`
+        stays null.
+      required: [step, startedAt]
+      properties:
+        step:
+          $ref: '#/components/schemas/TenantRegistrationStep'
+        startedAt:
+          type: string
+          format: date-time
+          description: Timestamp the step started.
+        completedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: Timestamp the step side effect succeeded, when it did.
+        error:
+          type: string
+          nullable: true
+          description: Error captured when the step failed.
+      example:
+        step:
+          id: routing-inserted
+        startedAt: '2026-06-08T09:00:00Z'
+        completedAt: '2026-06-08T09:00:01Z'
+        error: null
+    TenantRegistrationStep:
+      type: object
+      description: >
+        Identifier for a single registration step. The set is open. Standard
+        side-effect steps include routing/isolation, tenant schemas, default
+        authorization server and key-store binding, organization/contact
+        materialization, owner account provisioning, issuer/verifier endpoints,
+        keys/DIDs, sample data, and invitation or password delivery.
+      required: [id]
+      properties:
+        id:
+          type: string
+          description: Stable kebab-case step identifier.
+      example:
+        id: routing-inserted
+    LocalOwnerInput:
+      type: object
+      description: >
+        Initial tenant owner contact details. Tenant registration captures the owner
+        for platform-managed onboarding; the owner configures federation later
+        through tenant-owned admin operations.
+      required: [type, email, displayName]
+      properties:
+        type:
+          type: string
+          enum: [local]
+          description: Owner kind. Only `local` is accepted.
+        email:
+          type: string
+          format: email
+          description: Owner email address.
+        displayName:
+          type: string
+          description: Owner display name.
+      example:
+        type: local
+        email: admin@acme.example
+        displayName: Acme Administrator
+    OwnerDeliveryStatus:
+      type: string
+      description: Result of the owner account delivery attempt.
+      enum: [NOT_REQUESTED, DELIVERED, DELIVERY_FAILED, MANUAL_READY, UNAVAILABLE]
+      example: DELIVERED
+    SignupEmailDeliveryStatus:
+      type: string
+      description: Result of the signup verification email delivery.
+      enum: [SENT]
+      example: SENT
+    TenantSignupStatus:
+      type: string
+      description: >
+        Lifecycle status of a self-service signup request, from email verification
+        through registration or a terminal rejected/expired/failed state.
+      enum: [PENDING_EMAIL, PENDING_APPROVAL, CONFIRMED, REGISTERED, REJECTED, EXPIRED, FAILED]
+      example: PENDING_APPROVAL
+    TenantSignupRequestView:
+      type: object
+      description: Operator-facing view of a self-service signup request. Token and IP hashes are never exposed.
+      required: [id, email, slug, displayName, expiresAt, status, createdAt, resendCount]
+      properties:
+        id:
+          type: string
+          description: Signup request identifier.
+        email:
+          type: string
+          format: email
+          description: Requester email address.
+        slug:
+          type: string
+          description: Requested tenant slug.
+        parentTenantId:
+          type: string
+          nullable: true
+          description: Parent tenant for a subtenant signup, or null for a root signup.
+        displayName:
+          type: string
+          description: Requested tenant display name.
+        expiresAt:
+          type: string
+          format: date-time
+          description: Expiry of the signup request.
+        status:
+          $ref: '#/components/schemas/TenantSignupStatus'
+        createdAt:
+          type: string
+          format: date-time
+          description: Creation timestamp.
+        emailVerifiedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: Email verification timestamp, when verified.
+        approvedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: Operator approval timestamp, when approved.
+        approvedById:
+          type: string
+          nullable: true
+          description: Identifier of the operator who approved the request.
+        confirmedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: Email confirmation timestamp, when confirmed.
+        rejectedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: Rejection timestamp, when rejected.
+        rejectedReason:
+          type: string
+          nullable: true
+          description: Operator-supplied rejection reason.
+        registeredTenantId:
+          type: string
+          nullable: true
+          description: Identifier of the tenant created from this request, when registered.
+        registeredAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: Registration timestamp, when registered.
+        failureReason:
+          type: string
+          nullable: true
+          description: Failure reason when registration failed.
+        lastResendAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: Timestamp of the last verification resend.
+        resendCount:
+          type: integer
+          format: int32
+          minimum: 0
+          description: Number of verification resends so far.
+      example:
+        id: signup-9f12a7c4
+        email: admin@acme.example
+        slug: acme
+        parentTenantId: null
+        displayName: Acme Corporation
+        expiresAt: '2026-06-09T09:00:00Z'
+        status: PENDING_APPROVAL
+        createdAt: '2026-06-08T09:00:00Z'
+        emailVerifiedAt: '2026-06-08T09:05:00Z'
+        approvedAt: null
+        approvedById: null
+        confirmedAt: null
+        rejectedAt: null
+        rejectedReason: null
+        registeredTenantId: null
+        registeredAt: null
+        failureReason: null
+        lastResendAt: null
+        resendCount: 0
+
+    # =====================================================================
+    # Shared result envelopes
+    # =====================================================================
+    DeleteResult:
+      type: object
+      description: Generic deletion result.
+      required: [deleted]
+      properties:
+        deleted:
+          type: boolean
+          description: True when the entity was deleted.
+      example:
+        deleted: true
+    RejectResult:
+      type: object
+      description: Result of rejecting a self-service signup request.
+      required: [rejected]
+      properties:
+        rejected:
+          type: boolean
+          description: True when the request was rejected.
+      example:
+        rejected: true
+
+    # =====================================================================
+    # Registration reconciliation
+    # =====================================================================
+    ReconcileTenantRegistrationsRequest:
+      type: object
+      description: >
+        Scope of one reconciliation run. Both selectors are optional and mutually
+        exclusive; omit both to reconcile every in-flight or orphaned registration
+        and backfill every legacy tenant.
+      properties:
+        logId:
+          type: string
+          nullable: true
+          description: When present, reconcile only this registration-log row.
+        tenantId:
+          type: string
+          nullable: true
+          description: >
+            When present, repair the mandatory default-KMS state of this existing
+            tenant even when it predates the registration log. Reuses the
+            idempotent tenant provisioner; it never recreates the tenant.
+      example:
+        logId: null
+        tenantId: null
+    TenantReconciliationFailure:
+      type: object
+      description: >
+        Why one registration row could not be resolved. Carries the tenant, the
+        step it stopped on, and the exception type and message that stopped it.
+        Values, secret locators and bearer tokens are never part of `reason`.
+      required: [tenantId, logId, step, reason]
+      properties:
+        tenantId:
+          type: string
+          description: Tenant the registration row belongs to.
+        logId:
+          type: string
+          description: Registration-log row identifier.
+        step:
+          type: string
+          description: Stable kebab-case identifier of the step that failed.
+        reason:
+          type: string
+          description: Exception type and message that stopped the step.
+      example:
+        tenantId: 7b3c2d9e-1f4a-4c8b-9e2d-5a6f7c8b9d01
+        logId: reg-acme-7f12a7c4
+        step: routing-inserted
+        reason: 'IllegalStateException: routing row still referenced'
+    ReconcileTenantRegistrationsResponse:
+      type: object
+      description: Counts of one reconciliation run plus one entry per failed row.
+      required: [totalScanned, compensated, orphaned]
+      properties:
+        totalScanned:
+          type: integer
+          format: int32
+          minimum: 0
+          description: Registration-log rows examined.
+        compensated:
+          type: integer
+          format: int32
+          minimum: 0
+          description: Rows whose compensation completed in this run.
+        orphaned:
+          type: integer
+          format: int32
+          minimum: 0
+          description: Rows whose compensation failed again and remain orphaned.
+        kmsBackfilled:
+          type: integer
+          format: int32
+          minimum: 0
+          default: 0
+          description: Tenants whose default KMS binding was backfilled.
+        kmsBackfillFailed:
+          type: integer
+          format: int32
+          minimum: 0
+          default: 0
+          description: Tenants whose default KMS backfill failed.
+        kmsBackfillFailures:
+          type: array
+          description: One entry per row counted in `kmsBackfillFailed`.
+          default: []
+          items:
+            $ref: '#/components/schemas/TenantReconciliationFailure'
+        orphanedFailures:
+          type: array
+          description: One entry per row counted in `orphaned`.
+          default: []
+          items:
+            $ref: '#/components/schemas/TenantReconciliationFailure'
+      example:
+        totalScanned: 4
+        compensated: 2
+        orphaned: 1
+        kmsBackfilled: 1
+        kmsBackfillFailed: 0
+        kmsBackfillFailures: []
+        orphanedFailures:
+          - tenantId: 7b3c2d9e-1f4a-4c8b-9e2d-5a6f7c8b9d01
+            logId: reg-acme-7f12a7c4
+            step: routing-inserted
+            reason: 'IllegalStateException: routing row still referenced'

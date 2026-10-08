@@ -107,20 +107,24 @@ class WalletIssuanceHttpE2ETest {
     private val routeSelector = (ctx.app as HttpAdapterRouteSelector.Graph).httpAdapterRouteSelector
     private val dispatcher = (ctx.session.graph as HttpAdapterDispatcher.Graph).httpAdapterDispatcher
 
-    private suspend fun dispatch(request: GenericHttpRequest): GenericHttpResponse {
+    private suspend fun dispatch(original: GenericHttpRequest): GenericHttpResponse {
+        val routingHeaders = original.headers.toMutableMap()
+        if (routingHeaders.keys.none { it.equals("host", ignoreCase = true) }) routingHeaders["host"] = issuerHost
+        if (routingHeaders.keys.none { it.equals("x-forwarded-proto", ignoreCase = true) }) routingHeaders["x-forwarded-proto"] = "https"
+        val request = original.copy(headers = routingHeaders)
         val selection = routeSelector.select(request.method, request.path)
-        val route = (selection as? HttpAdapterRouteSelection.Selected)?.match
-            ?: return when (selection) {
-                is HttpAdapterRouteSelection.NotFound -> GenericHttpResponse(404, emptyMap(), "Not found")
-                is HttpAdapterRouteSelection.Ambiguous -> GenericHttpResponse(500, emptyMap(), "Ambiguous route")
-                is HttpAdapterRouteSelection.Misconfigured -> GenericHttpResponse(500, emptyMap(), selection.message)
-                is HttpAdapterRouteSelection.Selected -> error("unreachable")
-            }
+        val route =
+            (selection as? HttpAdapterRouteSelection.Selected)?.match
+                ?: return when (selection) {
+                    is HttpAdapterRouteSelection.NotFound -> GenericHttpResponse(404, emptyMap(), "Not found")
+                    is HttpAdapterRouteSelection.Ambiguous -> GenericHttpResponse(500, emptyMap(), "Ambiguous route")
+                    is HttpAdapterRouteSelection.Misconfigured -> GenericHttpResponse(500, emptyMap(), selection.message)
+                    is HttpAdapterRouteSelection.Selected -> error("unreachable")
+                }
         return dispatcher.dispatch(request, route)
     }
 
-    private fun adapters(): List<HttpAdapter> =
-        (ctx.session.graph as HttpAdapterTestGraph).httpAdapters.values.map { it.value }
+    private fun adapters(): List<HttpAdapter> = (ctx.session.graph as HttpAdapterTestGraph).httpAdapters.values.map { it.value }
 
     // =========================================================================
     // Helper: extract adapters from DI graph
@@ -252,7 +256,6 @@ class WalletIssuanceHttpE2ETest {
     @Test
     fun walletFetchesOAuth2DiscoveryViaHttp() =
         runTest {
-
             val discoveryRequest =
                 GenericHttpRequest(
                     method = "GET",
@@ -312,7 +315,6 @@ class WalletIssuanceHttpE2ETest {
     @Test
     fun tokenRequestWithInvalidPreAuthCodeReturns400() =
         runTest {
-
             val tokenRequest =
                 GenericHttpRequest(
                     method = "POST",
@@ -575,6 +577,7 @@ class WalletIssuanceHttpE2ETest {
                         subject = consumed.sessionId,
                         clientId = "wallet-e2e",
                         scope = "degree",
+                        audience = listOf(issuerUrl),
                         expiresInSeconds = 3600,
                     ),
                 )
@@ -812,7 +815,6 @@ class WalletIssuanceHttpE2ETest {
     @Test
     fun tokenEndpointWithMissingBodyReturns400() =
         runTest {
-
             val tokenRequest =
                 GenericHttpRequest(
                     method = "POST",
@@ -885,7 +887,6 @@ class WalletIssuanceHttpE2ETest {
     @Test
     fun jwksEndpointReturnsValidResponse() =
         runTest {
-
             val jwksRequest =
                 GenericHttpRequest(
                     method = "GET",

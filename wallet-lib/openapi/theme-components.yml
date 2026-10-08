@@ -1,0 +1,1084 @@
+openapi: 3.0.4
+info:
+  title: Theme Components
+  version: 0.1.0
+  description: |
+    Shared schemas for the tenant branding and theming API: scopes, variants, design tokens,
+    theme definitions, applications, features, design element bindings, brand shapes, and
+    resolution outputs.
+paths: {}
+components:
+  parameters:
+    TenantPath:
+      name: tenant
+      in: path
+      required: true
+      description: Tenant identifier. Validated against the tenant registry; an unknown tenant is a 404.
+      schema:
+        type: string
+    ApplicationIdPath:
+      name: applicationId
+      in: path
+      required: true
+      description: Identifier of a registered application (a deployed, brandable instance the tenant runs).
+      schema:
+        type: string
+    ProductTypePath:
+      name: productType
+      in: path
+      required: true
+      description: Product type the feature belongs to.
+      schema:
+        $ref: '#/components/schemas/ProductType'
+    FeatureIdPath:
+      name: featureId
+      in: path
+      required: true
+      description: Identifier of a brandable feature declared by the product type.
+      schema:
+        type: string
+    ElementIdPath:
+      name: elementId
+      in: path
+      required: true
+      description: Identifier of a design element declared by the feature.
+      schema:
+        type: string
+    ThemeIdPath:
+      name: themeId
+      in: path
+      required: true
+      description: Identifier of a theme definition.
+      schema:
+        type: string
+    ApplicationIdQuery:
+      name: applicationId
+      in: query
+      required: false
+      description: Optional identifier of a registered application to scope the operation to.
+      schema:
+        type: string
+    VariantQuery:
+      name: variant
+      in: query
+      required: false
+      description: Visual variant to resolve or select.
+      schema:
+        $ref: '#/components/schemas/ThemeVariant'
+    ScopeQuery:
+      name: scope
+      in: query
+      required: false
+      description: Restrict to definitions at this scope.
+      schema:
+        $ref: '#/components/schemas/ThemeScope'
+    ProductTypeQuery:
+      name: productType
+      in: query
+      required: false
+      description: Restrict to definitions keyed by this product type.
+      schema:
+        $ref: '#/components/schemas/ProductType'
+    ResolutionModeQuery:
+      name: mode
+      in: query
+      required: false
+      description: Resolution behavior requested by the client.
+      schema:
+        $ref: '#/components/schemas/ThemeResolutionMode'
+    IfNoneMatchHeader:
+      name: If-None-Match
+      in: header
+      required: false
+      description: ETag from a previous response. When it still matches, the server returns 304 with no body.
+      schema:
+        type: string
+
+  schemas:
+    ThemeVariant:
+      type: string
+      description: Visual variant. High contrast is named per ground because the role shapes invert between them; on a light ground a deep brand stop carries white text, and on a dark ground a light stop carries dark text.
+      enum: [LIGHT, DARK, HIGH_CONTRAST_LIGHT, HIGH_CONTRAST_DARK]
+
+    ThemeResolutionMode:
+      type: string
+      enum: [RESOLVED, FALLBACK]
+
+    ThemeScope:
+      type: string
+      description: |
+        Hierarchical scope of a theme definition. Precedence during resolution is
+        `SYSTEM < PRODUCT < TENANT < APPLICATION < PRINCIPAL`, later scopes win.
+        `PRODUCT` definitions require `productType`; `APPLICATION` definitions require
+        `applicationId`; the other scopes carry neither.
+      enum: [SYSTEM, PRODUCT, TENANT, APPLICATION, PRINCIPAL]
+
+    ProductType:
+      type: string
+      description: The product a deployed application is an instance of. EMAIL scopes features of the transactional email pipeline, which is not an end-user application but is brandable in the same way.
+      enum:
+        - AUTHORIZATION_SERVER
+        - WEB_WALLET
+        - MOBILE_WALLET
+        - PORTAL
+        - ADMIN_CONSOLE
+        - EMAIL
+        - CUSTOM
+
+    ThemeTokenType:
+      type: string
+      enum:
+        - COLOR
+        - DIMENSION
+        - FONT_FAMILY
+        - FONT_WEIGHT
+        - OPACITY
+        - DURATION
+        - EASING
+        - SHADOW
+        - BORDER_WIDTH
+        - SPACING
+        - STRING
+
+    ThemeToken:
+      type: object
+      required: [key, value, type]
+      properties:
+        key:
+          type: string
+          example: color.primary
+        value:
+          type: string
+          example: '#3157D5'
+        type:
+          $ref: '#/components/schemas/ThemeTokenType'
+
+    ThemeDefinition:
+      type: object
+      description: A set of design tokens at a given scope, layered during resolution.
+      required: [id, name, scope, tokens, version]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        variant:
+          type: string
+          allOf:
+            - $ref: '#/components/schemas/ThemeVariant'
+          nullable: true
+          description: Variant this definition applies to. Null means the common baseline for its scope.
+        parentId:
+          type: string
+          nullable: true
+          description: Optional parent definition to inherit from.
+        scope:
+          $ref: '#/components/schemas/ThemeScope'
+        productType:
+          type: string
+          allOf:
+            - $ref: '#/components/schemas/ProductType'
+          nullable: true
+          description: Required when `scope` is PRODUCT; absent otherwise.
+        applicationId:
+          type: string
+          nullable: true
+          description: Required when `scope` is APPLICATION; absent otherwise.
+        tokens:
+          type: array
+          items:
+            $ref: '#/components/schemas/ThemeToken'
+        version:
+          type: integer
+          format: int64
+        createdAt:
+          type: string
+          format: date-time
+          nullable: true
+        updatedAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    ThemeDefinitionInput:
+      type: object
+      description: Input shape for creating, updating, or validating a theme definition.
+      required: [name, scope, tokens]
+      properties:
+        id:
+          type: string
+          nullable: true
+          description: Optional client-chosen definition id. Generated when omitted on create; ignored on update.
+        name:
+          type: string
+        variant:
+          type: string
+          allOf:
+            - $ref: '#/components/schemas/ThemeVariant'
+          nullable: true
+        parentId:
+          type: string
+          nullable: true
+        scope:
+          $ref: '#/components/schemas/ThemeScope'
+        productType:
+          type: string
+          allOf:
+            - $ref: '#/components/schemas/ProductType'
+          nullable: true
+          description: Required when `scope` is PRODUCT; rejected otherwise.
+        applicationId:
+          type: string
+          nullable: true
+          description: Required when `scope` is APPLICATION; rejected otherwise.
+        tokens:
+          type: array
+          items:
+            $ref: '#/components/schemas/ThemeToken'
+
+    ThemeValidationError:
+      type: object
+      required: [message]
+      properties:
+        tokenKey:
+          type: string
+          nullable: true
+          description: Token key the error applies to, when the error is token specific.
+        message:
+          type: string
+
+    ThemeValidationResult:
+      type: object
+      required: [valid, errors]
+      properties:
+        valid:
+          type: boolean
+        errors:
+          type: array
+          items:
+            $ref: '#/components/schemas/ThemeValidationError'
+
+    ThemeHistoryEntry:
+      type: object
+      required: [version, savedAt, tokenCount, name]
+      properties:
+        version:
+          type: integer
+          format: int64
+        savedAt:
+          type: string
+          format: date-time
+        tokenCount:
+          type: integer
+          format: int32
+        name:
+          type: string
+
+    UndoThemeInput:
+      type: object
+      properties:
+        revertToVersion:
+          type: integer
+          format: int64
+          nullable: true
+          description: Version to revert to. When omitted, the last update is undone.
+
+    UndoThemeOutput:
+      type: object
+      required: [restoredDefinition, previousVersion, newVersion]
+      properties:
+        restoredDefinition:
+          $ref: '#/components/schemas/ThemeDefinition'
+        previousVersion:
+          type: integer
+          format: int64
+        newVersion:
+          type: integer
+          format: int64
+
+    RestoreThemeOutput:
+      type: object
+      required: [restoredDefinition]
+      properties:
+        restoredDefinition:
+          $ref: '#/components/schemas/ThemeDefinition'
+
+    Application:
+      type: object
+      description: >-
+        One deployed, brandable instance the tenant runs: a specific authorization server, web
+        wallet, portal, mobile wallet, or the admin console. Platform-managed instances enter the
+        list from the platform instance registries; external applications are registered here.
+      required: [applicationId, tenantId, productType, name, managed]
+      properties:
+        applicationId:
+          type: string
+        tenantId:
+          type: string
+        productType:
+          $ref: '#/components/schemas/ProductType'
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        managed:
+          type: boolean
+          description: True for platform-provisioned instances, which are read-only in this registry.
+        instanceRef:
+          type: string
+          nullable: true
+          description: Reference to the platform instance record backing a managed application.
+        createdAt:
+          type: string
+          format: date-time
+          nullable: true
+        updatedAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    ApplicationInput:
+      type: object
+      required: [productType, name]
+      properties:
+        productType:
+          $ref: '#/components/schemas/ProductType'
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+
+    BrandInput:
+      type: object
+      description: The tenant simple brand. Writing it regenerates the palette tokens in the canonical tenant definitions while preserving power overrides.
+      required: [appName, primaryColor]
+      properties:
+        appName:
+          type: string
+          example: Acme Wallet
+        primaryColor:
+          type: string
+          pattern: '^#[0-9A-Fa-f]{6}$'
+          example: '#3157D5'
+        secondaryColor:
+          type: string
+          nullable: true
+          pattern: '^#[0-9A-Fa-f]{6}$'
+        tagline:
+          type: string
+          nullable: true
+        supportUrl:
+          type: string
+          nullable: true
+          description: Public support or help-centre URL shown in transactional email footers.
+          example: https://help.example.com
+        supportEmail:
+          type: string
+          nullable: true
+          description: Support mailbox shown in transactional email footers.
+          example: support@example.com
+        logo:
+          type: object
+          allOf:
+            - $ref: './asset-components.yml#/components/schemas/AssetReference'
+          nullable: true
+        logoDark:
+          type: object
+          allOf:
+            - $ref: './asset-components.yml#/components/schemas/AssetReference'
+          nullable: true
+        favicon:
+          type: object
+          allOf:
+            - $ref: './asset-components.yml#/components/schemas/AssetReference'
+          nullable: true
+
+    ApplicationBrandInput:
+      type: object
+      description: Sparse per-application override of the tenant brand. Every property is optional; set properties override the tenant default for this application.
+      properties:
+        appName:
+          type: string
+          nullable: true
+        primaryColor:
+          type: string
+          nullable: true
+          pattern: '^#[0-9A-Fa-f]{6}$'
+        secondaryColor:
+          type: string
+          nullable: true
+          pattern: '^#[0-9A-Fa-f]{6}$'
+        tagline:
+          type: string
+          nullable: true
+        supportUrl:
+          type: string
+          nullable: true
+          description: Public support or help-centre URL shown in transactional email footers.
+          example: https://help.example.com
+        supportEmail:
+          type: string
+          nullable: true
+          description: Support mailbox shown in transactional email footers.
+          example: support@example.com
+        logo:
+          type: object
+          allOf:
+            - $ref: './asset-components.yml#/components/schemas/AssetReference'
+          nullable: true
+        logoDark:
+          type: object
+          allOf:
+            - $ref: './asset-components.yml#/components/schemas/AssetReference'
+          nullable: true
+        favicon:
+          type: object
+          allOf:
+            - $ref: './asset-components.yml#/components/schemas/AssetReference'
+          nullable: true
+
+    BrandOutput:
+      type: object
+      required:
+        - appName
+        - primaryColor
+        - generatedTokenCount
+        - preservedPowerTokenCount
+        - hasPowerOverrides
+      properties:
+        appName:
+          type: string
+        primaryColor:
+          type: string
+          pattern: '^#[0-9A-Fa-f]{6}$'
+        secondaryColor:
+          type: string
+          nullable: true
+          pattern: '^#[0-9A-Fa-f]{6}$'
+        tagline:
+          type: string
+          nullable: true
+        supportUrl:
+          type: string
+          nullable: true
+          description: Public support or help-centre URL shown in transactional email footers.
+          example: https://help.example.com
+        supportEmail:
+          type: string
+          nullable: true
+          description: Support mailbox shown in transactional email footers.
+          example: support@example.com
+        logo:
+          type: object
+          allOf:
+            - $ref: './asset-components.yml#/components/schemas/AssetReference'
+          nullable: true
+        logoDark:
+          type: object
+          allOf:
+            - $ref: './asset-components.yml#/components/schemas/AssetReference'
+          nullable: true
+        favicon:
+          type: object
+          allOf:
+            - $ref: './asset-components.yml#/components/schemas/AssetReference'
+          nullable: true
+        applicationId:
+          type: string
+          nullable: true
+          description: Set when this is a per-application brand.
+        generatedTokenCount:
+          type: integer
+          format: int32
+        preservedPowerTokenCount:
+          type: integer
+          format: int32
+        hasPowerOverrides:
+          type: boolean
+        lastUpdated:
+          type: string
+          format: date-time
+          nullable: true
+
+    TokenPatchRequest:
+      type: object
+      description: Upserts and removals applied to the canonical definition for the addressed `(scope, variant, applicationId)` combination.
+      properties:
+        variant:
+          type: string
+          allOf:
+            - $ref: '#/components/schemas/ThemeVariant'
+          nullable: true
+        applicationId:
+          type: string
+          nullable: true
+        set:
+          type: object
+          additionalProperties:
+            type: string
+          description: Token key to value upserts.
+        unset:
+          type: array
+          items:
+            type: string
+          description: Token keys to remove.
+
+    TokenSetOutput:
+      type: object
+      description: The editable token set at a given `(scope, variant, applicationId)` combination.
+      required: [definitionId, scope, tokens]
+      properties:
+        definitionId:
+          type: string
+          description: The canonical definition the tokens live in.
+        scope:
+          $ref: '#/components/schemas/ThemeScope'
+        variant:
+          type: string
+          allOf:
+            - $ref: '#/components/schemas/ThemeVariant'
+          nullable: true
+        applicationId:
+          type: string
+          nullable: true
+        tokens:
+          type: object
+          additionalProperties:
+            type: string
+          description: Flat map of token key to effective value.
+
+    FeatureDefinition:
+      type: object
+      description: A brandable capability a product type declares, with the named design elements it renders.
+      required: [featureId, productType, name, builtIn, elements, version]
+      properties:
+        featureId:
+          type: string
+          example: login
+        productType:
+          $ref: '#/components/schemas/ProductType'
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        builtIn:
+          type: boolean
+          description: True for features contributed in code by the product. Built-ins are read-only here.
+        elements:
+          type: array
+          items:
+            $ref: '#/components/schemas/DesignElement'
+        version:
+          type: integer
+          format: int64
+        createdAt:
+          type: string
+          format: date-time
+          nullable: true
+        updatedAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    FeatureInput:
+      type: object
+      required: [name, elements]
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        elements:
+          type: array
+          items:
+            $ref: '#/components/schemas/DesignElement'
+
+    DesignElement:
+      description: >-
+        A named, overridable design element a feature declares, such as a sign-in logo, a tagline,
+        or an email header style. The `kind` discriminator selects the variant; each variant carries
+        only the constraints and default that apply to it.
+      oneOf:
+        - $ref: '#/components/schemas/AssetDesignElement'
+        - $ref: '#/components/schemas/TextDesignElement'
+        - $ref: '#/components/schemas/ChoiceDesignElement'
+        - $ref: '#/components/schemas/ToggleDesignElement'
+      discriminator:
+        propertyName: kind
+        mapping:
+          asset: '#/components/schemas/AssetDesignElement'
+          text: '#/components/schemas/TextDesignElement'
+          choice: '#/components/schemas/ChoiceDesignElement'
+          toggle: '#/components/schemas/ToggleDesignElement'
+
+    DesignElementBase:
+      type: object
+      required: [kind, elementId, required]
+      properties:
+        kind:
+          type: string
+        elementId:
+          type: string
+          example: background
+        required:
+          type: boolean
+        description:
+          type: string
+          nullable: true
+        fallbackTokenKey:
+          type: string
+          nullable: true
+          description: Token key resolution falls back to when no binding or default exists, for example `branding.logoUrl`.
+
+    AssetDesignElement:
+      description: An element bound to an uploaded or referenced asset, such as a logo.
+      allOf:
+        - $ref: '#/components/schemas/DesignElementBase'
+        - type: object
+          properties:
+            kind:
+              type: string
+              enum: [asset]
+            acceptedContentTypes:
+              type: array
+              nullable: true
+              items:
+                type: string
+              description: MIME types the upload surface accepts for this element.
+            maxSizeBytes:
+              type: integer
+              format: int64
+              nullable: true
+              description: Largest accepted asset payload, in bytes.
+            default:
+              type: object
+              allOf:
+                - $ref: './asset-components.yml#/components/schemas/AssetReference'
+              nullable: true
+
+    TextDesignElement:
+      description: An element bound to a free-text string, such as a tagline.
+      allOf:
+        - $ref: '#/components/schemas/DesignElementBase'
+        - type: object
+          properties:
+            kind:
+              type: string
+              enum: [text]
+            maxLength:
+              type: integer
+              format: int32
+              nullable: true
+              description: Largest accepted length in characters.
+            default:
+              type: string
+              nullable: true
+
+    ChoiceDesignElement:
+      description: An element bound to one value from a fixed set, such as a header style.
+      allOf:
+        - $ref: '#/components/schemas/DesignElementBase'
+        - type: object
+          required: [allowedValues, default]
+          properties:
+            kind:
+              type: string
+              enum: [choice]
+            allowedValues:
+              type: array
+              minItems: 1
+              items:
+                type: string
+              example: [panel, hairline, logoOnly]
+            default:
+              type: string
+              description: Must be one of `allowedValues`.
+              example: panel
+
+    ToggleDesignElement:
+      description: An element bound to an on or off state, such as whether to show the tagline.
+      allOf:
+        - $ref: '#/components/schemas/DesignElementBase'
+        - type: object
+          required: [default]
+          properties:
+            kind:
+              type: string
+              enum: [toggle]
+            default:
+              type: boolean
+              example: true
+
+    ElementValue:
+      description: The value bound to, or resolved for, a design element. The `kind` discriminator matches the element's own kind.
+      oneOf:
+        - $ref: '#/components/schemas/AssetElementValue'
+        - $ref: '#/components/schemas/TextElementValue'
+        - $ref: '#/components/schemas/ChoiceElementValue'
+        - $ref: '#/components/schemas/ToggleElementValue'
+      discriminator:
+        propertyName: kind
+        mapping:
+          asset: '#/components/schemas/AssetElementValue'
+          text: '#/components/schemas/TextElementValue'
+          choice: '#/components/schemas/ChoiceElementValue'
+          toggle: '#/components/schemas/ToggleElementValue'
+
+    AssetElementValue:
+      type: object
+      required: [kind, asset]
+      properties:
+        kind:
+          type: string
+          enum: [asset]
+        asset:
+          $ref: './asset-components.yml#/components/schemas/AssetReference'
+
+    TextElementValue:
+      type: object
+      required: [kind, text]
+      properties:
+        kind:
+          type: string
+          enum: [text]
+        text:
+          type: string
+
+    ChoiceElementValue:
+      type: object
+      required: [kind, choice]
+      properties:
+        kind:
+          type: string
+          enum: [choice]
+        choice:
+          type: string
+          example: panel
+
+    ToggleElementValue:
+      type: object
+      required: [kind, enabled]
+      properties:
+        kind:
+          type: string
+          enum: [toggle]
+        enabled:
+          type: boolean
+
+    ElementBindingInput:
+      type: object
+      description: >-
+        Value to bind to a design element. `variant` and `applicationId` select the binding slot;
+        they can also be supplied as query parameters.
+      required: [value]
+      properties:
+        variant:
+          type: string
+          allOf:
+            - $ref: '#/components/schemas/ThemeVariant'
+          nullable: true
+        applicationId:
+          type: string
+          nullable: true
+        value:
+          $ref: '#/components/schemas/ElementValue'
+
+    ElementBinding:
+      type: object
+      description: >-
+        A stored design element value at tenant scope (`applicationId` null, the default for every
+        application of the product) or application scope (`applicationId` set), optionally per
+        variant. The `value` discriminator matches the element's declared kind.
+      required: [productType, featureId, elementId, value]
+      properties:
+        productType:
+          $ref: '#/components/schemas/ProductType'
+        featureId:
+          type: string
+        elementId:
+          type: string
+        variant:
+          type: string
+          allOf:
+            - $ref: '#/components/schemas/ThemeVariant'
+          nullable: true
+        applicationId:
+          type: string
+          nullable: true
+        value:
+          $ref: '#/components/schemas/ElementValue'
+        updatedAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    ElementOrigin:
+      type: string
+      description: The resolution layer a resolved element value came from.
+      enum: [APPLICATION, TENANT, PRODUCT_DEFAULT, ELEMENT_DEFAULT, TOKEN_FALLBACK]
+
+    ResolvedElement:
+      type: object
+      required: [value, origin]
+      properties:
+        value:
+          $ref: '#/components/schemas/ElementValue'
+        origin:
+          $ref: '#/components/schemas/ElementOrigin'
+
+    ResolvedFeature:
+      type: object
+      description: The effective design element values of one feature for a tenant, optionally scoped to an application and variant.
+      required: [productType, featureId, tenantId, elements]
+      properties:
+        productType:
+          $ref: '#/components/schemas/ProductType'
+        featureId:
+          type: string
+        tenantId:
+          type: string
+        applicationId:
+          type: string
+          nullable: true
+        variant:
+          type: string
+          allOf:
+            - $ref: '#/components/schemas/ThemeVariant'
+          nullable: true
+        etag:
+          type: string
+          nullable: true
+        elements:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/ResolvedElement'
+          description: Map of element id to resolved value.
+        missingRequired:
+          type: array
+          nullable: true
+          items:
+            type: string
+          description: Element ids of required elements that resolved to nothing.
+
+    StylesheetInput:
+      type: object
+      required: [css]
+      properties:
+        css:
+          type: string
+          description: The custom CSS. Existing CSS policy limits apply.
+
+    BrandingMetadata:
+      type: object
+      properties:
+        appName:
+          type: string
+          nullable: true
+        primaryColor:
+          type: string
+          nullable: true
+          example: '#3157D5'
+        logoUrl:
+          type: string
+          nullable: true
+          format: uri
+        logoDarkUrl:
+          type: string
+          nullable: true
+          format: uri
+        faviconUrl:
+          type: string
+          nullable: true
+          format: uri
+        fontResourceId:
+          type: string
+          nullable: true
+        logoResourceId:
+          type: string
+          nullable: true
+        logoDarkResourceId:
+          type: string
+          nullable: true
+
+    WebBrandingMetadata:
+      type: object
+      properties:
+        customCssUrl:
+          type: string
+          nullable: true
+          format: uri
+        fontStylesheetUrls:
+          type: array
+          nullable: true
+          items:
+            type: string
+            format: uri
+        assetBaseUrl:
+          type: string
+          nullable: true
+          format: uri
+
+    ResolvedTheme:
+      type: object
+      required: [tokens, resolvedAt, layerCount, fallback]
+      properties:
+        tokens:
+          type: object
+          additionalProperties:
+            type: string
+          description: Flat map of resolved token key to token value.
+        resolvedAt:
+          type: string
+          format: date-time
+        variant:
+          type: string
+          nullable: true
+          enum: [LIGHT, DARK, HIGH_CONTRAST_LIGHT, HIGH_CONTRAST_DARK]
+        layerCount:
+          type: integer
+          format: int32
+        etag:
+          type: string
+          nullable: true
+        fallback:
+          type: boolean
+        tenantId:
+          type: string
+          nullable: true
+        applicationId:
+          type: string
+          nullable: true
+        branding:
+          type: object
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/BrandingMetadata'
+        appliedLayers:
+          type: array
+          nullable: true
+          items:
+            type: string
+        web:
+          type: object
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/WebBrandingMetadata'
+
+    GeneratePaletteInput:
+      type: object
+      required: [seedColor]
+      properties:
+        seedColor:
+          type: string
+          pattern: '^#[0-9A-Fa-f]{6}$'
+          example: '#6750A4'
+
+    TonalPaletteResult:
+      type: object
+      description: A set of tonal values at standard Material Design 3 tone stops. Each value is a hex color string.
+      required:
+        - tone0
+        - tone10
+        - tone20
+        - tone30
+        - tone40
+        - tone50
+        - tone60
+        - tone70
+        - tone80
+        - tone90
+        - tone95
+        - tone99
+        - tone100
+      properties:
+        tone0:
+          type: string
+        tone10:
+          type: string
+        tone20:
+          type: string
+        tone30:
+          type: string
+        tone40:
+          type: string
+        tone50:
+          type: string
+        tone60:
+          type: string
+        tone70:
+          type: string
+        tone80:
+          type: string
+        tone90:
+          type: string
+        tone95:
+          type: string
+        tone99:
+          type: string
+        tone100:
+          type: string
+
+    ThemePalette:
+      type: object
+      description: A generated tonal palette based on Material Design 3, with the five key color role palettes.
+      required: [seedColor, primary, secondary, tertiary, neutral, error]
+      properties:
+        seedColor:
+          type: string
+          example: '#6750A4'
+        primary:
+          $ref: '#/components/schemas/TonalPaletteResult'
+        secondary:
+          $ref: '#/components/schemas/TonalPaletteResult'
+        tertiary:
+          $ref: '#/components/schemas/TonalPaletteResult'
+        neutral:
+          $ref: '#/components/schemas/TonalPaletteResult'
+        error:
+          $ref: '#/components/schemas/TonalPaletteResult'
+
+    GeneratePaletteOutput:
+      type: object
+      required: [palette]
+      properties:
+        palette:
+          $ref: '#/components/schemas/ThemePalette'
+
+    SeedThemeOutput:
+      type: object
+      required: [seededCount]
+      properties:
+        seededCount:
+          type: integer
+          format: int32
+        alreadyExisted:
+          type: boolean
+          default: false
+
+    PurgeCacheInput:
+      type: object
+      properties:
+        tenant:
+          type: string
+          nullable: true
+          description: Tenant to purge. When omitted, the whole theme resolution cache is purged.
+
+    PurgeCacheOutput:
+      type: object
+      properties:
+        purged:
+          type: boolean
+          default: true
+
+    ResolveBrandingContextOutput:
+      type: object
+      required: [context]
+      properties:
+        context:
+          type: object
+          additionalProperties:
+            type: string

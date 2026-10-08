@@ -37,7 +37,8 @@
       "redirectUris": ["*"],
       "webOrigins": ["*"],
       "attributes": {
-        "access.token.lifespan": "300"
+        "access.token.lifespan": "300",
+        "access.token.header.type.rfc9068": "true"
       },
       "protocolMappers": [
         {

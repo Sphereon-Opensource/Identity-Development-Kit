@@ -1,0 +1,355 @@
+openapi: 3.0.4
+info:
+  title: OID4VP Verification Template API
+  version: 0.1.0
+  description: |
+    Tenant-scoped reusable verification templates. A template stores the stable parts of an
+    OID4VP authorization-request for one configured verifier instance and a stored DCQL query
+    or verifier DCQL binding, so admins and external backends can start a real verification
+    session without rebuilding the request on every call.
+servers:
+  - description: OID4VP verification template API base path.
+    url: /api/oid4vp/v1
+security:
+  - oAuth2: []
+  - bearer: []
+tags:
+  - name: VerificationTemplates
+    description: Reusable authorization-request templates for configured verifier instances.
+
+paths:
+  /templates/verification:
+    get:
+      tags: [VerificationTemplates]
+      summary: List verification templates
+      operationId: listVerificationTemplates
+      parameters:
+        - name: verifierId
+          in: query
+          schema:
+            type: string
+        - name: enabled
+          in: query
+          schema:
+            type: boolean
+      responses:
+        '200':
+          description: Verification templates.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/VerificationTemplateRecord'
+    post:
+      tags: [VerificationTemplates]
+      summary: Create verification template
+      operationId: createVerificationTemplate
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateVerificationTemplateRequest'
+            examples:
+              createAgeCheckTemplate:
+                $ref: '#/components/examples/CreateAgeCheckVerificationTemplateRequest'
+      responses:
+        '201':
+          description: Created verification template.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VerificationTemplateRecord'
+              examples:
+                ageCheckTemplate:
+                  $ref: '#/components/examples/AgeCheckVerificationTemplateRecord'
+
+  /templates/verification/{templateId}:
+    parameters:
+      - name: templateId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags: [VerificationTemplates]
+      summary: Get verification template
+      operationId: getVerificationTemplate
+      responses:
+        '200':
+          description: Verification template.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VerificationTemplateRecord'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+    put:
+      tags: [VerificationTemplates]
+      summary: Replace verification template
+      operationId: replaceVerificationTemplate
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateVerificationTemplateRequest'
+      responses:
+        '200':
+          description: Replaced verification template.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VerificationTemplateRecord'
+    patch:
+      tags: [VerificationTemplates]
+      summary: Patch verification template
+      operationId: patchVerificationTemplate
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchVerificationTemplateRequest'
+      responses:
+        '200':
+          description: Updated verification template.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VerificationTemplateRecord'
+    delete:
+      tags: [VerificationTemplates]
+      summary: Delete verification template
+      operationId: deleteVerificationTemplate
+      responses:
+        '204':
+          description: Deleted.
+
+  /templates/verification/{templateId}/authorization-requests:
+    parameters:
+      - name: templateId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      tags: [VerificationTemplates]
+      summary: Create authorization request from verification template
+      operationId: createAuthorizationRequestFromVerificationTemplate
+      description: Resolves the template, resolves the configured DCQL query/version, merges overrides, and calls the existing authorization-request session creation path.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateAuthorizationRequestFromVerificationTemplateRequest'
+      responses:
+        '201':
+          description: Authorization request and verification session.
+          content:
+            application/json:
+              schema:
+                $ref: './oid4vp-universal-openapi.yml#/components/schemas/CreateAuthorizationRequestResponse'
+
+components:
+  securitySchemes:
+    bearer:
+      $ref: './common-components.yml#/components/securitySchemes/bearer'
+    oAuth2:
+      type: oauth2
+      flows:
+        clientCredentials:
+          tokenUrl: http://localhost:8082/realms/oid4vp/protocol/openid-connect/token
+          refreshUrl: http://localhost:8082/realms/oid4vp/protocol/openid-connect/token
+          scopes: {}
+
+  examples:
+    CreateAgeCheckVerificationTemplateRequest:
+      summary: Create an age-check verification template
+      value:
+        verifierId: "age-verifier"
+        name: "Age over 18"
+        description: "Reusable verification request for age checks."
+        enabled: true
+        spec:
+          queryRef:
+            verifierId: "age-verifier"
+            bindingId: "3df31016-674f-4828-a384-b9acb9d7d346"
+            queryId: "age-over-18"
+            version: 1
+          verifierDesignId: "97bd1d9d-1390-4c59-a57f-76d7a0e7e913"
+          request_defaults:
+            response_mode: "direct_post"
+            purpose: "Verify the holder is over 18."
+    AgeCheckVerificationTemplateRecord:
+      summary: Stored age-check verification template
+      value:
+        id: "db24f53b-ea2d-4432-82df-4188f977b2a6"
+        tenantId: "tenant-acme"
+        verifierId: "age-verifier"
+        name: "Age over 18"
+        description: "Reusable verification request for age checks."
+        enabled: true
+        spec:
+          queryRef:
+            verifierId: "age-verifier"
+            bindingId: "3df31016-674f-4828-a384-b9acb9d7d346"
+            queryId: "age-over-18"
+            version: 1
+          verifierDesignId: "97bd1d9d-1390-4c59-a57f-76d7a0e7e913"
+          request_defaults:
+            response_mode: "direct_post"
+            purpose: "Verify the holder is over 18."
+        createdAt: "2026-06-20T09:00:00Z"
+        updatedAt: "2026-06-25T14:30:00Z"
+
+  schemas:
+    VerificationTemplateQueryRef:
+      type: object
+      required: [queryId]
+      properties:
+        verifierId:
+          type: string
+          description: Configured verifier instance that owns/uses the query.
+        bindingId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Optional verifier DCQL binding id. Prefer this when the template should follow the binding's pinned-version semantics.
+        queryId:
+          type: string
+          description: Stable DCQL query id configured for the verifier instance, for example `age-check`.
+        version:
+          type: integer
+          nullable: true
+          description: Pinned DCQL query version. Null means latest active version for the binding/query.
+
+    VerificationTemplateSpec:
+      type: object
+      required: [queryRef]
+      properties:
+        queryRef:
+          $ref: '#/components/schemas/VerificationTemplateQueryRef'
+        verifierDesignId:
+          type: string
+          format: uuid
+          nullable: true
+        request_defaults:
+          type: object
+          additionalProperties: true
+          description: Stable partial authorization-request defaults merged into the execution request before decoding as the real runtime CreateAuthorizationRequest model.
+        recipient_lookup_sources:
+          type: array
+          description: Capable recipient-lookup connectors preconfigured on this template (verification-side Import source). A template with exactly one capable source yields exactly that lookup; zero sources keeps the console default.
+          items:
+            $ref: '#/components/schemas/RecipientLookupSource'
+          default: []
+
+    RecipientLookupSource:
+      type: object
+      description: One preconfigured recipient-lookup connector on an issuer or verifier template (handoff programme decision 4). Capabilities say what it can resolve; kind says how it is addressed.
+      required: [connector_ref]
+      properties:
+        connector_ref:
+          type: string
+          minLength: 1
+          description: Connector reference resolvable through the connector registry.
+        capabilities:
+          $ref: '#/components/schemas/LookupCapabilityFlags'
+        kind:
+          $ref: '#/components/schemas/LookupSourceKind'
+        display_name:
+          type: string
+          nullable: true
+
+    LookupCapabilityFlags:
+      type: object
+      description: What a lookup connector can resolve, as capability flags rather than a rank.
+      properties:
+        user:
+          type: boolean
+          default: false
+          description: Can resolve platform users.
+        party:
+          type: boolean
+          default: false
+          description: Can resolve Party records (organizations, natural persons).
+        email:
+          type: boolean
+          default: false
+          description: Can resolve by email identifier.
+
+    LookupSourceKind:
+      type: string
+      description: How a lookup connector is addressed by the console backend.
+      enum: [directory, rest, csv, database]
+
+    VerificationTemplateRecord:
+      type: object
+      required: [id, tenantId, verifierId, name, enabled, spec, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenantId:
+          type: string
+        verifierId:
+          type: string
+          description: Configured verifier instance this template executes against.
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        enabled:
+          type: boolean
+        spec:
+          $ref: '#/components/schemas/VerificationTemplateSpec'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    CreateVerificationTemplateRequest:
+      type: object
+      required: [verifierId, name, spec]
+      properties:
+        verifierId:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        enabled:
+          type: boolean
+          default: true
+        spec:
+          $ref: '#/components/schemas/VerificationTemplateSpec'
+
+    PatchVerificationTemplateRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        enabled:
+          type: boolean
+        spec:
+          $ref: '#/components/schemas/VerificationTemplateSpec'
+
+    CreateAuthorizationRequestFromVerificationTemplateRequest:
+      type: object
+      properties:
+        overrides:
+          type: object
+          additionalProperties: true
+          description: Per-session partial authorization-request overrides merged after template defaults.

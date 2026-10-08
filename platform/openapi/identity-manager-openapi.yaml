@@ -1,0 +1,415 @@
+openapi: 3.0.4
+info:
+  title: Identity Manager API
+  version: 0.1.0
+  x-products: [vdx]
+  description: |
+    Manage identities and identity identifiers for Verifiable Data Exchange.
+
+    An identity is the stable subject used for credential, login, and matching
+    workflows. It can represent a person, organization, software component, or
+    service-facing actor without requiring profile details to be stored on the
+    identity itself.
+
+    Identity identifiers are values such as email addresses, phone numbers,
+    DIDs, X.509 certificate identifiers, VAT numbers, LEIs, TINs, URLs, and
+    issuer identifiers. The API accepts raw values on create and returns values
+    according to `valueMode` and authorization policy.
+  license:
+    name: Apache 2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0
+
+servers:
+  - url: https://api.example.com/api/identity/v1
+    description: Production server.
+  - url: http://localhost:8080/api/identity/v1
+    description: Local development server.
+
+security:
+  - bearer: []
+
+tags:
+  - name: Identities
+    description: Create, read, update, soft-delete, and list identities.
+  - name: IdentityIdentifiers
+    description: Manage searchable and protected identifiers for identities.
+
+paths:
+  /identities:
+    get:
+      operationId: listIdentities
+      tags: [Identities]
+      summary: List identities
+      description: |
+        Returns a paginated list of identities in the caller's tenant. Use
+        filters to narrow by credential role, default flag, or deletion state.
+        Set `includeIdentityIdentifiers=true` only when identifiers are needed
+        in the same response. When identifiers are inlined, use `valueMode` to
+        choose whether their values are returned as lookup keys, masked display
+        values, or revealed values where policy and authorization allow it.
+      parameters:
+        - $ref: '#/components/parameters/IdentityRoleFilter'
+        - $ref: '#/components/parameters/IsDefaultFilter'
+        - $ref: '#/components/parameters/IncludeDeletedFilter'
+        - $ref: '#/components/parameters/IncludeIdentityIdentifiers'
+        - $ref: '#/components/parameters/ValueMode'
+        - $ref: '#/components/parameters/IncludeX509Extensions'
+        - $ref: '#/components/parameters/IncludeRegistrationExtensions'
+        - $ref: '#/components/parameters/IncludeElectronicExtensions'
+        - $ref: './common-components.yml#/components/parameters/Limit'
+        - $ref: './common-components.yml#/components/parameters/Offset'
+        - $ref: './common-components.yml#/components/parameters/Page'
+        - $ref: './common-components.yml#/components/parameters/Size'
+      responses:
+        '200':
+          description: Page of identities.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IdentityPageResponse'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+    post:
+      operationId: createIdentity
+      tags: [Identities]
+      summary: Create an identity
+      description: |
+        Creates an identity for credential, login, or matching workflows. The
+        identity can be created without any identifiers; identifiers can be
+        attached later through `/identities/{identityId}/identifiers`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IdentityCreateRequest'
+      responses:
+        '201':
+          description: Identity created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Identity'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /identities/{identityId}:
+    parameters:
+      - $ref: '#/components/parameters/IdentityId'
+    get:
+      operationId: getIdentity
+      tags: [Identities]
+      summary: Get an identity
+      description: |
+        Returns one identity by ID. Optional include flags control whether
+        identifiers and identifier extension data are returned inline.
+      parameters:
+        - $ref: '#/components/parameters/IncludeIdentityIdentifiers'
+        - $ref: '#/components/parameters/IncludeX509Extensions'
+        - $ref: '#/components/parameters/IncludeRegistrationExtensions'
+        - $ref: '#/components/parameters/IncludeElectronicExtensions'
+      responses:
+        '200':
+          description: The identity.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Identity'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+    put:
+      operationId: updateIdentity
+      tags: [Identities]
+      summary: Update an identity
+      description: |
+        Updates mutable identity settings such as role, default status, and
+        privacy mode. This endpoint does not create, update, or remove
+        identifiers.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IdentityUpdateRequest'
+      responses:
+        '200':
+          description: Identity updated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Identity'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+    delete:
+      operationId: deleteIdentity
+      tags: [Identities]
+      summary: Soft-delete an identity
+      description: |
+        Marks the identity as deleted. Deleted identities are omitted from list
+        responses unless `includeDeleted=true` is requested.
+      responses:
+        '204':
+          description: Identity deleted.
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /identities/{identityId}/identifiers:
+    parameters:
+      - $ref: '#/components/parameters/IdentityId'
+    get:
+      operationId: listIdentityIdentifiers
+      tags: [IdentityIdentifiers]
+      summary: List identifiers for an identity
+      description: |
+        Returns the identifiers attached to a known identity. Use `valueMode` to
+        choose whether values are returned as lookup keys, masked display values,
+        or revealed values where policy and authorization allow it.
+      parameters:
+        - $ref: '#/components/parameters/ValueMode'
+        - $ref: '#/components/parameters/IncludeX509Extensions'
+        - $ref: '#/components/parameters/IncludeRegistrationExtensions'
+        - $ref: '#/components/parameters/IncludeElectronicExtensions'
+      responses:
+        '200':
+          description: Identifiers for the identity.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IdentityIdentifierListResponse'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+    post:
+      operationId: createIdentityIdentifier
+      tags: [IdentityIdentifiers]
+      summary: Create an identifier for an identity
+      description: |
+        Creates an identifier from a raw value such as an email address, DID,
+        VAT number, LEI, or certificate identifier. The service applies tenant
+        policy before storing and returning the identifier.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IdentityIdentifierCreateRequest'
+      responses:
+        '201':
+          description: Identifier created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IdentityIdentifier'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /identifiers/{identifierId}:
+    parameters:
+      - $ref: '#/components/parameters/IdentifierId'
+    get:
+      operationId: getIdentityIdentifier
+      tags: [IdentityIdentifiers]
+      summary: Get an identity identifier
+      description: |
+        Returns one identifier by ID. Use this direct route when the identifier
+        ID is already known and the parent identity does not need to be part of
+        the request path.
+      parameters:
+        - $ref: '#/components/parameters/ValueMode'
+        - $ref: '#/components/parameters/IncludeX509Extensions'
+        - $ref: '#/components/parameters/IncludeRegistrationExtensions'
+        - $ref: '#/components/parameters/IncludeElectronicExtensions'
+      responses:
+        '200':
+          description: The identity identifier.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IdentityIdentifier'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+    put:
+      operationId: updateIdentityIdentifier
+      tags: [IdentityIdentifiers]
+      summary: Update an identity identifier
+      description: |
+        Updates mutable identifier metadata such as primary status, verification
+        status, verification time, and expiry. The identifier value itself is
+        not changed through this endpoint.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IdentityIdentifierUpdateRequest'
+      responses:
+        '200':
+          description: Identifier updated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IdentityIdentifier'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+    delete:
+      operationId: deleteIdentityIdentifier
+      tags: [IdentityIdentifiers]
+      summary: Soft-delete an identity identifier
+      description: |
+        Marks the identifier as deleted. Deleted identifiers are not returned in
+        ordinary reads and lists.
+      responses:
+        '204':
+          description: Identifier deleted.
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+components:
+  securitySchemes:
+    bearer:
+      $ref: './common-components.yml#/components/securitySchemes/bearer'
+
+  parameters:
+    IdentityId:
+      name: identityId
+      in: path
+      required: true
+      description: Stable identity ID returned as `partyId` in identity responses.
+      schema:
+        type: string
+        format: uuid
+    IdentifierId:
+      name: identifierId
+      in: path
+      required: true
+      description: Stable identity identifier ID returned as `id` in identifier responses.
+      schema:
+        type: string
+        format: uuid
+    IdentityRoleFilter:
+      name: identityRole
+      in: query
+      required: false
+      description: Filter by identity role, for example `issuer`, `verifier`, or `holder`.
+      schema:
+        $ref: './identity-manager-components.yml#/components/schemas/IdentityRole'
+    IsDefaultFilter:
+      name: isDefault
+      in: query
+      required: false
+      description: Filter identities by default flag.
+      schema:
+        type: boolean
+    IncludeDeletedFilter:
+      name: includeDeleted
+      in: query
+      required: false
+      description: Include soft-deleted identities in list responses.
+      schema:
+        type: boolean
+        default: false
+    IncludeIdentityIdentifiers:
+      name: includeIdentityIdentifiers
+      in: query
+      required: false
+      description: Return identity identifiers inline with identity responses.
+      schema:
+        type: boolean
+        default: false
+    IncludeX509Extensions:
+      name: includeX509Extensions
+      in: query
+      required: false
+      description: Include X.509 certificate metadata for X.509 identifiers when available.
+      schema:
+        type: boolean
+        default: false
+    IncludeRegistrationExtensions:
+      name: includeRegistrationExtensions
+      in: query
+      required: false
+      description: Include business registration metadata for registration identifiers when available.
+      schema:
+        type: boolean
+        default: false
+    IncludeElectronicExtensions:
+      name: includeElectronicExtensions
+      in: query
+      required: false
+      description: Include electronic address metadata for email, phone, URL, or endpoint identifiers when available.
+      schema:
+        type: boolean
+        default: false
+    ValueMode:
+      name: valueMode
+      in: query
+      required: false
+      description: |
+        Controls the returned identifier value representation. Use `masked` for
+        display, `lookup` for matching workflows, and `revealed` only when the
+        caller is authorized to see readable values.
+      schema:
+        $ref: './identity-manager-components.yml#/components/schemas/IdentityIdentifierValueMode'
+
+  schemas:
+    Identity:
+      $ref: './identity-manager-components.yml#/components/schemas/Identity'
+    IdentityCreateRequest:
+      $ref: './identity-manager-components.yml#/components/schemas/IdentityCreateRequest'
+    IdentityUpdateRequest:
+      $ref: './identity-manager-components.yml#/components/schemas/IdentityUpdateRequest'
+    IdentityPageResponse:
+      $ref: './identity-manager-components.yml#/components/schemas/IdentityPageResponse'
+    IdentityIdentifier:
+      $ref: './identity-manager-components.yml#/components/schemas/IdentityIdentifier'
+    IdentityIdentifierCreateRequest:
+      $ref: './identity-manager-components.yml#/components/schemas/IdentityIdentifierCreateRequest'
+    IdentityIdentifierUpdateRequest:
+      $ref: './identity-manager-components.yml#/components/schemas/IdentityIdentifierUpdateRequest'
+    IdentityIdentifierListResponse:
+      $ref: './identity-manager-components.yml#/components/schemas/IdentityIdentifierListResponse'

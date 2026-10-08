@@ -1,0 +1,3280 @@
+openapi: 3.0.4
+info:
+  title: Wallet Unit API Components
+  version: 0.1.0
+  description: Entity schemas, enums, and parameters for the Wallet Unit REST API.
+paths: {}
+components:
+  parameters:
+    WalletUnitId:
+      name: walletUnitId
+      in: path
+      required: true
+      description: Stable wallet unit identifier.
+      schema:
+        type: string
+    AttestationKind:
+      name: kind
+      in: path
+      required: true
+      description: Wallet attestation kind.
+      schema:
+        $ref: '#/components/schemas/WalletUnitAttestationKind'
+    AttestationRef:
+      name: attestationRef
+      in: path
+      required: true
+      description: Stored wallet attestation reference.
+      schema:
+        type: string
+
+  schemas:
+    StringMap:
+      type: object
+      description: String-valued evidence or metadata map. Keys are stable evidence names; values are already serialized for audit and transport.
+      additionalProperties:
+        type: string
+      example:
+        proofTranscriptDigest: sha256:2f20b6f6e7f1d36f8f6d35d27a5f093b6f2e4b2e
+        providerId: production-activation-provider
+        productionCapable: 'true'
+
+    JsonObject:
+      type: object
+      description: Arbitrary JSON object preserved as supplied.
+      additionalProperties: true
+      example:
+        keys:
+          - kty: EC
+            crv: P-256
+            kid: wallet-provider-signing-key-1
+
+    WalletUnitLifecycleState:
+      type: string
+      description: Persisted lifecycle state for a Wallet Unit. VALID means the production evidence gate has accepted the unit; REVOKED and UNINSTALLED are terminal for signing.
+      enum: [INSTALLED, OPERATIONAL, VALID, REVOKED, UNINSTALLED]
+
+    WalletAccountStatus:
+      type: string
+      description: Operational status of the wallet account that owns one or more Wallet Units.
+      enum: [ACTIVE, SUSPENDED, LOCKED, REVOKED, UNINSTALLED]
+
+    WalletUnitLifecycleEventType:
+      type: string
+      description: Audit event type recorded when a Wallet Unit lifecycle transition is persisted.
+      enum: [INSTALLED, MARKED_OPERATIONAL, VALIDATED, REVOKED, UNINSTALLED]
+
+    WalletLifecycleEvent:
+      type: object
+      description: Immutable lifecycle audit entry with caller-supplied evidence and the service timestamp.
+      required: [type, occurredAt, evidence]
+      example:
+        type: VALIDATED
+        occurredAt: '2026-07-02T08:10:00Z'
+        reason: production evidence accepted
+        evidence:
+          validationEvidenceSummaryId: valid-summary-wu-7f9d
+      properties:
+        type:
+          $ref: '#/components/schemas/WalletUnitLifecycleEventType'
+        occurredAt:
+          type: string
+          format: date-time
+        reason:
+          type: string
+          nullable: true
+        evidence:
+          $ref: '#/components/schemas/StringMap'
+
+    WalletCounterState:
+      type: object
+      description: Monotonic counters used for activation retry handling and accepted or denied activation decisions.
+      required: [activationSequence, failedActivationAttempts, acceptedActivationDecisions, rejectedActivationDecisions]
+      example:
+        activationSequence: 3
+        failedActivationAttempts: 0
+        acceptedActivationDecisions: 2
+        rejectedActivationDecisions: 0
+      properties:
+        activationSequence:
+          type: integer
+          format: int64
+          default: 0
+        failedActivationAttempts:
+          type: integer
+          default: 0
+        acceptedActivationDecisions:
+          type: integer
+          format: int64
+          default: 0
+        rejectedActivationDecisions:
+          type: integer
+          format: int64
+          default: 0
+
+    WalletTransactionRecord:
+      type: object
+      description: Audit record for a wallet-key operation that was evaluated against an activation decision and policy evidence.
+      required: [transactionId, operationType, operationHash, recordedAt, status, evidence]
+      example:
+        transactionId: tx-sign-20260702-1
+        operationType: wallet.wscd.sign-digest
+        operationHash: sha256:7f1a6aa671f1a2d1c3c2e994c09e3f87c4ac44d6
+        decisionId: act-20260702-0001
+        recordedAt: '2026-07-02T08:16:00Z'
+        status: SIGNED
+        evidence:
+          policyGrantId: grant-20260702-1
+      properties:
+        transactionId:
+          type: string
+        operationType:
+          type: string
+        operationHash:
+          type: string
+        decisionId:
+          type: string
+          nullable: true
+        recordedAt:
+          type: string
+          format: date-time
+        status:
+          type: string
+        evidence:
+          $ref: '#/components/schemas/StringMap'
+
+    WalletAccountRecord:
+      type: object
+      description: Wallet account state shared by Wallet Units, including key references, policies, counters, and lifecycle audit history.
+      required: [walletAccountId, remoteKeyRefs, policyRefs, counters, status, lifecycleHistory, transactionRecords, createdAt, updatedAt]
+      example:
+        walletAccountId: wa-42
+        remoteKeyRefs: [wallet-signing-key-1]
+        policyRefs: [wallet-unit-production-valid]
+        counters:
+          activationSequence: 3
+          failedActivationAttempts: 0
+          acceptedActivationDecisions: 2
+          rejectedActivationDecisions: 0
+        status: ACTIVE
+        lifecycleHistory: []
+        transactionRecords: []
+        createdAt: '2026-07-02T08:00:00Z'
+        updatedAt: '2026-07-02T08:10:00Z'
+      properties:
+        walletAccountId:
+          type: string
+        remoteKeyRefs:
+          type: array
+          items:
+            type: string
+        policyRefs:
+          type: array
+          items:
+            type: string
+        counters:
+          $ref: '#/components/schemas/WalletCounterState'
+        status:
+          $ref: '#/components/schemas/WalletAccountStatus'
+        lifecycleHistory:
+          type: array
+          items:
+            $ref: '#/components/schemas/WalletLifecycleEvent'
+        transactionRecords:
+          type: array
+          items:
+            $ref: '#/components/schemas/WalletTransactionRecord'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    WalletUnitRecord:
+      type: object
+      description: Persisted Wallet Unit state. The record links lifecycle state, allowed remote key refs, policy refs, activation key refs, and immutable audit history.
+      required: [walletUnitId, walletAccountId, status, remoteKeyRefs, policyRefs, counters, accountStatus, lifecycleHistory, transactionRecords, createdAt, updatedAt]
+      example:
+        walletUnitId: wu-7f9d
+        walletAccountId: wa-42
+        status: VALID
+        activationKeyRef: wallet-unit-activation-key
+        remoteKeyRefs: [wallet-signing-key-1]
+        policyRefs: [wallet-unit-production-valid]
+        counters:
+          activationSequence: 3
+          failedActivationAttempts: 0
+          acceptedActivationDecisions: 2
+          rejectedActivationDecisions: 0
+        accountStatus: ACTIVE
+        lifecycleHistory: []
+        transactionRecords: []
+        createdAt: '2026-07-02T08:00:00Z'
+        updatedAt: '2026-07-02T08:10:00Z'
+        revokedAt: null
+        uninstalledAt: null
+      properties:
+        walletUnitId:
+          type: string
+        walletAccountId:
+          type: string
+        status:
+          $ref: '#/components/schemas/WalletUnitLifecycleState'
+        activationKeyRef:
+          type: string
+          nullable: true
+        remoteKeyRefs:
+          type: array
+          items:
+            type: string
+        policyRefs:
+          type: array
+          items:
+            type: string
+        counters:
+          $ref: '#/components/schemas/WalletCounterState'
+        accountStatus:
+          $ref: '#/components/schemas/WalletAccountStatus'
+        lifecycleHistory:
+          type: array
+          items:
+            $ref: '#/components/schemas/WalletLifecycleEvent'
+        transactionRecords:
+          type: array
+          items:
+            $ref: '#/components/schemas/WalletTransactionRecord'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        revokedAt:
+          type: string
+          format: date-time
+          nullable: true
+        uninstalledAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    WalletUnitLifecycleResult:
+      type: object
+      description: Current Wallet Unit and account state after a lifecycle command.
+      required: [unit, account]
+      example:
+        unit:
+          walletUnitId: wu-7f9d
+          walletAccountId: wa-42
+          status: VALID
+          activationKeyRef: wallet-unit-activation-key
+          remoteKeyRefs: [wallet-signing-key-1]
+          policyRefs: [wallet-unit-production-valid]
+          counters:
+            activationSequence: 3
+            failedActivationAttempts: 0
+            acceptedActivationDecisions: 2
+            rejectedActivationDecisions: 0
+          accountStatus: ACTIVE
+          lifecycleHistory:
+            - type: INSTALLED
+              occurredAt: '2026-07-02T08:00:00Z'
+              reason: initial enrollment
+              evidence:
+                installationChannel: tenant-admin
+          transactionRecords: []
+          createdAt: '2026-07-02T08:00:00Z'
+          updatedAt: '2026-07-02T08:10:00Z'
+          revokedAt: null
+          uninstalledAt: null
+        account:
+          walletAccountId: wa-42
+          remoteKeyRefs: [wallet-signing-key-1]
+          policyRefs: [wallet-unit-production-valid]
+          counters:
+            activationSequence: 3
+            failedActivationAttempts: 0
+            acceptedActivationDecisions: 2
+            rejectedActivationDecisions: 0
+          status: ACTIVE
+          lifecycleHistory: []
+          transactionRecords: []
+          createdAt: '2026-07-02T08:00:00Z'
+          updatedAt: '2026-07-02T08:10:00Z'
+      properties:
+        unit:
+          $ref: '#/components/schemas/WalletUnitRecord'
+        account:
+          $ref: '#/components/schemas/WalletAccountRecord'
+
+    ListWalletUnitsResult:
+      type: object
+      description: Page-free result for Wallet Unit lookup commands. Filtering is supplied by query parameters on the list endpoint.
+      required: [units]
+      example:
+        units:
+          - walletUnitId: wu-7f9d
+            walletAccountId: wa-42
+            status: OPERATIONAL
+            remoteKeyRefs: [wallet-signing-key-1]
+            policyRefs: [wallet-unit-production-valid]
+            counters:
+              activationSequence: 1
+              failedActivationAttempts: 0
+              acceptedActivationDecisions: 1
+              rejectedActivationDecisions: 0
+            accountStatus: ACTIVE
+            lifecycleHistory: []
+            transactionRecords: []
+            createdAt: '2026-07-02T08:00:00Z'
+            updatedAt: '2026-07-02T08:05:00Z'
+      properties:
+        units:
+          type: array
+          items:
+            $ref: '#/components/schemas/WalletUnitRecord'
+
+    InstallWalletUnitHttpRequest:
+      type: object
+      description: Installs a Wallet Unit and optionally binds it to wallet account and unit parties in one request. Every unit carries exactly one Wallet Instance, so the instance identifier is required at install time.
+      required: [walletUnitId, walletAccountId, walletInstanceId]
+      example:
+        walletUnitId: wu-7f9d
+        walletAccountId: wa-42
+        walletInstanceId: wi-7f9d
+        activationKeyRef: wallet-unit-activation-key
+        remoteKeyRefs: [wallet-signing-key-1]
+        policyRefs: [wallet-unit-production-valid]
+        evidence:
+          installationChannel: tenant-admin
+          deviceBinding: strong
+        walletAccountPartyId: 9ad1a503-b3cb-4c72-86a7-2f226e146f04
+        walletUnitPartyId: 88f2f6e5-9fd0-4124-9c8f-305a381ceec3
+        ownerPartyId: f2e85bc5-5f76-4c12-bfb1-8ec5cc37fc39
+        operatorPartyIds: [6a9c80c7-738f-46cc-9145-098a57f05638]
+        partyBindingEvidence:
+          relationshipSource: tenant-operator
+      properties:
+        walletUnitId:
+          type: string
+        walletAccountId:
+          type: string
+        walletInstanceId:
+          type: string
+          description: Identifier of the single Wallet Instance this unit contains.
+        activationKeyRef:
+          type: string
+          nullable: true
+        remoteKeyRefs:
+          type: array
+          items:
+            type: string
+        policyRefs:
+          type: array
+          items:
+            type: string
+        evidence:
+          $ref: '#/components/schemas/StringMap'
+        walletAccountPartyId:
+          type: string
+          format: uuid
+          nullable: true
+        holderPartyId:
+          type: string
+          format: uuid
+          nullable: true
+        walletUnitPartyId:
+          type: string
+          format: uuid
+          nullable: true
+        ownerPartyId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Party that owns the wallet unit. Ownership and operation bindings require walletUnitPartyId.
+        operatorPartyIds:
+          type: array
+          uniqueItems: true
+          description: Parties currently authorized to operate the wallet unit.
+          items: { type: string, format: uuid }
+        partyBindingEvidence:
+          $ref: '#/components/schemas/StringMap'
+
+    WalletUnitTransitionHttpRequest:
+      type: object
+      description: Optional reason and evidence used when moving a Wallet Unit to OPERATIONAL, VALID, REVOKED, or UNINSTALLED.
+      example:
+        reason: production evidence complete
+        evidence:
+          validationEvidenceSummaryId: valid-summary-wu-7f9d
+          activationProofSessionId: aps-20260702-1
+      properties:
+        reason:
+          type: string
+          nullable: true
+        evidence:
+          $ref: '#/components/schemas/StringMap'
+
+    WalletUnitPartyBindingHttpRequest:
+      type: object
+      description: Updates the party identifiers linked to a Wallet Unit. `holderPartyId` is accepted as an alias for wallet account party input on this endpoint.
+      example:
+        walletAccountId: wa-42
+        walletAccountPartyId: 9ad1a503-b3cb-4c72-86a7-2f226e146f04
+        walletUnitPartyId: 88f2f6e5-9fd0-4124-9c8f-305a381ceec3
+        ownerPartyId: f2e85bc5-5f76-4c12-bfb1-8ec5cc37fc39
+        operatorPartyIds: [6a9c80c7-738f-46cc-9145-098a57f05638]
+        evidence:
+          source: party-registry
+      properties:
+        walletAccountId:
+          type: string
+          nullable: true
+        walletAccountPartyId:
+          type: string
+          format: uuid
+          nullable: true
+        holderPartyId:
+          type: string
+          format: uuid
+          nullable: true
+        walletUnitPartyId:
+          type: string
+          format: uuid
+          nullable: true
+        ownerPartyId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Party that owns the wallet unit. Ownership and operation bindings require walletUnitPartyId.
+        operatorPartyIds:
+          type: array
+          uniqueItems: true
+          description: Parties currently authorized to operate the wallet unit.
+          items: { type: string, format: uuid }
+        evidence:
+          $ref: '#/components/schemas/StringMap'
+
+    WalletUnitPartyRelationshipHint:
+      type: object
+      description: Optional relationship hint emitted with a party binding so callers can link wallet-account and wallet-unit parties in their party graph.
+      required: [leftPartyId, rightPartyId, relationshipType]
+      example:
+        leftPartyId: 9ad1a503-b3cb-4c72-86a7-2f226e146f04
+        rightPartyId: 88f2f6e5-9fd0-4124-9c8f-305a381ceec3
+        relationshipType: WALLET_ACCOUNT_OWNS_WALLET_UNIT
+      properties:
+        leftPartyId:
+          type: string
+          format: uuid
+        rightPartyId:
+          type: string
+          format: uuid
+        relationshipType:
+          type: string
+
+    WalletUnitPartyBindingRecord:
+      type: object
+      description: Persisted association between Wallet Unit/account identifiers and VDX party identifiers, including relationship hints and provenance.
+      required: [walletUnitId, walletAccountId, operatorPartyIds, relationshipHints, evidence, createdAt, updatedAt]
+      example:
+        walletUnitId: wu-7f9d
+        walletAccountId: wa-42
+        walletAccountPartyId: 9ad1a503-b3cb-4c72-86a7-2f226e146f04
+        walletUnitPartyId: 88f2f6e5-9fd0-4124-9c8f-305a381ceec3
+        ownerPartyId: f2e85bc5-5f76-4c12-bfb1-8ec5cc37fc39
+        operatorPartyIds: [6a9c80c7-738f-46cc-9145-098a57f05638]
+        relationshipHints:
+          - leftPartyId: 88f2f6e5-9fd0-4124-9c8f-305a381ceec3
+            rightPartyId: f2e85bc5-5f76-4c12-bfb1-8ec5cc37fc39
+            relationshipType: OWNED_BY
+          - leftPartyId: 88f2f6e5-9fd0-4124-9c8f-305a381ceec3
+            rightPartyId: 6a9c80c7-738f-46cc-9145-098a57f05638
+            relationshipType: OPERATED_BY
+        evidence:
+          source: party-registry
+        createdAt: '2026-07-02T08:00:00Z'
+        updatedAt: '2026-07-02T08:00:00Z'
+      properties:
+        walletUnitId:
+          type: string
+        walletAccountId:
+          type: string
+        walletAccountPartyId:
+          type: string
+          format: uuid
+          nullable: true
+        walletUnitPartyId:
+          type: string
+          format: uuid
+          nullable: true
+        ownerPartyId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Party that owns the wallet unit.
+        operatorPartyIds:
+          type: array
+          uniqueItems: true
+          description: Parties authorized to operate the wallet unit.
+          items: { type: string, format: uuid }
+        relationshipHints:
+          type: array
+          items:
+            $ref: '#/components/schemas/WalletUnitPartyRelationshipHint'
+        evidence:
+          $ref: '#/components/schemas/StringMap'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    ListWalletUnitPartyBindingsResult:
+      type: object
+      description: Result for party-binding lookup commands.
+      required: [bindings]
+      example:
+        bindings:
+          - walletUnitId: wu-7f9d
+            walletAccountId: wa-42
+            walletAccountPartyId: 9ad1a503-b3cb-4c72-86a7-2f226e146f04
+            walletUnitPartyId: 88f2f6e5-9fd0-4124-9c8f-305a381ceec3
+            operatorPartyIds: []
+            relationshipHints: []
+            evidence:
+              source: party-registry
+            createdAt: '2026-07-02T08:00:00Z'
+            updatedAt: '2026-07-02T08:00:00Z'
+      properties:
+        bindings:
+          type: array
+          items:
+            $ref: '#/components/schemas/WalletUnitPartyBindingRecord'
+
+    PasskeyOwnerScopeType:
+      type: string
+      description: Owner scope for a passkey credential or challenge. Passkey credentials are attached to an Identity.
+      enum: [IDENTITY]
+
+    PasskeyOwnerScope:
+      type: object
+      description: Tenant-scoped owner of a passkey ceremony or credential.
+      required: [type, ownerId]
+      properties:
+        type:
+          $ref: '#/components/schemas/PasskeyOwnerScopeType'
+        ownerId:
+          type: string
+        tenantId:
+          type: string
+          nullable: true
+
+    PasskeyCeremonyPurpose:
+      type: string
+      description: Purpose bound into a passkey challenge.
+      enum: [IDENTITY_LOGIN, OIDC_STEP_UP, WALLET_ACTIVATION]
+
+    PasskeyBackupStatePolicy:
+      type: string
+      description: Policy for WebAuthn backup eligibility and backup state metadata.
+      enum: [ALLOW_ANY, REQUIRE_BACKUP_ELIGIBLE, REQUIRE_BACKED_UP, FORBID_BACKED_UP]
+
+    PasskeyCredentialStatus:
+      type: string
+      description: Lifecycle status for a stored public passkey credential.
+      enum: [ACTIVE, SUSPENDED, REVOKED]
+
+    WebAuthnRpPolicy:
+      type: object
+      description: Typed relying-party policy enforced by WebAuthn registration and assertion verification.
+      required: [rpId, allowedOrigins]
+      properties:
+        rpId:
+          type: string
+        allowedOrigins:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+            format: uri
+        attestationPolicy:
+          type: string
+          enum: [none, indirect, direct, enterprise]
+          default: none
+        userVerification:
+          type: string
+          enum: [required, preferred, discouraged]
+          default: required
+        allowedTransports:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+        backupStatePolicy:
+          $ref: '#/components/schemas/PasskeyBackupStatePolicy'
+        challengeTtlSeconds:
+          type: integer
+          format: int64
+          default: 300
+        level3PrfEnabled:
+          type: boolean
+          default: false
+
+    BeginPasskeyRegistrationRequest:
+      type: object
+      description: Starts registration of one WebAuthn passkey as an authentication method attached to an Identity and Identifier.
+      required: [ownerScope, rpPolicy, purpose, expectedOrigin, identityId, identityIdentifierId, credentialIdentifierLookup]
+      properties:
+        ownerScope:
+          $ref: '#/components/schemas/PasskeyOwnerScope'
+        rpPolicy:
+          $ref: '#/components/schemas/WebAuthnRpPolicy'
+        purpose:
+          $ref: '#/components/schemas/PasskeyCeremonyPurpose'
+        expectedOrigin:
+          type: string
+          format: uri
+        identityId:
+          type: string
+        identityIdentifierId:
+          type: string
+        credentialIdentifierLookup:
+          type: string
+          description: Protected lookup value for the passkey credential Identifier; raw credential secrets are not stored here.
+        userHandle:
+          type: string
+          nullable: true
+        displayName:
+          type: string
+          nullable: true
+
+    BeginPasskeyAssertionRequest:
+      type: object
+      description: Starts a WebAuthn assertion challenge for login, step-up, or wallet activation.
+      required: [rpPolicy, purpose, expectedOrigin]
+      properties:
+        ownerScope:
+          $ref: '#/components/schemas/PasskeyOwnerScope'
+          nullable: true
+        rpPolicy:
+          $ref: '#/components/schemas/WebAuthnRpPolicy'
+        purpose:
+          $ref: '#/components/schemas/PasskeyCeremonyPurpose'
+        expectedOrigin:
+          type: string
+          format: uri
+        credentialId:
+          type: string
+          nullable: true
+        credentialIdentifierLookup:
+          type: string
+          nullable: true
+        walletUnitId:
+          type: string
+          nullable: true
+        walletAccountId:
+          type: string
+          nullable: true
+        methodId:
+          type: string
+          nullable: true
+        operationType:
+          type: string
+          nullable: true
+        operationHash:
+          type: string
+          nullable: true
+        nonce:
+          type: string
+          nullable: true
+        audience:
+          type: string
+          nullable: true
+
+    PasskeyCeremonyOptions:
+      type: object
+      description: WebAuthn options for browser or wallet edge credential APIs.
+      required: [challengeId, challenge, rpId, rpName, allowedOrigins, userVerification, attestationPolicy, allowedTransports, level3PrfEnabled, expiresAt, credentialIds]
+      properties:
+        challengeId:
+          type: string
+        challenge:
+          type: string
+        rpId:
+          type: string
+        rpName:
+          type: string
+        allowedOrigins:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+            format: uri
+        userVerification:
+          type: string
+        attestationPolicy:
+          type: string
+        allowedTransports:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+        level3PrfEnabled:
+          type: boolean
+        expiresAt:
+          type: string
+          format: date-time
+        credentialIds:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+
+    FinishPasskeyRegistrationRequest:
+      type: object
+      description: Finishes WebAuthn registration with public credential material from the browser or wallet edge.
+      required: [challengeId, ownerScope, rpPolicy, credentialId, identityId, identityIdentifierId, credentialIdentifierLookup, attestationObject, clientDataJson, origin, rpId]
+      properties:
+        challengeId:
+          type: string
+        ownerScope:
+          $ref: '#/components/schemas/PasskeyOwnerScope'
+        rpPolicy:
+          $ref: '#/components/schemas/WebAuthnRpPolicy'
+        credentialId:
+          type: string
+        identityId:
+          type: string
+        identityIdentifierId:
+          type: string
+        credentialIdentifierLookup:
+          type: string
+        attestationObject:
+          type: string
+        clientDataJson:
+          type: string
+        origin:
+          type: string
+          format: uri
+        rpId:
+          type: string
+        transports:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+
+    FinishPasskeyAssertionRequest:
+      type: object
+      description: Finishes WebAuthn assertion with browser or wallet edge authenticator output. ownerScope may be omitted for a discoverable assertion; the server resolves and verifies the credential owner.
+      required: [challengeId, rpPolicy, credentialId, authenticatorData, clientDataJson, signature, origin, rpId]
+      properties:
+        challengeId:
+          type: string
+        ownerScope:
+          $ref: '#/components/schemas/PasskeyOwnerScope'
+          nullable: true
+        rpPolicy:
+          $ref: '#/components/schemas/WebAuthnRpPolicy'
+        credentialId:
+          type: string
+        authenticatorData:
+          type: string
+        clientDataJson:
+          type: string
+        signature:
+          type: string
+        origin:
+          type: string
+          format: uri
+        rpId:
+          type: string
+        transport:
+          type: string
+          nullable: true
+        expectedPurpose:
+          $ref: '#/components/schemas/PasskeyCeremonyPurpose'
+          nullable: true
+
+    PasskeyCredentialRecord:
+      type: object
+      description: Stored public passkey credential and Identity/Identifier binding metadata. Private keys, PINs, raw PRF output, and assertion secrets are not stored.
+      required: [credentialId, identityId, identityIdentifierId, credentialIdentifierLookup, cosePublicKey, registrationClientDataJson, attestationObject, rpId, allowedOrigins, ownerScope, transports, prfCapable, status, enrolledAt]
+      properties:
+        credentialId:
+          type: string
+        identityId:
+          type: string
+        identityIdentifierId:
+          type: string
+        credentialIdentifierLookup:
+          type: string
+        cosePublicKey:
+          type: string
+        registrationClientDataJson:
+          type: string
+        attestationObject:
+          type: string
+        rpId:
+          type: string
+        allowedOrigins:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+            format: uri
+        ownerScope:
+          $ref: '#/components/schemas/PasskeyOwnerScope'
+        userHandle:
+          type: string
+          nullable: true
+        transports:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+        signCount:
+          type: integer
+          format: int64
+          nullable: true
+        attestationFormat:
+          type: string
+          nullable: true
+        attestationTrustPathRef:
+          type: string
+          nullable: true
+        backupEligible:
+          type: boolean
+          nullable: true
+        backupState:
+          type: boolean
+          nullable: true
+        prfCapable:
+          type: boolean
+        status:
+          $ref: '#/components/schemas/PasskeyCredentialStatus'
+        enrolledAt:
+          type: string
+          format: date-time
+        lastUsedAt:
+          type: string
+          format: date-time
+          nullable: true
+        revokedAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    PasskeyAssertionEvidence:
+      type: object
+      description: Verified assertion metadata bound to the passkey challenge and optional wallet operation.
+      required: [credentialId, challengeId, rpId, origin, userVerified, prfCapable, evidence]
+      properties:
+        credentialId:
+          type: string
+        challengeId:
+          type: string
+        rpId:
+          type: string
+        origin:
+          type: string
+          format: uri
+        userVerified:
+          type: boolean
+        walletUnitId:
+          type: string
+          nullable: true
+        walletAccountId:
+          type: string
+          nullable: true
+        methodId:
+          type: string
+          nullable: true
+        operationType:
+          type: string
+          nullable: true
+        operationHash:
+          type: string
+          nullable: true
+        nonce:
+          type: string
+          nullable: true
+        audience:
+          type: string
+          nullable: true
+        signCount:
+          type: integer
+          format: int64
+          nullable: true
+        backupEligible:
+          type: boolean
+          nullable: true
+        backupState:
+          type: boolean
+          nullable: true
+        prfCapable:
+          type: boolean
+        attestationFormat:
+          type: string
+          nullable: true
+        evidence:
+          $ref: '#/components/schemas/StringMap'
+
+    BeginPasskeyActivationRequest:
+      type: object
+      description: Starts an operation-bound passkey assertion for Wallet Unit activation with remote WSCD signing remaining behind the signing endpoints.
+      required: [walletUnitId, walletAccountId, activationKeyRef, operationKeyRef, operationType, operationBinding, operationHash, nonce, audience, ownerScope, rpPolicy, expectedOrigin]
+      properties:
+        walletUnitId:
+          type: string
+        walletAccountId:
+          type: string
+        activationKeyRef:
+          type: string
+        operationKeyRef:
+          type: string
+          minLength: 1
+        operationType:
+          type: string
+        operationBinding:
+          type: string
+          minLength: 1
+        operationHash:
+          type: string
+        nonce:
+          type: string
+        audience:
+          type: string
+        ownerScope:
+          $ref: '#/components/schemas/PasskeyOwnerScope'
+        rpPolicy:
+          $ref: '#/components/schemas/WebAuthnRpPolicy'
+        expectedOrigin:
+          type: string
+          format: uri
+        credentialId:
+          type: string
+          nullable: true
+
+    FinishPasskeyActivationDecisionRequest:
+      type: object
+      description: Finishes a passkey wallet activation assertion and issues an operation-bound activation decision.
+      required: [walletUnitId, walletAccountId, activationKeyRef, operationKeyRef, operationType, operationBinding, operationHash, nonce, audience, assertion]
+      properties:
+        walletUnitId:
+          type: string
+        walletAccountId:
+          type: string
+        activationKeyRef:
+          type: string
+        operationKeyRef:
+          type: string
+          minLength: 1
+        operationType:
+          type: string
+          minLength: 1
+        operationBinding:
+          type: string
+          minLength: 1
+        operationHash:
+          type: string
+          minLength: 1
+        nonce:
+          type: string
+          minLength: 1
+        audience:
+          type: string
+          minLength: 1
+        assertion:
+          $ref: '#/components/schemas/FinishPasskeyAssertionRequest'
+
+    BlindPinActivationProfile:
+      type: string
+      description: Activation proof profile. Test profiles remain explicit and are not sufficient for production Wallet Unit VALID evidence.
+      enum: [DETERMINISTIC_EVALUATION, PIN_DERIVED_SIGNATURE]
+
+    WalletActivationDecisionStatus:
+      type: string
+      description: Outcome of evaluating one activation proof against an operation-bound challenge.
+      enum: [ACCEPTED, DENIED]
+
+    WalletAssuranceLevel:
+      type: string
+      description: Assurance evidence assigned to an activation decision after proof verification. Key custody and WSCD/HSM backing are recorded separately on the secure-component profile.
+      enum: [EVALUATION_ONLY, PIN, PASSKEY, PROOF_TRANSCRIPT]
+
+    RetryCounterState:
+      type: object
+      description: Activation retry state returned with an activation decision.
+      required: [failedAttempts, remainingAttempts, maxAttempts, locked]
+      example:
+        failedAttempts: 0
+        remainingAttempts: 5
+        maxAttempts: 5
+        lockedUntil: null
+        locked: false
+      properties:
+        failedAttempts:
+          type: integer
+        remainingAttempts:
+          type: integer
+        maxAttempts:
+          type: integer
+        lockedUntil:
+          type: string
+          format: date-time
+          nullable: true
+        locked:
+          type: boolean
+
+    WalletActivationPolicyEvidence:
+      type: object
+      description: Evidence emitted by the configured activation proof provider and stored with an activation decision.
+      required: [profileId, providerId, entries]
+      example:
+        profileId: production-proof-transcript
+        providerId: production-activation-provider
+        policyRef: wallet-unit-production-valid
+        entries:
+          proofTranscriptDigest: sha256:2f20b6f6e7f1d36f8f6d35d27a5f093b6f2e4b2e
+          productionCapable: 'true'
+      properties:
+        profileId:
+          type: string
+        providerId:
+          type: string
+        policyRef:
+          type: string
+          nullable: true
+        entries:
+          $ref: '#/components/schemas/StringMap'
+
+    ActivationDecisionRecord:
+      type: object
+      description: Persisted authorization decision for one activation operation. Accepted decisions are single-use inputs to gated wallet-key signing.
+      required: [decisionId, status, walletUnitId, walletAccountId, profileId, activationKeyRef, operationKeyRef, operationType, operationBinding, operationHash, nonce, sequence, audience, expiresAt, assuranceLevel, retryState, policyEvidence, issuedAt]
+      example:
+        decisionId: act-20260702-0001
+        status: ACCEPTED
+        walletUnitId: wu-7f9d
+        walletAccountId: wa-42
+        profileId: production-proof-transcript
+        activationKeyRef: wallet-unit-activation-key
+        operationKeyRef: wallet-signing-key-1
+        operationType: wallet.wscd.sign-digest
+        operationBinding: wallet-operation-binding-1
+        operationHash: sha256:7f1a6aa671f1a2d1c3c2e994c09e3f87c4ac44d6
+        nonce: '6fc33771f7e14d63'
+        sequence: 12
+        audience: https://issuer.acme.example
+        expiresAt: '2026-07-02T08:20:00Z'
+        assuranceLevel: PROOF_TRANSCRIPT
+        retryState:
+          failedAttempts: 0
+          remainingAttempts: 5
+          maxAttempts: 5
+          lockedUntil: null
+          locked: false
+        policyEvidence:
+          profileId: production-proof-transcript
+          providerId: production-activation-provider
+          policyRef: wallet-unit-production-valid
+          entries:
+            proofTranscriptDigest: sha256:2f20b6f6e7f1d36f8f6d35d27a5f093b6f2e4b2e
+            productionCapable: 'true'
+        issuedAt: '2026-07-02T08:15:00Z'
+        denialReason: null
+        consumedAt: null
+      properties:
+        decisionId:
+          type: string
+        status:
+          $ref: '#/components/schemas/WalletActivationDecisionStatus'
+        walletUnitId:
+          type: string
+        walletAccountId:
+          type: string
+        profileId:
+          type: string
+        activationKeyRef:
+          type: string
+        operationKeyRef:
+          type: string
+          minLength: 1
+        operationType:
+          type: string
+        operationBinding:
+          type: string
+          minLength: 1
+        operationHash:
+          type: string
+        nonce:
+          type: string
+        sequence:
+          type: integer
+          format: int64
+        audience:
+          type: string
+        expiresAt:
+          type: string
+          format: date-time
+        assuranceLevel:
+          $ref: '#/components/schemas/WalletAssuranceLevel'
+        retryState:
+          $ref: '#/components/schemas/RetryCounterState'
+        policyEvidence:
+          $ref: '#/components/schemas/WalletActivationPolicyEvidence'
+        issuedAt:
+          type: string
+          format: date-time
+        denialReason:
+          type: string
+          nullable: true
+        consumedAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    BlindPinEnrollmentRequest:
+      type: object
+      description: Enrolls an activation verifier for a Wallet Unit. `activationSecretVerifier` is a blinded or derived verifier, not a raw PIN.
+      required: [walletUnitId, walletAccountId, profile, activationKeyRef, activationSecretVerifier]
+      example:
+        walletUnitId: wu-7f9d
+        walletAccountId: wa-42
+        profile: PIN_DERIVED_SIGNATURE
+        activationKeyRef: wallet-unit-activation-key
+        activationSecretVerifier: bpv1:argon2id:mem=65536,t=3:salt:verifier
+        policyRef: wallet-unit-production-valid
+      properties:
+        walletUnitId:
+          type: string
+        walletAccountId:
+          type: string
+        profile:
+          $ref: '#/components/schemas/BlindPinActivationProfile'
+        activationKeyRef:
+          type: string
+        activationSecretVerifier:
+          type: string
+          description: Blinded or derived activation secret verifier. Production clients must not send raw PIN material.
+        policyRef:
+          type: string
+          nullable: true
+
+    BlindPinUnlockRequest:
+      type: object
+      description: Requests an activation decision for one wallet operation. `activationSecretProof` is a blinded or derived proof bound to the operation details.
+      required: [walletUnitId, walletAccountId, profile, activationKeyRef, operationKeyRef, activationSecretProof, operationType, operationBinding, operationHash, nonce, audience, expiresAt]
+      example:
+        walletUnitId: wu-7f9d
+        walletAccountId: wa-42
+        profile: PIN_DERIVED_SIGNATURE
+        activationKeyRef: wallet-unit-activation-key
+        operationKeyRef: wallet-signing-key-1
+        activationSecretProof: bpp1:schnorr:challenge-response-proof
+        operationType: wallet.wscd.sign-digest
+        operationBinding: wallet-operation-binding-1
+        operationHash: sha256:7f1a6aa671f1a2d1c3c2e994c09e3f87c4ac44d6
+        nonce: '6fc33771f7e14d63'
+        audience: https://issuer.acme.example
+        expiresAt: '2026-07-02T08:20:00Z'
+        policyEvidence:
+          proofTranscriptDigest: sha256:2f20b6f6e7f1d36f8f6d35d27a5f093b6f2e4b2e
+      properties:
+        walletUnitId:
+          type: string
+        walletAccountId:
+          type: string
+        profile:
+          $ref: '#/components/schemas/BlindPinActivationProfile'
+        activationKeyRef:
+          type: string
+        operationKeyRef:
+          type: string
+          minLength: 1
+        activationSecretProof:
+          type: string
+          description: Blinded or derived activation proof. Production clients must not send raw PIN material.
+        operationType:
+          type: string
+        operationBinding:
+          type: string
+          minLength: 1
+        operationHash:
+          type: string
+        nonce:
+          type: string
+        audience:
+          type: string
+        expiresAt:
+          type: string
+          format: date-time
+        policyEvidence:
+          $ref: '#/components/schemas/StringMap'
+
+    BlindPinReEnrollmentRequest:
+      type: object
+      description: Rotates the activation verifier after proving control of the current verifier. Both proof values are blinded or derived values.
+      required: [walletUnitId, walletAccountId, profile, activationKeyRef, currentActivationSecretProof, replacementActivationSecretVerifier]
+      example:
+        walletUnitId: wu-7f9d
+        walletAccountId: wa-42
+        profile: PIN_DERIVED_SIGNATURE
+        activationKeyRef: wallet-unit-activation-key
+        currentActivationSecretProof: bpp1:schnorr:current-proof
+        replacementActivationSecretVerifier: bpv1:argon2id:mem=65536,t=3:new-salt:new-verifier
+        policyRef: wallet-unit-production-valid
+      properties:
+        walletUnitId:
+          type: string
+        walletAccountId:
+          type: string
+        profile:
+          $ref: '#/components/schemas/BlindPinActivationProfile'
+        activationKeyRef:
+          type: string
+        currentActivationSecretProof:
+          type: string
+          description: Blinded or derived activation proof. Production clients must not send raw PIN material.
+        replacementActivationSecretVerifier:
+          type: string
+          description: Blinded or derived replacement verifier. Production clients must not send raw PIN material.
+        policyRef:
+          type: string
+          nullable: true
+
+    BlindPinRevocationRequest:
+      type: object
+      description: Revokes an activation profile/key binding for a Wallet Unit. This is activation revocation, not a phase-7 factory reset workflow.
+      required: [walletUnitId, walletAccountId, profile, activationKeyRef]
+      example:
+        walletUnitId: wu-7f9d
+        walletAccountId: wa-42
+        profile: PIN_DERIVED_SIGNATURE
+        activationKeyRef: wallet-unit-activation-key
+        reason: operator requested activation credential revocation
+      properties:
+        walletUnitId:
+          type: string
+        walletAccountId:
+          type: string
+        profile:
+          $ref: '#/components/schemas/BlindPinActivationProfile'
+        activationKeyRef:
+          type: string
+        reason:
+          type: string
+          nullable: true
+
+    WalletUnitAttestationKind:
+      type: string
+      description: Wallet attestation family. WUA is modeled as the umbrella concept; WIA and KA are the concrete TS03 artifacts.
+      enum: [WUA, WIA, KA]
+
+    WalletUnitAttestationProfile:
+      type: string
+      description: Attestation profile used for issuance or validation. LOCAL_EVALUATION_REFERENCE is explicit evaluation-only material; TS03_JWT is production-capable when backed by trusted signer evidence.
+      enum: [LOCAL_EVALUATION_REFERENCE, TS03_JWT]
+
+    WalletUnitAttestationStatus:
+      type: string
+      description: Stored attestation lifecycle status.
+      enum: [ACTIVE, REVOKED, CONSUMED]
+
+    WalletUnitAttestationFormat:
+      type: string
+      description: Wire or stored-reference format for WIA, KA, and supported wallet credential proof material.
+      enum: [STORED_REF, JWT, SD_JWT_VC, SD_JWT_VC_PRESENTATION, KEY_ATTESTATION_JWT, MDOC_DEVICE_RESPONSE, MDOC_DOCUMENT, MDOC_ISSUER_SIGNED]
+
+    WalletUnitAttestationEncoding:
+      type: string
+      description: Encoding used for the attestation material value.
+      enum: [COMPACT, BASE64URL]
+
+    WalletUnitAttestationMaterial:
+      type: object
+      description: Attestation material supplied inline. Stored references should use the dedicated `attestationRef` fields on validation requests.
+      required: [format, value]
+      example:
+        format: JWT
+        value: eyJhbGciOiJFUzI1NiIsImtpZCI6IndwLXNpZ25lci1rZXktMSJ9...
+        encoding: COMPACT
+      properties:
+        format:
+          $ref: '#/components/schemas/WalletUnitAttestationFormat'
+        value:
+          type: string
+        encoding:
+          $ref: '#/components/schemas/WalletUnitAttestationEncoding'
+
+    WalletProviderAttestationSignerRef:
+      type: object
+      description: Configured Wallet Provider signing identity used for TS03 WIA/KA issuance. Production profiles resolve to remote WSCD or external provider signing; LOCAL_EVALUATION evidence is local/evaluation only.
+      required: [signerId, issuer]
+      example:
+        signerId: wp-signer-prod-1
+        issuer: https://wallet-provider.acme.example
+        keyId: wp-signer-key-1
+        signingAlgorithm: ES256
+        signerProfile: REMOTE_WSCD
+        certificateChain:
+          - MIIC...wallet-provider-cert...
+        trustEvidenceRef: lote:wallet-provider:acme-prod
+      properties:
+        signerId:
+          type: string
+        issuer:
+          type: string
+        keyId:
+          type: string
+          nullable: true
+        signingAlgorithm:
+          type: string
+          default: ES256
+        signerProfile:
+          type: string
+          enum: [LOCAL_EVALUATION, LOCAL_WSCD, REMOTE_WSCD, EXTERNAL_PROVIDER]
+          default: REMOTE_WSCD
+        certificateChain:
+          type: array
+          items:
+            type: string
+        trustEvidenceRef:
+          type: string
+          nullable: true
+
+    WalletSolutionCertificationEvidence:
+      type: object
+      description: Certification evidence for a Wallet Solution or secure component.
+      required: [certificationId, scheme, assuranceLevel, issuer]
+      example:
+        certificationId: eudi-ws-2026-00042
+        scheme: EUDI_WALLET_SOLUTION_CERTIFICATION
+        assuranceLevel: high
+        issuer: EU Wallet Certification Body
+        evidenceRef: https://cert.example.eu/eudi-ws-2026-00042
+        validFrom: '2026-01-01'
+        validUntil: '2027-01-01'
+      properties:
+        certificationId:
+          type: string
+        scheme:
+          type: string
+        assuranceLevel:
+          type: string
+        issuer:
+          type: string
+        evidenceRef:
+          type: string
+          nullable: true
+        validFrom:
+          type: string
+          nullable: true
+        validUntil:
+          type: string
+          nullable: true
+
+    WalletSolutionRef:
+      type: object
+      description: Wallet Solution identity and optional certification evidence used in WIA claims and trust resolution.
+      required: [name, version]
+      example:
+        name: Acme EUDI Wallet
+        version: 4.2.1
+        informationLink: https://wallet.acme.example/info
+        vendor: Acme Wallets BV
+        certification:
+          certificationId: eudi-ws-2026-00042
+          scheme: EUDI_WALLET_SOLUTION_CERTIFICATION
+          assuranceLevel: high
+          issuer: EU Wallet Certification Body
+      properties:
+        name:
+          type: string
+        version:
+          type: string
+        informationLink:
+          type: string
+          nullable: true
+        vendor:
+          type: string
+          nullable: true
+        certification:
+          $ref: '#/components/schemas/WalletSolutionCertificationEvidence'
+
+    WalletInstanceRef:
+      type: object
+      description: Wallet instance identity and integrity evidence included in WIA issuance.
+      required: [id, evidence]
+      example:
+        id: wi-android-7f9d
+        holderBindingRef: holder-binding-20260702
+        integrityEvidenceRef: device-integrity-20260702
+        evidence:
+          appIntegrity: hardware-backed
+          deviceBinding: mTLS-device-binding
+      properties:
+        id:
+          type: string
+        holderBindingRef:
+          type: string
+          nullable: true
+        integrityEvidenceRef:
+          type: string
+          nullable: true
+        evidence:
+          $ref: '#/components/schemas/StringMap'
+
+    WalletKeystoreSecurityLevel:
+      type: string
+      description: Security level asserted for the keystore, WSCD, QSCD, remote HSM, or local evaluation provider.
+      enum: [ISO_18045_HIGH, ISO_18045_MODERATE, ISO_18045_ENHANCED_BASIC, ISO_18045_BASIC, NONE]
+
+    WalletSecureComponentType:
+      type: string
+      description: Type of secure application, secure device, keystore, or provider used for wallet and eIDAS operations.
+      enum: [LOCAL_SECURE_AREA, REMOTE_WSCA, REMOTE_WSCD, REMOTE_HSM, REMOTE_QSCD, LOCAL_EVALUATION_PROVIDER, EXTERNAL_CERTIFIED_PROVIDER]
+
+    SecureComponentUsage:
+      type: string
+      description: Allowed use for a secure component. Generic eIDAS signature/seal usage is intentionally separate from Wallet Unit attestation usage.
+      enum: [WALLET_ATTESTATION, WALLET_CREDENTIAL_PROOF, EIDAS_SIGNATURE, EIDAS_SEAL]
+
+    WalletSecureComponentWalletBinding:
+      type: object
+      description: Optional binding between a secure component and a Wallet Unit/account/instance. Generic WSCA/WSCD use can omit these Wallet Unit fields.
+      example:
+        walletUnitId: wu-7f9d
+        walletAccountId: wa-42
+        walletInstanceId: wi-android-7f9d
+        evidence:
+          bindingMethod: mTLS-device-binding
+      properties:
+        walletUnitId:
+          type: string
+          nullable: true
+        walletAccountId:
+          type: string
+          nullable: true
+        walletInstanceId:
+          type: string
+          nullable: true
+        evidence:
+          $ref: '#/components/schemas/StringMap'
+
+    WalletPrivateKeyProtectionEvidence:
+      type: object
+      description: Evidence that the private key is non-exportable and protected by user authentication or an equivalent secure control.
+      required: [nonExportable, protectedByUserAuthentication]
+      example:
+        nonExportable: true
+        protectedByUserAuthentication: true
+        isolationBoundary: remote-hsm-tenant-partition
+        evidence:
+          keyPolicy: non-exportable-user-present
+      properties:
+        nonExportable:
+          type: boolean
+        protectedByUserAuthentication:
+          type: boolean
+        isolationBoundary:
+          type: string
+          nullable: true
+        evidence:
+          $ref: '#/components/schemas/StringMap'
+
+    WalletUserAuthenticationEvidence:
+      type: object
+      description: Evidence describing the user-authentication policy protecting wallet key use.
+      required: [assuranceLevel, methods, evidence]
+      example:
+        assuranceLevel: high
+        methods: [PIN, DEVICE_BIOMETRIC]
+        policyRef: wallet-user-auth-high
+        evidence:
+          activationDecisionId: act-20260702-0001
+      properties:
+        assuranceLevel:
+          type: string
+        methods:
+          type: array
+          items:
+            type: string
+        policyRef:
+          type: string
+          nullable: true
+        evidence:
+          $ref: '#/components/schemas/StringMap'
+
+    WalletSecureComponentEvidence:
+      type: object
+      description: Certification, key-protection, user-authentication, and provenance evidence for a WSCA, WSCD, QSCD, HSM, or keystore.
+      required: [certificationEvidence, provenance]
+      example:
+        certificationEvidence:
+          - certificationId: qscd-2026-991
+            scheme: eIDAS-QSCD
+            assuranceLevel: high
+            issuer: National Supervisory Body
+        privateKeyProtection:
+          nonExportable: true
+          protectedByUserAuthentication: true
+          isolationBoundary: remote-hsm-tenant-partition
+          evidence:
+            keyPolicy: non-exportable-user-present
+        userAuthentication:
+          assuranceLevel: high
+          methods: [PIN]
+          evidence:
+            activationDecisionId: act-20260702-0001
+        provenance:
+          adapter: etsi-lote
+      properties:
+        certificationEvidence:
+          type: array
+          items:
+            $ref: '#/components/schemas/WalletSolutionCertificationEvidence'
+        privateKeyProtection:
+          $ref: '#/components/schemas/WalletPrivateKeyProtectionEvidence'
+        userAuthentication:
+          $ref: '#/components/schemas/WalletUserAuthenticationEvidence'
+        provenance:
+          $ref: '#/components/schemas/StringMap'
+
+    WalletSecureCryptographicApplicationRef:
+      type: object
+      description: WSCA or equivalent secure application evidence. The same model can describe Wallet Unit and non-Wallet Unit eIDAS signature/seal usage.
+      required: [id, componentType]
+      example:
+        id: wsca-prod-app-1
+        version: 2.0.0
+        componentType: REMOTE_WSCA
+        usages: [WALLET_ATTESTATION, EIDAS_SIGNATURE, EIDAS_SEAL]
+        walletBinding:
+          walletUnitId: wu-7f9d
+          walletAccountId: wa-42
+          evidence:
+            bindingMethod: mTLS-device-binding
+        evidence:
+          certificationEvidence: []
+          provenance:
+            source: certified-provider-registry
+      properties:
+        id:
+          type: string
+        version:
+          type: string
+          nullable: true
+        componentType:
+          $ref: '#/components/schemas/WalletSecureComponentType'
+        usages:
+          type: array
+          uniqueItems: true
+          items:
+            $ref: '#/components/schemas/SecureComponentUsage'
+        walletBinding:
+          $ref: '#/components/schemas/WalletSecureComponentWalletBinding'
+        evidence:
+          $ref: '#/components/schemas/WalletSecureComponentEvidence'
+
+    WalletSecureCryptographicDeviceRef:
+      type: object
+      description: WSCD, QSCD, remote HSM, or other secure device evidence used for KA and for generic eIDAS signatures/seals.
+      required: [id, componentType, securityLevel]
+      example:
+        id: wscd-prod-device-1
+        providerId: external-certified-wscd
+        componentType: REMOTE_WSCD
+        securityLevel: ISO_18045_HIGH
+        usages: [WALLET_CREDENTIAL_PROOF, EIDAS_SIGNATURE]
+        certification:
+          certificationId: qscd-2026-991
+          scheme: eIDAS-QSCD
+          assuranceLevel: high
+          issuer: National Supervisory Body
+        evidence:
+          certificationEvidence:
+            - certificationId: qscd-2026-991
+              scheme: eIDAS-QSCD
+              assuranceLevel: high
+              issuer: National Supervisory Body
+          provenance:
+            source: etsi-lote
+      properties:
+        id:
+          type: string
+        providerId:
+          type: string
+          nullable: true
+        componentType:
+          $ref: '#/components/schemas/WalletSecureComponentType'
+        securityLevel:
+          $ref: '#/components/schemas/WalletKeystoreSecurityLevel'
+        usages:
+          type: array
+          uniqueItems: true
+          items:
+            $ref: '#/components/schemas/SecureComponentUsage'
+        walletBinding:
+          $ref: '#/components/schemas/WalletSecureComponentWalletBinding'
+        certification:
+          $ref: '#/components/schemas/WalletSolutionCertificationEvidence'
+        evidence:
+          $ref: '#/components/schemas/WalletSecureComponentEvidence'
+
+    WalletKeystoreRef:
+      type: object
+      description: Keystore or key container reference. It can be bound to a Wallet Unit or used independently by generic eIDAS signing/sealing flows.
+      required: [id, namespace, securityLevel, componentType]
+      example:
+        id: keystore-prod-1
+        namespace: tenant-root
+        securityLevel: ISO_18045_MODERATE
+        componentType: REMOTE_HSM
+        usages: [WALLET_CREDENTIAL_PROOF]
+        evidence:
+          kmsProvider: tenant-kms
+          nonExportable: 'true'
+      properties:
+        id:
+          type: string
+        namespace:
+          type: string
+        providerId:
+          type: string
+          nullable: true
+        securityLevel:
+          $ref: '#/components/schemas/WalletKeystoreSecurityLevel'
+        componentType:
+          $ref: '#/components/schemas/WalletSecureComponentType'
+        usages:
+          type: array
+          uniqueItems: true
+          items:
+            $ref: '#/components/schemas/SecureComponentUsage'
+        walletBinding:
+          $ref: '#/components/schemas/WalletSecureComponentWalletBinding'
+        evidence:
+          $ref: '#/components/schemas/StringMap'
+
+    WalletAttestedKeyRef:
+      type: object
+      description: Key reference included in a KA request. The key can point to a WSCD or external signer reference, public JWK, keystore evidence, and proof-of-possession.
+      required: [keyId, algorithm]
+      example:
+        keyId: wallet-signing-key-1
+        algorithm: ES256
+        keyRef: wscd://tenant/wallet-signing-key-1
+        walletUnitId: wu-7f9d
+        walletAccountId: wa-42
+        proofOfPossession: jws:eyJhbGciOiJFUzI1NiJ9...
+        evidence:
+          keyStorage: ISO_18045_HIGH
+      properties:
+        keyId:
+          type: string
+        algorithm:
+          type: string
+        publicKeyJwk:
+          type: string
+          nullable: true
+        keyRef:
+          type: string
+          nullable: true
+        walletUnitId:
+          type: string
+          nullable: true
+        walletAccountId:
+          type: string
+          nullable: true
+        keystore:
+          $ref: '#/components/schemas/WalletKeystoreRef'
+        proofOfPossession:
+          type: string
+          nullable: true
+        evidence:
+          $ref: '#/components/schemas/StringMap'
+
+    WalletStatusSubjectRef:
+      type: object
+      description: Compact status reference used in attestation claims and validation evidence.
+      required: [statusListUri, index, purpose]
+      example:
+        statusListUri: https://issuer.acme.example/status/wia
+        index: '127'
+        purpose: client_status
+        issuer: https://wallet-provider.acme.example
+      properties:
+        statusListUri:
+          type: string
+          format: uri
+        index:
+          type: string
+        purpose:
+          type: string
+        issuer:
+          type: string
+          nullable: true
+
+    WalletStatusMaintenancePeriod:
+      type: object
+      description: Status subject plus the maintenance timestamp that callers must preserve after WIA/KA expiry.
+      required: [statusSubject, maintenanceExpiresAtEpochSeconds]
+      example:
+        statusSubject:
+          statusListUri: https://issuer.acme.example/status/wia
+          index: '127'
+          purpose: client_status
+          issuer: https://wallet-provider.acme.example
+        maintenanceExpiresAtEpochSeconds: 1790812800
+      properties:
+        statusSubject:
+          $ref: '#/components/schemas/WalletStatusSubjectRef'
+        maintenanceExpiresAtEpochSeconds:
+          type: integer
+          format: int64
+
+    WalletAttestationStatusEvidence:
+      type: object
+      description: Resolved status-list evidence for a WIA, KA, Wallet Unit, WSCD, keystore, or related subject.
+      required: [statusListUri, index, revoked, provenance]
+      example:
+        statusListUri: https://issuer.acme.example/status/wia
+        index: '127'
+        revoked: false
+        resolvedAtEpochSeconds: 1782979200
+        maintenanceExpiresAtEpochSeconds: 1790812800
+        failureReason: null
+        provenance:
+          adapter: status-list-hosting
+      properties:
+        statusListUri:
+          type: string
+          format: uri
+        index:
+          type: string
+        revoked:
+          type: boolean
+        resolvedAtEpochSeconds:
+          type: integer
+          format: int64
+          nullable: true
+        maintenanceExpiresAtEpochSeconds:
+          type: integer
+          format: int64
+          nullable: true
+        failureReason:
+          type: string
+          nullable: true
+        provenance:
+          $ref: '#/components/schemas/StringMap'
+
+    EudiWalletTrustEvidenceKind:
+      type: string
+      description: Trust evidence category resolved by the Wallet Unit trust adapter.
+      enum: [WALLET_PROVIDER, WALLET_SOLUTION, ATTESTATION_SIGNER, STATUS_REFERENCE]
+
+    EudiWalletTrustDecision:
+      type: string
+      description: Trust decision. Rejection reasons are explicit so production evidence fails closed.
+      enum: [TRUSTED, UNTRUSTED, MISSING, EXPIRED, REVOKED, UNSUPPORTED_PROFILE]
+
+    EudiWalletTrustEvidence:
+      type: object
+      description: Result of resolving Wallet Provider, Wallet Solution, signer, or status-reference trust. Rejection cases are represented with `trusted=false`, a decision, and a failure reason.
+      required: [trusted, provenance]
+      example:
+        trusted: true
+        kind: WALLET_PROVIDER
+        decision: TRUSTED
+        trustListUri: https://lotl.example.eu/wallet-providers.xml
+        trustAnchor: EU-LOTL-root
+        loteRole: WalletProvider
+        serviceType: TS03-WIA-KA-SIGNING
+        serviceStatus: granted
+        matchedCertificateFingerprint: sha256:13b5a0e8a5d6c1b84701f9dd41f96045e2
+        signingCertificateProfile: ETSI_TS_119_412_6_WALLET_PROVIDER
+        validationTimeEpochSeconds: 1782979200
+        expiresAtEpochSeconds: 1814515200
+        provenance:
+          adapter: etsi-lote
+          trustListSequence: '2026-07'
+      properties:
+        trusted:
+          type: boolean
+        kind:
+          $ref: '#/components/schemas/EudiWalletTrustEvidenceKind'
+        decision:
+          $ref: '#/components/schemas/EudiWalletTrustDecision'
+        trustListUri:
+          type: string
+          nullable: true
+        trustAnchor:
+          type: string
+          nullable: true
+        loteRole:
+          type: string
+          nullable: true
+        serviceType:
+          type: string
+          nullable: true
+        serviceStatus:
+          type: string
+          nullable: true
+        serviceDigitalIdentity:
+          type: string
+          nullable: true
+        matchedCertificateFingerprint:
+          type: string
+          nullable: true
+        signingCertificateProfile:
+          type: string
+          nullable: true
+        validationTimeEpochSeconds:
+          type: integer
+          format: int64
+          nullable: true
+        expiresAtEpochSeconds:
+          type: integer
+          format: int64
+          nullable: true
+        revokedAtEpochSeconds:
+          type: integer
+          format: int64
+          nullable: true
+        walletSolutionName:
+          type: string
+          nullable: true
+        walletSolutionVersion:
+          type: string
+          nullable: true
+        certificationEvidenceRef:
+          type: string
+          nullable: true
+        failureReason:
+          type: string
+          nullable: true
+        provenance:
+          $ref: '#/components/schemas/StringMap'
+
+    WalletUnitAttestationTrustInput:
+      type: object
+      description: Trust evidence supplied for TS03 validation. Production validation can require JOSE verification, Wallet Provider trust, Wallet Solution trust, and matching status evidence.
+      example:
+        trustedIssuers: [https://wallet-provider.acme.example]
+        walletProviderTrustEvidence:
+          trusted: true
+          kind: WALLET_PROVIDER
+          decision: TRUSTED
+          trustListUri: https://lotl.example.eu/wallet-providers.xml
+          trustAnchor: EU-LOTL-root
+          signingCertificateProfile: ETSI_TS_119_412_6_WALLET_PROVIDER
+          provenance:
+            adapter: etsi-lote
+        walletSolutionTrustEvidence:
+          trusted: true
+          kind: WALLET_SOLUTION
+          decision: TRUSTED
+          walletSolutionName: Acme EUDI Wallet
+          walletSolutionVersion: 4.2.1
+          provenance:
+            adapter: wallet-solution-list
+        statusEvidence:
+          statusListUri: https://issuer.acme.example/status/wia
+          index: '127'
+          revoked: false
+          provenance:
+            adapter: status-list-hosting
+      properties:
+        trustedJwks:
+          $ref: '#/components/schemas/JsonObject'
+        trustedIssuers:
+          type: array
+          items:
+            type: string
+        x509TrustAnchorPaths:
+          type: array
+          items:
+            type: string
+        mdocTrustedCerts:
+          type: array
+          items:
+            type: string
+        walletProviderTrustEvidence:
+          $ref: '#/components/schemas/EudiWalletTrustEvidence'
+        walletSolutionTrustEvidence:
+          $ref: '#/components/schemas/EudiWalletTrustEvidence'
+        statusEvidence:
+          $ref: '#/components/schemas/WalletAttestationStatusEvidence'
+
+    WalletUnitAttestationEvidence:
+      type: object
+      description: Evidence stored with WIA/KA artifacts. Production artifacts carry signer, wallet solution, secure-component, trust, and status evidence; local/evaluation profiles are explicit.
+      required: [profile, ts03Conformant, custom]
+      example:
+        profile: TS03_JWT
+        ts03Conformant: true
+        signer:
+          signerId: wp-signer-prod-1
+          issuer: https://wallet-provider.acme.example
+          signerProfile: REMOTE_WSCD
+        walletSolution:
+          name: Acme EUDI Wallet
+          version: 4.2.1
+        secureDevice:
+          id: wscd-prod-device-1
+          componentType: REMOTE_WSCD
+          securityLevel: ISO_18045_HIGH
+        trustEvidence:
+          trusted: true
+          kind: WALLET_PROVIDER
+          decision: TRUSTED
+          provenance:
+            adapter: etsi-lote
+        custom:
+          statusSubjectRef: https://issuer.acme.example/status/wia#127
+      properties:
+        profile:
+          $ref: '#/components/schemas/WalletUnitAttestationProfile'
+        ts03Conformant:
+          type: boolean
+        signer:
+          $ref: '#/components/schemas/WalletProviderAttestationSignerRef'
+        walletSolution:
+          $ref: '#/components/schemas/WalletSolutionRef'
+        secureApplication:
+          $ref: '#/components/schemas/WalletSecureCryptographicApplicationRef'
+        secureDevice:
+          $ref: '#/components/schemas/WalletSecureCryptographicDeviceRef'
+        secureComponent:
+          $ref: '#/components/schemas/WalletSecureComponentEvidence'
+        keystore:
+          $ref: '#/components/schemas/WalletKeystoreRef'
+        userAuthentication:
+          $ref: '#/components/schemas/WalletUserAuthenticationEvidence'
+        privateKeyProtection:
+          $ref: '#/components/schemas/WalletPrivateKeyProtectionEvidence'
+        trustEvidence:
+          $ref: '#/components/schemas/EudiWalletTrustEvidence'
+        custom:
+          $ref: '#/components/schemas/StringMap'
+
+    WalletAttestationArtifactMetadata:
+      type: object
+      description: Audit metadata stored with issued attestation material, including claim summaries and signer evidence references.
+      required: [artifactHash, signingEvidence, claimSummary, singleUse]
+      example:
+        artifactHash: sha256:55a2d5be9f5e2f8ad4
+        statusSubject:
+          statusListUri: https://issuer.acme.example/status/wia
+          index: '127'
+          purpose: client_status
+        maintenancePeriod:
+          statusSubject:
+            statusListUri: https://issuer.acme.example/status/wia
+            index: '127'
+            purpose: client_status
+          maintenanceExpiresAtEpochSeconds: 1790812800
+        signingEvidence:
+          signerId: wp-signer-prod-1
+        claimSummary:
+          walletInstanceId: wi-android-7f9d
+        singleUse: false
+        consumedAt: null
+      properties:
+        artifactHash:
+          type: string
+        statusSubject:
+          $ref: '#/components/schemas/WalletStatusSubjectRef'
+        maintenancePeriod:
+          $ref: '#/components/schemas/WalletStatusMaintenancePeriod'
+        signingEvidence:
+          $ref: '#/components/schemas/StringMap'
+        claimSummary:
+          $ref: '#/components/schemas/StringMap'
+        singleUse:
+          type: boolean
+        consumedAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    WalletAttestationArtifact:
+      type: object
+      description: Issued or stored attestation artifact and the evidence captured at issuance time.
+      required: [kind, profile, material, issuedAt, evidence, metadata]
+      example:
+        kind: WIA
+        profile: TS03_JWT
+        material:
+          format: JWT
+          value: eyJhbGciOiJFUzI1NiIsImtpZCI6IndwLXNpZ25lci1rZXktMSJ9...
+          encoding: COMPACT
+        issuedAt: '2026-07-02T08:15:00Z'
+        expiresAt: '2026-07-03T08:15:00Z'
+        statusSubject:
+          statusListUri: https://issuer.acme.example/status/wia
+          index: '127'
+          purpose: client_status
+        evidence:
+          profile: TS03_JWT
+          ts03Conformant: true
+          custom:
+            statusSubjectRef: https://issuer.acme.example/status/wia#127
+        metadata:
+          artifactHash: sha256:55a2d5be9f5e2f8ad4
+          signingEvidence:
+            signerId: wp-signer-prod-1
+          claimSummary:
+            walletInstanceId: wi-android-7f9d
+          singleUse: false
+      properties:
+        kind:
+          $ref: '#/components/schemas/WalletUnitAttestationKind'
+        profile:
+          $ref: '#/components/schemas/WalletUnitAttestationProfile'
+        material:
+          $ref: '#/components/schemas/WalletUnitAttestationMaterial'
+        issuedAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+          nullable: true
+        statusSubject:
+          $ref: '#/components/schemas/WalletStatusSubjectRef'
+        evidence:
+          $ref: '#/components/schemas/WalletUnitAttestationEvidence'
+        metadata:
+          $ref: '#/components/schemas/WalletAttestationArtifactMetadata'
+
+    WalletInstanceAttestationIssueRequest:
+      type: object
+      description: Issues a Wallet Instance Attestation (WIA). The attested Wallet Instance is resolved authoritatively from the Wallet Unit record; callers may supply expectedWalletInstanceId as a validation-only precondition. TS03 production issuance requires a production signer, trusted Wallet Provider evidence, Wallet Solution evidence, and status subject evidence.
+      required: [walletUnitId, walletAccountId, profile, walletSolution, audience, expiresAt]
+      example:
+        walletUnitId: wu-7f9d
+        walletAccountId: wa-42
+        profile: TS03_JWT
+        requestedFormat: JWT
+        expectedWalletInstanceId: wi-7f9d
+        walletSolution:
+          name: Acme EUDI Wallet
+          version: 4.2.1
+          informationLink: https://wallet.acme.example/info
+          certification:
+            certificationId: eudi-ws-2026-00042
+            scheme: EUDI_WALLET_SOLUTION_CERTIFICATION
+            assuranceLevel: high
+            issuer: EU Wallet Certification Body
+        signer:
+          signerId: wp-signer-prod-1
+          issuer: https://wallet-provider.acme.example
+          keyId: wp-signer-key-1
+          signingAlgorithm: ES256
+          signerProfile: REMOTE_WSCD
+          certificateChain: [MIIC...wallet-provider-cert...]
+        statusSubject:
+          statusListUri: https://issuer.acme.example/status/wia
+          index: '127'
+          purpose: client_status
+          issuer: https://wallet-provider.acme.example
+        audience: https://issuer.acme.example
+        expiresAt: '2026-07-03T08:15:00Z'
+        proofBinding:
+          cnfKid: did:key:z6Mkh...#key-1
+        evidence:
+          activationDecisionId: act-20260702-0001
+      properties:
+        walletUnitId:
+          type: string
+        walletAccountId:
+          type: string
+        profile:
+          $ref: '#/components/schemas/WalletUnitAttestationProfile'
+        requestedFormat:
+          $ref: '#/components/schemas/WalletUnitAttestationFormat'
+        expectedWalletInstanceId:
+          type: string
+          nullable: true
+          description: Optional precondition; when supplied it must match the unit record's authoritative wallet instance id or issuance fails with WALLET_UNIT_INSTANCE_MISMATCH.
+        walletSolution:
+          $ref: '#/components/schemas/WalletSolutionRef'
+        secureApplication:
+          $ref: '#/components/schemas/WalletSecureCryptographicApplicationRef'
+        secureDevice:
+          $ref: '#/components/schemas/WalletSecureCryptographicDeviceRef'
+        keystore:
+          $ref: '#/components/schemas/WalletKeystoreRef'
+        signer:
+          $ref: '#/components/schemas/WalletProviderAttestationSignerRef'
+        statusSubject:
+          $ref: '#/components/schemas/WalletStatusSubjectRef'
+        audience:
+          type: string
+        expiresAt:
+          type: string
+          format: date-time
+        proofBinding:
+          $ref: '#/components/schemas/StringMap'
+        evidence:
+          $ref: '#/components/schemas/StringMap'
+
+    WalletInstanceAttestationIssueResult:
+      type: object
+      description: Issued WIA artifact plus stored reference. Production artifacts use compact JWT material; local/evaluation artifacts can use stored references.
+      required: [walletUnitId, walletAccountId, attestationRef, artifact, issuedAt, expiresAt]
+      example:
+        walletUnitId: wu-7f9d
+        walletAccountId: wa-42
+        attestationRef: wia-wu-7f9d-20260702
+        artifact:
+          kind: WIA
+          profile: TS03_JWT
+          material:
+            format: JWT
+            value: eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ3YWxsZXQtaW5zdGFuY2UtNDIifQ.signature
+            encoding: COMPACT
+          issuedAt: '2026-07-02T08:15:00Z'
+          expiresAt: '2026-07-03T08:15:00Z'
+          evidence:
+            profile: TS03_JWT
+            ts03Conformant: true
+            custom:
+              statusSubjectRef: https://issuer.acme.example/status/wia#127
+          metadata:
+            artifactHash: sha256:5ef7d5efc1
+            signingEvidence:
+              signerId: wp-signer-prod-1
+              signerProfile: REMOTE_WSCD
+            claimSummary:
+              walletName: Acme EUDI Wallet
+            singleUse: false
+        statusRef: https://issuer.acme.example/status/wia
+        issuedAt: '2026-07-02T08:15:00Z'
+        expiresAt: '2026-07-03T08:15:00Z'
+      properties:
+        walletUnitId:
+          type: string
+        walletAccountId:
+          type: string
+        attestationRef:
+          type: string
+        artifact:
+          $ref: '#/components/schemas/WalletAttestationArtifact'
+        statusRef:
+          type: string
+          nullable: true
+        issuedAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+
+    KeyAttestationIssueRequest:
+      type: object
+      description: Issues a Key Attestation (KA) for one or more attested keys. Production KA requires signer evidence, key-storage evidence, user-authentication evidence, and status subject evidence.
+      required: [walletUnitId, walletAccountId, profile, attestedKeys, audience, nonce]
+      example:
+        walletUnitId: wu-7f9d
+        walletAccountId: wa-42
+        profile: TS03_JWT
+        requestedFormat: KEY_ATTESTATION_JWT
+        attestedKeys:
+          - keyId: wallet-signing-key-1
+            algorithm: ES256
+            keyRef: wallet-signing-key-1
+            walletUnitId: wu-7f9d
+            walletAccountId: wa-42
+            evidence:
+              nonExportable: 'true'
+        secureDevice:
+          id: wscd-prod-device-1
+          providerId: external-certified-wscd
+          componentType: REMOTE_WSCD
+          securityLevel: ISO_18045_HIGH
+          usages: [WALLET_CREDENTIAL_PROOF, EIDAS_SIGNATURE]
+        userAuthentication:
+          assuranceLevel: high
+          methods: [PIN_DERIVED_SIGNATURE, DEVICE_BOUND_BIOMETRIC]
+          policyRef: wallet-unit-production-valid
+        privateKeyProtection:
+          nonExportable: true
+          protectedByUserAuthentication: true
+          isolationBoundary: certified-wscd
+        signer:
+          signerId: wp-signer-prod-1
+          issuer: https://wallet-provider.acme.example
+          signerProfile: REMOTE_WSCD
+        statusSubject:
+          statusListUri: https://issuer.acme.example/status/ka
+          index: '188'
+          purpose: key_storage_status
+          issuer: https://wallet-provider.acme.example
+        audience: https://issuer.acme.example
+        nonce: cnonce-issuer-123
+        expiresAt: '2026-07-03T08:15:00Z'
+        singleUse: true
+        evidence:
+          activationDecisionId: act-20260702-0001
+      properties:
+        walletUnitId:
+          type: string
+        walletAccountId:
+          type: string
+        profile:
+          $ref: '#/components/schemas/WalletUnitAttestationProfile'
+        requestedFormat:
+          $ref: '#/components/schemas/WalletUnitAttestationFormat'
+        attestedKeys:
+          type: array
+          items:
+            $ref: '#/components/schemas/WalletAttestedKeyRef'
+        secureApplication:
+          $ref: '#/components/schemas/WalletSecureCryptographicApplicationRef'
+        secureDevice:
+          $ref: '#/components/schemas/WalletSecureCryptographicDeviceRef'
+        keystore:
+          $ref: '#/components/schemas/WalletKeystoreRef'
+        userAuthentication:
+          $ref: '#/components/schemas/WalletUserAuthenticationEvidence'
+        privateKeyProtection:
+          $ref: '#/components/schemas/WalletPrivateKeyProtectionEvidence'
+        signer:
+          $ref: '#/components/schemas/WalletProviderAttestationSignerRef'
+        statusSubject:
+          $ref: '#/components/schemas/WalletStatusSubjectRef'
+        audience:
+          type: string
+        nonce:
+          type: string
+        expiresAt:
+          type: string
+          format: date-time
+          nullable: true
+        singleUse:
+          type: boolean
+        evidence:
+          $ref: '#/components/schemas/StringMap'
+
+    KeyAttestationIssueResult:
+      type: object
+      description: Issued KA artifact plus stored reference and nonce/audience binding.
+      required: [walletUnitId, walletAccountId, attestationRef, artifact, nonce, audience]
+      example:
+        walletUnitId: wu-7f9d
+        walletAccountId: wa-42
+        attestationRef: ka-wu-7f9d-20260702
+        artifact:
+          kind: KA
+          profile: TS03_JWT
+          material:
+            format: KEY_ATTESTATION_JWT
+            value: eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9.eyJjX25vbmNlIjoiY25vbmNlLWlzc3Vlci0xMjMifQ.signature
+            encoding: COMPACT
+          issuedAt: '2026-07-02T08:15:00Z'
+          expiresAt: '2026-07-03T08:15:00Z'
+          evidence:
+            profile: TS03_JWT
+            ts03Conformant: true
+            custom:
+              statusSubjectRef: https://issuer.acme.example/status/ka#188
+          metadata:
+            artifactHash: sha256:9cead9139d
+            signingEvidence:
+              signerId: wp-signer-prod-1
+              signerProfile: REMOTE_WSCD
+            claimSummary:
+              keyStorage: ISO_18045_HIGH
+            singleUse: true
+        nonce: cnonce-issuer-123
+        audience: https://issuer.acme.example
+      properties:
+        walletUnitId:
+          type: string
+        walletAccountId:
+          type: string
+        attestationRef:
+          type: string
+        artifact:
+          $ref: '#/components/schemas/WalletAttestationArtifact'
+        nonce:
+          type: string
+        audience:
+          type: string
+
+    ValidateWalletInstanceAttestationHttpRequest:
+      type: object
+      description: Validates a WIA material directly or by stored attestation reference. Production validation can include trusted-list and status evidence.
+      required: [expectedAudience]
+      example:
+        attestationRef: wia-wu-7f9d-20260702
+        expectedAudience: https://issuer.acme.example
+        expectedIssuer: https://wallet-provider.acme.example
+        trust:
+          trustedIssuers: [https://wallet-provider.acme.example]
+          walletProviderTrustEvidence:
+            trusted: true
+            kind: WALLET_PROVIDER
+            decision: TRUSTED
+            signingCertificateProfile: ETSI_TS_119_412_6_WALLET_PROVIDER
+            provenance:
+              adapter: etsi-lote
+          walletSolutionTrustEvidence:
+            trusted: true
+            kind: WALLET_SOLUTION
+            decision: TRUSTED
+            walletSolutionName: Acme EUDI Wallet
+            walletSolutionVersion: 4.2.1
+            provenance:
+              adapter: wallet-solution-list
+          statusEvidence:
+            statusListUri: https://issuer.acme.example/status/wia
+            index: '127'
+            revoked: false
+            provenance:
+              adapter: status-list-hosting
+        clockSkewSeconds: 300
+      properties:
+        material:
+          $ref: '#/components/schemas/WalletUnitAttestationMaterial'
+        attestationRef:
+          type: string
+          nullable: true
+        expectedAudience:
+          type: string
+        expectedIssuer:
+          type: string
+          nullable: true
+        trust:
+          $ref: '#/components/schemas/WalletUnitAttestationTrustInput'
+        clockSkewSeconds:
+          type: integer
+          format: int64
+
+    ValidateKeyAttestationHttpRequest:
+      type: object
+      description: Validates a KA material directly or by stored attestation reference, including nonce, key-storage, user-authentication, trust, and status checks.
+      required: [expectedAudience, expectedNonce]
+      example:
+        attestationRef: ka-wu-7f9d-20260702
+        expectedAudience: https://issuer.acme.example
+        expectedNonce: cnonce-issuer-123
+        expectedIssuer: https://wallet-provider.acme.example
+        requiredKeyStorage: [ISO_18045_HIGH]
+        requiredUserAuthentication: [high]
+        trust:
+          walletProviderTrustEvidence:
+            trusted: true
+            kind: WALLET_PROVIDER
+            decision: TRUSTED
+            signingCertificateProfile: ETSI_TS_119_412_6_WALLET_PROVIDER
+            provenance:
+              adapter: etsi-lote
+          statusEvidence:
+            statusListUri: https://issuer.acme.example/status/ka
+            index: '188'
+            revoked: false
+            provenance:
+              adapter: status-list-hosting
+        clockSkewSeconds: 300
+      properties:
+        material:
+          $ref: '#/components/schemas/WalletUnitAttestationMaterial'
+        attestationRef:
+          type: string
+          nullable: true
+        expectedAudience:
+          type: string
+        expectedNonce:
+          type: string
+        expectedIssuer:
+          type: string
+          nullable: true
+        requiredKeyStorage:
+          type: array
+          items:
+            type: string
+        requiredUserAuthentication:
+          type: array
+          items:
+            type: string
+        trust:
+          $ref: '#/components/schemas/WalletUnitAttestationTrustInput'
+        clockSkewSeconds:
+          type: integer
+          format: int64
+
+    Ts1194723ValidationHttpResponse:
+      type: object
+      description: Validation result for TS 119 472-3 WIA or KA material. Invalid trust, revocation, unsupported profile, and expiry conditions are returned as errors.
+      required: [valid, format, evidence, errors]
+      example:
+        valid: true
+        format: KEY_ATTESTATION_JWT
+        evidence:
+          kind: KA
+          alg: ES256
+          issuer: https://wallet-provider.acme.example
+          keyStorageSecurityLevel: ISO_18045_HIGH
+          WalletProviderTrustListUri: https://lotl.example.eu/wallet-providers.xml
+        errors: []
+      properties:
+        valid:
+          type: boolean
+        format:
+          $ref: '#/components/schemas/WalletUnitAttestationFormat'
+        evidence:
+          $ref: '#/components/schemas/StringMap'
+        errors:
+          type: array
+          items:
+            type: string
+
+    WalletAttestationValidationEvidenceResult:
+      type: object
+      description: Stored evidence summary for a previously issued or validated WIA/KA artifact.
+      required: [attestationRef, kind, walletUnitId, walletAccountId, status, format, profile, issuedAt, evidence, metadata]
+      example:
+        attestationRef: ka-wu-7f9d-20260702
+        kind: KA
+        walletUnitId: wu-7f9d
+        walletAccountId: wa-42
+        status: ACTIVE
+        format: KEY_ATTESTATION_JWT
+        profile: TS03_JWT
+        issuedAt: '2026-07-02T08:15:00Z'
+        expiresAt: '2026-07-03T08:15:00Z'
+        evidence:
+          profile: TS03_JWT
+          ts03Conformant: true
+          custom:
+            validationEvidenceId: val-ka-20260702-1
+        metadata:
+          artifactHash: sha256:9cead9139d
+          signingEvidence:
+            signerId: wp-signer-prod-1
+          claimSummary:
+            keyStorage: ISO_18045_HIGH
+          singleUse: true
+      properties:
+        attestationRef:
+          type: string
+        kind:
+          $ref: '#/components/schemas/WalletUnitAttestationKind'
+        walletUnitId:
+          type: string
+        walletAccountId:
+          type: string
+        status:
+          $ref: '#/components/schemas/WalletUnitAttestationStatus'
+        format:
+          $ref: '#/components/schemas/WalletUnitAttestationFormat'
+        profile:
+          $ref: '#/components/schemas/WalletUnitAttestationProfile'
+        issuedAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+          nullable: true
+        evidence:
+          $ref: '#/components/schemas/WalletUnitAttestationEvidence'
+        metadata:
+          $ref: '#/components/schemas/WalletAttestationArtifactMetadata'
+
+    ResolveWalletProviderTrustRequest:
+      type: object
+      description: Resolves trust for a Wallet Provider or attestation signer certificate chain against the configured trusted-list adapter.
+      required: [providerId]
+      example:
+        providerId: https://wallet-provider.acme.example
+        signerCertificateChain:
+          - MIIC...wallet-provider-cert...
+        requiredLoteRole: WalletProvider
+        requiredServiceType: TS03-WIA-KA-SIGNING
+        requiredCertificateProfile: ETSI_TS_119_412_6_WALLET_PROVIDER
+        validationTimeEpochSeconds: 1782979200
+      properties:
+        providerId:
+          type: string
+        signerCertificateChain:
+          type: array
+          items:
+            type: string
+        requiredLoteRole:
+          type: string
+          nullable: true
+        requiredServiceType:
+          type: string
+          nullable: true
+        requiredCertificateProfile:
+          type: string
+          nullable: true
+        validationTimeEpochSeconds:
+          type: integer
+          format: int64
+          nullable: true
+
+    ResolveWalletSolutionTrustRequest:
+      type: object
+      description: Resolves trust for a Wallet Solution name/version against configured Wallet Solution trusted-list evidence.
+      required: [walletSolution]
+      example:
+        walletSolution:
+          name: Acme EUDI Wallet
+          version: 4.2.1
+          vendor: Acme Wallets BV
+        requiredLoteRole: WalletSolution
+        requiredServiceType: EUDI-WALLET-SOLUTION
+        validationTimeEpochSeconds: 1782979200
+      properties:
+        walletSolution:
+          $ref: '#/components/schemas/WalletSolutionRef'
+        requiredLoteRole:
+          type: string
+          nullable: true
+        requiredServiceType:
+          type: string
+          nullable: true
+        validationTimeEpochSeconds:
+          type: integer
+          format: int64
+          nullable: true
+
+    StatusListRef:
+      type: object
+      description: Reference to an existing status list. Provide `id`, `correlationId`, or a public `statusListUri`.
+      example:
+        correlationId: wallet-unit-wia-revocation
+        statusListUri: https://issuer.acme.example/status/wia
+      properties:
+        id:
+          type: string
+          nullable: true
+        correlationId:
+          type: string
+          nullable: true
+        statusListUri:
+          type: string
+          format: uri
+          nullable: true
+
+    WalletUnitStatusSubjectKind:
+      type: string
+      description: Type of status subject allocated through the existing status-list backend.
+      enum: [WIA_CLIENT_STATUS, KA_KEY_STORAGE_STATUS, KA_TYPE_SHARED_KEY_STORAGE_STATUS, WALLET_INSTANCE, WSCD, KEYSTORE, PID, WALLET_ATTESTATION]
+
+    WalletUnitStatusPrivacyStrategy:
+      type: string
+      description: Privacy strategy for choosing or reusing status-list indexes.
+      enum: [FRESH_INDEX, PER_ARTIFACT, TYPE_SHARED, PER_ISSUER_REUSE]
+
+    WalletUnitStatusAllocationStrategy:
+      type: string
+      description: Allocation strategy used by the status-list adapter.
+      enum: [RANDOM_UNUSED, EXPLICIT_INDEX]
+
+    WalletUnitStatusSubjectAllocationRequest:
+      type: object
+      description: Allocates an existing status-list entry for WIA, KA, Wallet Unit, WSCD, keystore, PID, or attestation status.
+      required: [subjectKind, subjectId, statusPurpose, statusList, issuer, privacyStrategy, maintenanceExpiresAt]
+      example:
+        subjectKind: WIA_CLIENT_STATUS
+        subjectId: wia-wu-7f9d-20260702
+        statusPurpose: client_status
+        statusList:
+          correlationId: wallet-unit-wia-revocation
+          statusListUri: https://issuer.acme.example/status/wia
+        issuer: https://wallet-provider.acme.example
+        privacyStrategy: FRESH_INDEX
+        walletUnitId: wu-7f9d
+        walletAccountId: wa-42
+        artifactRef: wia-wu-7f9d-20260702
+        jwtExpiresAt: '2026-07-03T08:15:00Z'
+        maintenanceExpiresAt: '2026-10-01T00:00:00Z'
+        entryCorrelationId: wallet-unit:WIA_CLIENT_STATUS:wia-wu-7f9d-20260702
+        evidence:
+          allocatedBy: wallet-unit-service
+      properties:
+        subjectKind:
+          $ref: '#/components/schemas/WalletUnitStatusSubjectKind'
+        subjectId:
+          type: string
+        statusPurpose:
+          type: string
+        statusList:
+          $ref: '#/components/schemas/StatusListRef'
+        issuer:
+          type: string
+        privacyStrategy:
+          $ref: '#/components/schemas/WalletUnitStatusPrivacyStrategy'
+        walletUnitId:
+          type: string
+          nullable: true
+        walletAccountId:
+          type: string
+          nullable: true
+        artifactRef:
+          type: string
+          nullable: true
+        explicitIndex:
+          type: integer
+          nullable: true
+        jwtExpiresAt:
+          type: string
+          format: date-time
+          nullable: true
+        maintenanceExpiresAt:
+          type: string
+          format: date-time
+        entryCorrelationId:
+          type: string
+          nullable: true
+        evidence:
+          $ref: '#/components/schemas/StringMap'
+
+    WalletUnitStatusSubjectRecord:
+      type: object
+      description: Persisted Wallet Unit status subject and its backing status-list entry.
+      required: [statusSubjectRef, subjectKind, subjectId, statusPurpose, statusListSpec, statusListUri, statusListIndex, issuer, privacyStrategy, allocationStrategy, statusValue, maintenanceExpiresAt, createdAt, updatedAt, evidence]
+      example:
+        statusSubjectRef: https://issuer.acme.example/status/wia#127
+        subjectKind: WIA_CLIENT_STATUS
+        subjectId: wia-wu-7f9d-20260702
+        statusPurpose: client_status
+        statusListSpec: token_status_list
+        statusListId: sl-wallet-wia
+        statusListCorrelationId: wallet-unit-wia-revocation
+        statusListUri: https://issuer.acme.example/status/wia
+        statusListIndex: 127
+        issuer: https://wallet-provider.acme.example
+        privacyStrategy: FRESH_INDEX
+        allocationStrategy: RANDOM_UNUSED
+        statusValue: 0
+        walletUnitId: wu-7f9d
+        walletAccountId: wa-42
+        artifactRef: wia-wu-7f9d-20260702
+        jwtExpiresAt: '2026-07-03T08:15:00Z'
+        maintenanceExpiresAt: '2026-10-01T00:00:00Z'
+        createdAt: '2026-07-02T08:15:00Z'
+        updatedAt: '2026-07-02T08:15:00Z'
+        evidence:
+          allocatedBy: wallet-unit-service
+      properties:
+        statusSubjectRef:
+          type: string
+        subjectKind:
+          $ref: '#/components/schemas/WalletUnitStatusSubjectKind'
+        subjectId:
+          type: string
+        statusPurpose:
+          type: string
+        statusListSpec:
+          type: string
+          enum: [token_status_list, bitstring_status_list]
+        statusListId:
+          type: string
+          nullable: true
+        statusListCorrelationId:
+          type: string
+          nullable: true
+        statusListUri:
+          type: string
+          format: uri
+        statusListIndex:
+          type: integer
+        issuer:
+          type: string
+        privacyStrategy:
+          $ref: '#/components/schemas/WalletUnitStatusPrivacyStrategy'
+        allocationStrategy:
+          $ref: '#/components/schemas/WalletUnitStatusAllocationStrategy'
+        statusValue:
+          type: integer
+        walletUnitId:
+          type: string
+          nullable: true
+        walletAccountId:
+          type: string
+          nullable: true
+        artifactRef:
+          type: string
+          nullable: true
+        jwtExpiresAt:
+          type: string
+          format: date-time
+          nullable: true
+        maintenanceExpiresAt:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        evidence:
+          $ref: '#/components/schemas/StringMap'
+
+    WalletUnitStatusSubjectAllocationResult:
+      type: object
+      description: Allocation result containing both the persistent record and compact status subject reference for attestation claims.
+      required: [record, statusSubject]
+      example:
+        record:
+          statusSubjectRef: https://issuer.acme.example/status/wia#127
+          subjectKind: WIA_CLIENT_STATUS
+          subjectId: wia-wu-7f9d-20260702
+          statusPurpose: client_status
+          statusListSpec: token_status_list
+          statusListUri: https://issuer.acme.example/status/wia
+          statusListIndex: 127
+          issuer: https://wallet-provider.acme.example
+          privacyStrategy: FRESH_INDEX
+          allocationStrategy: RANDOM_UNUSED
+          statusValue: 0
+          maintenanceExpiresAt: '2026-10-01T00:00:00Z'
+          createdAt: '2026-07-02T08:15:00Z'
+          updatedAt: '2026-07-02T08:15:00Z'
+          evidence:
+            allocatedBy: wallet-unit-service
+        statusSubject:
+          statusListUri: https://issuer.acme.example/status/wia
+          index: '127'
+          purpose: client_status
+          issuer: https://wallet-provider.acme.example
+      properties:
+        record:
+          $ref: '#/components/schemas/WalletUnitStatusSubjectRecord'
+        statusSubject:
+          $ref: '#/components/schemas/WalletStatusSubjectRef'
+
+    WalletUnitStatusSubjectCheckRequest:
+      type: object
+      description: Checks a status subject by direct reference or by subject kind and subject id.
+      example:
+        statusSubjectRef: https://issuer.acme.example/status/wia#127
+      properties:
+        statusSubjectRef:
+          type: string
+          nullable: true
+        subjectKind:
+          $ref: '#/components/schemas/WalletUnitStatusSubjectKind'
+        subjectId:
+          type: string
+          nullable: true
+
+    WalletUnitStatusSubjectCheckResult:
+      type: object
+      description: Current validity view for a Wallet Unit status subject. `valid=false` when the entry is revoked, missing, or outside maintenance.
+      required: [valid, maintenanceExpired, checkedAt, errors]
+      example:
+        record:
+          statusSubjectRef: https://issuer.acme.example/status/wia#127
+          subjectKind: WIA_CLIENT_STATUS
+          subjectId: wia-wu-7f9d-20260702
+          statusPurpose: client_status
+          statusListSpec: token_status_list
+          statusListUri: https://issuer.acme.example/status/wia
+          statusListIndex: 127
+          issuer: https://wallet-provider.acme.example
+          privacyStrategy: FRESH_INDEX
+          allocationStrategy: RANDOM_UNUSED
+          statusValue: 0
+          maintenanceExpiresAt: '2026-10-01T00:00:00Z'
+          createdAt: '2026-07-02T08:15:00Z'
+          updatedAt: '2026-07-02T08:15:00Z'
+          evidence: {}
+        valid: true
+        statusValue: 0
+        maintenanceExpired: false
+        checkedAt: '2026-07-02T08:16:00Z'
+        errors: []
+      properties:
+        record:
+          $ref: '#/components/schemas/WalletUnitStatusSubjectRecord'
+        valid:
+          type: boolean
+        statusValue:
+          type: integer
+          nullable: true
+        maintenanceExpired:
+          type: boolean
+        checkedAt:
+          type: string
+          format: date-time
+        errors:
+          type: array
+          items:
+            type: string
+
+    WalletUnitRevocationRequest:
+      type: object
+      description: Records an irreversible revocation event and, when `statusSubjectRef` is present, updates the backing status-list entry to INVALID.
+      required: [revocationEventId, subjectKind, subjectId, policyId, source, occurredAt]
+      example:
+        revocationEventId: revoke-wia-20260702-1
+        subjectKind: WIA_CLIENT_STATUS
+        subjectId: wia-wu-7f9d-20260702
+        policyId: wallet-unit-status-revocation
+        source: wallet-unit-lifecycle
+        actor: tenant-operator
+        reason: wallet unit revoked
+        statusSubjectRef: https://issuer.acme.example/status/wia#127
+        walletUnitId: wu-7f9d
+        walletAccountId: wa-42
+        artifactRef: wia-wu-7f9d-20260702
+        evidence:
+          lifecycleEvent: REVOKED
+        occurredAt: '2026-07-02T09:00:00Z'
+      properties:
+        revocationEventId:
+          type: string
+        subjectKind:
+          $ref: '#/components/schemas/WalletUnitStatusSubjectKind'
+        subjectId:
+          type: string
+        policyId:
+          type: string
+        source:
+          type: string
+        actor:
+          type: string
+          nullable: true
+        reason:
+          type: string
+          nullable: true
+        statusSubjectRef:
+          type: string
+          nullable: true
+        walletUnitId:
+          type: string
+          nullable: true
+        walletAccountId:
+          type: string
+          nullable: true
+        artifactRef:
+          type: string
+          nullable: true
+        evidence:
+          $ref: '#/components/schemas/StringMap'
+        occurredAt:
+          type: string
+          format: date-time
+
+    WalletUnitRevocationEvent:
+      type: object
+      description: Irreversible revocation event for a Wallet Unit, WIA, KA, WSCD, keystore, PID, or attestation status subject.
+      required: [revocationEventId, subjectKind, subjectId, policyId, source, evidence, occurredAt]
+      example:
+        revocationEventId: revoke-wia-20260702-1
+        subjectKind: WIA_CLIENT_STATUS
+        subjectId: wia-wu-7f9d-20260702
+        policyId: wallet-unit-status-revocation
+        source: wallet-unit-lifecycle
+        actor: tenant-operator
+        reason: wallet unit revoked
+        statusSubjectRef: https://issuer.acme.example/status/wia#127
+        walletUnitId: wu-7f9d
+        walletAccountId: wa-42
+        artifactRef: wia-wu-7f9d-20260702
+        evidence:
+          lifecycleEvent: REVOKED
+        occurredAt: '2026-07-02T09:00:00Z'
+      properties:
+        revocationEventId:
+          type: string
+        subjectKind:
+          $ref: '#/components/schemas/WalletUnitStatusSubjectKind'
+        subjectId:
+          type: string
+        policyId:
+          type: string
+        source:
+          type: string
+        actor:
+          type: string
+          nullable: true
+        reason:
+          type: string
+          nullable: true
+        statusSubjectRef:
+          type: string
+          nullable: true
+        walletUnitId:
+          type: string
+          nullable: true
+        walletAccountId:
+          type: string
+          nullable: true
+        artifactRef:
+          type: string
+          nullable: true
+        evidence:
+          $ref: '#/components/schemas/StringMap'
+        occurredAt:
+          type: string
+          format: date-time
+
+    WalletUnitRevocationResult:
+      type: object
+      description: Irreversible revocation event and updated status subject, if one was linked.
+      required: [event]
+      example:
+        event:
+          revocationEventId: revoke-wia-20260702-1
+          subjectKind: WIA_CLIENT_STATUS
+          subjectId: wia-wu-7f9d-20260702
+          policyId: wallet-unit-status-revocation
+          source: wallet-unit-lifecycle
+          actor: tenant-operator
+          reason: wallet unit revoked
+          statusSubjectRef: https://issuer.acme.example/status/wia#127
+          walletUnitId: wu-7f9d
+          walletAccountId: wa-42
+          artifactRef: wia-wu-7f9d-20260702
+          evidence:
+            lifecycleEvent: REVOKED
+          occurredAt: '2026-07-02T09:00:00Z'
+        statusSubject:
+          statusSubjectRef: https://issuer.acme.example/status/wia#127
+          subjectKind: WIA_CLIENT_STATUS
+          subjectId: wia-wu-7f9d-20260702
+          statusPurpose: client_status
+          statusListSpec: token_status_list
+          statusListUri: https://issuer.acme.example/status/wia
+          statusListIndex: 127
+          issuer: https://wallet-provider.acme.example
+          privacyStrategy: FRESH_INDEX
+          allocationStrategy: RANDOM_UNUSED
+          statusValue: 1
+          maintenanceExpiresAt: '2026-10-01T00:00:00Z'
+          createdAt: '2026-07-02T08:15:00Z'
+          updatedAt: '2026-07-02T09:00:00Z'
+          evidence: {}
+      properties:
+        event:
+          $ref: '#/components/schemas/WalletUnitRevocationEvent'
+        statusSubject:
+          $ref: '#/components/schemas/WalletUnitStatusSubjectRecord'
+
+    WalletUnitWscdAlgorithmProfile:
+      type: string
+      description: Server-owned key profile. The profile fixes the KMS algorithm, use, and permitted operations without exposing provider selection.
+      enum: [holder-proof-es256]
+
+    ProvisionWalletUnitWscdKeyRequest:
+      type: object
+      additionalProperties: false
+      description: |
+        Provisioning request for a wallet-unit-owned managed key. The
+        high-entropy idempotency key is reduced to a one-way digest before
+        persistence; it is never logged or returned.
+      required: [idempotencyKey, algorithmProfileId]
+      properties:
+        idempotencyKey:
+          type: string
+          minLength: 32
+          maxLength: 256
+          writeOnly: true
+        algorithmProfileId:
+          $ref: '#/components/schemas/WalletUnitWscdAlgorithmProfile'
+
+    WalletUnitWscdPublicJwk:
+      type: object
+      additionalProperties: false
+      description: Normalized public P-256 JWK. Private parameters are not part of this schema.
+      required: [kty, crv, x, y, kid, alg, use, key_ops]
+      properties:
+        kty:
+          type: string
+          enum: [EC]
+        crv:
+          type: string
+          enum: [P-256]
+        x:
+          type: string
+          minLength: 1
+        y:
+          type: string
+          minLength: 1
+        kid:
+          type: string
+          minLength: 1
+        alg:
+          type: string
+          enum: [ES256]
+        use:
+          type: string
+          enum: [sig]
+        key_ops:
+          type: array
+          minItems: 2
+          maxItems: 2
+          uniqueItems: true
+          items:
+            type: string
+            enum: [sign, verify]
+
+    WalletUnitWscdKeyState:
+      type: string
+      description: Public wallet-unit key lifecycle state. Retirement is not advertised until the typed KMS supports a permit-bound managed-retirement command.
+      enum: [ACTIVE]
+
+    WalletUnitWscdKeyAction:
+      type: string
+      enum: [SIGN, VERIFY]
+
+    WalletUnitWscdKeyDetail:
+      type: object
+      additionalProperties: false
+      description: Safe wallet-unit key projection containing no KMS provider, resource handle, locator, alias, configuration, or private material.
+      required: [keyRef, kid, algorithmProfileId, algorithm, keyType, state, availableActions, publicJwk]
+      properties:
+        keyRef:
+          type: string
+          pattern: '^wscd_[A-Za-z0-9_-]{20,128}$'
+        kid:
+          type: string
+          minLength: 1
+        algorithmProfileId:
+          $ref: '#/components/schemas/WalletUnitWscdAlgorithmProfile'
+        algorithm:
+          type: string
+          enum: [ES256]
+        keyType:
+          type: string
+          enum: [EC]
+        state:
+          $ref: '#/components/schemas/WalletUnitWscdKeyState'
+        availableActions:
+          type: array
+          minItems: 2
+          maxItems: 2
+          uniqueItems: true
+          items:
+            $ref: '#/components/schemas/WalletUnitWscdKeyAction'
+        publicJwk:
+          $ref: '#/components/schemas/WalletUnitWscdPublicJwk'
+
+    ListWalletUnitWscdKeysResult:
+      type: object
+      additionalProperties: false
+      required: [keys]
+      properties:
+        keys:
+          type: array
+          items:
+            $ref: '#/components/schemas/WalletUnitWscdKeyDetail'
+
+    WalletWscdKeyRef:
+      type: object
+      description: Opaque wallet secure cryptographic device key reference resolved by the WSCD implementation.
+      required: [keyRef]
+      example:
+        keyRef: wallet-signing-key-1
+        signatureAlgorithm: ES256
+      properties:
+        keyRef:
+          type: string
+          minLength: 1
+        signatureAlgorithm:
+          type: string
+          nullable: true
+
+    WalletRawSignHttpRequest:
+      type: object
+      description: Requests a policy-gated raw signature. The activation decision must be accepted, unconsumed, unexpired, and match the requested operation details exactly.
+      required: [walletUnitId, walletAccountId, activationDecisionId, key, operationType, operationBinding, operationHash, nonce, audience, inputBase64Url]
+      example:
+        walletUnitId: wu-7f9d
+        walletAccountId: wa-42
+        activationDecisionId: act-20260702-0001
+        key:
+          keyRef: wallet-signing-key-1
+          signatureAlgorithm: ES256
+        operationType: wallet.wscd.raw-sign
+        operationBinding: wallet-operation-binding-1
+        operationHash: sha256:0f984c5d74f6a8f2a1e0
+        nonce: '6fc33771f7e14d63'
+        audience: https://issuer.acme.example
+        inputBase64Url: aGVsbG8
+        requireX5Chain: true
+      properties:
+        walletUnitId:
+          type: string
+        walletAccountId:
+          type: string
+        activationDecisionId:
+          type: string
+          minLength: 1
+        key:
+          $ref: '#/components/schemas/WalletWscdKeyRef'
+        providerProfile:
+          $ref: '#/components/schemas/WalletWscdProviderProfile'
+        operationType:
+          type: string
+          minLength: 1
+        operationBinding:
+          type: string
+          minLength: 1
+        operationHash:
+          type: string
+          minLength: 1
+        nonce:
+          type: string
+          minLength: 1
+        audience:
+          type: string
+          minLength: 1
+        inputBase64Url:
+          type: string
+          format: byte
+        requireX5Chain:
+          type: boolean
+
+    WalletWscdSignatureEncoding:
+      type: string
+      description: Signature encoding requested from the WSCD/external signer.
+      enum: [RAW, DER]
+
+    WalletWscdProviderProfile:
+      type: string
+      description: WSCD backing profile. Scenario 1 passkey activation authenticates the holder while signing remains behind the remote WSCD boundary.
+      enum: [REMOTE_WSCD, LOCAL_WSCD, LOCAL_EVALUATION_WSCD]
+
+    WalletDigestSignHttpRequest:
+      type: object
+      description: Requests a policy-gated digest signature. This is the preferred signing form when callers have already calculated the operation digest.
+      required: [walletUnitId, walletAccountId, activationDecisionId, key, operationType, operationBinding, operationHash, nonce, audience, digestBase64Url, signatureAlgorithm]
+      example:
+        walletUnitId: wu-7f9d
+        walletAccountId: wa-42
+        activationDecisionId: act-20260702-0001
+        key:
+          keyRef: wallet-signing-key-1
+          signatureAlgorithm: ES256
+        operationType: wallet.wscd.sign-digest
+        operationBinding: wallet-operation-binding-1
+        operationHash: sha256:7f1a6aa671f1a2d1c3c2e994c09e3f87c4ac44d6
+        nonce: '6fc33771f7e14d63'
+        audience: https://issuer.acme.example
+        digestBase64Url: HUXZLQLMuI_KZ4LQnczrV5O5N0Q3RlYe8XSXBw6r8VM
+        signatureAlgorithm: ES256
+        signatureEncoding: RAW
+        requireX5Chain: true
+      properties:
+        walletUnitId:
+          type: string
+        walletAccountId:
+          type: string
+        activationDecisionId:
+          type: string
+          minLength: 1
+        key:
+          $ref: '#/components/schemas/WalletWscdKeyRef'
+        providerProfile:
+          $ref: '#/components/schemas/WalletWscdProviderProfile'
+        operationType:
+          type: string
+          minLength: 1
+        operationBinding:
+          type: string
+          minLength: 1
+        operationHash:
+          type: string
+          minLength: 1
+        nonce:
+          type: string
+          minLength: 1
+        audience:
+          type: string
+          minLength: 1
+        digestBase64Url:
+          type: string
+          format: byte
+        signatureAlgorithm:
+          type: string
+        signatureEncoding:
+          $ref: '#/components/schemas/WalletWscdSignatureEncoding'
+        requireX5Chain:
+          type: boolean
+
+    WalletHsmPolicyGrant:
+      type: object
+      description: Policy grant bound to a consumed activation decision and one wallet-key operation.
+      required: [activationDecisionId, walletUnitId, walletAccountId, keyRef, operationType, operationBinding, operationHash, nonce, audience, sequence, evidence]
+      example:
+        activationDecisionId: act-20260702-0001
+        walletUnitId: wu-7f9d
+        walletAccountId: wa-42
+        keyRef: wallet-signing-key-1
+        operationType: wallet.wscd.sign-digest
+        operationBinding: wallet-operation-binding-1
+        operationHash: sha256:7f1a6aa671f1a2d1c3c2e994c09e3f87c4ac44d6
+        nonce: '6fc33771f7e14d63'
+        audience: https://issuer.acme.example
+        sequence: 12
+        evidence:
+          profileId: production-proof-transcript
+          assuranceLevel: PROOF_TRANSCRIPT
+      properties:
+        activationDecisionId:
+          type: string
+          minLength: 1
+        walletUnitId:
+          type: string
+        walletAccountId:
+          type: string
+        keyRef:
+          type: string
+        operationType:
+          type: string
+        operationBinding:
+          type: string
+          minLength: 1
+        operationHash:
+          type: string
+        nonce:
+          type: string
+        audience:
+          type: string
+        sequence:
+          type: integer
+          format: int64
+        evidence:
+          $ref: '#/components/schemas/StringMap'
+
+    WalletSignatureHttpResponse:
+      type: object
+      description: Wallet-key signature plus the activation-policy grant that authorized it.
+      required: [signatureBase64Url, grant]
+      example:
+        signatureBase64Url: MEYCIQC81x...
+        grant:
+          activationDecisionId: act-20260702-0001
+          walletUnitId: wu-7f9d
+          walletAccountId: wa-42
+          keyRef: wallet-signing-key-1
+          operationType: wallet.wscd.sign-digest
+          operationBinding: wallet-operation-binding-1
+          operationHash: sha256:7f1a6aa671f1a2d1c3c2e994c09e3f87c4ac44d6
+          nonce: '6fc33771f7e14d63'
+          audience: https://issuer.acme.example
+          sequence: 12
+          evidence:
+            assuranceLevel: PROOF_TRANSCRIPT
+      properties:
+        signatureBase64Url:
+          type: string
+          format: byte
+        grant:
+          $ref: '#/components/schemas/WalletHsmPolicyGrant'

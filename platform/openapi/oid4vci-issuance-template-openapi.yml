@@ -1,0 +1,403 @@
+openapi: 3.0.4
+info:
+  title: OID4VCI Issuance Template API
+  version: 0.1.0
+  description: |
+    Tenant-scoped reusable issuance templates. A template stores the stable parts of an
+    OID4VCI credential-offer request for one configured issuer instance, so an admin or
+    external backend can ask for "offer this credential" without rebuilding grant, QR,
+    lifecycle, callback, and design-version settings on every call.
+servers:
+  - description: OID4VCI issuance template API base path.
+    url: /api/oid4vci/v1
+security:
+  - oAuth2: []
+  - bearer: []
+tags:
+  - name: IssuanceTemplates
+    description: Reusable credential-offer templates for configured issuer instances.
+
+paths:
+  /templates/issuance:
+    get:
+      tags: [IssuanceTemplates]
+      summary: List issuance templates
+      operationId: listIssuanceTemplates
+      parameters:
+        - name: issuerId
+          in: query
+          schema:
+            type: string
+        - name: enabled
+          in: query
+          schema:
+            type: boolean
+      responses:
+        '200':
+          description: Issuance templates.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/IssuanceTemplateRecord'
+    post:
+      tags: [IssuanceTemplates]
+      summary: Create issuance template
+      operationId: createIssuanceTemplate
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateIssuanceTemplateRequest'
+            examples:
+              createEmployeeBadgeTemplate:
+                $ref: '#/components/examples/CreateEmployeeBadgeIssuanceTemplateRequest'
+      responses:
+        '201':
+          description: Created issuance template.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IssuanceTemplateRecord'
+              examples:
+                employeeBadgeTemplate:
+                  $ref: '#/components/examples/EmployeeBadgeIssuanceTemplateRecord'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+
+  /templates/issuance/{templateId}:
+    parameters:
+      - name: templateId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags: [IssuanceTemplates]
+      summary: Get issuance template
+      operationId: getIssuanceTemplate
+      responses:
+        '200':
+          description: Issuance template.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IssuanceTemplateRecord'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+    put:
+      tags: [IssuanceTemplates]
+      summary: Replace issuance template
+      operationId: replaceIssuanceTemplate
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateIssuanceTemplateRequest'
+      responses:
+        '200':
+          description: Replaced issuance template.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IssuanceTemplateRecord'
+    patch:
+      tags: [IssuanceTemplates]
+      summary: Patch issuance template
+      operationId: patchIssuanceTemplate
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchIssuanceTemplateRequest'
+      responses:
+        '200':
+          description: Updated issuance template.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IssuanceTemplateRecord'
+    delete:
+      tags: [IssuanceTemplates]
+      summary: Delete issuance template
+      operationId: deleteIssuanceTemplate
+      responses:
+        '204':
+          description: Deleted.
+
+  /templates/issuance/{templateId}/credential-offers:
+    parameters:
+      - name: templateId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      tags: [IssuanceTemplates]
+      summary: Create credential offer from issuance template
+      operationId: createCredentialOfferFromIssuanceTemplate
+      description: Resolves the template, merges execution overrides, and calls the existing credential-offer session creation path.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCredentialOfferFromIssuanceTemplateRequest'
+      responses:
+        '201':
+          description: Credential offer and issuance session.
+          content:
+            application/json:
+              schema:
+                $ref: './oid4vci-issuer-session-components.yml#/components/schemas/CreateCredentialOfferOutput'
+
+components:
+  securitySchemes:
+    bearer:
+      $ref: './common-components.yml#/components/securitySchemes/bearer'
+    oAuth2:
+      type: oauth2
+      flows:
+        clientCredentials:
+          tokenUrl: http://localhost:8082/realms/oid4vci/protocol/openid-connect/token
+          refreshUrl: http://localhost:8082/realms/oid4vci/protocol/openid-connect/token
+          scopes: {}
+
+  examples:
+    CreateEmployeeBadgeIssuanceTemplateRequest:
+      summary: Create an employee badge issuance template
+      value:
+        issuerId: "hr-issuer"
+        name: "Employee onboarding"
+        description: "Pre-authorized offer used by the HR onboarding kiosk."
+        enabled: true
+        spec:
+          credential_configuration_ids:
+            - "EmployeeBadge"
+          credential_designs:
+            - designId: "7a4fd7c3-4c15-4fe7-936e-39ecbb9f3440"
+              version: 2
+          offer_defaults:
+            grants:
+              pre_authorized_code:
+                tx_code:
+                  input_mode: "numeric"
+                  length: 6
+                  description: "PIN sent by email"
+            ttl_seconds: 600
+    EmployeeBadgeIssuanceTemplateRecord:
+      summary: Stored employee badge issuance template
+      value:
+        id: "0f4b9837-1d5b-4ef4-a16d-2f504c54e4a1"
+        tenantId: "tenant-acme"
+        issuerId: "hr-issuer"
+        name: "Employee onboarding"
+        description: "Pre-authorized offer used by the HR onboarding kiosk."
+        enabled: true
+        spec:
+          credential_configuration_ids:
+            - "EmployeeBadge"
+          credential_designs:
+            - designId: "7a4fd7c3-4c15-4fe7-936e-39ecbb9f3440"
+              version: 2
+          offer_defaults:
+            grants:
+              pre_authorized_code:
+                tx_code:
+                  input_mode: "numeric"
+                  length: 6
+                  description: "PIN sent by email"
+            ttl_seconds: 600
+        createdAt: "2026-06-20T09:00:00Z"
+        updatedAt: "2026-06-25T14:30:00Z"
+
+  schemas:
+    CredentialDesignVersionRef:
+      type: object
+      required: [designId]
+      properties:
+        designId:
+          type: string
+          format: uuid
+        version:
+          type: integer
+          nullable: true
+          description: Pinned design version. Null means latest active version.
+
+    IssuanceTemplateSpec:
+      type: object
+      required: [credential_configuration_ids]
+      properties:
+        credential_configuration_ids:
+          type: array
+          items:
+            type: string
+        credential_designs:
+          type: array
+          items:
+            $ref: '#/components/schemas/CredentialDesignVersionRef'
+        offer_defaults:
+          anyOf:
+            - $ref: './oid4vci-issuer-session-components.yml#/components/schemas/CredentialOfferDefaults'
+            - type: object
+              nullable: true
+          description: Stable partial credential-offer defaults merged into the execution request before decoding as the real runtime CreateCredentialOfferInput model.
+        authorization_server_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: Stable authorization-server resource UUID selected for every offer created from this template.
+        authorization_server_allowed_grant_types:
+          type: array
+          nullable: true
+          minItems: 1
+          uniqueItems: true
+          description: Grant types the selected authorization server must support for this template.
+          items:
+            type: string
+            enum: [AUTHORIZATION_CODE, PRE_AUTHORIZED_CODE]
+        deferral:
+          $ref: '#/components/schemas/IssuanceDeferral'
+        recipient_lookup_sources:
+          type: array
+          description: Capable recipient-lookup connectors preconfigured on this template. A template with exactly one capable source yields exactly that lookup; zero sources keeps the console default.
+          items:
+            $ref: '#/components/schemas/RecipientLookupSource'
+          default: []
+
+    RecipientLookupSource:
+      type: object
+      description: One preconfigured recipient-lookup connector on an issuer or verifier template (handoff programme decision 4). Capabilities say what it can resolve; kind says how it is addressed.
+      required: [connector_ref]
+      properties:
+        connector_ref:
+          type: string
+          minLength: 1
+          description: Connector reference resolvable through the connector registry.
+        capabilities:
+          $ref: '#/components/schemas/LookupCapabilityFlags'
+        kind:
+          $ref: '#/components/schemas/LookupSourceKind'
+        display_name:
+          type: string
+          nullable: true
+
+    LookupCapabilityFlags:
+      type: object
+      description: What a lookup connector can resolve, as capability flags rather than a rank.
+      properties:
+        user:
+          type: boolean
+          default: false
+          description: Can resolve platform users.
+        party:
+          type: boolean
+          default: false
+          description: Can resolve Party records (organizations, natural persons).
+        email:
+          type: boolean
+          default: false
+          description: Can resolve by email identifier.
+
+    LookupSourceKind:
+      type: string
+      description: How a lookup connector is addressed by the console backend.
+      enum: [directory, rest, csv, database]
+
+    IssuanceDeferral:
+      description: |
+        Deferred-issuance policy applied to offers executed from this template. When `enabled`,
+        the wallet's credential request can receive a deferred response instead of the
+        credential itself, so the wallet polls the deferred-credential endpoint until an operator
+        completes any outstanding data and marks the session ready.
+      type: object
+      required: [enabled]
+      properties:
+        enabled:
+          type: boolean
+        pollIntervalSeconds:
+          type: integer
+          minimum: 1
+          nullable: true
+          description: Suggested wallet poll interval, in seconds, returned with the deferred response.
+        maxDeferralSeconds:
+          type: integer
+          minimum: 1
+          nullable: true
+          description: Maximum time the session stays deferred before it expires.
+        approvalRequired:
+          type: boolean
+          nullable: true
+          description: When true, the session also requires an explicit approval decision before it can be marked ready.
+
+    IssuanceTemplateRecord:
+      type: object
+      required: [id, tenantId, issuerId, name, enabled, spec, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenantId:
+          type: string
+        issuerId:
+          type: string
+          description: Configured issuer instance this template executes against.
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        enabled:
+          type: boolean
+        spec:
+          $ref: '#/components/schemas/IssuanceTemplateSpec'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    CreateIssuanceTemplateRequest:
+      type: object
+      required: [issuerId, name, spec]
+      properties:
+        issuerId:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        enabled:
+          type: boolean
+          default: true
+        spec:
+          $ref: '#/components/schemas/IssuanceTemplateSpec'
+
+    PatchIssuanceTemplateRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        enabled:
+          type: boolean
+        spec:
+          $ref: '#/components/schemas/IssuanceTemplateSpec'
+
+    CreateCredentialOfferFromIssuanceTemplateRequest:
+      type: object
+      properties:
+        overrides:
+          type: object
+          additionalProperties: true
+          description: Per-session partial credential-offer overrides merged after template defaults.

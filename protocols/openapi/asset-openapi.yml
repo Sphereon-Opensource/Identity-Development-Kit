@@ -1,0 +1,272 @@
+openapi: 3.0.4
+info:
+  title: Asset API
+  version: 0.1.0
+  x-products: [edk, vdx]
+  description: |
+    Tenant asset service: a content-addressed library of binary assets (logos, favicons,
+    backgrounds, design artwork) over the platform blob store, plus the public hosting
+    surface that serves the stored bytes.
+
+    Assets are addressed by the SHA-256 hash of their bytes and deduplicated per tenant:
+    uploading the same bytes twice returns the same asset. Assets are grouped into
+    namespaces (`brand` for theming and branding, `design` for credential design).
+    Library endpoints are tenant-admin operations; the tenant is taken from the
+    authenticated context and never appears in library paths.
+
+    Public asset URLs are tenant scoped and host independent:
+    `/public/assets/{tenantId}/{namespace}/{hash}.{ext}`. Because the tenant id is in the
+    path, the URL resolves identically whether assets are served from the tenant's own
+    domain or from the platform domain. The asset id is the SHA-256 content hash and is
+    stable across hosts and re-uploads of the same bytes, so responses are cacheable
+    forever (`Cache-Control: public, max-age=31536000, immutable`).
+
+servers:
+  - url: https://api.example.com/api/assets/v1
+    description: Production server.
+  - url: http://localhost:8080/api/assets/v1
+    description: Local development server.
+
+security:
+  - bearer: []
+
+tags:
+  - name: AssetLibrary
+    description: >-
+      Tenant-admin asset library: upload, list, get, and delete content-addressed assets
+      per namespace. The tenant is resolved from the bearer token.
+  - name: AssetHosting
+    description: >-
+      Public, unauthenticated hosting of stored asset bytes at stable tenant-scoped,
+      content-addressed URLs.
+
+paths:
+
+  /library/{namespace}:
+    parameters:
+      - $ref: '#/components/parameters/Namespace'
+    post:
+      tags: [AssetLibrary]
+      summary: Upload an asset
+      operationId: uploadAsset
+      x-command-id: asset.rest-library.upload
+      description: >-
+        Uploads an asset into the caller-tenant's library as raw bytes. The stored content
+        type is taken from the request `Content-Type` header, which is authoritative. The
+        asset is content-addressed by the SHA-256 hash of its bytes and deduplicated within
+        the tenant and namespace: re-uploading identical bytes returns a reference to the
+        already-stored asset instead of creating a new one. Returns an [AssetReference]
+        whose `uri` is the stable public hosting path.
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema:
+              type: string
+              format: binary
+          image/png:
+            schema:
+              type: string
+              format: binary
+          image/jpeg:
+            schema:
+              type: string
+              format: binary
+          image/svg+xml:
+            schema:
+              type: string
+              format: binary
+          application/pdf:
+            schema:
+              type: string
+              format: binary
+      responses:
+        '201':
+          description: A reference to the stored asset. Returned for new uploads and for deduplicated re-uploads alike.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssetReference'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+    get:
+      tags: [AssetLibrary]
+      summary: List assets
+      operationId: listAssets
+      x-command-id: asset.rest-library.list
+      description: >-
+        Lists the caller-tenant's assets in the namespace as a plain array. The optional
+        `contentType` filter restricts to assets whose content type starts with the given
+        value (for example `image/`).
+      parameters:
+        - $ref: '#/components/parameters/FilterContentType'
+      responses:
+        '200':
+          description: The tenant's assets in this namespace.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AssetInfo'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /library/{namespace}/{hash}:
+    parameters:
+      - $ref: '#/components/parameters/Namespace'
+      - $ref: '#/components/parameters/AssetHash'
+    get:
+      tags: [AssetLibrary]
+      summary: Get an asset
+      operationId: getAsset
+      x-command-id: asset.rest-library.get
+      description: >-
+        Returns the descriptor of one stored asset by its SHA-256 content hash. The asset
+        bytes themselves are served from the public hosting path in the descriptor's `uri`.
+      responses:
+        '200':
+          description: The asset descriptor.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssetInfo'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+    delete:
+      tags: [AssetLibrary]
+      summary: Delete an asset
+      operationId: deleteAsset
+      x-command-id: asset.rest-library.delete
+      description: >-
+        Deletes a stored asset by its SHA-256 content hash and returns no response body when
+        successful. The public hosting URL stops resolving for this tenant and namespace.
+      responses:
+        '204':
+          description: The asset was deleted.
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /public/assets/{tenantId}/{namespace}/{asset}:
+    servers:
+      - url: /
+        description: Host root. Public asset hosting is an unversioned mount, not under `/api/assets/v1`.
+    parameters:
+      - name: tenantId
+        in: path
+        required: true
+        description: Tenant the asset belongs to. An unknown tenant returns 404.
+        schema:
+          type: string
+      - $ref: '#/components/parameters/Namespace'
+      - name: asset
+        in: path
+        required: true
+        description: Content-addressed asset leaf, for example `{sha256}.png`. May include a file extension.
+        schema:
+          type: string
+    get:
+      tags: [AssetHosting]
+      summary: Download a public asset
+      operationId: getPublicAsset
+      x-command-id: asset.rest-hosting.get
+      security: []
+      description: |
+        Serves the raw bytes of a stored asset from its stable tenant-scoped, content-addressed
+        public URL. The response `Content-Type` is whatever the asset was stored as. Because the
+        asset id is the SHA-256 content hash, the body can never change for a given URL, so the
+        response is served with `Cache-Control: public, max-age=31536000, immutable`. Returns 404
+        for an unknown tenant, namespace, or asset.
+      responses:
+        '200':
+          description: Public asset bytes.
+          headers:
+            Cache-Control:
+              description: Always `public, max-age=31536000, immutable` (content addressed, safe to cache forever).
+              schema:
+                type: string
+                example: public, max-age=31536000, immutable
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+            image/png:
+              schema:
+                type: string
+                format: binary
+            image/jpeg:
+              schema:
+                type: string
+                format: binary
+            image/svg+xml:
+              schema:
+                type: string
+                format: binary
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+
+components:
+  securitySchemes:
+    bearer:
+      $ref: './common-components.yml#/components/securitySchemes/bearer'
+
+  parameters:
+    Namespace:
+      name: namespace
+      in: path
+      required: true
+      description: Asset namespace.
+      schema:
+        $ref: './asset-components.yml#/components/schemas/AssetNamespace'
+    AssetHash:
+      name: hash
+      in: path
+      required: true
+      description: Lowercase-hex SHA-256 digest (64 chars) of the asset bytes.
+      schema:
+        type: string
+    FilterContentType:
+      name: contentType
+      in: query
+      required: false
+      description: Restrict to assets whose content type starts with this value (for example `image/`).
+      schema:
+        type: string
+
+  schemas:
+    # ---- Re-exported entity schemas from asset-components.yml ----
+    AssetNamespace:
+      $ref: './asset-components.yml#/components/schemas/AssetNamespace'
+    AssetReference:
+      $ref: './asset-components.yml#/components/schemas/AssetReference'
+    AssetInfo:
+      $ref: './asset-components.yml#/components/schemas/AssetInfo'
+    BlobInfo:
+      $ref: './asset-components.yml#/components/schemas/BlobInfo'

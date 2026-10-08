@@ -1,0 +1,1704 @@
+openapi: 3.0.4
+info:
+  title: OID4VCI Issuer Integration API
+  version: 0.1.0
+  description: |
+    Server-to-server integration API for orchestrating OpenID for Verifiable Credential Issuance
+    (OID4VCI) from an issuer backend. It does two things: it manages credential offers together
+    with their issuance session, and it runs the attribute-provisioning pipeline that supplies the
+    data a credential is built from.
+
+    With the offer endpoints a backend creates a credential offer and opens a tracked issuance
+    session for it, then follows that session across the issuance lifecycle and removes it when it
+    is no longer needed. The create call returns everything needed to start the wallet flow (the
+    offer URI, an optional QR code, and a transaction code when applicable) and a correlation id
+    that keys the session.
+
+    With the pipeline endpoints a backend resolves the attributes for an issuance:
+
+    - initialise a pipeline session for a registered pipeline configuration, optionally seeded
+      with attributes and connector fields known up front;
+    - contribute attributes from one or more connector contributors, each carrying provenance (the
+      contributor, the phase, the time of capture, assurance, and a retention policy);
+    - read back the attributes accumulated so far;
+    - evaluate completeness against the credential's requirements, getting a verdict per binding;
+    - approve or fail a session that is gated on an approval decision or on a contributor that could
+      not deliver;
+    - contribute asynchronously through a callback, for contributors that answer out of band after the
+      synchronous credential window has closed.
+
+    This is a backend integration surface for confidential issuer systems, not a browser or wallet
+    API.
+
+    This API is explicitly not the wallet-facing OID4VCI protocol (offer retrieval, nonce, token,
+    credential, deferred credential, and notification) and it is not the issuer metadata surface
+    (the OpenID credential issuer well-known documents). Those are a separate wallet-facing
+    surface and are not described here.
+
+    A related instance-level setting, `missingRequiredClaims` (`reject` or `defer`; default
+    `reject`), governs what happens when a wallet's credential request arrives while mandatory
+    claims are still missing from the pipeline bag. That request handling belongs to the
+    wallet-facing protocol excluded above, so it is not part of this API; it is typed on
+    `Oid4vciIssuerIssuanceSettings` in the platform tenant-configuration surface for the issuer
+    instance. Its effect is visible here through `deferralRecommended` on a completeness verdict
+    and through the `DEFERRED` state a testing session can reach.
+  license:
+    name: Apache-2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0
+
+servers:
+  - url: http://localhost:8080
+    description: Local issuer integration API
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: Pipeline
+    description: Attribute-provisioning pipeline for an issuance session.
+  - name: PublicMetadata
+    description: Anonymous public metadata hosted by the issuer.
+  - name: Testing
+    description: Public testing bootstrap plus dynamically protected workspace and issuance-session operations.
+
+paths:
+  /api/oid4vci/v1/testing/instances/{instanceId}/bootstrap:
+    get:
+      tags: [Testing]
+      summary: Get issuer testing-surface bootstrap links
+      operationId: getOid4vciTestingBootstrap
+      security: []
+      parameters:
+        - name: instanceId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: redirectUri
+          in: query
+          required: false
+          description: |
+            Exact registered callback URI for the testing portal OAuth client. This parameter is
+            required when the instance testing surface uses `AS_PROTECTED`; it is ignored for a
+            `PUBLIC` surface. The URI must be absolute, secure (except loopback HTTP), fragment-free,
+            and registered on the configured authorization-server client.
+          schema: { type: string, format: uri }
+      responses:
+        '200':
+          description: Public testing-surface routing, login, theme, discovery, and capability metadata.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IssuerTestingBootstrap'
+        '400': { description: 'The required redirect URI is missing, malformed, or not registered for the configured client.' }
+        '404': { description: Testing surface is disabled or unavailable. }
+        '503': { description: Tenant configuration or related-surface authority is temporarily unavailable. }
+
+  /api/oid4vci/v1/testing/instances/{instanceId}/workspace:
+    get:
+      tags: [Testing]
+      summary: Get the issuer testing workspace
+      operationId: getOid4vciTestingWorkspace
+      description: Returns operational dashboard aggregates, credential catalog metadata, and action URLs. AS-protected instances require their exact configured resource grant.
+      security:
+        - {}
+        - bearerAuth: []
+      parameters:
+        - name: instanceId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Operational issuer testing workspace.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IssuerTestingWorkspace'
+        '401': { description: The configured exposure mode requires the exact AS-issued resource grant. }
+        '404': { description: Testing surface is disabled or unavailable. }
+
+  /api/oid4vci/v1/testing/instances/{instanceId}/capabilities:
+    get:
+      tags: [Testing]
+      summary: Get issuer testing-surface capabilities
+      operationId: getOid4vciTestingCapabilities
+      security:
+        - {}
+        - bearerAuth: []
+      parameters:
+        - name: instanceId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Supported testing actions.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IssuerTestingCapabilities'
+        '401': { description: The configured exposure mode requires AS authentication. }
+        '404': { description: Testing surface is disabled or unavailable. }
+
+  /api/oid4vci/v1/testing/instances/{instanceId}/actions/{action}:
+    post:
+      tags: [Testing]
+      summary: Execute an issuer testing action
+      operationId: executeOid4vciTestingAction
+      security:
+        - {}
+        - bearerAuth: []
+      parameters:
+        - name: instanceId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: action
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [create-offer]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateOfferRequestBody'
+            examples:
+              createSdJwtVcOffer:
+                summary: Create an SD-JWT VC credential offer
+                description: Selects the EuPid credential configuration advertised as dc+sd-jwt. The wallet must still resolve the offer, obtain a token, and submit its own proof at the credential endpoint.
+                value:
+                  issuerId: issuer-main
+                  credentialConfigurationIds: [EuPid]
+                  preAuthorizedCodeGrant: true
+                  authorizationCodeGrant: false
+                  txCodeRequired: false
+                  offerTtlSeconds: 600
+                  uriLifecycle: SINGLE_USE
+              createMdocOffer:
+                summary: Create an ISO mdoc credential offer
+                description: Selects the Mdl credential configuration advertised as mso_mdoc. The wallet must still perform the mdoc-aware token and credential request with its own proof.
+                value:
+                  issuerId: issuer-main
+                  credentialConfigurationIds: [Mdl]
+                  preAuthorizedCodeGrant: true
+                  authorizationCodeGrant: false
+                  txCodeRequired: false
+                  offerTtlSeconds: 600
+                  uriLifecycle: SINGLE_USE
+              createVcdm11JwtOffer:
+                summary: Create a W3C VCDM 1.1 JWT credential offer
+                description: Selects the Vcdm11Jwt credential configuration advertised as jwt_vc_json. It is not interchangeable with the VCDM 2.0 configuration.
+                value:
+                  issuerId: issuer-main
+                  credentialConfigurationIds: [Vcdm11Jwt]
+                  preAuthorizedCodeGrant: true
+                  authorizationCodeGrant: false
+                  txCodeRequired: false
+                  offerTtlSeconds: 600
+                  uriLifecycle: SINGLE_USE
+              createVcdm20JwtLdOffer:
+                summary: Create a W3C VCDM 2.0 JWT-JSON-LD credential offer
+                description: Selects the Vcdm20JwtLd credential configuration advertised as jwt_vc_json-ld. It is not a VCDM 1.1 jwt_vc_json request.
+                value:
+                  issuerId: issuer-main
+                  credentialConfigurationIds: [Vcdm20JwtLd]
+                  preAuthorizedCodeGrant: true
+                  authorizationCodeGrant: false
+                  txCodeRequired: false
+                  offerTtlSeconds: 600
+                  uriLifecycle: SINGLE_USE
+      responses:
+        '201':
+          description: Credential offer created successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IssuerTestingActionResponse'
+        '400': { description: The action request was malformed or failed validation. }
+        '401': { description: Missing or invalid bearer credentials. }
+        '404': { description: 'Testing surface, instance, or action not found.' }
+
+  /api/oid4vci/v1/testing/instances/{instanceId}/templates:
+    get:
+      tags: [Testing]
+      summary: List issuer testing templates
+      operationId: listOid4vciTestingTemplates
+      security:
+        - {}
+        - bearerAuth: []
+      parameters:
+        - name: instanceId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Available issuer testing templates.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Oid4vciTestingTemplatePage'
+        '401': { description: The configured exposure mode requires AS authentication. }
+        '404': { description: Testing surface or instance not found. }
+
+  /api/oid4vci/v1/testing/instances/{instanceId}/templates/{templateId}/execute:
+    post:
+      tags: [Testing]
+      summary: Execute an issuer testing template
+      operationId: executeOid4vciTestingTemplate
+      security:
+        - {}
+        - bearerAuth: []
+      parameters:
+        - name: instanceId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: templateId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TestingTemplateExecutionRequest'
+      responses:
+        '201':
+          description: Credential offer created successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Oid4vciTestingTemplateExecutionResponse'
+        '400': { description: The template execution request was malformed or failed validation. }
+        '401': { description: Missing or invalid bearer credentials. }
+        '404': { description: 'Testing surface, instance, or template not found.' }
+
+  /api/oid4vci/v1/testing/instances/{instanceId}/status-lists:
+    get:
+      tags: [Testing]
+      summary: List issuer testing status lists
+      operationId: listOid4vciTestingStatusLists
+      security:
+        - {}
+        - bearerAuth: []
+      parameters:
+        - name: instanceId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Issuer status lists available to the testing surface.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Oid4vciTestingStatusListPage'
+        '401': { description: The configured exposure mode requires AS authentication. }
+        '404': { description: Testing surface or instance not found. }
+
+  /api/oid4vci/v1/testing/instances/{instanceId}/status-lists/{statusListId}/entries/{index}:
+    get:
+      tags: [Testing]
+      summary: Get an issuer testing status-list entry
+      operationId: getOid4vciTestingStatusListEntry
+      security:
+        - {}
+        - bearerAuth: []
+      parameters:
+        - name: instanceId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: statusListId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: index
+          in: path
+          required: true
+          schema: { type: integer, minimum: 0 }
+      responses:
+        '200':
+          description: Current status-list entry value and safe correlation metadata.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Oid4vciTestingStatusListEntry'
+        '401': { description: The configured exposure mode requires AS authentication. }
+        '404': { description: 'Testing surface, instance, status list, or entry not found.' }
+    post:
+      tags: [Testing]
+      summary: Update an issuer testing status-list entry
+      operationId: updateOid4vciTestingStatusListEntry
+      security:
+        - {}
+        - bearerAuth: []
+      parameters:
+        - name: instanceId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: statusListId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: index
+          in: path
+          required: true
+          schema: { type: integer, minimum: 0 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Oid4vciTestingStatusListEntryUpdate'
+      responses:
+        '200':
+          description: Updated status-list entry value and safe correlation metadata.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Oid4vciTestingStatusListEntry'
+        '400': { description: The status-list entry update was malformed or failed validation. }
+        '401': { description: Missing or invalid bearer credentials. }
+        '404': { description: 'Testing surface, instance, status list, or entry not found.' }
+
+  /api/oid4vci/v1/testing/instances/{instanceId}/credential-configurations/{configurationId}/operator-form:
+    get:
+      tags: [Testing]
+      summary: Resolve a pre-session data-entry form for a credential configuration
+      operationId: getOid4vciTestingCredentialConfigurationOperatorForm
+      security:
+        - {}
+        - bearerAuth: []
+      parameters:
+        - name: instanceId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: configurationId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Resolved form seeded from claim exampleValues.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Oid4vciTestingOperatorForm'
+        '401': { description: The configured exposure mode requires AS authentication. }
+        '404': { description: 'Testing surface, instance, or configuration not found.' }
+
+  # -- Stable, non-testing twin of the operator form above, for product surfaces --
+  /api/oid4vci/v1/instances/{instanceId}/credential-configurations/{configurationId}/operator-form:
+    get:
+      tags: [Pipeline]
+      summary: Resolve a pre-session data-entry form for a credential configuration
+      description: |
+        Resolves the same data-entry form as the testing-surface operation of the same name,
+        seeded from each bound design claim's `exampleValue`, so an operator can fill in the
+        claim values before an issuance session exists. Unlike the testing operation this path
+        is never gated on the instance testing surface being enabled and always requires bearer
+        credentials; the tenant is taken from the token and the instance and configuration are
+        scoped exactly as on the testing path.
+      operationId: getOid4vciCredentialConfigurationOperatorForm
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: instanceId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: configurationId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Resolved form seeded from claim exampleValues.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Oid4vciTestingOperatorForm'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404': { description: 'Instance or configuration not found.' }
+
+  /api/oid4vci/v1/testing/instances/{instanceId}/sessions:
+    get:
+      tags: [Testing]
+      summary: List event-sourced issuer sessions
+      operationId: listOid4vciTestingSessions
+      security:
+        - {}
+        - bearerAuth: []
+      parameters:
+        - name: instanceId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: cursor
+          in: query
+          description: Opaque cursor returned as `nextCursor` by the preceding page.
+          schema: { type: string }
+        - name: limit
+          in: query
+          description: Maximum number of session summaries to return.
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+        - name: state
+          in: query
+          description: Exact projected protocol state to include.
+          schema: { type: string }
+        - name: templateId
+          in: query
+          description: Restrict results to sessions created from this template.
+          schema: { type: string }
+        - name: createdFrom
+          in: query
+          description: Inclusive lower bound for the creation timestamp.
+          schema: { type: string, format: date-time }
+        - name: createdTo
+          in: query
+          description: Exclusive upper bound for the creation timestamp.
+          schema: { type: string, format: date-time }
+      responses:
+        '200':
+          description: Current issuer session projections.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IssuerTestingSessionPage'
+        '400': { description: A cursor or session filter is malformed or inconsistent. }
+        '401': { description: Missing or invalid bearer credentials. }
+        '404': { description: Testing surface or instance not found. }
+
+  /api/oid4vci/v1/testing/instances/{instanceId}/sessions/{sessionId}:
+    get:
+      tags: [Testing]
+      summary: Get a issuer session projection
+      operationId: getOid4vciTestingSession
+      security:
+        - {}
+        - bearerAuth: []
+      parameters:
+        - name: instanceId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: sessionId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Current issuer session projection.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IssuerTestingSessionDetail'
+        '401': { description: Missing or invalid bearer credentials. }
+        '404': { description: Session not found. }
+
+  /api/oid4vci/v1/testing/instances/{instanceId}/sessions/{sessionId}/operator-form:
+    get:
+      tags: [Testing]
+      summary: Get the operator form for an issuer session
+      operationId: getOid4vciTestingOperatorForm
+      security:
+        - {}
+        - bearerAuth: []
+      parameters:
+        - name: instanceId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: sessionId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Current renderer-safe operator form and amendment state.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Oid4vciTestingOperatorForm'
+        '401': { description: The configured exposure mode requires AS authentication. }
+        '404': { description: 'Testing surface, instance, session, or operator form not found.' }
+    put:
+      tags: [Testing]
+      summary: Amend the operator form values for an issuer session
+      operationId: amendOid4vciTestingOperatorForm
+      security:
+        - {}
+        - bearerAuth: []
+      parameters:
+        - name: instanceId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: sessionId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Oid4vciTestingOperatorFormAmendmentRequest'
+      responses:
+        '200':
+          description: Operator form values amended successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Oid4vciTestingOperatorForm'
+        '400': { description: The amendment was malformed or failed validation. }
+        '401': { description: The configured exposure mode requires AS authentication. }
+        '404': { description: 'Testing surface, instance, session, or operator form not found.' }
+        '409':
+          description: The supplied predecessor version is stale; the body contains the latest operator-form state.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Oid4vciTestingOperatorFormConflict'
+
+  /api/oid4vci/v1/testing/instances/{instanceId}/sessions/{sessionId}/operator-form/validation:
+    post:
+      tags: [Testing]
+      summary: Validate operator-form values for an issuer session
+      operationId: validateOid4vciTestingOperatorForm
+      security:
+        - {}
+        - bearerAuth: []
+      parameters:
+        - name: instanceId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: sessionId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Oid4vciTestingOperatorFormValidationRequest'
+      responses:
+        '200':
+          description: Authoritative server-side validation result produced by the resolved forms engine.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Oid4vciTestingOperatorFormValidationResponse'
+        '400': { description: The validation request was malformed or referenced an unavailable field. }
+        '401': { description: The configured exposure mode requires AS authentication. }
+        '404': { description: 'Testing surface, instance, session, or operator form not found.' }
+        '409':
+          description: The supplied predecessor version is stale; the body contains the latest operator-form state.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Oid4vciTestingOperatorFormConflict'
+
+  /api/oid4vci/v1/testing/instances/{instanceId}/sessions/{sessionId}/events:
+    get:
+      tags: [Testing]
+      summary: List immutable issuer session events
+      operationId: listOid4vciTestingSessionEvents
+      security:
+        - {}
+        - bearerAuth: []
+      parameters:
+        - name: instanceId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: sessionId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: afterSequence
+          in: query
+          schema: { type: integer, format: int64, minimum: 0 }
+        - name: cursor
+          in: query
+          description: Opaque cursor returned as `nextCursor` by the preceding page.
+          schema: { type: string }
+        - name: limit
+          in: query
+          description: Maximum number of events to return.
+          schema: { type: integer, minimum: 1, maximum: 200, default: 100 }
+      responses:
+        '200':
+          description: Ordered, redacted issuer session events.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IssuerTestingSessionEventPage'
+        '400': { description: The event cursor or sequence filter is malformed. }
+        '401': { description: Missing or invalid bearer credentials. }
+        '404': { description: Session not found. }
+
+  /api/oid4vci/v1/testing/instances/{instanceId}/sessions/{sessionId}/ready:
+    post:
+      tags: [Testing]
+      summary: Release a deferred session so the next wallet poll issues
+      operationId: markOid4vciTestingSessionReady
+      description: |
+        Advances a session that is deferred or awaiting approval so the next wallet poll of the
+        deferred-credential endpoint returns the issued credential. The approver identity is
+        resolved from the authenticated context, mirroring approvePipelineSession.
+      security:
+        - {}
+        - bearerAuth: []
+      parameters:
+        - name: instanceId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: sessionId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Session released; next deferred-credential poll issues.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IssuerTestingSessionDetail'
+        '401': { description: The configured exposure mode requires AS authentication. }
+        '404': { description: Session not found. }
+        '409': { description: Session is not in a deferred/awaiting-approval state. }
+
+  # -- Credential offers and their issuance session (typed contract from the session spec) --
+  /api/oid4vci/v1/backend/credential/offers:
+    $ref: './oid4vci-issuer-session-openapi.yml#/paths/~1backend~1credential~1offers'
+
+  /api/oid4vci/v1/backend/credential/offers/{correlation_id}:
+    $ref: './oid4vci-issuer-session-openapi.yml#/paths/~1backend~1credential~1offers~1{correlation_id}'
+
+  /public/schema/vct/{vctId}:
+    servers:
+      - url: /
+        description: Host root. Hosted type metadata is an unversioned mount at the deployment origin, never under an issuer instance path.
+    get:
+      tags: [PublicMetadata]
+      summary: Get hosted SD-JWT VC type metadata
+      description: |
+        Returns a design-generated SD-JWT VC type metadata document for VCT bindings whose
+        `vctHostingMode` is `HOSTED`. External VCTs and plain non-hosted VCT strings are not
+        served from this endpoint.
+      operationId: getHostedVctTypeMetadata
+      security: []
+      parameters:
+        - name: vctId
+          in: path
+          required: true
+          description: Hosted VCT identifier, usually the last path segment of the VCT URI.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: SD-JWT VC type metadata.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SdJwtVcTypeMetadata'
+        '404':
+          description: No hosted VCT metadata exists for this identifier.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  # -- Attribute-provisioning pipeline --
+  /api/oid4vci/v1/backend/sessions:
+    post:
+      tags: [Pipeline]
+      summary: Initialise an issuance pipeline session
+      description: |
+        Allocates a new issuance pipeline session for a registered pipeline configuration,
+        optionally seeded with attributes and connector fields known at init time. No phase runs here;
+        this only opens the session. Drive phases afterwards with the contribute endpoint. The
+        response returns the session id and the resolved correlation handle.
+      operationId: initPipelineSession
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InitPipelineSessionRequestBody'
+            example:
+              pipeline_configuration:
+                pipelineId: pid-issuance
+                expectedInitialConnectorFields:
+                  - employee_id
+              correlation_id: order-2026-000931
+              initial_connector_fields:
+                employee_id: E1042
+              ttl_seconds: 600
+      responses:
+        '200':
+          description: Pipeline session created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InitPipelineSessionResult'
+              example:
+                sessionId: 1f3b2a90-7e4c-4a1e-8c2d-9b6f0a1e2d34
+                correlationId: order-2026-000931
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/oid4vci/v1/backend/sessions/{correlationId}/attributes:
+    get:
+      tags: [Pipeline]
+      summary: Read accumulated session attributes
+      description: |
+        Returns the attribute values accumulated in the session bag, keyed by attribute path,
+        plus the names of any connector fields present on the session. Connector-field values are
+        sensitive and are never returned over this API.
+      operationId: getSessionAttributes
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: Accumulated attributes for the session.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GetSessionAttributesResult'
+              example:
+                attributes:
+                  given_name: Alice
+                  family_name: Smith
+                  birth_date: '1990-04-01'
+                connectorFieldNames:
+                  - email
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    post:
+      tags: [Pipeline]
+      summary: Contribute attributes to a session
+      description: |
+        Pushes compact attribute groups and connector fields into an active session as input for the
+        credential-request phase. The session is identified by the path correlation id; the
+        attributes and connector fields come from the body. Each record carries provenance: the
+        producing contributor, the phase, the capture time, an optional assurance level, a
+        conflict-resolution priority, and a retention policy.
+      operationId: contributeAttributes
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ContributeAttributesRequestBody'
+            example:
+              groups:
+                - contributorId: hr-backend
+                  phase: oid4vci_credential_request
+                  timestamp: '2026-06-07T10:16:00Z'
+                  attributes:
+                    - path: given_name
+                      value: Alice
+                      verified: true
+                    - path: family_name
+                      value: Smith
+                  connectorFields:
+                    email: alice@acme.io
+      responses:
+        '200':
+          description: Contribution accepted; session state after the phase ran.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ContributeAttributesResult'
+              example:
+                sessionId: 1f3b2a90-7e4c-4a1e-8c2d-9b6f0a1e2d34
+                status: PHASE_COMPLETED
+                completedPhases:
+                  - oid4vci_credential_request
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/oid4vci/v1/backend/sessions/{correlationId}/completeness:
+    get:
+      tags: [Pipeline]
+      summary: Evaluate session attribute completeness
+      description: |
+        Returns a verdict per credential-claims binding: whether the session's accumulated bag
+        satisfies every mandatory attribute path, which paths are still missing, and whether
+        deferral or approval is indicated. This is a read-only verdict; it does not mutate the
+        session.
+      operationId: evaluateCompleteness
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: Completeness verdicts for the session.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EvaluateAttributeCompletenessResult'
+              example:
+                verdicts:
+                  - bindingId: pid-credential
+                    complete: false
+                    missingRequiredPaths:
+                      - birth_date
+                    deferralRecommended: true
+                    awaitingApproval: false
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/oid4vci/v1/backend/sessions/{correlationId}/approve:
+    post:
+      tags: [Pipeline]
+      summary: Apply an approval-gate decision to a session
+      description: |
+        Applies an approve or reject decision to a session that is awaiting approval. On approval
+        the session moves towards ready; on rejection it fails. The approver identity is resolved
+        from the authenticated context and is never supplied in the body. A reason is required on
+        rejection.
+      operationId: approvePipelineSession
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApprovePipelineSessionRequestBody'
+            example:
+              decision: APPROVE
+              reason: Manual review passed.
+      responses:
+        '200':
+          description: Decision applied; session status after the decision.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApprovePipelineSessionResult'
+              example:
+                correlationId: order-2026-000931
+                status: READY
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/oid4vci/v1/backend/sessions/{correlationId}/fail:
+    post:
+      tags: [Pipeline]
+      summary: Mark a contributor's contribution as failed
+      description: |
+        Records that a single connector contributor could not deliver its contribution to the session.
+        A later completeness evaluation can then treat an unsatisfied required contributor as a hard
+        miss rather than waiting indefinitely.
+      operationId: recordPipelineContributorFailure
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RecordPipelineContributorFailureRequestBody'
+            example:
+              contributor_id: hr-backend
+              reason: HR API returned 503 after retries.
+      responses:
+        '200':
+          description: Failure recorded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecordPipelineContributorFailureResult'
+              example:
+                correlationId: order-2026-000931
+                contributorId: hr-backend
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/oid4vci/v1/backend/sessions/{correlationId}/callbacks/{callbackToken}:
+    post:
+      tags: [Pipeline]
+      summary: Contribute attributes via an asynchronous callback
+      description: |
+        Inbound contribution endpoint for a connector contributor that answers out of band. The
+        callback token is the opaque capability artefact minted by the issuer when the contributor was
+        dispatched; it is validated and cross-checked against the path correlation id. The body is
+        fed into the pipeline as a deferred contribution. Authorisation is carried by the callback
+        token in the path, so this endpoint does not require a bearer token.
+      operationId: contributeViaCallback
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/CallbackToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ContributeViaCallbackRequestBody'
+            example:
+              groups:
+                - contributorId: idv-provider
+                  phase: oid4vci_deferred
+                  timestamp: '2026-06-07T11:02:00Z'
+                  attributes:
+                    - path: birth_date
+                      value: '1990-04-01'
+                      assurance: high
+                      verified: true
+      responses:
+        '200':
+          description: Contribution accepted; session state after the deferred phase ran.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ContributeAttributesResult'
+              example:
+                sessionId: 1f3b2a90-7e4c-4a1e-8c2d-9b6f0a1e2d34
+                status: READY
+                completedPhases:
+                  - oid4vci_credential_request
+                  - oid4vci_deferred
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          description: The callback token is missing, invalid, or does not match the path correlation id.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Bearer JWT access token. The tenant is resolved from this token.
+
+  parameters:
+    # -- Re-exported path parameters from oid4vci-issuer-components.yml --
+    CorrelationId:
+      $ref: './oid4vci-issuer-components.yml#/components/parameters/CorrelationId'
+    CallbackToken:
+      $ref: './oid4vci-issuer-components.yml#/components/parameters/CallbackToken'
+
+  responses:
+    Unauthorized:
+      description: Missing or invalid bearer credentials.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    BadRequest:
+      description: The request was malformed or failed validation.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: The referenced pipeline session was not found.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+  schemas:
+    TestingLink:
+      type: object
+      required: [label, href]
+      properties:
+        label: { type: string }
+        href: { type: string, format: uri }
+
+    IssuerTestingFeatureSet:
+      type: object
+      required: [templates, statusLists, dcql, sessions]
+      properties:
+        templates: { type: boolean }
+        statusLists: { type: boolean }
+        dcql: { type: boolean }
+        sessions: { type: boolean }
+
+    IssuerTestingActions:
+      type: object
+      required: [templates, direct, sessions]
+      properties:
+        templates: { type: string, format: uri }
+        direct: { type: string, format: uri }
+        sessions: { type: string, format: uri }
+        statusLists: { type: string, format: uri, nullable: true }
+        dcql: { type: string, format: uri, nullable: true }
+
+    IssuerTestingAuthentication:
+      type: object
+      description: Canonical authorization-code with PKCE metadata for an AS-protected testing surface.
+      required:
+        - mode
+        - issuer
+        - metadataUrl
+        - authorizationEndpoint
+        - tokenEndpoint
+        - jwksUri
+        - clientId
+        - redirectUri
+        - scopes
+        - audience
+      properties:
+        mode: { type: string, enum: [AUTHORIZATION_CODE_PKCE] }
+        issuer: { type: string, format: uri }
+        metadataUrl: { type: string, format: uri }
+        authorizationEndpoint: { type: string, format: uri }
+        tokenEndpoint: { type: string, format: uri }
+        jwksUri: { type: string, format: uri }
+        clientId: { type: string, minLength: 1 }
+        redirectUri: { type: string, format: uri }
+        scopes:
+          type: array
+          minItems: 1
+          items: { type: string, minLength: 1 }
+        audience: { type: string, minLength: 1 }
+        resource: { type: string, nullable: true }
+
+    Oid4vciTestingCredentialDisplay:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string }
+        locale: { type: string, nullable: true }
+        description: { type: string, nullable: true }
+        logoUri: { type: string, format: uri, nullable: true }
+        logoAltText: { type: string, nullable: true }
+        backgroundColor: { type: string, nullable: true }
+        backgroundImageUri: { type: string, format: uri, nullable: true }
+        textColor: { type: string, nullable: true }
+
+    Oid4vciTestingCredentialClaim:
+      type: object
+      required: [path, display]
+      properties:
+        path:
+          type: array
+          minItems: 1
+          items: { type: string }
+        mandatory: { type: boolean, nullable: true }
+        valueType: { type: string, nullable: true }
+        display:
+          type: array
+          items: { $ref: '#/components/schemas/Oid4vciTestingCredentialDisplay' }
+        exampleValue:
+          type: string
+          nullable: true
+          description: >-
+            Illustrative sample value (from the credential design
+            ClaimPresentation.exampleValue). The testing console pre-fills the
+            data form with it; claims without one get a generated placeholder.
+            Never applied to issued credentials.
+
+    Oid4vciTestingCredentialDesignMetadata:
+      type: object
+      required: [credentialDefinitionTypes, credentialDefinitionContexts, claims, order]
+      properties:
+        vct: { type: string, nullable: true }
+        doctype: { type: string, nullable: true }
+        credentialDefinitionTypes:
+          type: array
+          items: { type: string }
+        credentialDefinitionContexts:
+          type: array
+          items: { type: string }
+        claims:
+          type: array
+          items: { $ref: '#/components/schemas/Oid4vciTestingCredentialClaim' }
+        order:
+          type: array
+          items: { type: string }
+
+    Oid4vciTestingOfferDefaults:
+      type: object
+      required: [preAuthorizedCodeGrant, authorizationCodeGrant, txCodeRequired, offerTtlSeconds, scheme, uriLifecycle]
+      properties:
+        preAuthorizedCodeGrant: { type: boolean }
+        authorizationCodeGrant: { type: boolean }
+        txCodeRequired: { type: boolean }
+        offerTtlSeconds: { type: integer, format: int64, minimum: 1 }
+        scheme: { type: string }
+        uriLifecycle: { type: string, enum: [SINGLE_USE, REUSABLE_FRESH_PER_FETCH] }
+
+    Oid4vciTestingCredentialConfigurationSummary:
+      type: object
+      required: [id, format, display, statusListBound, design, offerDefaults]
+      properties:
+        id: { type: string }
+        format: { $ref: './wallet-credential-components.yml#/components/schemas/CredentialFormat' }
+        scope: { type: string, nullable: true }
+        display:
+          type: array
+          items: { $ref: '#/components/schemas/Oid4vciTestingCredentialDisplay' }
+        statusListBound: { type: boolean }
+        design: { $ref: '#/components/schemas/Oid4vciTestingCredentialDesignMetadata' }
+        offerDefaults: { $ref: '#/components/schemas/Oid4vciTestingOfferDefaults' }
+
+    TestingSessionAggregate:
+      type: object
+      required: [total, recent, byState, recentByState, recentWindowSeconds]
+      properties:
+        total: { type: integer, format: int64, minimum: 0 }
+        recent: { type: integer, format: int64, minimum: 0 }
+        byState:
+          type: object
+          additionalProperties: { type: integer, format: int64, minimum: 0 }
+        recentByState:
+          type: object
+          additionalProperties: { type: integer, format: int64, minimum: 0 }
+        recentWindowSeconds: { type: integer, format: int64, minimum: 1, example: 86400 }
+
+    Oid4vciTestingDashboard:
+      type: object
+      required: [credentialConfigurations, templates, sessions]
+      properties:
+        credentialConfigurations: { type: integer, format: int64, minimum: 0 }
+        templates: { type: integer, format: int64, minimum: 0 }
+        sessions: { $ref: '#/components/schemas/TestingSessionAggregate' }
+
+    RelatedSurfaceDescriptor:
+      type: object
+      required: [kind, surfaceId, instanceId, title, href, access, capabilities]
+      properties:
+        kind:
+          type: string
+          enum: [DEVELOPER_CONSOLE, OID4VCI_TESTING, OID4VP_TESTING]
+        surfaceId:
+          type: string
+          enum: [developer_console, oid4vci_testing, oid4vp_testing]
+        instanceId:
+          type: string
+        title:
+          type: string
+        href:
+          type: string
+          format: uri
+          pattern: '^https://'
+          description: Tenant-authoritative HTTPS URL; never derived from caller slugs or query parameters.
+        access:
+          type: string
+          enum: [PUBLIC, AS_PROTECTED]
+        capabilities:
+          type: array
+          uniqueItems: true
+          items: { type: string }
+
+    IssuerTestingBootstrap:
+      type: object
+      required:
+        - service
+        - kind
+        - instanceId
+        - displayName
+        - access
+        - publicBaseUrl
+        - displayUrl
+        - themeUrl
+        - themeCssUrl
+        - themeApplicationId
+        - discoveryUrl
+        - capabilitiesUrl
+        - workspaceUrl
+        - discovery
+        - capabilities
+        - authentication
+        - relatedSurfaces
+      properties:
+        service: { type: string, enum: [oid4vci-issuer] }
+        kind: { type: string, enum: [issuer] }
+        instanceId: { type: string }
+        displayName: { type: string }
+        access: { type: string, enum: [PUBLIC, AS_PROTECTED] }
+        publicBaseUrl:
+          type: string
+          format: uri
+          pattern: '^https?://[^/?#]+(?:/|(?:/[^/?#]+)+)?$'
+          description: Canonical public scheme, authority, and optional instance route prefix. HTTPS is required except for localhost or 127.0.0.1. Contains no query or fragment and has no trailing slash.
+        displayUrl: { type: string, format: uri, description: Canonical public testing-console page URL for this instance. This is not the API base; use publicBaseUrl for protocol testing API requests. }
+        themeUrl: { type: string, format: uri, description: Host-resolved public theme bootstrap URL; never contains the internal tenant identifier. }
+        themeCssUrl: { type: string, format: uri, description: Host-resolved public theme CSS URL; never contains the internal tenant identifier. }
+        themeApplicationId: { type: string, description: Application id used by the tenant theme resolver for this portal. }
+        discoveryUrl: { type: string, format: uri }
+        capabilitiesUrl: { type: string, format: uri }
+        workspaceUrl: { type: string, format: uri, description: Explicit operational workspace resource. }
+        discovery:
+          type: array
+          items: { $ref: '#/components/schemas/TestingLink' }
+        capabilities: { $ref: '#/components/schemas/IssuerTestingFeatureSet' }
+        authentication:
+          type: object
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/IssuerTestingAuthentication'
+        relatedSurfaces:
+          type: array
+          description: >-
+            Other enabled, licensed and exposure-visible surfaces of the same tenant,
+            including the Developer Console and issuer/verifier testing instances. The
+            current exact kind/instance pair is excluded. Anonymous callers see PUBLIC only.
+          items:
+            $ref: '#/components/schemas/RelatedSurfaceDescriptor'
+
+    IssuerTestingWorkspace:
+      type: object
+      required: [service, kind, instanceId, actions, dashboard, credentialConfigurations]
+      properties:
+        service: { type: string, enum: [oid4vci-issuer] }
+        kind: { type: string, enum: [issuer] }
+        instanceId: { type: string }
+        actions: { $ref: '#/components/schemas/IssuerTestingActions' }
+        dashboard: { $ref: '#/components/schemas/Oid4vciTestingDashboard' }
+        credentialConfigurations:
+          type: array
+          items: { $ref: '#/components/schemas/Oid4vciTestingCredentialConfigurationSummary' }
+
+    IssuerTestingCapabilities:
+      type: object
+      required: [service, actions, bootstrapUrl, actionUrl]
+      properties:
+        service: { type: string, enum: [oid4vci-issuer] }
+        actions:
+          type: array
+          items: { type: string, enum: [create-offer] }
+        bootstrapUrl: { type: string, format: uri }
+        actionUrl:
+          type: string
+          description: Absolute action URL template containing the `{action}` path placeholder.
+
+    TestingTemplateExecutionRequest:
+      type: object
+      properties:
+        overrides:
+          type: object
+          additionalProperties: true
+
+    Oid4vciTestingTemplateSummary:
+      type: object
+      required: [id, name, credentialConfigurationIds]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        description: { type: string, nullable: true }
+        credentialConfigurationIds:
+          type: array
+          items: { type: string }
+
+    Oid4vciTestingTemplatePage:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Oid4vciTestingTemplateSummary' }
+
+    Oid4vciTestingTemplateExecutionResponse:
+      type: object
+      required: [correlation_id, offer_uri, session_id]
+      properties:
+        correlation_id: { type: string }
+        session_id:
+          type: string
+          description: >-
+            Immutable protocol-session identifier. Feeds the durable session APIs
+            (/testing/instances/{instanceId}/sessions/{sessionId} and its events).
+            Distinct from correlation_id, which is the business correlation echoed
+            to callbacks and status polling.
+        offer_uri: { type: string }
+        status_uri: { type: string }
+        qr_uri: { type: string, format: dataurl }
+        tx_code: { type: string }
+
+    Oid4vciTestingStatusListPage:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Oid4vciTestingStatusListSummary' }
+
+    Oid4vciTestingStatusListSummary:
+      type: object
+      required:
+        - id
+        - correlationId
+        - credentialConfigurationIds
+        - spec
+        - purposes
+        - bitsPerStatus
+        - length
+        - issuedCount
+        - remainingCapacity
+        - updatedAt
+      properties:
+        id: { type: string }
+        correlationId: { type: string }
+        credentialConfigurationIds:
+          type: array
+          items: { type: string }
+        spec: { type: string }
+        purposes:
+          type: array
+          items: { type: string }
+        bitsPerStatus: { type: integer }
+        length: { type: integer }
+        issuedCount: { type: integer }
+        remainingCapacity: { type: integer }
+        updatedAt: { type: string, format: date-time }
+
+    Oid4vciTestingStatusListEntry:
+      type: object
+      required: [statusListId, statusListIndex, value, purpose]
+      properties:
+        statusListId: { type: string }
+        statusListIndex: { type: integer, minimum: 0 }
+        value: { type: integer, minimum: 0 }
+        purpose: { type: string }
+        entryCorrelationId: { type: string, nullable: true }
+        credentialId: { type: string, nullable: true }
+
+    Oid4vciTestingStatusListEntryUpdate:
+      type: object
+      required: [value]
+      properties:
+        value: { type: integer, minimum: 0 }
+
+    IssuerTestingActionResponse:
+      type: object
+      required: [offerId, sessionId, offer, offerUri]
+      properties:
+        offerId: { type: string }
+        sessionId: { type: string }
+        offer:
+          type: object
+          additionalProperties: true
+        offerUri: { type: string }
+        txCode: { type: string, nullable: true }
+
+    IssuerTestingSessionSummary:
+      type: object
+      required: [id, state, createdAt]
+      properties:
+        id: { type: string }
+        state:
+          type: string
+          nullable: true
+          description: >-
+            Free-form projected protocol state mirroring the issuance session lifecycle (for
+            example OFFER_CREATED, CREDENTIAL_ISSUED, EXPIRED). The testing-visible
+            deferred-issuance state is DEFERRED. An approval-gated hold is a pipeline-internal
+            detail that also collapses into DEFERRED here; it is never a distinct value of this
+            field. POST the session's `ready` action to release a deferred session once complete.
+        createdAt: { type: string, format: date-time }
+        templateId: { type: string, nullable: true }
+        updatedAt: { type: string, format: date-time, nullable: true }
+
+    IssuerTestingSessionDetail:
+      allOf:
+        - $ref: '#/components/schemas/IssuerTestingSessionSummary'
+        - type: object
+          required: [creationSnapshot, currentResult]
+          properties:
+            creationSnapshot:
+              type: object
+              nullable: true
+              additionalProperties: true
+            currentResult:
+              type: object
+              nullable: true
+              additionalProperties: true
+            expiresAt:
+              type: string
+              format: date-time
+              nullable: true
+              description: Offer expiry resolved from the live issuance session, when it still exists. Absent for sessions whose live record is gone.
+
+    Oid4vciTestingOperatorFormAmendmentRequest:
+      type: object
+      required: [previousVersionId, values]
+      properties:
+        previousVersionId:
+          type: string
+          minLength: 1
+          description: Opaque immutable session-chain head observed when the form was read.
+        values:
+          type: object
+          description: Renderer field values keyed by attribute path; secrets and raw credentials are not accepted.
+          additionalProperties: true
+
+    Oid4vciTestingOperatorFormValidationRequest:
+      type: object
+      required: [previousVersionId, values]
+      properties:
+        previousVersionId:
+          type: string
+          minLength: 1
+          description: Opaque immutable session-chain head against which validation is requested.
+        values:
+          type: object
+          description: Renderer field values keyed by attribute path; secrets and raw credentials are not accepted.
+          additionalProperties: true
+
+    Oid4vciTestingOperatorFormFieldValidationError:
+      type: object
+      required: [code, message]
+      properties:
+        code: { type: string }
+        message: { type: string }
+
+    Oid4vciTestingOperatorFormValidationResponse:
+      type: object
+      required: [versionId, valid, errors]
+      properties:
+        versionId:
+          type: string
+          minLength: 1
+        valid: { type: boolean }
+        errors:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              $ref: '#/components/schemas/Oid4vciTestingOperatorFormFieldValidationError'
+
+    Oid4vciTestingOperatorFormAmendmentHistoryEntry:
+      type: object
+      required: [previousVersionId, occurredAt, changedFieldPaths]
+      properties:
+        previousVersionId:
+          type: string
+          minLength: 1
+          description: Opaque immutable session version amended by this entry.
+        occurredAt:
+          type: string
+          format: date-time
+        changedFieldPaths:
+          type: array
+          items: { type: string }
+        actorLabel:
+          type: string
+
+    Oid4vciTestingOperatorForm:
+      type: object
+      description: |
+        Renderer-safe operator form state. Tokens, secrets, raw credentials, and unredacted
+        connector diagnostics are never included.
+      required:
+        - sessionId
+        - tenantId
+        - connectorId
+        - resolvedForm
+        - values
+        - versionId
+        - phase
+        - status
+        - editable
+        - updatedAt
+        - amendmentHistory
+      properties:
+        sessionId: { type: string }
+        tenantId:
+          type: string
+          description: Actual execution tenant of this protected operator-form session; never emitted by public bootstrap.
+        connectorId: { type: string }
+        resolvedForm:
+          $ref: './forms-components.yml#/components/schemas/ResolvedForm'
+        values:
+          type: object
+          description: Renderer field values keyed by attribute path, excluding secrets and raw credentials.
+          additionalProperties: true
+        versionId:
+          type: string
+          minLength: 1
+          description: Opaque current head of the immutable session version chain.
+        phase: { type: string, nullable: true }
+        status: { type: string, nullable: true }
+        editable: { type: boolean }
+        updatedAt: { type: string, format: date-time }
+        amendmentHistory:
+          type: array
+          items:
+            $ref: '#/components/schemas/Oid4vciTestingOperatorFormAmendmentHistoryEntry'
+
+    Oid4vciTestingOperatorFormConflict:
+      type: object
+      required: [latest]
+      properties:
+        latest:
+          $ref: '#/components/schemas/Oid4vciTestingOperatorForm'
+
+    IssuerTestingSessionEvent:
+      type: object
+      required: [sourceEventId, sequence, occurredAt, eventType]
+      properties:
+        sourceEventId:
+          type: string
+          minLength: 1
+          description: Stable identifier of the persisted source event used for idempotent projection.
+        sequence: { type: integer, format: int64, minimum: 0 }
+        occurredAt: { type: string, format: date-time }
+        eventType: { type: string }
+        oldState: { type: string, nullable: true }
+        newState: { type: string, nullable: true }
+        safeMetadata:
+          type: object
+          nullable: true
+          additionalProperties:
+            oneOf:
+              - { type: string, nullable: true }
+              - { type: number, nullable: true }
+              - { type: boolean, nullable: true }
+        redactedDiagnosticDetail: { type: string, nullable: true }
+        data:
+          type: object
+          nullable: true
+          additionalProperties: true
+          description: Redacted per-step data snapshot (offer payload, contributed attributes, credential request, deferral transition, issued summary).
+
+    IssuerTestingSessionPage:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/IssuerTestingSessionSummary' }
+        nextCursor: { type: string, nullable: true }
+
+    IssuerTestingSessionEventPage:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/IssuerTestingSessionEvent' }
+        nextCursor: { type: string, nullable: true }
+
+    # -- Re-exported entity schemas from oid4vci-issuer-components.yml --
+    AttributeRecord:
+      $ref: './oid4vci-issuer-components.yml#/components/schemas/AttributeRecord'
+    AttributeValue:
+      $ref: './oid4vci-issuer-components.yml#/components/schemas/AttributeValue'
+    AttributeEvidence:
+      $ref: './oid4vci-issuer-components.yml#/components/schemas/AttributeEvidence'
+    AttributeRetentionPolicy:
+      $ref: './oid4vci-issuer-components.yml#/components/schemas/AttributeRetentionPolicy'
+    EphemeralRetention:
+      $ref: './oid4vci-issuer-components.yml#/components/schemas/EphemeralRetention'
+    SessionRetention:
+      $ref: './oid4vci-issuer-components.yml#/components/schemas/SessionRetention'
+    RetainedRetention:
+      $ref: './oid4vci-issuer-components.yml#/components/schemas/RetainedRetention'
+    ConnectorFields:
+      $ref: './oid4vci-issuer-components.yml#/components/schemas/ConnectorFields'
+    PipelineConfiguration:
+      $ref: './oid4vci-issuer-components.yml#/components/schemas/PipelineConfiguration'
+    InitPipelineSessionRequestBody:
+      $ref: './oid4vci-issuer-components.yml#/components/schemas/InitPipelineSessionRequestBody'
+    InitPipelineSessionResult:
+      $ref: './oid4vci-issuer-components.yml#/components/schemas/InitPipelineSessionResult'
+    ContributeAttributesRequestBody:
+      $ref: './oid4vci-issuer-components.yml#/components/schemas/ContributeAttributesRequestBody'
+    ContributeViaCallbackRequestBody:
+      $ref: './oid4vci-issuer-components.yml#/components/schemas/ContributeViaCallbackRequestBody'
+    ContributeAttributesCompactRequestBody:
+      $ref: './oid4vci-issuer-components.yml#/components/schemas/ContributeAttributesCompactRequestBody'
+    AttributeProvisionGroup:
+      $ref: './oid4vci-issuer-components.yml#/components/schemas/AttributeProvisionGroup'
+    SemanticSetEntry:
+      $ref: './oid4vci-issuer-components.yml#/components/schemas/SemanticSetEntry'
+    SemanticSetAttributeItem:
+      $ref: './oid4vci-issuer-components.yml#/components/schemas/SemanticSetAttributeItem'
+    RawAttributeItem:
+      $ref: './oid4vci-issuer-components.yml#/components/schemas/RawAttributeItem'
+    CompactRetentionPolicy:
+      $ref: './oid4vci-issuer-components.yml#/components/schemas/CompactRetentionPolicy'
+    CreateOfferRequestBody:
+      $ref: './oid4vci-issuer-components.yml#/components/schemas/CreateOfferRequestBody'
+    ContributeAttributesResult:
+      $ref: './oid4vci-issuer-components.yml#/components/schemas/ContributeAttributesResult'
+    ApprovePipelineSessionRequestBody:
+      $ref: './oid4vci-issuer-components.yml#/components/schemas/ApprovePipelineSessionRequestBody'
+    ApprovePipelineSessionResult:
+      $ref: './oid4vci-issuer-components.yml#/components/schemas/ApprovePipelineSessionResult'
+    ApprovalDecision:
+      $ref: './oid4vci-issuer-components.yml#/components/schemas/ApprovalDecision'
+    RecordPipelineContributorFailureRequestBody:
+      $ref: './oid4vci-issuer-components.yml#/components/schemas/RecordPipelineContributorFailureRequestBody'
+    RecordPipelineContributorFailureResult:
+      $ref: './oid4vci-issuer-components.yml#/components/schemas/RecordPipelineContributorFailureResult'
+    EvaluateAttributeCompletenessResult:
+      $ref: './oid4vci-issuer-components.yml#/components/schemas/EvaluateAttributeCompletenessResult'
+    BindingCompletenessVerdict:
+      $ref: './oid4vci-issuer-components.yml#/components/schemas/BindingCompletenessVerdict'
+    GetSessionAttributesResult:
+      $ref: './oid4vci-issuer-components.yml#/components/schemas/GetSessionAttributesResult'
+    IssuancePipelineStatus:
+      $ref: './oid4vci-issuer-components.yml#/components/schemas/IssuancePipelineStatus'
+    SdJwtVcTypeMetadata:
+      $ref: './oid4vci-issuer-components.yml#/components/schemas/SdJwtVcTypeMetadata'
+    SdJwtVcDisplayInformation:
+      $ref: './oid4vci-issuer-components.yml#/components/schemas/SdJwtVcDisplayInformation'
+    SdJwtVcRenderingMetadata:
+      $ref: './oid4vci-issuer-components.yml#/components/schemas/SdJwtVcRenderingMetadata'
+    SdJwtVcSimpleRenderingMethod:
+      $ref: './oid4vci-issuer-components.yml#/components/schemas/SdJwtVcSimpleRenderingMethod'
+    SdJwtVcLogoMetadata:
+      $ref: './oid4vci-issuer-components.yml#/components/schemas/SdJwtVcLogoMetadata'
+    SdJwtVcClaimInformation:
+      $ref: './oid4vci-issuer-components.yml#/components/schemas/SdJwtVcClaimInformation'
+    SdJwtVcClaimDisplayMetadata:
+      $ref: './oid4vci-issuer-components.yml#/components/schemas/SdJwtVcClaimDisplayMetadata'
+    SdJwtVcClaimSdMetadata:
+      $ref: './oid4vci-issuer-components.yml#/components/schemas/SdJwtVcClaimSdMetadata'
+    Error:
+      $ref: './oid4vci-issuer-components.yml#/components/schemas/Error'

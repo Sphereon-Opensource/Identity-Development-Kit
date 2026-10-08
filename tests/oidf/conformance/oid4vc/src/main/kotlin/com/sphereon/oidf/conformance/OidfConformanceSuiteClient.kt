@@ -242,8 +242,9 @@ class OidfConformanceSuiteClient(
                 "OIDF suite ${request.method()} ${request.uri()} returned ${response.statusCode()}: ${response.body()}"
             }
             require(redirectCount < maxRedirects) { "OIDF authorization exceeded $maxRedirects redirects" }
-            val location = response.headers().firstValue("Location").orElse(null)
-                ?: error("OIDF authorization redirect omitted Location")
+            val location =
+                response.headers().firstValue("Location").orElse(null)
+                    ?: error("OIDF authorization redirect omitted Location")
             val resolved = target.resolve(location)
             if (terminal != null && resolved.sameEndpointAs(terminal)) {
                 return resolved.toString()
@@ -260,7 +261,13 @@ class OidfConformanceSuiteClient(
             path == other.path
 
     private fun URI.effectivePort(): Int =
-        if (port >= 0) port else if (scheme.equals("https", ignoreCase = true)) 443 else 80
+        if (port >= 0) {
+            port
+        } else if (scheme.equals("https", ignoreCase = true)) {
+            443
+        } else {
+            80
+        }
 
     /**
      * Returns a Digital Credentials API result to the exact one-time callback issued by the suite.
@@ -398,7 +405,10 @@ class OidfConformanceSuiteClient(
         names: MutableSet<String>,
     ) {
         when (element) {
-            is JsonArray -> element.forEach { collectPlanNames(it, names) }
+            is JsonArray -> {
+                element.forEach { collectPlanNames(it, names) }
+            }
+
             is JsonObject -> {
                 (element["planName"] ?: element["plan"])
                     ?.let { it as? JsonPrimitive }
@@ -406,7 +416,10 @@ class OidfConformanceSuiteClient(
                     ?.let(names::add)
                 element.values.forEach { collectPlanNames(it, names) }
             }
-            else -> Unit
+
+            else -> {
+                Unit
+            }
         }
     }
 

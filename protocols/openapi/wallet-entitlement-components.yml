@@ -1,0 +1,448 @@
+components:
+  schemas:
+    WalletEntitlementSubjectType:
+      type: string
+      enum: [TENANT_DEFAULT, ORG_UNIT, GROUP, PARTY]
+    WalletEntitlementState:
+      type: string
+      enum: [ENABLED, DISABLED]
+    JsonObject:
+      type: object
+      additionalProperties: true
+    WalletEntitlementRow:
+      type: object
+      required: [entitlementId, tenantId, subjectType, featureKey, state, createdAt, updatedAt]
+      properties:
+        entitlementId: { type: string }
+        tenantId: { type: string }
+        subjectType:
+          $ref: '#/components/schemas/WalletEntitlementSubjectType'
+        subjectId: { type: string, nullable: true }
+        featureKey: { type: string }
+        state:
+          $ref: '#/components/schemas/WalletEntitlementState'
+        configJson:
+          nullable: true
+          $ref: '#/components/schemas/JsonObject'
+        validFrom: { type: string, format: date-time, nullable: true }
+        validUntil: { type: string, format: date-time, nullable: true }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    UpsertWalletEntitlementArgs:
+      type: object
+      required: [subjectType, featureKey, state]
+      properties:
+        entitlementId: { type: string, nullable: true }
+        subjectType:
+          $ref: '#/components/schemas/WalletEntitlementSubjectType'
+        subjectId: { type: string, nullable: true }
+        featureKey: { type: string }
+        state:
+          $ref: '#/components/schemas/WalletEntitlementState'
+        configJson:
+          nullable: true
+          $ref: '#/components/schemas/JsonObject'
+        validFrom: { type: string, format: date-time, nullable: true }
+        validUntil: { type: string, format: date-time, nullable: true }
+    ListWalletEntitlementsResult:
+      type: object
+      required: [entitlements]
+      properties:
+        entitlements:
+          type: array
+          items:
+            $ref: '#/components/schemas/WalletEntitlementRow'
+    DeleteWalletEntitlementResult:
+      type: object
+      required: [entitlementId, deleted]
+      properties:
+        entitlementId: { type: string }
+        deleted: { type: boolean }
+    WalletFeatureManifestEntry:
+      type: object
+      required: [featureKey, state, sourceEntitlementId, sourceSubjectType]
+      properties:
+        featureKey: { type: string }
+        state:
+          $ref: '#/components/schemas/WalletEntitlementState'
+        configJson:
+          nullable: true
+          $ref: '#/components/schemas/JsonObject'
+        sourceEntitlementId: { type: string }
+        sourceSubjectType:
+          $ref: '#/components/schemas/WalletEntitlementSubjectType'
+        sourceSubjectId: { type: string, nullable: true }
+        validFrom: { type: string, format: date-time, nullable: true }
+        validUntil: { type: string, format: date-time, nullable: true }
+    WalletFeatureManifest:
+      type: object
+      required: [version, etag, issuedAt, features]
+      properties:
+        version: { type: string }
+        etag: { type: string }
+        issuedAt: { type: string, format: date-time }
+        tenantId: { type: string, nullable: true }
+        appId: { type: string, nullable: true }
+        walletUnitId: { type: string, nullable: true }
+        partyId: { type: string, nullable: true }
+        groupIds:
+          type: array
+          items: { type: string }
+        orgUnitIds:
+          type: array
+          items: { type: string }
+        features:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/WalletFeatureManifestEntry'
+    WalletManifestSignature:
+      type: object
+      required: [format, keyRef, value]
+      properties:
+        format: { type: string }
+        keyRef: { type: string }
+        value: { type: string }
+    SignedWalletFeatureManifest:
+      type: object
+      required: [manifest, signature]
+      properties:
+        manifest:
+          $ref: '#/components/schemas/WalletFeatureManifest'
+        signature:
+          $ref: '#/components/schemas/WalletManifestSignature'
+    WalletChannel:
+      type: string
+      enum: [WEB, MOBILE]
+    ProtocolExecutionOwner:
+      type: string
+      enum: [WALLET_APP, WALLET_BACKEND]
+    WalletInteractionCaptureSource:
+      type: string
+      enum: [MOBILE_QR, MOBILE_DEEPLINK, WEB_UI, API]
+    WalletFeaturePolicyScope:
+      type: string
+      enum: [TENANT_DEFAULT, ORGANIZATION_UNIT, GROUP, INDIVIDUAL]
+    WalletFeaturePolicyProfileState:
+      type: string
+      enum: [DRAFT, ACTIVE, RETIRED]
+    WalletFeaturePolicyAssignmentState:
+      type: string
+      enum: [ACTIVE, SUSPENDED, REVOKED]
+    WalletFeaturePolicyEffect:
+      type: string
+      enum: [GRANT, DENY]
+    WalletFeatureConstraintPolicy:
+      type: object
+      properties:
+        allowedChannels:
+          type: array
+          uniqueItems: true
+          items: { $ref: '#/components/schemas/WalletChannel' }
+        allowedProtocolExecutionOwners:
+          type: array
+          uniqueItems: true
+          items: { $ref: '#/components/schemas/ProtocolExecutionOwner' }
+        defaultProtocolExecutionOwner:
+          $ref: '#/components/schemas/ProtocolExecutionOwner'
+        userMayChooseExecutionOwnerBeforeCapture: { type: boolean }
+        allowedCaptureSources:
+          type: array
+          uniqueItems: true
+          items: { $ref: '#/components/schemas/WalletInteractionCaptureSource' }
+        backendEgressPolicyRefs:
+          type: array
+          uniqueItems: true
+          items: { type: string }
+        maxMobileRegistrationsPerUnit: { type: integer, minimum: 1 }
+        maxWebRegistrationsPerUnit: { type: integer, minimum: 1 }
+        maxAppRegistrationsPerAccount: { type: integer, minimum: 1 }
+        maxPersonalWalletsPerPerson: { type: integer, minimum: 1 }
+        maxPersonalWalletsPerAccount: { type: integer, minimum: 1 }
+        maxAccountsPerConduitUnit: { type: integer, minimum: 1 }
+        maxConduitUnitsPerBusinessAccount: { type: integer, minimum: 1 }
+        minimumAssurance: { type: string }
+    WalletFeaturePolicyRule:
+      type: object
+      required: [featureKey, effect, constraints]
+      properties:
+        featureKey: { type: string }
+        effect: { $ref: '#/components/schemas/WalletFeaturePolicyEffect' }
+        providerRef: { type: string, nullable: true }
+        constraints: { $ref: '#/components/schemas/WalletFeatureConstraintPolicy' }
+        configuration:
+          nullable: true
+          $ref: '#/components/schemas/JsonObject'
+    ManagedWalletIdvPolicy:
+      type: object
+      required: [methodGraphRef, minimumAssurance, challengeLifetimeSeconds, resendIntervalSeconds, maxSendsPerRollingDay, recoveryRequiresFreshIdv]
+      properties:
+        methodGraphRef: { type: string }
+        minimumAssurance: { type: string }
+        challengeLifetimeSeconds: { type: integer, format: int64, minimum: 1 }
+        resendIntervalSeconds: { type: integer, format: int64, minimum: 1 }
+        maxSendsPerRollingDay: { type: integer, minimum: 1 }
+        recoveryRequiresFreshIdv: { type: boolean }
+    ManagedWalletAccountAuthenticationPolicy:
+      type: object
+      required: [methodProfileRef, idleLifetimeSeconds, absoluteLifetimeSeconds]
+      properties:
+        methodProfileRef: { type: string }
+        idleLifetimeSeconds: { type: integer, format: int64, minimum: 1 }
+        absoluteLifetimeSeconds: { type: integer, format: int64, minimum: 1 }
+    WalletPasskeySharingScope:
+      type: string
+      enum: [PER_WALLET_UNIT, PROVIDER_TENANT, PROFESSIONAL_BUSINESS_CONDUIT]
+    WalletUnifiedViewScope:
+      type: string
+      enum: [DISABLED, PROVIDER_TENANT]
+    WalletProfileOpeningPolicy:
+      type: object
+      properties:
+        passkeySharingScope:
+          $ref: '#/components/schemas/WalletPasskeySharingScope'
+        unifiedViewScope:
+          $ref: '#/components/schemas/WalletUnifiedViewScope'
+    ManagedWalletActivationPolicy:
+      type: object
+      required: [factorProfileRef, singleOperationLifetimeSeconds, requireProductionWiaAndKa, requireLiveStatusEvidence, authenticatorKinds]
+      properties:
+        factorProfileRef: { type: string }
+        singleOperationLifetimeSeconds: { type: integer, format: int64, minimum: 1 }
+        requireProductionWiaAndKa: { type: boolean }
+        requireLiveStatusEvidence: { type: boolean }
+        openingPolicy: { $ref: '#/components/schemas/WalletProfileOpeningPolicy' }
+        authenticatorKinds:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items:
+            type: string
+            enum: [PASSKEY_WEBAUTHN, PIN]
+    ManagedWalletCompleteUnitBackupPolicy:
+      type: object
+      required: [deploymentProfileRef, snapshotIntervalSeconds, pointInTimeRecoveryDays, dailyCompleteSnapshotRetentionDays, monthlyCompleteSnapshotRetentionMonths, restoreDrillIntervalDays, requireWscdKeyEvidence, requireTombstoneCompleteness]
+      properties:
+        deploymentProfileRef: { type: string }
+        snapshotIntervalSeconds: { type: integer, format: int64, minimum: 1 }
+        pointInTimeRecoveryDays: { type: integer, minimum: 1 }
+        dailyCompleteSnapshotRetentionDays: { type: integer, minimum: 1 }
+        monthlyCompleteSnapshotRetentionMonths: { type: integer, minimum: 1 }
+        restoreDrillIntervalDays: { type: integer, minimum: 1 }
+        requireWscdKeyEvidence: { type: boolean }
+        requireTombstoneCompleteness: { type: boolean }
+    ManagedWalletDeploymentPolicy:
+      type: object
+      required: [profileRef, primaryResidency, backupResidency, failureDomainRefs, databaseProviderRef, objectStoreProviderRef, vaultProviderRef, wscdProviderRef, notificationRouteRef, auditSinkRef]
+      properties:
+        profileRef: { type: string }
+        primaryResidency: { type: string }
+        backupResidency: { type: string }
+        failureDomainRefs:
+          type: array
+          uniqueItems: true
+          minItems: 2
+          items: { type: string }
+        databaseProviderRef: { type: string }
+        objectStoreProviderRef: { type: string }
+        vaultProviderRef: { type: string }
+        wscdProviderRef: { type: string }
+        notificationRouteRef: { type: string }
+        auditSinkRef: { type: string }
+    ManagedWalletRetentionAndErasurePolicy:
+      type: object
+      required: [primaryRetentionDays, backupRetentionDays, cryptographicErasureHours, closedAccountPurgeDays, legalHoldPolicyRef, legalHoldReviewIntervalDays]
+      properties:
+        primaryRetentionDays: { type: integer, minimum: 1 }
+        backupRetentionDays: { type: integer, minimum: 1 }
+        cryptographicErasureHours: { type: integer, minimum: 1 }
+        closedAccountPurgeDays: { type: integer, minimum: 1 }
+        legalHoldPolicyRef: { type: string }
+        legalHoldReviewIntervalDays: { type: integer, minimum: 1 }
+    ManagedWalletEgressPrivacyPolicy:
+      type: object
+      required: [allowedProfileRefs, defaultProfileRef, stripForwardedDeviceMetadata, strictBackendExecution]
+      properties:
+        allowedProfileRefs:
+          type: array
+          uniqueItems: true
+          minItems: 1
+          items: { type: string }
+        defaultProfileRef: { type: string }
+        stripForwardedDeviceMetadata: { type: boolean }
+        strictBackendExecution: { type: boolean }
+    ManagedWalletUnattendedActionClass:
+      type: string
+      enum: [CREDENTIAL_STATUS_REFRESH, BACKUP_HEALTH_CHECK, METADATA_SYNCHRONIZATION, NOTIFICATION_DELIVERY, STALE_ASSIGNMENT_CLEANUP]
+    ManagedWalletBusinessConduitPolicy:
+      type: object
+      required: [maxAccountsPerConduitUnit, maxConduitUnitsPerBusinessAccount, approvalPolicyRefs, unattendedActionClasses]
+      properties:
+        maxAccountsPerConduitUnit: { type: integer, minimum: 1 }
+        maxConduitUnitsPerBusinessAccount: { type: integer, minimum: 1 }
+        approvalPolicyRefs:
+          type: array
+          uniqueItems: true
+          minItems: 1
+          items: { type: string }
+        unattendedActionClasses:
+          type: array
+          uniqueItems: true
+          items:
+            $ref: '#/components/schemas/ManagedWalletUnattendedActionClass'
+    ManagedWalletRolloutPolicy:
+      type: object
+      required: [enabled, databaseSchemaVersion, rollbackProfileRef, processReconciliationEnabled, orphanCleanupEnabled, strandedKeyGuardEnabled, tombstoneResurrectionGuardEnabled]
+      properties:
+        enabled: { type: boolean }
+        databaseSchemaVersion: { type: integer, format: int64, minimum: 1 }
+        releaseEvidenceRef: { type: string, nullable: true }
+        rollbackProfileRef: { type: string }
+        processReconciliationEnabled: { type: boolean }
+        orphanCleanupEnabled: { type: boolean }
+        strandedKeyGuardEnabled: { type: boolean }
+        tombstoneResurrectionGuardEnabled: { type: boolean }
+    ManagedWalletRecoveryPolicy:
+      type: object
+      required: [oldAppDisposition, addRegistrationToHealthyUnit, successorUnitForCompromise]
+      properties:
+        oldAppDisposition: { type: string }
+        addRegistrationToHealthyUnit: { type: boolean }
+        successorUnitForCompromise: { type: boolean }
+        portableMigrationProfileRef: { type: string, nullable: true }
+    ManagedWalletOnboardingPolicyDefinition:
+      type: object
+      required: [policyRevision, enabledEntryPoints, allowedPersonas, allowedProvisioningOrigins, processLifetimeSeconds, controllerLeaseSeconds, idv, accountAuthentication, activation, deployment, backup, recovery, retentionAndErasure, egressPrivacy, businessConduit, rollout, brandingPolicyRef, legalPolicyRef, notificationPolicyRef, retentionPolicyRef]
+      properties:
+        policyRevision: { type: integer, format: int64, minimum: 1 }
+        enabledEntryPoints: { type: array, uniqueItems: true, minItems: 1, items: { type: string } }
+        allowedPersonas:
+          type: array
+          uniqueItems: true
+          minItems: 1
+          items:
+            $ref: './wallet-onboarding-components.yml#/components/schemas/WalletPersona'
+        allowedProvisioningOrigins: { type: array, uniqueItems: true, minItems: 1, items: { type: string } }
+        processLifetimeSeconds: { type: integer, format: int64, minimum: 1 }
+        controllerLeaseSeconds: { type: integer, format: int64, minimum: 1 }
+        idv: { $ref: '#/components/schemas/ManagedWalletIdvPolicy' }
+        accountAuthentication: { $ref: '#/components/schemas/ManagedWalletAccountAuthenticationPolicy' }
+        activation: { $ref: '#/components/schemas/ManagedWalletActivationPolicy' }
+        deployment: { $ref: '#/components/schemas/ManagedWalletDeploymentPolicy' }
+        backup: { $ref: '#/components/schemas/ManagedWalletCompleteUnitBackupPolicy' }
+        recovery: { $ref: '#/components/schemas/ManagedWalletRecoveryPolicy' }
+        retentionAndErasure: { $ref: '#/components/schemas/ManagedWalletRetentionAndErasurePolicy' }
+        egressPrivacy: { $ref: '#/components/schemas/ManagedWalletEgressPrivacyPolicy' }
+        businessConduit: { $ref: '#/components/schemas/ManagedWalletBusinessConduitPolicy' }
+        rollout: { $ref: '#/components/schemas/ManagedWalletRolloutPolicy' }
+        brandingPolicyRef: { type: string }
+        legalPolicyRef: { type: string }
+        notificationPolicyRef: { type: string }
+        retentionPolicyRef: { type: string }
+    WalletFeaturePolicyProfile:
+      type: object
+      required: [profileId, tenantId, version, displayName, state, rules, createdAt, updatedAt]
+      properties:
+        profileId: { type: string }
+        tenantId: { type: string }
+        version: { type: integer, format: int64, minimum: 1 }
+        displayName: { type: string }
+        state: { $ref: '#/components/schemas/WalletFeaturePolicyProfileState' }
+        rules:
+          type: object
+          minProperties: 1
+          additionalProperties: { $ref: '#/components/schemas/WalletFeaturePolicyRule' }
+        onboardingPolicy:
+          nullable: true
+          $ref: '#/components/schemas/ManagedWalletOnboardingPolicyDefinition'
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    WalletFeaturePolicyAssignment:
+      type: object
+      required: [assignmentId, tenantId, profileId, profileVersion, scope, state, provenanceRef, createdAt, updatedAt]
+      properties:
+        assignmentId: { type: string }
+        tenantId: { type: string }
+        profileId: { type: string }
+        profileVersion: { type: integer, format: int64, minimum: 1 }
+        scope: { $ref: '#/components/schemas/WalletFeaturePolicyScope' }
+        scopeSubjectRef: { type: string, nullable: true }
+        priority: { type: integer, nullable: true }
+        state: { $ref: '#/components/schemas/WalletFeaturePolicyAssignmentState' }
+        validFrom: { type: string, format: date-time, nullable: true }
+        validUntil: { type: string, format: date-time, nullable: true }
+        provenanceRef: { type: string }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    WalletFeaturePolicyProfilesResult:
+      type: object
+      required: [profiles]
+      properties:
+        profiles: { type: array, items: { $ref: '#/components/schemas/WalletFeaturePolicyProfile' } }
+    WalletFeaturePolicyAssignmentsResult:
+      type: object
+      required: [assignments]
+      properties:
+        assignments: { type: array, items: { $ref: '#/components/schemas/WalletFeaturePolicyAssignment' } }
+    WalletFeaturePolicyAssignmentRevokeResult:
+      type: object
+      required: [assignmentId, revoked]
+      properties:
+        assignmentId: { type: string }
+        revoked: { type: boolean }
+    WalletFeaturePolicyPreviewRequest:
+      type: object
+      required: [individualRef]
+      additionalProperties: false
+      properties:
+        individualRef: { type: string }
+    WalletResolvedFeaturePolicyDecision:
+      type: object
+      required: [featureKey, enabled, constraints, allowedPersonas, assignmentRefs, profileRefs, membershipEvidenceRefs, denialReasonCodes]
+      properties:
+        featureKey: { type: string }
+        enabled: { type: boolean }
+        providerRef: { type: string, nullable: true }
+        constraints: { $ref: '#/components/schemas/WalletFeatureConstraintPolicy' }
+        allowedPersonas:
+          type: array
+          uniqueItems: true
+          items:
+            $ref: './wallet-onboarding-components.yml#/components/schemas/WalletPersona'
+        assignmentRefs: { type: array, items: { type: string } }
+        profileRefs: { type: array, items: { type: string } }
+        membershipEvidenceRefs: { type: array, uniqueItems: true, items: { type: string } }
+        denialReasonCodes: { type: array, uniqueItems: true, items: { type: string } }
+    ResolvedWalletFeaturePolicy:
+      type: object
+      required: [tenantId, individualRef, policyRevision, membershipEvidenceRevision, resolvedAt, decisions]
+      properties:
+        tenantId: { type: string }
+        individualRef: { type: string }
+        policyRevision: { type: integer, format: int64, minimum: 1 }
+        membershipEvidenceRevision: { type: integer, format: int64, minimum: 1 }
+        resolvedAt: { type: string, format: date-time }
+        decisions:
+          type: object
+          additionalProperties: { $ref: '#/components/schemas/WalletResolvedFeaturePolicyDecision' }
+    ManagedWalletOfferingReadinessGate:
+      type: string
+      enum: [CONFIGURATION, DEPENDENCIES, RELEASE_EVIDENCE]
+    ManagedWalletOfferingReadiness:
+      type: object
+      additionalProperties: false
+      required: [profileId, profileVersion, satisfiedGates, reasonCodes, evaluatedAt]
+      properties:
+        profileId: { type: string, minLength: 1 }
+        profileVersion: { type: integer, format: int64, minimum: 1 }
+        satisfiedGates:
+          type: array
+          uniqueItems: true
+          items:
+            $ref: '#/components/schemas/ManagedWalletOfferingReadinessGate'
+        reasonCodes:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+            pattern: '^[a-z0-9][a-z0-9_.:-]{0,119}$'
+        evaluatedAt: { type: string, format: date-time }

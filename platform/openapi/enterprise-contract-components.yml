@@ -1,0 +1,542 @@
+openapi: 3.0.4
+info:
+  title: Enterprise Modeling Contract Components
+  version: 0.2.0
+  description: Generic contract-first schemas shared by enterprise modeling, organization, and lifecycle services.
+paths: {}
+components:
+  schemas:
+    PackageVersion:
+      type: object
+      required: [value]
+      properties:
+        value: { type: string, pattern: '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$' }
+    PositiveRevision:
+      type: object
+      required: [value]
+      properties:
+        value: { type: integer, format: int64, minimum: 1 }
+    GovernedTypeId:
+      type: object
+      required: [namespace, value]
+      properties:
+        namespace: { type: string, minLength: 1 }
+        value: { type: string, minLength: 1 }
+    VersionedRef:
+      type: object
+      required: [id, version]
+      properties:
+        id: { type: string, minLength: 1 }
+        version: { $ref: '#/components/schemas/PackageVersion' }
+    ArtifactRef:
+      $ref: '#/components/schemas/VersionedRef'
+    SemanticResourceRef:
+      type: object
+      required: [id, revision]
+      properties:
+        id: { type: string, minLength: 1 }
+        revision: { $ref: '#/components/schemas/PositiveRevision' }
+    WorkflowDefinitionRef:
+      type: object
+      required: [id, revision]
+      properties:
+        id: { type: string, minLength: 1 }
+        revision: { $ref: '#/components/schemas/PositiveRevision' }
+    BusinessObjectRef:
+      type: object
+      required: [type, id]
+      properties:
+        type: { $ref: '#/components/schemas/GovernedTypeId' }
+        id: { type: string, minLength: 1 }
+    CaseRef:
+      type: object
+      required: [modelId, caseId, caseType]
+      properties:
+        modelId: { type: string, minLength: 1 }
+        caseId: { type: string, minLength: 1 }
+        caseType: { $ref: '#/components/schemas/GovernedTypeId' }
+    ContentHash:
+      type: object
+      required: [algorithm, value]
+      properties:
+        algorithm: { type: string, default: sha-256 }
+        value: { type: string, minLength: 1 }
+    ProtectedPayloadRef:
+      type: object
+      required: [storeId, objectId, contentHash]
+      properties:
+        storeId: { type: string, minLength: 1 }
+        objectId: { type: string, minLength: 1 }
+        version: { type: string }
+        contentHash: { $ref: '#/components/schemas/ContentHash' }
+    EffectiveInterval:
+      type: object
+      required: [validFrom]
+      properties:
+        validFrom: { type: string, format: date-time }
+        validUntil: { type: string, format: date-time }
+    ActorRef:
+      type: object
+      required: [actorId, actorType]
+      additionalProperties: false
+      properties:
+        actorId: { type: string }
+        actorType: { type: string }
+        authorityRef: { $ref: '#/components/schemas/BusinessObjectRef' }
+    CorrelationContext:
+      type: object
+      required: [correlationId]
+      additionalProperties: false
+      properties:
+        correlationId: { type: string }
+        causationId: { type: string }
+        executionId: { type: string }
+        connectorRunId: { type: string }
+        traceId: { type: string }
+        spanId: { type: string }
+        parentSpanId: { type: string }
+    CommandRequestMetadata:
+      type: object
+      required: [modelId, expectedStreamVersion, idempotencyKey]
+      additionalProperties: false
+      properties:
+        modelId: { type: string, minLength: 1 }
+        expectedStreamVersion: { type: integer, format: int64, minimum: 0 }
+        idempotencyKey: { type: string, minLength: 1 }
+        requestedEffectiveAt: { type: string, format: date-time }
+    SemanticLayer:
+      type: string
+      enum: [CATALOG, PROFILE, ATTRIBUTE_SET, DEFINITION]
+    SemanticCoordinate:
+      type: object
+      required: [layer, resource]
+      properties:
+        layer: { $ref: '#/components/schemas/SemanticLayer' }
+        resource: { $ref: '#/components/schemas/VersionedRef' }
+        attributePath: { type: string }
+    DecisionReason:
+      type: object
+      required: [code]
+      additionalProperties: false
+      properties:
+        code: { $ref: '#/components/schemas/GovernedTypeId' }
+        explanation: { type: string }
+        protectedDetailsRef: { $ref: '#/components/schemas/ProtectedPayloadRef' }
+    CanonicalCommandResult:
+      type: object
+      required: [recordRef, streamVersion, commandDigest, replayedFromIdempotency]
+      properties:
+        recordRef: { $ref: '#/components/schemas/BusinessObjectRef' }
+        streamVersion: { type: integer, format: int64, minimum: 0 }
+        commandDigest: { $ref: '#/components/schemas/ContentHash' }
+        replayedFromIdempotency: { type: boolean, default: false }
+    CaseStatus:
+      type: string
+      enum: [OPEN, BLOCKED, COMPLETED, CANCELLED]
+    BusinessCase:
+      type: object
+      required: [ref, currentStage, status, openedAt, semanticProfileRef]
+      properties:
+        ref: { $ref: '#/components/schemas/CaseRef' }
+        externalReferences: { type: array, items: { type: object, additionalProperties: true } }
+        participantRoles: { type: array, items: { type: object, additionalProperties: true } }
+        subjectRefs: { type: array, items: { $ref: '#/components/schemas/BusinessObjectRef' } }
+        currentStage: { type: string }
+        status: { $ref: '#/components/schemas/CaseStatus' }
+        openedAt: { type: string, format: date-time }
+        effectiveInterval: { $ref: '#/components/schemas/EffectiveInterval' }
+        semanticProfileRef: { $ref: '#/components/schemas/VersionedRef' }
+        workflowRef: { $ref: '#/components/schemas/VersionedRef' }
+        metadata: { type: object, additionalProperties: { type: string } }
+    ElapsedGateStart:
+      type: object
+      required: [gateRef, startedAt, elapsedAt]
+      properties:
+        gateRef: { $ref: '#/components/schemas/VersionedRef' }
+        startedAt: { type: string, format: date-time }
+        elapsedAt: { type: string, format: date-time }
+    CaseStageTransition:
+      type: object
+      required: [transitionId, caseRef, previousStage, nextStage, requestedBy, outcome, correlation]
+      properties:
+        transitionId: { type: string }
+        caseRef: { $ref: '#/components/schemas/CaseRef' }
+        previousStage: { type: string }
+        nextStage: { type: string }
+        requestedBy: { $ref: '#/components/schemas/ActorRef' }
+        preconditions: { type: array, items: { $ref: '#/components/schemas/GateResult' } }
+        approvals: { type: array, items: { type: object, additionalProperties: true } }
+        # Nullable only because this record is also the request body of case-transition apply (CR-3):
+        # the authored workflow that sends it may not read a clock. The server stamps both instants
+        # before the transition is stored, so a transition read back always carries them. The proper
+        # shape - a separate apply input without the timestamps, this record with both required - is
+        # a recorded follow-up; nothing about this is a data-migration constraint.
+        effectiveAt: { type: string, format: date-time, nullable: true }
+        recordedAt: { type: string, format: date-time, nullable: true }
+        workflowExecutionRef: { $ref: '#/components/schemas/BusinessObjectRef' }
+        outcome: { type: string }
+        reasons: { type: array, items: { $ref: '#/components/schemas/DecisionReason' } }
+        correlation: { $ref: '#/components/schemas/CorrelationContext' }
+        caseMetadata:
+          type: object
+          additionalProperties: { type: string }
+          readOnly: true
+          description: |
+            Case metadata this transition wrote when it was applied, merged into `BusinessCase.metadata`
+            by every projection. Stamped by the server from the governed template (the elapsed gate
+            the transition starts, keyed by that gate's `metadataKey`, valued with the server's
+            effective instant). Read-only: a request body must not carry this property. A server
+            that receives one refuses any value it carries. An empty object is tolerated rather than
+            permitted, and a conforming client sends nothing here at all. Absent for a transition
+            that starts no clock.
+        appliedDefinitionRef:
+          allOf: [{ $ref: '#/components/schemas/VersionedRef' }]
+          nullable: true
+          readOnly: true
+        elapsedGateStart:
+          allOf: [{ $ref: '#/components/schemas/ElapsedGateStart' }]
+          nullable: true
+          readOnly: true
+        resultingStatus:
+          allOf: [{ $ref: '#/components/schemas/CaseStatus' }]
+          nullable: true
+          readOnly: true
+          description: Target status stamped from the pinned stage definition.
+    GateResult:
+      type: object
+      required: [gate, passed, reasons, evidenceRefs]
+      properties:
+        gate: { type: string, minLength: 1 }
+        passed: { type: boolean }
+        reasons: { type: array, items: { $ref: '#/components/schemas/DecisionReason' } }
+        evidenceRefs: { type: array, items: { $ref: '#/components/schemas/BusinessObjectRef' } }
+    SourceAssertionStatus:
+      type: string
+      enum: [CONFIRMED, NOT_CONFIRMED, STALE, UNAVAILABLE, ERROR]
+    IntegrationReceiptRef:
+      type: object
+      required: [exchangeId, messageId, connectorId, routeId, operation, direction, dispatchStatus, connectorRunId, receivedAt]
+      properties:
+        exchangeId: { type: string }
+        messageId: { type: string }
+        connectorId: { type: string }
+        routeId: { type: string }
+        operation: { type: string }
+        direction: { type: string, enum: [INBOUND, OUTBOUND] }
+        dispatchStatus: { type: string, enum: [RECEIVED, VALIDATED, TRANSFORMED, DELIVERED, RETRY_PENDING, QUARANTINED, DEAD_LETTERED, FAILED, CANCELLED] }
+        connectorRunId: { type: string }
+        receivedAt: { type: string, format: date-time }
+        requestHash: { $ref: '#/components/schemas/ContentHash' }
+        responseHash: { $ref: '#/components/schemas/ContentHash' }
+    SourceAssertion:
+      type: object
+      required: [assertionId, tenantId, modelId, providerId, connectorId, sourceSystem, operation, purpose, subjectRefs, requestedSemantics, returnedSemantics, observedAt, integrationReceiptRef, status, correlation]
+      properties:
+        assertionId: { type: string }
+        tenantId: { type: string }
+        modelId: { type: string }
+        providerId: { type: string }
+        connectorId: { type: string }
+        sourceSystem: { type: string }
+        operation: { type: string }
+        purpose: { type: string }
+        subjectRefs: { type: array, items: { $ref: '#/components/schemas/BusinessObjectRef' } }
+        requestedSemantics: { type: array, items: { $ref: '#/components/schemas/SemanticCoordinate' } }
+        returnedSemantics: { type: array, items: { $ref: '#/components/schemas/SemanticCoordinate' } }
+        observedAt: { type: string, format: date-time }
+        sourceEffectiveAt: { type: string, format: date-time }
+        freshUntil: { type: string, format: date-time }
+        freshnessPolicyRef: { $ref: '#/components/schemas/VersionedRef' }
+        integrationReceiptRef: { $ref: '#/components/schemas/IntegrationReceiptRef' }
+        status: { $ref: '#/components/schemas/SourceAssertionStatus' }
+        protectedRawResponseRef: { $ref: '#/components/schemas/ProtectedPayloadRef' }
+        normalizedFacts: { type: array, items: { type: object, additionalProperties: true } }
+        correlation: { $ref: '#/components/schemas/CorrelationContext' }
+    EvidenceSubmission:
+      type: object
+      required: [submissionId, tenantId, caseRef, requirementRef, submitterRef, evidenceType, evidenceRef, receivedAt, reviewState, correlation]
+      properties:
+        verifiedSnapshot: { $ref: '#/components/schemas/VerifiedEvidenceSnapshot', readOnly: true }
+        verifiedRejection: { $ref: '#/components/schemas/VerifiedEvidenceRejection', readOnly: true }
+        submissionId: { type: string }
+        revision: { type: integer, format: int64, minimum: 0, default: 0, readOnly: true }
+        tenantId: { type: string }
+        caseRef: { $ref: '#/components/schemas/CaseRef' }
+        requirementRef: { $ref: '#/components/schemas/VersionedRef' }
+        submitterRef: { $ref: '#/components/schemas/BusinessObjectRef' }
+        representedPartyRef: { $ref: '#/components/schemas/BusinessObjectRef' }
+        evidenceType: { type: string }
+        evidenceRef: { $ref: '#/components/schemas/BusinessObjectRef' }
+        protectedPayloadRef: { $ref: '#/components/schemas/ProtectedPayloadRef' }
+        receivedAt: { type: string, format: date-time }
+        effectiveInterval: { $ref: '#/components/schemas/EffectiveInterval' }
+        validationResults: { type: array, items: { type: object, additionalProperties: true } }
+        reviewState: { type: string, enum: [PENDING, AUTOMATED_ACCEPTED, REVIEW_REQUIRED, APPROVED, REJECTED, MORE_INFORMATION_REQUIRED] }
+        reviewerActions: { type: array, items: { type: object, additionalProperties: true } }
+        disposition: { type: string }
+        reasons: { type: array, items: { $ref: '#/components/schemas/DecisionReason' } }
+        correlation: { $ref: '#/components/schemas/CorrelationContext' }
+    DecisionOutcome:
+      type: string
+      enum: [PERMIT, DENY, REVIEW_REQUIRED, INDETERMINATE]
+    DecisionRecord:
+      type: object
+      required: [decisionId, decisionType, tenantId, caseRef, action, principalRef, inputManifest, policyRef, outcome, reasons, recordedAt, effectiveAt, correlation]
+      properties:
+        decisionId: { type: string }
+        decisionType: { type: string }
+        tenantId: { type: string }
+        caseRef: { $ref: '#/components/schemas/CaseRef' }
+        action: { type: string }
+        principalRef: { $ref: '#/components/schemas/BusinessObjectRef' }
+        representedPartyRef: { $ref: '#/components/schemas/BusinessObjectRef' }
+        resourceRef: { $ref: '#/components/schemas/BusinessObjectRef' }
+        inputManifest: { type: array, items: { type: object, additionalProperties: true } }
+        requirementRefs: { type: array, items: { $ref: '#/components/schemas/VersionedRef' } }
+        policyRef: { $ref: '#/components/schemas/VersionedRef' }
+        ruleResults: { type: array, items: { type: object, additionalProperties: true } }
+        protectedDiagnosticsRef: { $ref: '#/components/schemas/ProtectedPayloadRef' }
+        outcome: { $ref: '#/components/schemas/DecisionOutcome' }
+        reasons: { type: array, items: { $ref: '#/components/schemas/DecisionReason' } }
+        explanation: { type: string }
+        recordedAt: { type: string, format: date-time }
+        effectiveAt: { type: string, format: date-time }
+        correlation: { $ref: '#/components/schemas/CorrelationContext' }
+        supersedesDecisionId: { type: string }
+    LegalSourceSnapshot:
+      type: object
+      required: [snapshotId, corpusId, providerId, acquisitionRef, jurisdiction, corpusVersion, acquiredAt, sourceInventory, protectedContentRef]
+      properties:
+        snapshotId: { type: string }
+        corpusId: { type: string }
+        providerId: { type: string }
+        acquisitionRef: { $ref: '#/components/schemas/BusinessObjectRef' }
+        jurisdiction: { type: string }
+        corpusVersion: { type: string }
+        acquiredAt: { type: string, format: date-time }
+        effectiveAt: { type: string, format: date-time }
+        sourceInventory: { type: array, items: { type: object, additionalProperties: true } }
+        protectedContentRef: { $ref: '#/components/schemas/ProtectedPayloadRef' }
+        license: { type: string }
+        disclaimer: { type: string }
+        useLimitations: { type: array, items: { type: string } }
+        supersededBy: { $ref: '#/components/schemas/VersionedRef' }
+    LegalClause:
+      type: object
+      required: [clauseId, snapshotRef, sourceRef, citation, sourceUri, jurisdiction, statement, protectedSourceTextRef]
+      properties:
+        clauseId: { type: string }
+        snapshotRef: { $ref: '#/components/schemas/VersionedRef' }
+        sourceRef: { $ref: '#/components/schemas/BusinessObjectRef' }
+        citation: { type: string }
+        sourceUri: { type: string, format: uri }
+        jurisdiction: { type: string }
+        effectiveFrom: { type: string, format: date-time }
+        effectiveUntil: { type: string, format: date-time }
+        applicabilityScope: { type: object, additionalProperties: true }
+        statement: { type: string }
+        conditions: { type: object, additionalProperties: true }
+        exceptions: { type: array, items: { type: string } }
+        limitations: { type: array, items: { type: string } }
+        protectedSourceTextRef: { $ref: '#/components/schemas/ProtectedPayloadRef' }
+    InterpretationRecord:
+      type: object
+      required: [interpretationId, version, snapshotRef, clauseRefs, businessQuestion, proposedInterpretation, author, reviewState]
+      properties:
+        interpretationId: { type: string }
+        version: { $ref: '#/components/schemas/PackageVersion' }
+        snapshotRef: { $ref: '#/components/schemas/VersionedRef' }
+        clauseRefs: { type: array, items: { $ref: '#/components/schemas/VersionedRef' } }
+        businessQuestion: { type: string }
+        jurisdictionalContext: { type: object, additionalProperties: true }
+        proposedInterpretation: { type: string }
+        uncertainty: { type: array, items: { type: string } }
+        limitations: { type: array, items: { type: string } }
+        author: { $ref: '#/components/schemas/ActorRef' }
+        reviewer: { $ref: '#/components/schemas/ActorRef' }
+        reviewState: { type: string, enum: [DRAFT, REVIEW_REQUIRED, APPROVED, REJECTED, SUPERSEDED] }
+        approval: { type: object, additionalProperties: true }
+        supersedes: { $ref: '#/components/schemas/VersionedRef' }
+        protectedNotesRef: { $ref: '#/components/schemas/ProtectedPayloadRef' }
+        supersededBy: { $ref: '#/components/schemas/ArtifactRef' }
+    EvidenceRequirement:
+      type: object
+      required: [requirementId, version, semanticFact, acceptedEvidenceTypes, equivalentEvidencePermitted]
+      properties:
+        credentialVerification: { $ref: '#/components/schemas/EvidenceVerificationDefinition' }
+        requirementId: { type: string }
+        version: { $ref: '#/components/schemas/PackageVersion' }
+        semanticFact: { $ref: '#/components/schemas/SemanticCoordinate' }
+        acceptedEvidenceTypes: { type: array, items: { type: string } }
+        acceptedIssuerRefs: { type: array, items: { $ref: '#/components/schemas/BusinessObjectRef' } }
+        validity: { $ref: '#/components/schemas/EvidenceValidityConstraints' }
+        freshnessPolicyRef: { $ref: '#/components/schemas/VersionedRef' }
+        equivalentEvidencePermitted: { type: boolean, default: false }
+        automatedValidationRules: { type: array, items: { $ref: '#/components/schemas/VersionedRef' } }
+        humanReviewRules: { type: array, items: { $ref: '#/components/schemas/VersionedRef' } }
+        minimizationPolicyRef: { $ref: '#/components/schemas/VersionedRef' }
+        retentionPolicyRef: { $ref: '#/components/schemas/VersionedRef' }
+    RequirementDefinition:
+      type: object
+      required: [requirementId, version, semanticMeaning, applicableCaseType, kind, statement, interpretationRefs, publicationState]
+      properties:
+        requirementId: { type: string }
+        version: { $ref: '#/components/schemas/PackageVersion' }
+        semanticMeaning: { $ref: '#/components/schemas/SemanticCoordinate' }
+        applicableCaseType: { type: string }
+        kind: { type: string, enum: [FUNCTIONAL, QUALIFICATION, EXCLUSION, EVIDENCE, ACCESS, WORKFLOW_GATE] }
+        statement: { type: string }
+        conditions: { type: object, additionalProperties: true }
+        evidenceRequirementRefs: { type: array, items: { $ref: '#/components/schemas/VersionedRef' } }
+        equivalentEvidencePolicyRef: { $ref: '#/components/schemas/VersionedRef' }
+        interpretationRefs: { type: array, items: { $ref: '#/components/schemas/VersionedRef' } }
+        approval: { type: object, additionalProperties: true }
+        publicationState: { type: string, enum: [DRAFT, APPROVED, PUBLISHED, ARCHIVED] }
+        supersededBy: { $ref: '#/components/schemas/ArtifactRef' }
+    PolicyBinding:
+      type: object
+      required: [bindingId, version, requirementRef, engineProfile, policySetRef, principalMapping, actionMapping, resourceMapping, contextMapping, semanticInputs, missingInputBehavior]
+      properties:
+        bindingId: { type: string }
+        version: { $ref: '#/components/schemas/PackageVersion' }
+        requirementRef: { $ref: '#/components/schemas/ArtifactRef' }
+        engineProfile: { $ref: '#/components/schemas/GovernedTypeId' }
+        policySetRef: { $ref: '#/components/schemas/ArtifactRef' }
+        principalMapping: { type: object, additionalProperties: true }
+        actionMapping: { type: object, additionalProperties: true }
+        resourceMapping: { type: object, additionalProperties: true }
+        contextMapping: { type: object, additionalProperties: true }
+        semanticInputs: { type: array, items: { $ref: '#/components/schemas/SemanticCoordinate' } }
+        freshnessRequirements: { type: object, additionalProperties: { $ref: '#/components/schemas/ArtifactRef' } }
+        missingInputBehavior: { type: string, enum: [DENY, REVIEW_REQUIRED, INDETERMINATE] }
+        reviewBehavior: { type: string }
+        reasonCodeMapping: { type: object, additionalProperties: { type: string } }
+    ReplayManifest:
+      type: object
+      required: [manifestId, fixtureSetVersion, semanticRefs]
+      properties:
+        manifestId: { type: string }
+        fixtureSetVersion: { type: string }
+        legalSnapshotRef: { $ref: '#/components/schemas/VersionedRef' }
+        semanticRefs: { type: array, items: { $ref: '#/components/schemas/VersionedRef' } }
+        requirementRefs: { type: array, items: { $ref: '#/components/schemas/VersionedRef' } }
+        policyRefs: { type: array, items: { $ref: '#/components/schemas/VersionedRef' } }
+        businessObjectRefs: { type: array, items: { $ref: '#/components/schemas/BusinessObjectRef' } }
+        connectorFixtureRefs: { type: array, items: { $ref: '#/components/schemas/VersionedRef' } }
+        clockInstants: { type: object, additionalProperties: { type: string, format: date-time } }
+        expectedDecisions: { type: array, items: { type: object, additionalProperties: true } }
+        protectedPayloadHashes: { type: object, additionalProperties: { $ref: '#/components/schemas/ContentHash' } }
+    FormSubmissionCompletionNotice:
+      type: object
+      required: [caseRef, formDefinitionRef, formSessionId, workflowExecutionId, completionTokenRef, submissionRef, completedAt]
+      properties:
+        caseRef: { $ref: '#/components/schemas/CaseRef' }
+        formDefinitionRef: { $ref: '#/components/schemas/BusinessObjectRef' }
+        formSessionId: { type: string }
+        workflowExecutionId: { type: string }
+        completionTokenRef: { $ref: '#/components/schemas/ProtectedPayloadRef' }
+        submissionRef: { $ref: '#/components/schemas/BusinessObjectRef' }
+        completedAt: { type: string, format: date-time }
+    HumanCorrelationCompletionEnvelope:
+      type: object
+      required: [tenantId, modelId, caseRef, formSessionId, workflowExecutionId, completionTokenRef, submissionRef, correlationKey, correlation, completedAt]
+      properties:
+        tenantId: { type: string }
+        modelId: { type: string }
+        caseRef: { $ref: '#/components/schemas/CaseRef' }
+        formSessionId: { type: string }
+        workflowExecutionId: { type: string }
+        completionTokenRef: { $ref: '#/components/schemas/ProtectedPayloadRef' }
+        submissionRef: { $ref: '#/components/schemas/BusinessObjectRef' }
+        correlationKey: { type: string }
+        correlation: { $ref: '#/components/schemas/CorrelationContext' }
+        completedAt: { type: string, format: date-time }
+
+    EvidenceVerificationDefinition:
+      type: object
+      required: [templateId, templateRevision, verifierId, queryId, queryVersion, credentialQueryId, requestLifetimeSeconds, maximumVerificationAgeSeconds]
+      properties:
+        templateId: { type: string }
+        templateRevision: { type: string, format: date-time }
+        verifierId: { type: string }
+        queryId: { type: string }
+        queryVersion: { type: integer, minimum: 1 }
+        credentialQueryId: { type: string }
+        requestLifetimeSeconds: { type: integer, format: int64, minimum: 1, maximum: 86400 }
+        maximumVerificationAgeSeconds: { type: integer, format: int64, minimum: 1 }
+        requireActiveCredentialStatus: { type: boolean, default: true }
+    EvidenceVerificationLaunch:
+      type: object
+      required: [operationId, caseRef, submissionId, submissionRevision, requirementRef, definition, actor, reservedAt, expiresAt]
+      properties:
+        operationId: { type: string }
+        caseRef: { $ref: '#/components/schemas/CaseRef' }
+        submissionId: { type: string }
+        submissionRevision: { type: integer, format: int64 }
+        requirementRef: { $ref: '#/components/schemas/VersionedRef' }
+        definition: { $ref: '#/components/schemas/EvidenceVerificationDefinition' }
+        actor: { $ref: '#/components/schemas/ActorRef' }
+        reservedAt: { type: string, format: date-time }
+        expiresAt: { type: string, format: date-time }
+        sessionId: { type: string }
+        correlationId: { type: string }
+        requestUri: { type: string }
+        request: { type: string }
+    VerifiedEvidenceSnapshot:
+      type: object
+      readOnly: true
+      required: [operationId, sessionId, definition, verifiedAt, recordedAt, protectedPayloadRef, presentationHash, issuerTrusted, activeStatusVerified]
+      properties:
+        operationId: { type: string }
+        sessionId: { type: string }
+        definition: { $ref: '#/components/schemas/EvidenceVerificationDefinition' }
+        verifiedAt: { type: string, format: date-time }
+        recordedAt: { type: string, format: date-time }
+        protectedPayloadRef: { $ref: '#/components/schemas/ProtectedPayloadRef' }
+        presentationHash: { $ref: '#/components/schemas/ContentHash' }
+        issuerIdentifier: { type: string }
+        issuerBindingRef: { $ref: '#/components/schemas/BusinessObjectRef' }
+        issuerTrusted: { type: boolean }
+        activeStatusVerified: { type: boolean }
+        temporalFactsVerified: { type: boolean, default: false }
+        issuedAt: { type: string, format: date-time }
+        validFrom: { type: string, format: date-time }
+        validUntil: { type: string, format: date-time }
+    EvidenceRejectionReason:
+      type: string
+      description: >-
+        Ground on which a governed verification was rejected as a business verdict. The status
+        grounds map one-to-one from the verifier's credential-status rejection reasons; EXPIRED and
+        NOT_YET_VALID are derived server-side from the temporal facts of a credential that verified.
+      enum: [REVOKED, SUSPENDED, STATUS_UNRESOLVABLE, STATUS_REQUIRED_BUT_ABSENT, STATUS_NOT_ACCEPTED, EXPIRED, NOT_YET_VALID]
+    VerifiedEvidenceRejection:
+      type: object
+      readOnly: true
+      description: A rejected verification. Records no credential content - no protected payload, presentation hash, issuer or claims.
+      required: [operationId, sessionId, definition, reason, rejectedAt, recordedAt]
+      properties:
+        operationId: { type: string }
+        sessionId: { type: string }
+        definition: { $ref: '#/components/schemas/EvidenceVerificationDefinition' }
+        reason: { $ref: '#/components/schemas/EvidenceRejectionReason' }
+        rejectedAt: { type: string, format: date-time }
+        recordedAt: { type: string, format: date-time }
+    EvidenceVerificationResult:
+      type: object
+      description: Exactly one of snapshot and rejection is present once the verification has been recorded.
+      required: [launch, streamVersion]
+      properties:
+        launch: { $ref: '#/components/schemas/EvidenceVerificationLaunch' }
+        streamVersion: { type: integer, format: int64 }
+        snapshot: { $ref: '#/components/schemas/VerifiedEvidenceSnapshot' }
+        rejection: { $ref: '#/components/schemas/VerifiedEvidenceRejection' }
+        replayedFromIdempotency: { type: boolean, default: false }
+
+    EvidenceValidityConstraints:
+      type: object
+      additionalProperties: false
+      description: Constraints use verifier-authenticated envelope facts; missing or uninterpretable required facts fail closed.
+      properties:
+        maximumAgeSeconds: { type: integer, format: int64, minimum: 1 }
+        minimumRemainingValiditySeconds: { type: integer, format: int64, minimum: 0 }
+        requireExpiration: { type: boolean, default: false }

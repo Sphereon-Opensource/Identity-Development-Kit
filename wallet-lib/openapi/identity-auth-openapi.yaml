@@ -1,0 +1,361 @@
+openapi: 3.0.4
+info:
+  title: Identity Auth API
+  version: 0.1.0
+  x-products: [edk, vdx]
+  description: |
+    The authentication surface that stands behind the platform's OAuth2 Authorization Server. It
+    manages the password credentials a tenant's users sign in with, runs redirect-flow
+    authentication for external methods (an identity-verification email challenge, a federated OIDC
+    provider, and similar), and reads or terminates the sessions the Authorization Server tracks.
+
+    The Authorization Server owns the OAuth and OpenID Connect endpoints a relying party talks to
+    (authorization, token, discovery). This API is the layer the Authorization Server calls into to
+    verify a user, start and finish a redirect-flow challenge, and end a session. A relying party
+    integrates with the Authorization Server, not with this API directly.
+
+    ## Tenancy and IdP hosting
+
+    Every operation acts in one tenant. The tenant is resolved from the request context: the bearer
+    token for an authenticated admin call, or the host and path a public flow arrives on. A tenant's
+    identity provider can be reached in more than one way. Alongside the shared platform base path,
+    a tenant can expose its IdP on a dedicated subdomain or under a tenant path prefix, so end users
+    see the tenant's own address during sign-in. The operations are identical whichever address is
+    used; only the resolved tenant differs, and tenant context is never carried as an explicit field
+    in a request body.
+
+    ## Credentials
+
+    A credential is a username and a hashed password linked to one Identity. An operator creates a
+    credential for an existing Identity, a user rotates their own password by proving the current
+    one, and an operator clears a lockout. Credential creation and unlock are operator-only and
+    mount under the `/admin` subtree so ingress rules can scope that whole subtree; password
+    rotation stays off `/admin` because it is self-service and gated per credential.
+
+    ## Sessions
+
+    Look up the authenticated user behind an Authorization-Server session, log a single session out,
+    or run OpenID Connect RP-Initiated Logout to terminate one or many sessions and fire
+    back-channel notifications. Session ids are bearer-equivalent and are always carried in the
+    request body, never in the URL.
+
+    ## Redirect-flow authentication
+
+    Two endpoints drive an external authentication challenge. The initiate endpoint resolves the
+    tenant's method (an explicit `methodId`, or the tenant default when none is given) and returns
+    the URL the user agent is sent to. The callback endpoint completes the flow when the external
+    provider returns, writes the session, and yields the authenticated user. The method is a
+    server-side choice, so these URLs stay the same as a tenant changes or adds methods.
+  license:
+    name: Apache 2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0
+
+servers:
+  - url: https://api.example.com/api/identity-auth/v1
+    description: Production server.
+  - url: http://localhost:8080/api/identity-auth/v1
+    description: Local development server.
+
+security:
+  - bearer: []
+
+tags:
+  - name: Credentials
+    description: Password credential lifecycle, create, rotate, and unlock.
+  - name: Sessions
+    description: Read and terminate Authorization-Server sessions.
+  - name: RedirectFlow
+    description: >-
+      Redirect-flow authentication: start an external challenge and complete it on callback. The
+      method (identity-verification email, federated OIDC, and similar) is resolved from tenant
+      configuration, so the URLs are method-agnostic.
+
+paths:
+
+  /admin/credentials:
+    post:
+      tags: [Credentials]
+      operationId: createCredential
+      summary: Create a login credential
+      description: >-
+        Operator operation. Hashes the plaintext password and stores a new credential keyed on the
+        tenant and username, linked to an existing Identity. Fails with `409` when a credential for
+        that username already exists (`AUTH_CREDENTIAL_ALREADY_EXISTS`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCredentialRequest'
+      responses:
+        '201':
+          description: The created credential.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserCredential'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '409':
+          $ref: './common-components.yml#/components/responses/Conflict'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /credentials/{credentialId}/password:
+    parameters:
+      - $ref: '#/components/parameters/CredentialId'
+    put:
+      tags: [Credentials]
+      operationId: updatePassword
+      summary: Change a password
+      description: >-
+        Rotates the stored password hash. The caller must present the current password, which the
+        server re-verifies before rotating. A wrong current password fails with `401`
+        (`AUTH_INVALID_CREDENTIALS`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdatePasswordRequest'
+      responses:
+        '200':
+          description: Password updated; the credential is returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserCredential'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /admin/credentials/{credentialId}/unlock:
+    parameters:
+      - $ref: '#/components/parameters/CredentialId'
+    post:
+      tags: [Credentials]
+      operationId: unlockCredential
+      summary: Clear lockout state
+      description: >-
+        Operator operation. Resets the failed-attempts counter and clears a time-based lockout. Does
+        not change a `DISABLED` status, which is a separate operator action.
+      responses:
+        '200':
+          description: Lockout cleared; the credential is returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserCredential'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /session/lookup:
+    post:
+      tags: [Sessions]
+      operationId: getAuthenticatedSession
+      summary: Get the authenticated user for a session
+      description: >-
+        Returns the authenticated user bound to an Authorization-Server session id, or `user: null`
+        when the session is unknown, expired, or not yet authenticated. The session id is carried in
+        the body because it is bearer-equivalent.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GetAuthenticatedSessionRequest'
+      responses:
+        '200':
+          description: Lookup succeeded. The user is present or null.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GetAuthenticatedSessionResult'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /logout:
+    post:
+      tags: [Sessions]
+      operationId: logoutSession
+      summary: Log out a session
+      description: >-
+        Terminates a single Authorization-Server session. Idempotent; logging out an unknown or
+        expired session returns `loggedOut` false without error.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LogoutSessionRequest'
+      responses:
+        '200':
+          description: Logout attempted.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LogoutSessionResult'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /end-session:
+    post:
+      tags: [Sessions]
+      operationId: endSession
+      summary: OpenID Connect RP-Initiated Logout
+      description: >-
+        Terminates one or many sessions per OpenID Connect RP-Initiated Logout (section 3) and fires
+        back-channel notifications. Supply at least one of `idTokenHint`, `sessionId`, or
+        `identityId`; omitting all three fails with `400` (`AUTH_END_SESSION_ARGUMENT_MISSING`). An
+        `idTokenHint` that cannot be validated fails with `400` (`AUTH_INVALID_ID_TOKEN_HINT`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EndSessionRequest'
+      responses:
+        '200':
+          description: Logout processed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EndSessionResult'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /initiate:
+    post:
+      tags: [RedirectFlow]
+      operationId: initiateAuthentication
+      summary: Start a redirect-flow authentication
+      description: >-
+        Starts an external authentication challenge and returns the dispatch URL the user agent
+        should be redirected to. The method is resolved from `methodId`, or the tenant default when
+        `methodId` is null. A configured method that is not a redirect-flow method fails with `400`
+        (`AUTH_METHOD_TYPE_MISMATCH`); a method that is absent or disabled fails with `503`
+        (`AUTH_METHOD_NOT_CONFIGURED`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InitiateAuthenticationRequest'
+      responses:
+        '200':
+          description: Challenge started.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InitiateAuthenticationResult'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+        '503':
+          description: The requested authentication method is not configured for this tenant (`AUTH_METHOD_NOT_CONFIGURED`).
+          content:
+            application/json:
+              schema:
+                $ref: './common-components.yml#/components/schemas/ApiError'
+
+  /callback:
+    post:
+      tags: [RedirectFlow]
+      operationId: completeAuthentication
+      summary: Complete a redirect-flow authentication
+      description: >-
+        Callback from the external authentication method. Completes the flow, upserts the resulting
+        Identity, writes the session, and returns the authenticated user. The flow is dispatched by
+        `executionId` and `sessionId`, so this one path serves every configured method. This
+        endpoint does not require a bearer token: it is bound to the one-shot `executionId` issued by
+        the initiate call. A verification that produced no verified identifiers fails with `401`
+        (`AUTH_INVALID_CREDENTIALS`); an unknown or expired execution fails with `404`
+        (`AUTH_SESSION_NOT_FOUND`).
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CompleteAuthenticationRequest'
+      responses:
+        '200':
+          description: Authentication completed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthenticatedUser'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+components:
+  # Shared error/header/pagination components and the bearer scheme live in
+  # ./common-components.yml. Entity, request, and result schemas live in
+  # ./identity-auth-components.yml and are re-exported below so operations can
+  # reference them with spec-internal `#/components/schemas/...` refs.
+
+  securitySchemes:
+    bearer:
+      $ref: './common-components.yml#/components/securitySchemes/bearer'
+
+  parameters:
+    CredentialId:
+      $ref: './identity-auth-components.yml#/components/parameters/CredentialId'
+
+  schemas:
+    UserCredential:
+      $ref: './identity-auth-components.yml#/components/schemas/UserCredential'
+    AuthenticatedUser:
+      $ref: './identity-auth-components.yml#/components/schemas/AuthenticatedUser'
+    CreateCredentialRequest:
+      $ref: './identity-auth-components.yml#/components/schemas/CreateCredentialRequest'
+    UpdatePasswordRequest:
+      $ref: './identity-auth-components.yml#/components/schemas/UpdatePasswordRequest'
+    GetAuthenticatedSessionRequest:
+      $ref: './identity-auth-components.yml#/components/schemas/GetAuthenticatedSessionRequest'
+    GetAuthenticatedSessionResult:
+      $ref: './identity-auth-components.yml#/components/schemas/GetAuthenticatedSessionResult'
+    LogoutSessionRequest:
+      $ref: './identity-auth-components.yml#/components/schemas/LogoutSessionRequest'
+    LogoutSessionResult:
+      $ref: './identity-auth-components.yml#/components/schemas/LogoutSessionResult'
+    EndSessionRequest:
+      $ref: './identity-auth-components.yml#/components/schemas/EndSessionRequest'
+    EndSessionResult:
+      $ref: './identity-auth-components.yml#/components/schemas/EndSessionResult'
+    InitiateAuthenticationRequest:
+      $ref: './identity-auth-components.yml#/components/schemas/InitiateAuthenticationRequest'
+    InitiateAuthenticationResult:
+      $ref: './identity-auth-components.yml#/components/schemas/InitiateAuthenticationResult'
+    CompleteAuthenticationRequest:
+      $ref: './identity-auth-components.yml#/components/schemas/CompleteAuthenticationRequest'

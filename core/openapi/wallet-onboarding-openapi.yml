@@ -1,0 +1,240 @@
+openapi: 3.0.4
+info:
+  title: Managed Wallet Onboarding API
+  version: 0.1.0
+  x-products: [edk, vdx]
+  description: |
+    Authenticated, durable enterprise-wallet onboarding processes. Tenant, wallet-account,
+    Identity, Party, organization, relationship, policy, and entitlement bindings are resolved
+    from the authenticated server context and are never accepted from request bodies.
+servers:
+  - url: https://api.example.com/api/wallet-onboarding/v1
+  - url: http://localhost:8080/api/wallet-onboarding/v1
+security:
+  - bearer: []
+tags:
+  - name: ManagedWalletOnboarding
+paths:
+  /identifier-inputs:
+    post:
+      tags: [ManagedWalletOnboarding]
+      summary: Capture a one-use managed wallet identifier input
+      description: |
+        Accepts the identifier only at the authenticated provider boundary. The clear-text email is
+        protected immediately and is never returned, retained in onboarding state, or published to
+        events, outbox messages, or audit projections.
+      operationId: captureManagedWalletIdentifierInput
+      x-command-id: wallet.onboarding.identifier-capture
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './wallet-onboarding-components.yml#/components/schemas/CaptureManagedWalletIdentifierInputArgs'
+      responses:
+        '201':
+          description: Opaque one-use identifier input reference.
+          content:
+            application/json:
+              schema:
+                $ref: './wallet-onboarding-components.yml#/components/schemas/WalletOnboardingIdentifierInputRef'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '409':
+          $ref: './common-components.yml#/components/responses/Conflict'
+  /processes:
+    post:
+      tags: [ManagedWalletOnboarding]
+      summary: Start managed wallet onboarding
+      operationId: startManagedWalletOnboarding
+      x-command-id: wallet.onboarding.start
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './wallet-onboarding-components.yml#/components/schemas/WalletOnboardingStartRequest'
+      responses:
+        '201':
+          description: Durable process created, or the idempotent existing process returned.
+          content:
+            application/json:
+              schema:
+                $ref: './wallet-onboarding-components.yml#/components/schemas/ManagedWalletOnboardingSnapshot'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '409':
+          $ref: './common-components.yml#/components/responses/Conflict'
+  /processes/{processId}:
+    parameters:
+      - $ref: './wallet-onboarding-components.yml#/components/parameters/ManagedWalletOnboardingProcessId'
+    get:
+      tags: [ManagedWalletOnboarding]
+      summary: Observe managed wallet onboarding
+      operationId: observeManagedWalletOnboarding
+      x-command-id: wallet.onboarding.observe
+      responses:
+        '200':
+          description: Current UI-safe process snapshot.
+          content:
+            application/json:
+              schema:
+                $ref: './wallet-onboarding-components.yml#/components/schemas/ManagedWalletOnboardingSnapshot'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+  /processes/{processId}/actions:
+    parameters:
+      - $ref: './wallet-onboarding-components.yml#/components/parameters/ManagedWalletOnboardingProcessId'
+    post:
+      tags: [ManagedWalletOnboarding]
+      summary: Dispatch a typed onboarding action
+      operationId: dispatchManagedWalletOnboardingAction
+      x-command-id: wallet.onboarding.dispatch
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './wallet-onboarding-components.yml#/components/schemas/ManagedWalletOnboardingDispatch'
+      responses:
+        '200':
+          description: Updated process snapshot.
+          content:
+            application/json:
+              schema:
+                $ref: './wallet-onboarding-components.yml#/components/schemas/ManagedWalletOnboardingSnapshot'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '409':
+          $ref: './common-components.yml#/components/responses/Conflict'
+  /processes/{processId}/support:
+    parameters:
+      - $ref: './wallet-onboarding-components.yml#/components/parameters/ManagedWalletOnboardingProcessId'
+    get:
+      tags: [ManagedWalletOnboarding]
+      summary: Inspect privacy-safe managed wallet process support state
+      operationId: inspectManagedWalletSupport
+      x-command-id: wallet.onboarding.support
+      responses:
+        '200':
+          description: Subject-authorized references, state, timestamps, health, and safe reason codes.
+          content:
+            application/json:
+              schema:
+                $ref: './wallet-onboarding-components.yml#/components/schemas/ManagedWalletSupportSnapshot'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+  /processes/{processId}/events:
+    parameters:
+      - $ref: './wallet-onboarding-components.yml#/components/parameters/ManagedWalletOnboardingProcessId'
+    get:
+      tags: [ManagedWalletOnboarding]
+      summary: List append-only managed wallet onboarding events
+      operationId: listManagedWalletOnboardingEvents
+      x-command-id: wallet.onboarding.events-list
+      parameters:
+        - name: afterRevision
+          in: query
+          schema: { type: integer, format: int64, minimum: -1, default: -1 }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 1000, default: 100 }
+      responses:
+        '200':
+          description: Ordered UI-safe events after the requested process revision.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: './wallet-onboarding-components.yml#/components/schemas/ManagedWalletOnboardingEvent'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+  /processes/{processId}/resume:
+    parameters:
+      - $ref: './wallet-onboarding-components.yml#/components/parameters/ManagedWalletOnboardingProcessId'
+    post:
+      tags: [ManagedWalletOnboarding]
+      summary: Resume from a verified one-use provider completion
+      operationId: resumeManagedWalletOnboarding
+      x-command-id: wallet.onboarding.resume
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './wallet-onboarding-components.yml#/components/schemas/ManagedWalletOnboardingResumeHttpRequest'
+      responses:
+        '200':
+          description: Updated process snapshot.
+          content:
+            application/json:
+              schema:
+                $ref: './wallet-onboarding-components.yml#/components/schemas/ManagedWalletOnboardingSnapshot'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '409':
+          $ref: './common-components.yml#/components/responses/Conflict'
+  /processes/{processId}/cancel:
+    parameters:
+      - $ref: './wallet-onboarding-components.yml#/components/parameters/ManagedWalletOnboardingProcessId'
+    post:
+      tags: [ManagedWalletOnboarding]
+      summary: Cancel managed wallet onboarding
+      operationId: cancelManagedWalletOnboarding
+      x-command-id: wallet.onboarding.cancel
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './wallet-onboarding-components.yml#/components/schemas/CancelManagedWalletOnboardingRequest'
+      responses:
+        '200':
+          description: Cancelled or compensating process snapshot.
+          content:
+            application/json:
+              schema:
+                $ref: './wallet-onboarding-components.yml#/components/schemas/ManagedWalletOnboardingSnapshot'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '409':
+          $ref: './common-components.yml#/components/responses/Conflict'
+components:
+  securitySchemes:
+    bearer:
+      $ref: './common-components.yml#/components/securitySchemes/bearer'

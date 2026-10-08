@@ -1,0 +1,3074 @@
+openapi: 3.0.4
+info:
+  title: Semantic Model Authoring API
+  version: 0.2.0
+  # Whole API requires the `semantic-modeling.v1` license feature (enterprise). The build
+  # derives a Scalar "Enterprise" badge on every operation from this default. Individual read-only
+  # operations may opt out with `x-license-required: false`.
+  x-license-required: semantic-modeling.v1
+  description: |
+    Author the layered model used to define business terms once and reuse them across credential
+    issuance and verification. The model has four tiers. Each tier builds on the one above it and
+    can only narrow it; no tier can loosen a constraint set by a higher one.
+
+      - **Data domain (L1)**: the authoritative business-term definitions. A data domain holds object types
+        (such as Person or Organization). Each object type is a tree of business terms, where every term
+        carries a data type, validation rules, and governance overlays (data classification,
+        processing purpose, retention, residency). A data domain also records relationship types between its
+        object types, can map its terms onto external or internal schemas, and can generate a JSON
+        Schema. A business term can also record authoritative grounding, a pinned legal-source snapshot,
+        retrieval time, and the governed kind of its entry-code scheme.
+      - **Object model (L2)**: a use case built on one or more published data domains. An object model
+        binds named roles to data-domain object types, selects the relationships it needs, and tightens
+        per-business-term constraints. It resolves into an effective object graph and a JSON Schema.
+      - **Data product (L3)**: one published object model narrowed to the exact business terms a single
+        issuance or verification scenario needs.
+      - **Channel (L4)**: one data product rendered into a concrete output, such as a
+        capture form, a PDF or other document, a verifiable credential, an OID4VCI issuance, or an
+        API payload.
+      - **Credential branding (L4)**: reusable presentation overlays (display name, logo, and colors
+        per language) that a verifiable-credential channel applies for wallet display.
+
+    The model is tenant-owned. Published data domains and object models can be reused by downstream
+    credential, form, document, and API-payload definitions without copying their constraints.
+servers:
+  - url: http://localhost:8080/api/model/v1
+    description: Local development.
+security:
+  - bearer: []
+tags:
+  - name: DataDomain
+    description: Author, version, publish, and bind schemas for L1 data domains.
+  - name: ObjectModel
+    description: Author, curate, version, publish, resolve, and generate schemas for L2 object models.
+  - name: DataProduct
+    description: Author, narrow, version, publish, and resolve L3 data products.
+  - name: Channel
+    description: Channel-neutral L4 operations (list, fetch, and delete a channel of any type).
+  - name: FormChannel
+    description: Author L4 form channels that render one data product as a capture form.
+  - name: PdfChannel
+    description: Author L4 PDF/document channels that render one data product into a document template.
+  - name: CredentialChannel
+    description: Author L4 verifiable-credential channels that render one data product as a verifiable credential.
+  - name: Oid4vciChannel
+    description: Author L4 OID4VCI issuance channels that compose verifiable-credential channels for issuance.
+  - name: ApiChannel
+    description: Author L4 API-payload channels that render one data product as an API request or response payload.
+  - name: CredentialBranding
+    description: Author, version, and publish L4 credential-branding presentation overlays (logo, colors, per-language display name).
+paths:
+  /data-domains:
+    post:
+      tags: [DataDomain]
+      summary: Create the stable data-domain identity and initial draft revision
+      operationId: createDataDomain
+      x-command-id: model.data-domain.create
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateDataDomainInput'
+      responses:
+        '201':
+          description: Created identity with its initial draft revision.
+          headers:
+            Location:
+              schema:
+                type: string
+            ETag:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DataDomainCreation'
+        '400':
+          description: Validation failure
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+    get:
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+        - $ref: '#/components/parameters/Sort'
+        - $ref: '#/components/parameters/SortDirection'
+      tags: [DataDomain]
+      summary: List data-domain identities and revision pointers
+      operationId: listDataDomains
+      x-command-id: model.data-domain.list
+      responses:
+        '200':
+          description: Page of identities.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DataDomainPageResponse'
+        '401':
+          description: Unauthorized
+
+  /data-domains/{dataDomainId}:
+    parameters:
+      - $ref: '#/components/parameters/DataDomainId'
+    get:
+      tags: [DataDomain]
+      summary: Get a data-domain identity and revision pointers
+      operationId: getDataDomain
+      x-command-id: model.data-domain.get
+      responses:
+        '200':
+          description: Data-domain identity and pointers only.
+          headers:
+            ETag:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DataDomain'
+        '401':
+          description: Unauthorized
+        '404':
+          description: Not found
+
+  /data-domains/{dataDomainId}/revisions:
+    parameters:
+      - $ref: '#/components/parameters/DataDomainId'
+    post:
+      tags: [DataDomain]
+      summary: Create a draft revision
+      operationId: createDataDomainRevision
+      x-command-id: model.data-domain.create-revision
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateDataDomainRevisionInput'
+      responses:
+        '201':
+          description: Draft revision created.
+          headers:
+            Location:
+              schema:
+                type: string
+            ETag:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DataDomainRevision'
+        '409':
+          description: Conflict
+        '412':
+          description: Precondition failed
+        '422':
+          description: Semantic validation failure
+    get:
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+        - $ref: '#/components/parameters/Sort'
+        - $ref: '#/components/parameters/SortDirection'
+      tags: [DataDomain]
+      summary: List revisions
+      operationId: listDataDomainRevisions
+      x-command-id: model.data-domain.list-revisions
+      responses:
+        '200':
+          description: Revisions for the identity.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DataDomainRevisionPageResponse'
+        '404':
+          description: Not found
+
+  /data-domains/{dataDomainId}/revisions/{revision}:
+    parameters:
+      - $ref: '#/components/parameters/DataDomainId'
+      - $ref: '#/components/parameters/DataDomainRevision'
+    get:
+      tags: [DataDomain]
+      summary: Get an exact pinned revision
+      operationId: getDataDomainRevision
+      x-command-id: model.data-domain.get-revision
+      responses:
+        '200':
+          description: Exact revision.
+          headers:
+            ETag:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DataDomainRevision'
+        '404':
+          description: Not found
+    put:
+      tags: [DataDomain]
+      summary: Replace draft revision content
+      operationId: replaceDataDomainDraftRevision
+      x-command-id: model.data-domain.replace-draft-revision
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateDataDomainRevisionInput'
+      responses:
+        '200':
+          description: Updated draft revision.
+          headers:
+            ETag:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DataDomainRevision'
+        '404':
+          description: Not found
+        '409':
+          description: Conflict
+        '412':
+          description: Precondition failed
+    delete:
+      tags: [DataDomain]
+      summary: Delete a draft revision
+      operationId: deleteDataDomainDraftRevision
+      x-command-id: model.data-domain.delete-draft-revision
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      responses:
+        '204':
+          description: Draft revision deleted.
+        '404':
+          description: Not found
+        '409':
+          description: Conflict
+        '412':
+          description: Precondition failed
+
+  /data-domains/{dataDomainId}/revisions/{revision}/usages:
+    parameters:
+      - $ref: '#/components/parameters/DataDomainId'
+      - $ref: '#/components/parameters/DataDomainRevision'
+      - $ref: './common-components.yml#/components/parameters/Limit'
+      - $ref: './common-components.yml#/components/parameters/Offset'
+      - $ref: './common-components.yml#/components/parameters/Sort'
+      - $ref: './common-components.yml#/components/parameters/SortDirection'
+    get:
+      tags: [DataDomain]
+      summary: List usages for an exact data-domain revision
+      operationId: listDataDomainRevisionUsages
+      x-command-id: model.data-domain.list-revision-usages
+      responses:
+        '200':
+          description: Persisted semantic-attribute usage rows for this exact revision.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SemanticAttributeUsagePageResponse'
+        '404':
+          description: Not found
+
+  /data-domains/{dataDomainId}/revisions/{revision}/composed:
+    parameters:
+      - $ref: '#/components/parameters/DataDomainId'
+      - $ref: '#/components/parameters/DataDomainRevision'
+    get:
+      tags: [DataDomain]
+      summary: Get the exact published revision content
+      operationId: getDataDomainRevisionComposed
+      x-command-id: model.data-domain.get-revision-composed
+      responses:
+        '200':
+          description: Exact published revision content.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DataDomainComposedRevision'
+        '404':
+          description: Not found or not published
+
+  /data-domains/{dataDomainId}/revisions/{revision}/validation:
+    parameters:
+      - $ref: '#/components/parameters/DataDomainId'
+      - $ref: '#/components/parameters/DataDomainRevision'
+    get:
+      tags: [DataDomain]
+      summary: Validate the exact revision content
+      operationId: getDataDomainRevisionValidation
+      x-command-id: model.data-domain.get-revision-validation
+      responses:
+        '200':
+          description: Validation result for the exact revision.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DataDomainValidationResult'
+        '404':
+          description: Not found
+
+  /data-domains/{dataDomainId}/revisions/{revision}/policy:
+    parameters:
+      - $ref: '#/components/parameters/DataDomainId'
+      - $ref: '#/components/parameters/DataDomainRevision'
+    get:
+      tags: [DataDomain]
+      summary: Project exact revision governance as an ODRL Offer
+      operationId: getDataDomainGovernancePolicy
+      x-command-id: semantic-governance.policy.data-domain
+      responses:
+        '200':
+          description: Governance policy projection.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GovernanceOdrlResult'
+        '404':
+          description: Not found
+
+  /data-domains/{dataDomainId}/revisions/{revision}/reviews:
+    parameters:
+      - $ref: '#/components/parameters/DataDomainId'
+      - $ref: '#/components/parameters/DataDomainRevision'
+    post:
+      tags: [DataDomain]
+      summary: Create a review for an exact draft revision
+      operationId: createDataDomainReview
+      x-command-id: model.data-domain.create-review
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      responses:
+        '201':
+          description: Review created and revision sealed.
+          headers:
+            Location:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DataDomainReview'
+        '409':
+          description: Conflict
+        '412':
+          description: Precondition failed
+    get:
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+        - $ref: '#/components/parameters/Sort'
+        - $ref: '#/components/parameters/SortDirection'
+      tags: [DataDomain]
+      summary: List reviews for an exact revision
+      operationId: listDataDomainReviews
+      x-command-id: model.data-domain.list-reviews
+      responses:
+        '200':
+          description: Reviews.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DataDomainReviewList'
+
+  /data-domains/{dataDomainId}/revisions/{revision}/reviews/{reviewId}:
+    parameters:
+      - $ref: '#/components/parameters/DataDomainId'
+      - $ref: '#/components/parameters/DataDomainRevision'
+      - $ref: '#/components/parameters/ReviewId'
+    get:
+      tags: [DataDomain]
+      summary: Get a review
+      operationId: getDataDomainReview
+      x-command-id: model.data-domain.get-review
+      responses:
+        '200':
+          description: Review with immutable decisions.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DataDomainReview'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+
+  /data-domains/{dataDomainId}/revisions/{revision}/reviews/{reviewId}/decisions:
+    parameters:
+      - $ref: '#/components/parameters/DataDomainId'
+      - $ref: '#/components/parameters/DataDomainRevision'
+      - $ref: '#/components/parameters/ReviewId'
+    post:
+      tags: [DataDomain]
+      summary: Record an immutable review decision
+      operationId: createDataDomainReviewDecision
+      x-command-id: model.data-domain.decide-review
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateDataDomainReviewDecisionInput'
+      responses:
+        '201':
+          description: Immutable review decision.
+          headers:
+            Location:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DataDomainReviewDecision'
+        '409':
+          description: Conflict
+        '422':
+          description: Rejected semantic decision. A REJECT verdict requires a non-blank reasonRef or comment.
+    get:
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+        - $ref: '#/components/parameters/Sort'
+        - $ref: '#/components/parameters/SortDirection'
+      tags: [DataDomain]
+      summary: List immutable decisions for a review
+      operationId: listDataDomainReviewDecisions
+      x-command-id: model.data-domain.list-review-decisions
+      responses:
+        '200':
+          description: Immutable review decisions.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DataDomainReviewDecisionList'
+
+  /data-domains/{dataDomainId}/revisions/{revision}/reviews/{reviewId}/decisions/{decisionId}:
+    parameters:
+      - $ref: '#/components/parameters/DataDomainId'
+      - $ref: '#/components/parameters/DataDomainRevision'
+      - $ref: '#/components/parameters/ReviewId'
+      - $ref: '#/components/parameters/DecisionId'
+    get:
+      tags: [DataDomain]
+      summary: Get an immutable review decision
+      operationId: getDataDomainReviewDecision
+      x-command-id: model.data-domain.get-review-decision
+      responses:
+        '200':
+          description: Immutable review decision.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DataDomainReviewDecision'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+
+  /data-domains/{dataDomainId}/publications:
+    parameters:
+      - $ref: '#/components/parameters/DataDomainId'
+    post:
+      tags: [DataDomain]
+      summary: Create a publication for an approved revision
+      operationId: createDataDomainPublication
+      x-command-id: model.data-domain.publish
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateDataDomainPublicationInput'
+      responses:
+        '201':
+          description: Publication created.
+          headers:
+            Location:
+              schema:
+                type: string
+            ETag:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DataDomainPublication'
+        '409':
+          description: Conflict
+        '422':
+          description: Semantic publication validation failure
+        '412':
+          description: Precondition failed
+    get:
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+        - $ref: '#/components/parameters/Sort'
+        - $ref: '#/components/parameters/SortDirection'
+      tags: [DataDomain]
+      summary: List publications
+      operationId: listDataDomainPublications
+      x-command-id: model.data-domain.list-publications
+      responses:
+        '200':
+          description: Publications.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DataDomainPublicationList'
+
+  /data-domains/{dataDomainId}/publications/{publicationId}:
+    parameters:
+      - $ref: '#/components/parameters/DataDomainId'
+      - $ref: '#/components/parameters/PublicationId'
+    get:
+      tags: [DataDomain]
+      summary: Get a publication
+      operationId: getDataDomainPublication
+      x-command-id: model.data-domain.get-publication
+      responses:
+        '200':
+          description: Publication.
+          headers:
+            ETag:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DataDomainPublication'
+
+  /data-domains/{dataDomainId}/publications/{publicationId}/notices:
+    parameters:
+      - $ref: '#/components/parameters/DataDomainId'
+      - $ref: '#/components/parameters/PublicationId'
+    post:
+      tags: [DataDomain]
+      summary: Create a publication notice
+      operationId: createDataDomainPublicationNotice
+      x-command-id: model.data-domain.record-publication-notice
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateDataDomainPublicationNoticeInput'
+      responses:
+        '201':
+          description: Publication notice created.
+          headers:
+            Location:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DataDomainPublicationNotice'
+        '409':
+          description: Conflict
+        '412':
+          description: Precondition failed
+    get:
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+        - $ref: '#/components/parameters/Sort'
+        - $ref: '#/components/parameters/SortDirection'
+      tags: [DataDomain]
+      summary: List publication notices
+      operationId: listDataDomainPublicationNotices
+      x-command-id: model.data-domain.list-publication-notices
+      responses:
+        '200':
+          description: Notices.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DataDomainPublicationNoticeList'
+
+  /data-domains/{dataDomainId}/publications/{publicationId}/notices/{noticeId}:
+    parameters:
+      - $ref: '#/components/parameters/DataDomainId'
+      - $ref: '#/components/parameters/PublicationId'
+      - $ref: '#/components/parameters/NoticeId'
+    get:
+      tags: [DataDomain]
+      summary: Get a publication notice
+      operationId: getDataDomainPublicationNotice
+      x-command-id: model.data-domain.get-publication-notice
+      responses:
+        '200':
+          description: Publication notice.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DataDomainPublicationNotice'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+
+  /data-products:
+    post:
+      tags: [DataProduct]
+      summary: Create a draft data product narrowing one published object model
+      operationId: createDataProduct
+      x-command-id: model.data-product.create-endpoint
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateDataProductInput'
+      responses:
+        '201':
+          description: Data product created (draft, version 1).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DataProduct'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+    get:
+      tags: [DataProduct]
+      summary: List data products for the calling tenant
+      operationId: listDataProducts
+      x-command-id: model.data-product.list-endpoint
+      description: |
+        Returns a page of data products matching the optional filter. Pagination accepts both
+        `limit`/`offset` and OpenAPI-style `page`/`size`; the parser normalises and clamps `limit`
+        to `[1, 100]` (default `20`). Sort is constrained to an allow-list (`name`, `createdAt`,
+        `updatedAt`, `version`); the default is `createdAt DESC`.
+      parameters:
+        - name: nameContains
+          in: query
+          description: Case-insensitive substring match against the data product name.
+          schema:
+            type: string
+        - name: status
+          in: query
+          description: Restrict to data products in this lifecycle status.
+          schema:
+            $ref: '#/components/schemas/ModelLifecycleStatus'
+        - name: objectModelId
+          in: query
+          description: Restrict to data products that narrow this object model.
+          schema:
+            type: string
+            format: uuid
+        - $ref: './common-components.yml#/components/parameters/Limit'
+        - $ref: './common-components.yml#/components/parameters/Offset'
+        - $ref: './common-components.yml#/components/parameters/Page'
+        - $ref: './common-components.yml#/components/parameters/Size'
+        - $ref: './common-components.yml#/components/parameters/Sort'
+        - $ref: './common-components.yml#/components/parameters/SortDirection'
+      responses:
+        '200':
+          description: Page of data products.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DataProductPageResponse'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /data-products/{dataProductId}:
+    parameters:
+      - $ref: '#/components/parameters/DataProductId'
+    get:
+      parameters:
+        - name: version
+          in: query
+          required: false
+          description: Exact retained version; omission reads the current head. Missing versions never fall back to newer content.
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+      tags: [DataProduct]
+      summary: Get an data product by id
+      operationId: getDataProduct
+      x-command-id: model.data-product.get-endpoint
+      responses:
+        '200':
+          description: Data product.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DataProduct'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+    patch:
+      tags: [DataProduct]
+      summary: Update a draft data product's name, description, selection or overrides
+      operationId: updateDataProduct
+      x-command-id: model.data-product.update-endpoint
+      description: |
+        Partial update of a DRAFT data product. Each field is optional; a null (or absent) field leaves the
+        corresponding value unchanged. The object model reference, lifecycle status and version are not
+        editable here. Updating a PUBLISHED data product is a conflict.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateDataProductInput'
+      responses:
+        '200':
+          description: Updated data product.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DataProduct'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '409':
+          $ref: './common-components.yml#/components/responses/Conflict'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+    delete:
+      tags: [DataProduct]
+      summary: Delete an data product by id
+      operationId: deleteDataProduct
+      x-command-id: model.data-product.delete-endpoint
+      responses:
+        '200':
+          description: Deletion outcome (whether a data product existed for the id).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeleteDataProductResult'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /data-products/{dataProductId}/selection:
+    parameters:
+      - $ref: '#/components/parameters/DataProductId'
+    put:
+      tags: [DataProduct]
+      summary: Replace a draft data product's selection entries wholesale
+      operationId: setDataProductSelection
+      x-command-id: model.data-product.set-selection-endpoint
+      description: |
+        Replaces the data product's `selected` entries wholesale. Overrides are untouched; an override whose
+        `(roleRef, path)` is no longer selected is rejected by validation. The data product must be in DRAFT.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetDataProductSelectionInput'
+      responses:
+        '200':
+          description: Updated data product.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DataProduct'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '409':
+          $ref: './common-components.yml#/components/responses/Conflict'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /data-products/{dataProductId}/status:
+    parameters:
+      - $ref: '#/components/parameters/DataProductId'
+    put:
+      tags: [DataProduct]
+      summary: Toggle data product status (draft <-> published)
+      operationId: setDataProductStatus
+      x-command-id: model.data-product.set-status-endpoint
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetDataProductStatusInput'
+      responses:
+        '200':
+          description: Data product after the lifecycle transition.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DataProduct'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /data-products/{dataProductId}/version:
+    parameters:
+      - $ref: '#/components/parameters/DataProductId'
+    post:
+      tags: [DataProduct]
+      summary: Bump the data product's snapshot version
+      operationId: snapshotDataProductVersion
+      x-command-id: model.data-product.snapshot-version-endpoint
+      description: Bumps the data product's monotonic snapshot `version` by one. No request body.
+      responses:
+        '200':
+          description: Data product with the bumped version.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DataProduct'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /data-products/{dataProductId}/resolved:
+    parameters:
+      - $ref: '#/components/parameters/DataProductId'
+    get:
+      parameters:
+        - name: version
+          in: query
+          required: false
+          description: Exact retained version; omission reads the current head. Missing versions never fall back to newer content.
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+      tags: [DataProduct]
+      summary: Resolve an data product into its effective contract
+      operationId: resolveDataProduct
+      x-command-id: model.data-product.resolve-endpoint
+      description: |
+        Resolves the data product against the object model its `objectModelRef` pins, restricts to the selected paths,
+        and applies the narrow-only member overrides, yielding the effective contract a downstream
+        credential definition consumes. This is a read and is not license-gated.
+      responses:
+        '200':
+          description: The resolved (effective) data product.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResolvedDataProduct'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /objects:
+    post:
+      tags: [ObjectModel]
+      summary: Create a draft object model
+      operationId: createObjectModel
+      x-command-id: model.object.create-endpoint
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateObjectModelInput'
+      responses:
+        '201':
+          description: Object model created (draft, version 1).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ObjectModel'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+    get:
+      tags: [ObjectModel]
+      summary: List object models for the calling tenant
+      operationId: listObjectModels
+      x-command-id: model.object.list-endpoint
+      description: |
+        Returns a page of object models matching the optional filter. Pagination accepts both
+        `limit`/`offset` and OpenAPI-style `page`/`size`; the parser normalises and clamps `limit`
+        to `[1, 100]` (default `20`). Sort is constrained to an allow-list; the default is
+        `createdAt DESC`.
+      parameters:
+        - name: nameContains
+          in: query
+          description: Case-insensitive substring match against the object model name.
+          schema:
+            type: string
+        - name: status
+          in: query
+          description: Restrict to object models in this lifecycle status.
+          schema:
+            $ref: '#/components/schemas/ModelLifecycleStatus'
+        - $ref: './common-components.yml#/components/parameters/Limit'
+        - $ref: './common-components.yml#/components/parameters/Offset'
+        - $ref: './common-components.yml#/components/parameters/Page'
+        - $ref: './common-components.yml#/components/parameters/Size'
+        - $ref: './common-components.yml#/components/parameters/Sort'
+        - $ref: './common-components.yml#/components/parameters/SortDirection'
+      responses:
+        '200':
+          description: Page of object models.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ObjectModelPageResponse'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /objects/{objectModelId}:
+    parameters:
+      - $ref: '#/components/parameters/ObjectModelId'
+    get:
+      parameters:
+        - name: version
+          in: query
+          required: false
+          description: Exact retained version; omission reads the current head. Missing versions never fall back to newer content.
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+      tags: [ObjectModel]
+      summary: Get an object model by id
+      operationId: getObjectModel
+      x-command-id: model.object.get-endpoint
+      responses:
+        '200':
+          description: Object model.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ObjectModel'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+    patch:
+      tags: [ObjectModel]
+      summary: Update an object model's name or description
+      operationId: updateObjectModel
+      x-command-id: model.object.update-endpoint
+      description: |
+        Partial update of an object model's mutable metadata (name, description). Each field is optional; a
+        null (or absent) field leaves the corresponding value unchanged. Domain refs, roles,
+        relationships, overrides, version and status have their own endpoints.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateObjectModelInput'
+      responses:
+        '200':
+          description: Updated object model.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ObjectModel'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+    delete:
+      tags: [ObjectModel]
+      summary: Delete an object model by id
+      operationId: deleteObjectModel
+      x-command-id: model.object.delete-endpoint
+      responses:
+        '200':
+          description: Deletion outcome (whether an object model existed for the id).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeleteObjectModelResult'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /objects/{objectModelId}/domain-refs:
+    parameters:
+      - $ref: '#/components/parameters/ObjectModelId'
+    put:
+      tags: [ObjectModel]
+      summary: Set (replace) the domain refs of an object model
+      operationId: setObjectModelDomainRefs
+      x-command-id: model.object.set-domain-refs-endpoint
+      description: |
+        Replaces the whole domain-ref set wholesale. The reconstructed object model enforces the
+        at-most-one-ref-per-data-domain invariant and that roles and relationships still reference
+        referenced data domains.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetObjectModelDomainRefsInput'
+      responses:
+        '200':
+          description: Object model with the new domain refs.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ObjectModel'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /objects/{objectModelId}/roles:
+    parameters:
+      - $ref: '#/components/parameters/ObjectModelId'
+    put:
+      tags: [ObjectModel]
+      summary: Set (replace) the roles of an object model
+      operationId: setObjectModelRoles
+      x-command-id: model.object.set-roles-endpoint
+      description: |
+        Replaces the declared role set wholesale. The reconstructed object model validates role-id
+        uniqueness and that overrides still reference declared roles and roles reference referenced
+        data domains.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetObjectModelRolesInput'
+      responses:
+        '200':
+          description: Object model with the new roles.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ObjectModel'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /objects/{objectModelId}/relationships:
+    parameters:
+      - $ref: '#/components/parameters/ObjectModelId'
+    put:
+      tags: [ObjectModel]
+      summary: Set (replace) the relationships of an object model
+      operationId: setObjectModelRelationships
+      x-command-id: model.object.set-relationships-endpoint
+      description: |
+        Replaces the selected data-domain relationship set wholesale. The reconstructed object model validates
+        that each relationship references a data domain the object model refers to and resolves to a real data-domain
+        relationship whose ends are bound by the object model's roles.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetObjectModelRelationshipsInput'
+      responses:
+        '200':
+          description: Object model with the new relationships.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ObjectModel'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /objects/{objectModelId}/overrides:
+    parameters:
+      - $ref: '#/components/parameters/ObjectModelId'
+    put:
+      tags: [ObjectModel]
+      summary: Set (replace) the narrow-only overrides of an object model
+      operationId: setObjectModelOverrides
+      x-command-id: model.object.set-overrides-endpoint
+      description: |
+        Replaces the narrow-only per-attribute override set wholesale. The reconstructed object model
+        validates that each override references a declared role; the data-domain-aware widening check
+        rejects any override that would widen rather than narrow the data-domain attribute.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetObjectModelOverridesInput'
+      responses:
+        '200':
+          description: Object model with the new overrides.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ObjectModel'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /objects/{objectModelId}/version:
+    parameters:
+      - $ref: '#/components/parameters/ObjectModelId'
+    post:
+      tags: [ObjectModel]
+      summary: Bump the object model's snapshot version
+      operationId: snapshotObjectModelVersion
+      x-command-id: model.object.snapshot-version-endpoint
+      description: Creates the next DRAFT version and retains the previous exact version. Published versions cannot be edited or reopened. No request body.
+      responses:
+        '200':
+          description: Object model with the bumped version.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ObjectModel'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /objects/{objectModelId}/status:
+    parameters:
+      - $ref: '#/components/parameters/ObjectModelId'
+    put:
+      tags: [ObjectModel]
+      summary: Toggle object model status (draft <-> published)
+      operationId: setObjectModelStatus
+      x-command-id: model.object.set-status-endpoint
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetObjectModelStatusInput'
+      responses:
+        '200':
+          description: Object model after the status transition.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ObjectModel'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /objects/{objectModelId}/resolved:
+    parameters:
+      - $ref: '#/components/parameters/ObjectModelId'
+    get:
+      tags: [ObjectModel]
+      summary: Resolve an object model into its effective object-graph projection
+      operationId: resolveObjectModel
+      x-command-id: model.object.resolve-endpoint
+      description: |
+        Resolves the object model across its referenced data-domain snapshots: each role composes its bound
+        object type (root plus applied specializations) with the object model's narrow-only overrides applied,
+        and each selected relationship is projected over the bound roles, yielding the effective
+        object-graph projection. This is a read and is not license-gated.
+      responses:
+        '200':
+          description: The resolved (effective) object model.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResolvedObjectModel'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /objects/{objectModelId}/schemas:
+    parameters:
+      - $ref: '#/components/parameters/ObjectModelId'
+    post:
+      tags: [ObjectModel]
+      summary: Generate (and optionally register) an object model's use-case JSON Schema
+      operationId: generateObjectModelSchema
+      x-command-id: model.object.generate-schema-endpoint
+      description: |
+        Resolves the object model and projects its resolved nested attributes into a CONFORMANCE-BEARING
+        JSON Schema: an attribute whose effective mandatory flag is set contributes to the enclosing
+        object's `required` array, data-domain object boundaries nest, entry-code narrowing maps to `enum`,
+        and a repeating attribute maps to an `array`. Only `JSON_SCHEMA` is supported now; any other
+        `targetType` (including `JSON_LD_CONTEXT`) is reserved for a later phase and rejected with a
+        400. When `register` is true the schema is also registered with the schema registry under the
+        `object-models` namespace and the resulting registry id is returned; registration is the
+        only license-gated path (pure generation is a read).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenerateObjectModelSchemaInput'
+      responses:
+        '200':
+          description: The generated object-model schema (with a registry id when registered).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GeneratedObjectModelSchemaResult'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /channels:
+    get:
+      tags: [Channel]
+      summary: List channels for the calling tenant
+      operationId: listChannels
+      x-command-id: model.channel.list-endpoint
+      description: |
+        Returns a page of channels matching the optional filter, each as a channel
+        envelope ({channel, definition}). Pagination accepts both `limit`/`offset` and OpenAPI-style
+        `page`/`size`; the parser normalises and clamps `limit` to `[1, 100]` (default `20`).
+      parameters:
+        - name: nameContains
+          in: query
+          description: Case-insensitive substring match against the definition name.
+          schema:
+            type: string
+        - name: channel
+          in: query
+          description: Restrict to definitions rendering into this output channel.
+          schema:
+            $ref: '#/components/schemas/ChannelType'
+        - name: dataProductId
+          in: query
+          description: Restrict to definitions bound to this data product id.
+          schema:
+            type: string
+            format: uuid
+        - $ref: './common-components.yml#/components/parameters/Limit'
+        - $ref: './common-components.yml#/components/parameters/Offset'
+        - $ref: './common-components.yml#/components/parameters/Page'
+        - $ref: './common-components.yml#/components/parameters/Size'
+        - $ref: './common-components.yml#/components/parameters/Sort'
+        - $ref: './common-components.yml#/components/parameters/SortDirection'
+      responses:
+        '200':
+          description: Page of channel envelopes.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChannelEnvelopePageResponse'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /channels/forms:
+    get:
+      tags: [FormChannel]
+      summary: List FORM channels (optional nameContains/dataProductId filters)
+      operationId: listFormChannels
+      x-command-id: model.channel.list-form-endpoint
+      parameters:
+        - name: nameContains
+          in: query
+          description: Case-insensitive substring match against the form channel name.
+          schema:
+            type: string
+        - name: dataProductId
+          in: query
+          description: Restrict to form channels bound to this data product id.
+          schema:
+            type: string
+            format: uuid
+        - $ref: './common-components.yml#/components/parameters/Limit'
+        - $ref: './common-components.yml#/components/parameters/Offset'
+        - $ref: './common-components.yml#/components/parameters/Page'
+        - $ref: './common-components.yml#/components/parameters/Size'
+        - $ref: './common-components.yml#/components/parameters/Sort'
+        - $ref: './common-components.yml#/components/parameters/SortDirection'
+      responses:
+        '200':
+          description: Page of form channels.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FormChannelPageResponse'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+    post:
+      tags: [FormChannel]
+      summary: Create a form definition binding one data product to a capture form
+      operationId: createFormChannel
+      x-command-id: model.channel.create-form-endpoint
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FormChannelInput'
+      responses:
+        '201':
+          description: Form definition created, returned as a channel envelope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChannelEnvelope'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /channels/forms/{channelId}:
+    parameters:
+      - $ref: '#/components/parameters/ChannelId'
+    get:
+      tags: [FormChannel]
+      summary: Get a FORM channel by id
+      operationId: getFormChannel
+      x-command-id: model.channel.get-form-endpoint
+      responses:
+        '200':
+          description: Form channel.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FormChannel'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+    put:
+      tags: [FormChannel]
+      summary: Replace a form definition's content
+      operationId: updateFormChannel
+      x-command-id: model.channel.update-form-endpoint
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FormChannelInput'
+      responses:
+        '200':
+          description: Updated form definition, returned as a channel envelope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChannelEnvelope'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /channels/forms/{channelId}/publication:
+    parameters:
+      - $ref: '#/components/parameters/ChannelId'
+    put:
+      tags: [FormChannel]
+      summary: Set a FORM channel's publication state
+      operationId: publishFormChannel
+      x-command-id: model.channel.publish-form-endpoint
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PublishFormChannelInput'
+      responses:
+        '200':
+          description: Form channel with its updated publication state.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FormChannel'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /channels/pdf:
+    post:
+      tags: [PdfChannel]
+      summary: Create a PDF/document definition for one data product
+      operationId: createPdfDocumentChannel
+      x-command-id: model.channel.create-pdf-endpoint
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PdfDocumentChannelInput'
+      responses:
+        '201':
+          description: PDF/document definition created, returned as a channel envelope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChannelEnvelope'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /channels/pdf/{channelId}:
+    parameters:
+      - $ref: '#/components/parameters/ChannelId'
+    put:
+      tags: [PdfChannel]
+      summary: Replace a PDF/document definition's content
+      operationId: updatePdfDocumentChannel
+      x-command-id: model.channel.update-pdf-endpoint
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PdfDocumentChannelInput'
+      responses:
+        '200':
+          description: Updated PDF/document definition, returned as a channel envelope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChannelEnvelope'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /channels/credentials:
+    post:
+      tags: [CredentialChannel]
+      summary: Create a verifiable-credential definition for one data product
+      operationId: createVerifiableCredentialChannel
+      x-command-id: model.channel.create-credential-endpoint
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VerifiableCredentialChannelInput'
+      responses:
+        '201':
+          description: Verifiable-credential definition created, returned as a channel envelope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChannelEnvelope'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /channels/credentials/{channelId}:
+    parameters:
+      - $ref: '#/components/parameters/ChannelId'
+    put:
+      tags: [CredentialChannel]
+      summary: Replace a verifiable-credential definition's content
+      operationId: updateVerifiableCredentialChannel
+      x-command-id: model.channel.update-credential-endpoint
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VerifiableCredentialChannelInput'
+      responses:
+        '200':
+          description: Updated verifiable-credential definition, returned as a channel envelope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChannelEnvelope'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /channels/oid4vci:
+    post:
+      tags: [Oid4vciChannel]
+      summary: Create an OID4VCI issuance definition for one data product
+      operationId: createOid4vciIssuanceChannel
+      x-command-id: model.channel.create-oid4vci-endpoint
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Oid4vciIssuanceChannelInput'
+      responses:
+        '201':
+          description: OID4VCI issuance definition created, returned as a channel envelope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChannelEnvelope'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /channels/oid4vci/{channelId}:
+    parameters:
+      - $ref: '#/components/parameters/ChannelId'
+    put:
+      tags: [Oid4vciChannel]
+      summary: Replace an OID4VCI issuance definition's content
+      operationId: updateOid4vciIssuanceChannel
+      x-command-id: model.channel.update-oid4vci-endpoint
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Oid4vciIssuanceChannelInput'
+      responses:
+        '200':
+          description: Updated OID4VCI issuance definition, returned as a channel envelope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChannelEnvelope'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /channels/api:
+    post:
+      tags: [ApiChannel]
+      summary: Create an API-payload definition for one data product
+      operationId: createApiPayloadChannel
+      x-command-id: model.channel.create-api-endpoint
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApiPayloadChannelInput'
+      responses:
+        '201':
+          description: API-payload definition created, returned as a channel envelope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChannelEnvelope'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /channels/api/{channelId}:
+    parameters:
+      - $ref: '#/components/parameters/ChannelId'
+    put:
+      tags: [ApiChannel]
+      summary: Replace an API-payload definition's content
+      operationId: updateApiPayloadChannel
+      x-command-id: model.channel.update-api-endpoint
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApiPayloadChannelInput'
+      responses:
+        '200':
+          description: Updated API-payload definition, returned as a channel envelope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChannelEnvelope'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /channels/{channelId}:
+    parameters:
+      - $ref: '#/components/parameters/ChannelId'
+    get:
+      tags: [Channel]
+      summary: Get a channel by id (returned as a channel envelope)
+      operationId: getChannel
+      x-command-id: model.channel.get-endpoint
+      responses:
+        '200':
+          description: The channel, as a channel envelope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChannelEnvelope'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+    delete:
+      tags: [Channel]
+      summary: Delete a channel by id
+      operationId: deleteChannel
+      x-command-id: model.channel.delete-endpoint
+      responses:
+        '200':
+          description: Deletion outcome (whether a definition existed for the id).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeleteChannelResult'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  # ------------------------------------------------------------------------------------------
+  # Credential branding (L4 presentation overlay) tier
+  # ------------------------------------------------------------------------------------------
+
+  /branding:
+    post:
+      tags: [CredentialBranding]
+      summary: Create a draft credential-branding record
+      operationId: createCredentialBranding
+      x-command-id: credential-branding.branding.create-endpoint
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCredentialBrandingInput'
+      responses:
+        '201':
+          description: Branding record created (draft, version 1).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CredentialBranding'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+    get:
+      tags: [CredentialBranding]
+      summary: List credential-branding records for the calling tenant
+      operationId: listCredentialBrandings
+      x-command-id: credential-branding.branding.list-endpoint
+      parameters:
+        - name: nameContains
+          in: query
+          description: Case-insensitive substring match against the branding record name.
+          schema:
+            type: string
+        - name: status
+          in: query
+          description: Filter by lifecycle status (DRAFT or PUBLISHED).
+          schema:
+            $ref: '#/components/schemas/ModelLifecycleStatus'
+        - $ref: './common-components.yml#/components/parameters/Limit'
+        - $ref: './common-components.yml#/components/parameters/Offset'
+        - $ref: './common-components.yml#/components/parameters/Page'
+        - $ref: './common-components.yml#/components/parameters/Size'
+        - $ref: './common-components.yml#/components/parameters/Sort'
+        - $ref: './common-components.yml#/components/parameters/SortDirection'
+      responses:
+        '200':
+          description: Paged list of branding records.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CredentialBrandingPageResponse'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /branding/{brandingId}:
+    get:
+      tags: [CredentialBranding]
+      summary: Get a credential-branding record by id
+      operationId: getCredentialBranding
+      x-command-id: credential-branding.branding.get-endpoint
+      parameters:
+        - name: brandingId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: The requested branding record.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CredentialBranding'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+    patch:
+      tags: [CredentialBranding]
+      summary: Update a draft credential-branding record's name, description, locales, or layout
+      operationId: updateCredentialBranding
+      x-command-id: credential-branding.branding.update-endpoint
+      parameters:
+        - name: brandingId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateCredentialBrandingInput'
+      responses:
+        '200':
+          description: Updated branding record.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CredentialBranding'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '409':
+          $ref: './common-components.yml#/components/responses/Conflict'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+    delete:
+      tags: [CredentialBranding]
+      summary: Delete a credential-branding record by id
+      operationId: deleteCredentialBranding
+      x-command-id: credential-branding.branding.delete-endpoint
+      parameters:
+        - name: brandingId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Deletion outcome.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeleteCredentialBrandingResult'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /branding/{brandingId}/status:
+    put:
+      tags: [CredentialBranding]
+      summary: Toggle credential-branding status (draft <-> published)
+      operationId: setCredentialBrandingStatus
+      x-command-id: credential-branding.branding.set-status-endpoint
+      parameters:
+        - name: brandingId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetCredentialBrandingStatusInput'
+      responses:
+        '200':
+          description: Branding record with updated status.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CredentialBranding'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /branding/{brandingId}/version:
+    post:
+      tags: [CredentialBranding]
+      summary: Bump the credential-branding record's snapshot version
+      operationId: snapshotBrandingVersion
+      x-command-id: credential-branding.branding.snapshot-version-endpoint
+      parameters:
+        - name: brandingId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Branding record with incremented version.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CredentialBranding'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+components:
+  # Shared parameters (TenantId), pagination params (Limit/Offset/Page/Size/Sort/SortDirection),
+  # error responses (NotFound/ValidationError/Unauthorized/Forbidden/Conflict/Error), and the
+  # ApiError/PageMeta schemas live in the canonical shared ./common-components.yml (owned by IDK
+  # lib-core-api-public, copied in at build time). Only data-product components are defined here.
+  parameters:
+    DataProductId:
+      $ref: './semantic-model-authoring-components.yml#/components/parameters/DataProductId'
+    DataDomainId:
+      $ref: './semantic-model-authoring-components.yml#/components/parameters/DataDomainId'
+    BindingId:
+      $ref: './semantic-model-authoring-components.yml#/components/parameters/BindingId'
+    TermPathParam:
+      $ref: './semantic-model-authoring-components.yml#/components/parameters/TermPathParam'
+    ObjectTypeName:
+      $ref: './semantic-model-authoring-components.yml#/components/parameters/ObjectTypeName'
+    RelationshipTypeName:
+      $ref: './semantic-model-authoring-components.yml#/components/parameters/RelationshipTypeName'
+    ObjectModelId:
+      $ref: './semantic-model-authoring-components.yml#/components/parameters/ObjectModelId'
+    ChannelId:
+      $ref: './semantic-model-authoring-components.yml#/components/parameters/ChannelId'
+    Limit:
+      $ref: './common-components.yml#/components/parameters/Limit'
+    Offset:
+      $ref: './common-components.yml#/components/parameters/Offset'
+    Sort:
+      $ref: './common-components.yml#/components/parameters/Sort'
+    SortDirection:
+      $ref: './common-components.yml#/components/parameters/SortDirection'
+    DataDomainRevision:
+      name: revision
+      in: path
+      required: true
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
+    ReviewId:
+      name: reviewId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    DecisionId:
+      name: decisionId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    PublicationId:
+      name: publicationId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    NoticeId:
+      name: noticeId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    IfMatch:
+      name: If-Match
+      in: header
+      required: true
+      schema:
+        type: string
+      description: Opaque compare-and-set token returned only in the ETag header. Required for every compare-and-set mutation.
+  schemas:
+    ModelLifecycleStatus:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/ModelLifecycleStatus'
+    ProductConformance:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/ProductConformance'
+    ProductCardinality:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/ProductCardinality'
+    ObjectModelRef:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/ObjectModelRef'
+    ProductSelection:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/ProductSelection'
+    ProductOverride:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/ProductOverride'
+    DataProduct:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/DataProduct'
+    DataProductPageResponse:
+      type: object
+      description: Paged list of data products, matching the envelope emitted by `ResponseBuilder.paginated()`.
+      required: [data, pagination]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/DataProduct'
+        pagination:
+          $ref: './common-components.yml#/components/schemas/PageMeta'
+
+    CreateDataProductInput:
+      type: object
+      description: Body for creating a draft data product. The new data product's id is server-assigned.
+      required: [name, objectModelRef]
+      example:
+        name: "Employee Badge - minimal"
+        objectModelRef:
+          objectModelId: "c4d5e6f7-8a9b-4c0d-8e1f-2a3b4c5d6e7f"
+          objectModelVersion: 2
+        selected:
+          - roleRef: "employee"
+            path: ["givenName"]
+          - roleRef: "employee"
+            path: ["familyName"]
+        overrides: []
+        description: "Given and family name of the employee only"
+      properties:
+        name:
+          type: string
+        objectModelRef:
+          $ref: '#/components/schemas/ObjectModelRef'
+        selected:
+          type: array
+          description: The (roleRef, path) traversal entries to select.
+          default: []
+          items:
+            $ref: '#/components/schemas/ProductSelection'
+        overrides:
+          type: array
+          description: Per-member governance tightening, keyed by (roleRef, path).
+          default: []
+          items:
+            $ref: '#/components/schemas/ProductOverride'
+        description:
+          type: string
+          nullable: true
+
+    UpdateDataProductInput:
+      type: object
+      description: |
+        Partial update of a draft data product. Every field is optional; a null (or absent) field leaves the
+        corresponding value unchanged. The data product id arrives via the URL and is never in the body.
+      properties:
+        name:
+          type: string
+          nullable: true
+        description:
+          type: string
+          nullable: true
+        selected:
+          type: array
+          nullable: true
+          items:
+            $ref: '#/components/schemas/ProductSelection'
+        overrides:
+          type: array
+          nullable: true
+          items:
+            $ref: '#/components/schemas/ProductOverride'
+
+    SetDataProductSelectionInput:
+      type: object
+      description: Body for replacing the data product's selection entries wholesale.
+      required: [selected]
+      properties:
+        selected:
+          type: array
+          description: The new (roleRef, path) selection entries.
+          default: []
+          items:
+            $ref: '#/components/schemas/ProductSelection'
+
+    SetDataProductStatusInput:
+      type: object
+      description: Body for toggling the data product's status.
+      required: [status]
+      properties:
+        status:
+          $ref: '#/components/schemas/ModelLifecycleStatus'
+
+    DeleteDataProductResult:
+      type: object
+      description: Outcome of a delete request.
+      required: [deleted]
+      properties:
+        deleted:
+          type: boolean
+          description: True when a data product existed for the id and was removed; false when none existed.
+
+    ResolvedDataProduct:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/ResolvedDataProduct'
+    ResolvedProductTerm:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/ResolvedProductTerm'
+    ResolvedProductSchemaRelationship:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/ResolvedProductSchemaRelationship'
+    # ------------------------------------------------------------------------------------------
+    # Data domain (L1) tier
+    # ------------------------------------------------------------------------------------------
+
+    PartyRef:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/PartyRef'
+    DomainOverlays:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/DomainOverlays'
+    DomainMetaText:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/DomainMetaText'
+    DomainGovernance:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/DomainGovernance'
+    GovernanceJurisdiction:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/GovernanceJurisdiction'
+    JurisdictionResidency:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/JurisdictionResidency'
+    JurisdictionTransfer:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/JurisdictionTransfer'
+    GovernanceController:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/GovernanceController'
+    Nis2Classification:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/Nis2Classification'
+    MicaClassification:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/MicaClassification'
+    BusinessTermEntityType:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/BusinessTermEntityType'
+    AttributeValueType:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/AttributeValueType'
+    AttributeWidgetHint:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/AttributeWidgetHint'
+    AttributeCardinality:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/AttributeCardinality'
+    SdPolicy:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/SdPolicy'
+    DataClassification:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/DataClassification'
+    SpecialCategoryType:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/SpecialCategoryType'
+    LegalBasis:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/LegalBasis'
+    CrossBorderPolicy:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/CrossBorderPolicy'
+    RetentionPolicy:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/RetentionPolicy'
+    SemanticTermReference:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/SemanticTermReference'
+    SkosConceptSchemeReference:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/SkosConceptSchemeReference'
+    BusinessTerm:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/BusinessTerm'
+    AttributeOverlays:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/AttributeOverlays'
+    I18nOverlay:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/I18nOverlay'
+    EntryCodes:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/EntryCodes'
+    Conformance:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/Conformance'
+    SchemaOrigin:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/SchemaOrigin'
+    SchemaType:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/SchemaType'
+    SchemaRef:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/SchemaRef'
+    SchemaBindingPurpose:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/SchemaBindingPurpose'
+    DomainSchemaBinding:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/DomainSchemaBinding'
+    SchemaAttributeRelation:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/SchemaAttributeRelation'
+    EquivalenceStrength:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/EquivalenceStrength'
+    MappingDirection:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/MappingDirection'
+    AttributeTransformKind:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/AttributeTransformKind'
+    AttributeTransform:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/AttributeTransform'
+    ExternalSchemaAttributeRef:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/ExternalSchemaAttributeRef'
+    SemanticAttributeSchemaRelationship:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/SemanticAttributeSchemaRelationship'
+    ExternalSchemaAttribute:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/ExternalSchemaAttribute'
+    ObjectType:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/ObjectType'
+    ObjectTypeKind:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/ObjectTypeKind'
+    DataDomainRef:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/DataDomainRef'
+    ObjectTypeRef:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/ObjectTypeRef'
+    RelationshipEnd:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/RelationshipEnd'
+    RelationshipType:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/RelationshipType'
+    DataDomain:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/DataDomain'
+
+    DataDomainCreation:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/DataDomainCreation'
+
+    DataDomainPageResponse:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/DataDomainPageResponse'
+
+    CreateDataDomainInput:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/CreateDataDomainInput'
+
+    DataDomainContent:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/DataDomainContent'
+
+    DataDomainRevision:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/DataDomainRevision'
+
+    DataDomainComposedRevision:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/DataDomainComposedRevision'
+
+    DataDomainValidationResult:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/DataDomainValidationResult'
+
+    DataDomainRevisionPageResponse:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/DataDomainRevisionPageResponse'
+
+    SemanticAttributeUsage:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/SemanticAttributeUsage'
+
+    SemanticAttributeUsagePageResponse:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/SemanticAttributeUsagePageResponse'
+
+    CreateDataDomainRevisionInput:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/CreateDataDomainRevisionInput'
+
+    UpdateDataDomainRevisionInput:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/UpdateDataDomainRevisionInput'
+
+    DataDomainReview:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/DataDomainReview'
+
+    DataDomainReviewDecision:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/DataDomainReviewDecision'
+
+    CreateDataDomainReviewDecisionInput:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/CreateDataDomainReviewDecisionInput'
+
+    DataDomainReviewDecisionList:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/DataDomainReviewDecisionList'
+
+    DataDomainPublication:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/DataDomainPublication'
+
+    CreateDataDomainPublicationInput:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/CreateDataDomainPublicationInput'
+
+    DataDomainPublicationNotice:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/DataDomainPublicationNotice'
+
+    CreateDataDomainPublicationNoticeInput:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/CreateDataDomainPublicationNoticeInput'
+
+    DataDomainReviewList:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/DataDomainReviewList'
+
+    DataDomainPublicationList:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/DataDomainPublicationList'
+
+    DataDomainPublicationNoticeList:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/DataDomainPublicationNoticeList'
+
+    GovernanceOdrlResult:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/GovernanceOdrlResult'
+
+    # Object model (L2) tier
+    # ------------------------------------------------------------------------------------------
+
+    ObjectTypeBinding:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/ObjectTypeBinding'
+    ObjectRole:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/ObjectRole'
+    ObjectRelationshipRef:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/ObjectRelationshipRef'
+    ObjectOverride:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/ObjectOverride'
+    ObjectModel:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/ObjectModel'
+    ObjectModelPageResponse:
+      type: object
+      description: Paged list of object models, matching the envelope emitted by `ResponseBuilder.paginated()`.
+      required: [data, pagination]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/ObjectModel'
+        pagination:
+          $ref: './common-components.yml#/components/schemas/PageMeta'
+
+    CreateObjectModelInput:
+      type: object
+      description: Body for creating a draft object model. The new object model's id is server-assigned.
+      required: [name]
+      example:
+        name: "Employee Onboarding"
+        description: "Use case composing employee attributes drawn from the Acme Employee Data Domain"
+        domainRefs:
+          - dataDomainId: "9f2c1b3e-7a44-4c1e-8b0a-2d6f5e9c1a77"
+            revision: 3
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        domainRefs:
+          type: array
+          description: The data domains this object model draws from; at most one ref per data domain.
+          default: []
+          items:
+            $ref: '#/components/schemas/DataDomainRef'
+        roles:
+          type: array
+          default: []
+          items:
+            $ref: '#/components/schemas/ObjectRole'
+        relationships:
+          type: array
+          default: []
+          items:
+            $ref: '#/components/schemas/ObjectRelationshipRef'
+        overrides:
+          type: array
+          default: []
+          items:
+            $ref: '#/components/schemas/ObjectOverride'
+
+    UpdateObjectModelInput:
+      type: object
+      description: |
+        Partial update of an object model's name and description. Every field is optional; a null (or
+        absent) field leaves the corresponding value unchanged. The object model id arrives via the URL.
+      properties:
+        name:
+          type: string
+          nullable: true
+        description:
+          type: string
+          nullable: true
+
+    DeleteObjectModelResult:
+      type: object
+      description: Outcome of a delete request.
+      required: [deleted]
+      properties:
+        deleted:
+          type: boolean
+          description: True when an object model existed for the id and was removed; false when none existed.
+
+    SetObjectModelDomainRefsInput:
+      type: object
+      description: Body for replacing the object model's whole domain-ref set. The object model id arrives via the URL.
+      required: [domainRefs]
+      properties:
+        domainRefs:
+          type: array
+          items:
+            $ref: '#/components/schemas/DataDomainRef'
+
+    SetObjectModelRolesInput:
+      type: object
+      description: Body for replacing the object model's declared role set. The object model id arrives via the URL.
+      required: [roles]
+      properties:
+        roles:
+          type: array
+          items:
+            $ref: '#/components/schemas/ObjectRole'
+
+    SetObjectModelRelationshipsInput:
+      type: object
+      description: Body for replacing the object model's selected relationship set. The object model id arrives via the URL.
+      required: [relationships]
+      properties:
+        relationships:
+          type: array
+          items:
+            $ref: '#/components/schemas/ObjectRelationshipRef'
+
+    SetObjectModelOverridesInput:
+      type: object
+      description: Body for replacing the object model's narrow-only override set. The object model id arrives via the URL.
+      required: [overrides]
+      properties:
+        overrides:
+          type: array
+          items:
+            $ref: '#/components/schemas/ObjectOverride'
+
+    SetObjectModelStatusInput:
+      type: object
+      description: Body for toggling the object model's status.
+      required: [status]
+      properties:
+        status:
+          $ref: '#/components/schemas/ModelLifecycleStatus'
+
+    GenerateObjectModelSchemaInput:
+      type: object
+      description: |
+        Body for generating (and optionally registering) an object model's use-case JSON Schema. The object model
+        id arrives via the URL.
+      properties:
+        targetType:
+          allOf:
+            - $ref: '#/components/schemas/SchemaType'
+          default: JSON_SCHEMA
+          description: |
+            The schema shape to generate. Only `JSON_SCHEMA` is supported now; any other value
+            (including `JSON_LD_CONTEXT`) is reserved for a later phase and rejected with a 400.
+        register:
+          type: boolean
+          default: false
+          description: When true, also register the generated schema with the registry (license-gated).
+
+    ResolvedObjectModel:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/ResolvedObjectModel'
+    ResolvedObjectRole:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/ResolvedObjectRole'
+    ResolvedTerm:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/ResolvedTerm'
+    ResolvedObjectRelationship:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/ResolvedObjectRelationship'
+    ResolvedObjectSchemaRelationship:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/ResolvedObjectSchemaRelationship'
+    GeneratedObjectModelSchemaResult:
+      type: object
+      description: The result of generating an object-model JSON Schema.
+      required: [objectModelId, objectModelVersion, targetType, schema]
+      properties:
+        objectModelId:
+          type: string
+          format: uuid
+        objectModelVersion:
+          type: integer
+          format: int64
+          description: The resolved object-model snapshot version the schema was generated from.
+        targetType:
+          $ref: '#/components/schemas/SchemaType'
+        schema:
+          type: string
+          description: The generated JSON Schema document, serialized to a string.
+        schemaId:
+          type: string
+          format: uuid
+          nullable: true
+          description: The registry id of the registered schema when `register` was true; null otherwise.
+
+    # ------------------------------------------------------------------------------------------
+    # Channel (L4) tier
+    # ------------------------------------------------------------------------------------------
+
+    ChannelType:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/ChannelType'
+    DataProductRef:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/DataProductRef'
+    ChannelFieldMapping:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/ChannelFieldMapping'
+    FormWidget:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/FormWidget'
+    FormFieldRender:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/FormFieldRender'
+    PdfPlacement:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/PdfPlacement'
+    PdfRepeatedSection:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/PdfRepeatedSection'
+    DisclosureMode:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/DisclosureMode'
+    VcClaimMapping:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/VcClaimMapping'
+    VerifiableCredentialChannelRef:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/VerifiableCredentialChannelRef'
+    Oid4vciGrantType:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/Oid4vciGrantType'
+    Oid4vciOfferConfig:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/Oid4vciOfferConfig'
+    Oid4vciSigning:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/Oid4vciSigning'
+    Oid4vciCredentialConfiguration:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/Oid4vciCredentialConfiguration'
+    ApiPayloadRole:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/ApiPayloadRole'
+    ApiNamingConvention:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/ApiNamingConvention'
+    ApiPathMapping:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/ApiPathMapping'
+    ChannelEnvelope:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/ChannelEnvelope'
+    ChannelEnvelopePageResponse:
+      type: object
+      description: Paged list of channel envelopes, matching the envelope emitted by `ResponseBuilder.paginated()`.
+      required: [data, pagination]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChannelEnvelope'
+        pagination:
+          $ref: './common-components.yml#/components/schemas/PageMeta'
+
+    FormChannelPageResponse:
+      type: object
+      description: Paged list of form channels, matching the envelope emitted by `ResponseBuilder.paginated()`.
+      required: [data, pagination]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/FormChannel'
+        pagination:
+          $ref: './common-components.yml#/components/schemas/PageMeta'
+
+    DeleteChannelResult:
+      type: object
+      description: Outcome of a delete request.
+      required: [deleted]
+      properties:
+        deleted:
+          type: boolean
+          description: True when a definition existed for the id and was removed; false when none existed.
+
+    FormChannelInput:
+      type: object
+      description: |
+        Body for creating or replacing a form channel. A form channel has two parts that work together,
+        joined by field name:
+
+          - `fieldMappings` is the binding. Each entry names a form field and gives the data-product
+            selection (roleRef plus path) whose value that field captures.
+          - `fields` is the rendering. Each entry configures how a named field is presented (widget,
+            group, wizard step, input mask, validation message, placeholder).
+
+        A `fields` entry's `fieldName` must match a `fieldMappings` entry, so the form knows both what
+        a field captures and how to render it. `fieldMappings` holds no presentation and `fields` holds
+        no data-product binding, with one exception: a field's `required` flag can tighten an optional data-product
+        attribute (the binding validator rejects any attempt to loosen a mandatory one). The definition
+        id (on update) arrives via the URL and is never in the body.
+      required: [name, setRef]
+      example:
+        name: "Employee badge capture form"
+        setRef:
+          dataProductId: "1b2c3d4e-5f60-4a71-8b92-0c1d2e3f4a5b"
+          dataProductVersion: 1
+        fieldMappings:
+          - fieldName: "givenName"
+            set:
+              roleRef: "employee"
+              path: ["givenName"]
+          - fieldName: "familyName"
+            set:
+              roleRef: "employee"
+              path: ["familyName"]
+        fields:
+          - fieldName: "givenName"
+            widget: TEXT
+            required: true
+            step: 1
+          - fieldName: "familyName"
+            widget: TEXT
+            required: true
+            step: 1
+        stepLabels: ["Personal details"]
+      properties:
+        name:
+          type: string
+        setRef:
+          $ref: '#/components/schemas/DataProductRef'
+        fieldMappings:
+          type: array
+          description: |
+            The binding. One entry per form field, mapping the field name to the data-product
+            selection (roleRef plus path) it captures. Only selections present in the bound data product are
+            allowed. Holds no presentation.
+          default: []
+          items:
+            $ref: '#/components/schemas/ChannelFieldMapping'
+        fields:
+          type: array
+          description: |
+            The rendering. One entry per form field, configuring how the field named by its `fieldName`
+            (which must match a `fieldMappings` entry) is presented. Holds no data-product binding apart from the
+            `required` widening flag.
+          default: []
+          items:
+            $ref: '#/components/schemas/FormFieldRender'
+        stepLabels:
+          type: array
+          description: Optional ordered labels for the wizard steps referenced by a field's `step`.
+          default: []
+          items:
+            type: string
+
+    FormChannel:
+      type: object
+      description: A persisted FORM channel and its rendering and data-product binding contract.
+      required: [id, tenantId, name, version, setRef, fieldMappings, fields, stepLabels, status]
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenantId:
+          type: string
+        name:
+          type: string
+        version:
+          type: integer
+          format: int64
+          minimum: 1
+          description: Monotonic snapshot version, starting at 1.
+        setRef:
+          $ref: '#/components/schemas/DataProductRef'
+        fieldMappings:
+          type: array
+          description: The data-product selection bound to each form field name.
+          default: []
+          items:
+            $ref: '#/components/schemas/ChannelFieldMapping'
+        fields:
+          type: array
+          description: The rendering configuration for each form field.
+          default: []
+          items:
+            $ref: '#/components/schemas/FormFieldRender'
+        stepLabels:
+          type: array
+          description: Optional ordered labels for the wizard steps referenced by a field's `step`.
+          default: []
+          items:
+            type: string
+        status:
+          $ref: '#/components/schemas/ModelLifecycleStatus'
+
+    PublishFormChannelInput:
+      type: object
+      description: Desired publication state for a FORM channel.
+      required: [published]
+      properties:
+        published:
+          type: boolean
+
+    PdfDocumentChannelInput:
+      type: object
+      description: |
+        Body for creating or replacing a PDF/document definition. The definition id (on update) arrives
+        via the URL.
+      required: [name, setRef, templateRef]
+      example:
+        name: "Employee badge PDF"
+        setRef:
+          dataProductId: "1b2c3d4e-5f60-4a71-8b92-0c1d2e3f4a5b"
+          dataProductVersion: 1
+        templateRef: "employee-badge-template"
+        fieldMappings:
+          - fieldName: "givenName"
+            set:
+              roleRef: "employee"
+              path: ["givenName"]
+        placements: []
+        repeatedSections: []
+      properties:
+        name:
+          type: string
+        setRef:
+          $ref: '#/components/schemas/DataProductRef'
+        fieldMappings:
+          type: array
+          default: []
+          items:
+            $ref: '#/components/schemas/ChannelFieldMapping'
+        templateRef:
+          type: string
+          description: A reference (id/name/URI) to the document template to fill.
+        placements:
+          type: array
+          default: []
+          items:
+            $ref: '#/components/schemas/PdfPlacement'
+        repeatedSections:
+          type: array
+          default: []
+          items:
+            $ref: '#/components/schemas/PdfRepeatedSection'
+        locale:
+          type: string
+          nullable: true
+          description: Optional BCP-47 locale tag for localized rendering.
+
+    VerifiableCredentialChannelInput:
+      type: object
+      description: |
+        Body for creating or replacing a verifiable-credential definition. The definition id (on update)
+        arrives via the URL.
+      required: [name, setRef, credentialFormat]
+      example:
+        name: "Employee badge credential"
+        setRef:
+          dataProductId: "1b2c3d4e-5f60-4a71-8b92-0c1d2e3f4a5b"
+          dataProductVersion: 1
+        credentialFormat: "dc+sd-jwt"
+        vct: "employee-badge"
+        vctHostingMode: HOSTED
+        claimMappings: []
+      properties:
+        name:
+          type: string
+        setRef:
+          $ref: '#/components/schemas/DataProductRef'
+        fieldMappings:
+          type: array
+          description: |
+            Channel-neutral field mappings; typically empty for a VC definition, which carries subject
+            mapping via the richer `claimMappings`.
+          default: []
+          items:
+            $ref: '#/components/schemas/ChannelFieldMapping'
+        credentialFormat:
+          $ref: './wallet-credential-components.yml#/components/schemas/CredentialFormat'
+        vct:
+          type: string
+          nullable: true
+          description: The IETF SD-JWT VC type identifier, when the format is `dc+sd-jwt`.
+        vctHostingMode:
+          type: string
+          nullable: true
+          description: |
+            Optional hosting intent passed through to the credential design binding when a design
+            is created from this channel. `HOSTED` lets the issuer derive and serve the VCT URI;
+            `EXTERNAL` means the `vct` is hosted elsewhere; `NONE` leaves it as a plain value.
+          enum: [HOSTED, EXTERNAL, NONE]
+        doctype:
+          type: string
+          nullable: true
+          description: The mdoc doctype, when the format is `mso_mdoc`.
+        namespace:
+          type: string
+          nullable: true
+          description: |
+            The channel-level mdoc namespace applied to every claim element when the format is
+            `mso_mdoc`, unless a `VcClaimMapping.namespace` overrides it. Distinct from `doctype`; an
+            opaque identifier that MAY carry dots. The converter combines it with each claim's element.
+        jsonLdContexts:
+          type: array
+          description: The JSON-LD `@context` URIs, when the format is a JSON-LD VC.
+          default: []
+          items:
+            type: string
+        claimMappings:
+          type: array
+          description: The credential-subject claim-to-data-product-selection mappings with disclosure modes.
+          default: []
+          items:
+            $ref: '#/components/schemas/VcClaimMapping'
+        brandingRef:
+          type: object
+          allOf:
+            - $ref: '#/components/schemas/BrandingRef'
+          nullable: true
+          description: |
+            Optional version-pinned reference to a credential-branding overlay. Wallet display derives
+            from the bound data product's i18n overlays and this branding; the definition holds no card metadata.
+
+    Oid4vciIssuanceChannelInput:
+      type: object
+      description: |
+        Body for creating or replacing an OID4VCI issuance channel. An issuance channel composes one or
+        more verifiable-credential channels via per-credential configurations rather than binding an
+        data product directly, so it carries no setRef. The channel id (on update) arrives via the URL.
+      required: [name, credentialConfigurations]
+      example:
+        name: "Employee badge issuance"
+        credentialConfigurations:
+          - credentialConfigurationId: "employee-badge"
+            channelRef:
+              channelId: "e7f80192-a3b4-4c5d-8e6f-7081a2b3c4d5"
+              channelVersion: 1
+            signing:
+              algorithm: "ES256"
+              keyBinding: "did:jwk"
+            offer:
+              grants: [PRE_AUTHORIZED_CODE]
+              txCodeRequired: true
+      properties:
+        name:
+          type: string
+          description: The channel (bundle) name.
+        credentialConfigurations:
+          type: array
+          minItems: 1
+          description: |
+            The per-credential configurations this issuance advertises; each self-contained
+            (configuration id, VC channel ref, signing, offer) with a unique credentialConfigurationId.
+            Must declare at least one.
+          items:
+            $ref: '#/components/schemas/Oid4vciCredentialConfiguration'
+
+    ApiPayloadChannelInput:
+      type: object
+      description: |
+        Body for creating or replacing an API-payload definition. The definition id (on update) arrives
+        via the URL.
+      required: [name, setRef, payloadName]
+      example:
+        name: "Employee payload"
+        setRef:
+          dataProductId: "1b2c3d4e-5f60-4a71-8b92-0c1d2e3f4a5b"
+          dataProductVersion: 1
+        payloadName: "employee"
+        role: REQUEST
+        namingConvention: CAMEL_CASE
+        fieldMappings:
+          - fieldName: "givenName"
+            set:
+              roleRef: "employee"
+              path: ["givenName"]
+        externalPathMappings: []
+      properties:
+        name:
+          type: string
+        setRef:
+          $ref: '#/components/schemas/DataProductRef'
+        fieldMappings:
+          type: array
+          default: []
+          items:
+            $ref: '#/components/schemas/ChannelFieldMapping'
+        payloadName:
+          type: string
+          description: The payload's name; must be non-blank.
+        role:
+          allOf:
+            - $ref: '#/components/schemas/ApiPayloadRole'
+          default: REQUEST
+        namingConvention:
+          allOf:
+            - $ref: '#/components/schemas/ApiNamingConvention'
+          default: CAMEL_CASE
+        externalPathMappings:
+          type: array
+          description: The bound-field to external-path placements.
+          default: []
+          items:
+            $ref: '#/components/schemas/ApiPathMapping'
+
+    # ------------------------------------------------------------------------------------------
+    # Credential branding (L4 presentation overlay) schemas
+    # ------------------------------------------------------------------------------------------
+
+    BrandingLocale:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/BrandingLocale'
+    CredentialBranding:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/CredentialBranding'
+    BrandingRef:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/BrandingRef'
+    CredentialBrandingPageResponse:
+      type: object
+      description: Paged list of credential-branding records.
+      required: [data, pagination]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/CredentialBranding'
+        pagination:
+          $ref: './common-components.yml#/components/schemas/PageMeta'
+
+    CreateCredentialBrandingInput:
+      type: object
+      description: Body for creating a credential-branding record. The record is created as DRAFT at version 1.
+      required: [name]
+      example:
+        name: "Acme Employee Badge branding"
+        locales:
+          - language: "en"
+            name: "Acme Employee Badge"
+            description: "Official employee identification credential"
+            logoUri: "https://assets.acme.example/logo.png"
+            backgroundColor: "#1A237E"
+            textColor: "#FFFFFF"
+      properties:
+        name:
+          type: string
+          description: Internal human-readable name; must be non-blank.
+        locales:
+          type: array
+          description: Per-language presentation overlays; language tags must be unique.
+          default: []
+          items:
+            $ref: '#/components/schemas/BrandingLocale'
+        layout:
+          type: string
+          nullable: true
+          description: Optional layout hint.
+        description:
+          type: string
+          nullable: true
+
+    UpdateCredentialBrandingInput:
+      type: object
+      description: |
+        Body for updating a DRAFT credential-branding record. All fields are optional; a null
+        leaves the corresponding value unchanged. The record must be in DRAFT.
+      properties:
+        name:
+          type: string
+          nullable: true
+        description:
+          type: string
+          nullable: true
+        locales:
+          type: array
+          nullable: true
+          description: Replaces the locales list wholesale; language tags must be unique.
+          items:
+            $ref: '#/components/schemas/BrandingLocale'
+        layout:
+          type: string
+          nullable: true
+
+    SetCredentialBrandingStatusInput:
+      type: object
+      description: Body for toggling the credential-branding lifecycle status.
+      required: [status]
+      properties:
+        status:
+          $ref: '#/components/schemas/ModelLifecycleStatus'
+
+    DeleteCredentialBrandingResult:
+      type: object
+      description: Outcome of a delete request.
+      required: [deleted]
+      properties:
+        deleted:
+          type: boolean
+          description: True when a branding record existed for the id and was removed; false when none existed.
+
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Bearer JWT token. Tenant context is resolved from this token.

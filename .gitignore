@@ -55,3 +55,5 @@ lib/conf/theme/react/
 .worktrees/
 .worktree-m2/
 .gradle-home/
+.gradle-home-solo/
+.workspace-m2/

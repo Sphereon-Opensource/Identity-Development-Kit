@@ -79,8 +79,7 @@ internal fun oidfIssuerScenarioClients(
         .filter {
             it.requiredPlan.role == OidfRole.ISSUER &&
                 (it.planName.contains("haip") == (profile == OidfProductProfile.HAIP))
-        }
-        .map { scenario ->
+        }.map { scenario ->
             OidfIssuerScenarioClients(
                 scenarioId = scenario.id,
                 clientId = oidfIssuerClientId(scenario, 1),

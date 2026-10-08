@@ -1,5 +1,5 @@
 [versions]
-app-platform = "0.0.15SPH-SNAPSHOT"
+app-platform = "0.0.16SPH-SNAPSHOT"
 
 [libraries]
 amz-metro-public = { module = "software.amazon.app.platform:metro-public", version.ref = "app-platform"}
@@ -18,3 +18,6 @@ app-platform-di = [
 ]
 
 [plugins]
+# Root-only Autonomous Apps wrapper (GBS DependencyAnalysisConventionPlugin).
+# Apply on pack / IDK root build.gradle.kts — never on included-build copies.
+sphereon-dependency-analysis = { id = "com.sphereon.gradle.plugin.dependency-analysis", version = "0.10.0-SNAPSHOT" }

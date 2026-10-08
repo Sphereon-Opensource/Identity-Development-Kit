@@ -10,52 +10,52 @@
 
 package com.sphereon.openid.oid4vci.integration
 
-import com.sphereon.core.api.session.asCoreApiServiceGraph
 import com.sphereon.core.api.decodeFromBase64Url
-import com.sphereon.crypto.core.generic.SignatureAlgorithm
+import com.sphereon.core.api.session.asCoreApiServiceGraph
 import com.sphereon.crypto.core.ManagedKeyInfoType
+import com.sphereon.crypto.core.generic.SignatureAlgorithm
+import com.sphereon.crypto.core.jose.Jwk
+import com.sphereon.crypto.core.jose.JwkSet
 import com.sphereon.crypto.core.jose.JwkUse
 import com.sphereon.crypto.core.jose.generateJwkThumbprintUri
 import com.sphereon.crypto.core.kms.asKeyManagerServiceGraph
-import com.sphereon.crypto.core.jose.Jwk
-import com.sphereon.crypto.core.jose.JwkSet
 import com.sphereon.crypto.resolution.AdditionalIdentifierLookup
 import com.sphereon.crypto.resolution.extern.ExternalIdentifierJwksUrlOpts
 import com.sphereon.crypto.resolution.extern.JwksUrlExternalIdentifierResolutionServiceImpl
 import com.sphereon.di.session.SessionScope
+import com.sphereon.ktor.http.client.provider.HttpClientEngineType
+import com.sphereon.ktor.http.client.provider.HttpClientFactory
+import com.sphereon.ktor.http.client.provider.HttpClientOptions
 import com.sphereon.openid.oid4vc.common.CredentialFormat
 import com.sphereon.openid.oid4vci.common.model.CredentialConfigurationSupported
 import com.sphereon.openid.oid4vci.common.model.CredentialDefinition
 import com.sphereon.openid.oid4vci.common.model.CredentialRequest
+import com.sphereon.openid.oid4vci.issuer.format.CredentialFormatHandler
 import com.sphereon.openid.oid4vci.issuer.format.IssuanceContext
 import com.sphereon.openid.oid4vci.issuer.format.SigningKeyMode
-import com.sphereon.openid.oid4vci.issuer.format.CredentialFormatHandler
 import com.sphereon.openid.oid4vci.issuer.impl.format.JwtVcJsonFormatHandler
 import com.sphereon.openid.oid4vci.issuer.impl.format.VcLdJsonJwtFormatHandler
 import com.sphereon.openid.oid4vp.common.ClientIdScheme
 import com.sphereon.openid.oid4vp.common.ClientMetadata
 import com.sphereon.openid.oid4vp.common.ResponseMode
 import com.sphereon.openid.oid4vp.common.VpToken
-import com.sphereon.openid.oid4vp.common.vpToken
 import com.sphereon.openid.oid4vp.common.jwtVcFormatInfo
+import com.sphereon.openid.oid4vp.common.vpToken
 import com.sphereon.openid.oid4vp.dcql.DcqlCredentialQuery
 import com.sphereon.openid.oid4vp.dcql.DcqlQuery
 import com.sphereon.openid.oid4vp.dcql.w3cVcMeta
 import com.sphereon.openid.oid4vp.holder.CreateAuthorizationResponseArgs
+import com.sphereon.openid.oid4vp.holder.HolderJwtVpSigningIdentifier
 import com.sphereon.openid.oid4vp.holder.Oid4vpHolder
 import com.sphereon.openid.oid4vp.holder.ResolvedOid4vpRequest
 import com.sphereon.openid.oid4vp.holder.SelectedCredential
-import com.sphereon.openid.oid4vp.holder.HolderJwtVpSigningIdentifier
+import com.sphereon.openid.oid4vp.holder.VerifierInfo
 import com.sphereon.openid.oid4vp.verifier.CreateAuthorizationRequestArgs
 import com.sphereon.openid.oid4vp.verifier.Oid4vpVerifierService
 import com.sphereon.openid.oid4vp.verifier.ParseAuthorizationResponseArgs
-import com.sphereon.openid.oid4vp.verifier.ValidateAuthorizationResponseArgs
-import com.sphereon.openid.oid4vp.holder.VerifierInfo
-import com.sphereon.openid.oid4vp.verifier.TrustedAuthenticationResolution
 import com.sphereon.openid.oid4vp.verifier.TrustedAuthenticationPurpose
-import com.sphereon.ktor.http.client.provider.HttpClientEngineType
-import com.sphereon.ktor.http.client.provider.HttpClientFactory
-import com.sphereon.ktor.http.client.provider.HttpClientOptions
+import com.sphereon.openid.oid4vp.verifier.TrustedAuthenticationResolution
+import com.sphereon.openid.oid4vp.verifier.ValidateAuthorizationResponseArgs
 import com.sphereon.wallet.unit.SecureComponentUsage
 import dev.zacsweers.metro.ContributesTo
 import io.ktor.client.HttpClient
@@ -115,108 +115,108 @@ class VcdmJwtJwksIdentifierNeutralE2ETest {
     fun vcdm11AndVcdm20IssuePresentAndVerifyUseConfiguredHttpsJwksWithoutDid() =
         runTest {
             for (version in JwtVersion.entries) {
-            val issuerKey = generateKey("jwks-vcdm-issuer-key-${version.name.lowercase()}")
-            val holderKey = provisionHolder("jwks-vcdm-holder-key-${version.name.lowercase()}")
-            val published = publishedJwks(issuerKey)
-            val http = StaticJwksHttpClientFactory(jwksUrl, published)
-            val verifierService = verifierService()
-            val query = DcqlQuery(credentials = listOf(query(version)))
-            val request =
-                verifierService
-                    .createAuthorizationRequest(
-                        CreateAuthorizationRequestArgs(
-                            instanceId = "jwks-vcdm-verifier",
-                            dcqlQuery = query,
-                            clientId = verifier,
-                            responseUri = "$verifier/response",
-                            responseMode = ResponseMode.DIRECT_POST,
-                            nonce = "jwks-vcdm-nonce",
-                            state = "jwks-vcdm-state",
-                            clientMetadata = ClientMetadata(vpFormatsSupported = mapOf(version.format.value to jwtVcFormatInfo(listOf("ES256")))),
-                        ),
-                    ).also {
-                        assertTrue(it.isOk, "production JWKS verifier request must be created: ${if (it.isErr) it.error else ""}")
-                    }
-                    .value
-            val resolved =
-                ResolvedOid4vpRequest(
-                    request = request.request,
-                    dcqlQuery = query,
-                    clientMetadata = ClientMetadata(vpFormatsSupported = mapOf(version.format.value to jwtVcFormatInfo(listOf("ES256")))),
-                    verifierInfo = VerifierInfo(clientId = verifier, clientIdScheme = ClientIdScheme.REDIRECT_URI),
-                )
-            val credential = issue(issuerKey.alias, version)
-            assertIssuerJwtHasNoEmbeddedKeyMaterial(credential)
-            assertCredentialShape(credential, version)
-            val response =
-                (ctx.session.graph as VcdmJwksVerifierTestGraph).oid4vpHolder.commands.createAuthorizationResponse.execute(
-                    CreateAuthorizationResponseArgs(
-                        request = resolved,
-                        selectedCredentials =
-                            listOf(
-                                SelectedCredential(
-                                    credentialQueryId = QUERY_ID,
-                                    credentialId = "jwks-vcdm-credential",
-                                    presentation = JsonPrimitive(credential),
-                                    credentialFormat = version.format,
-                                    holderKeyRef = holderKey.keyRef,
-                                    holderId = holder,
-                                    holderVerificationMethod = holderKey.kid,
-                                    holderSigningAlgorithm = SignatureAlgorithm.ECDSA_SHA256,
-                                    holderJwtVpSigningIdentifier =
-                                        HolderJwtVpSigningIdentifier.JwksKid(holderKey.kid),
-                                    holderJwtVpOperationBinding = "jwks-vcdm-attended-operation",
-                                    holderJwtVpWalletUnitId = holderWalletUnitId,
-                                ),
+                val issuerKey = generateKey("jwks-vcdm-issuer-key-${version.name.lowercase()}")
+                val holderKey = provisionHolder("jwks-vcdm-holder-key-${version.name.lowercase()}")
+                val published = publishedJwks(issuerKey)
+                val http = StaticJwksHttpClientFactory(jwksUrl, published)
+                val verifierService = verifierService()
+                val query = DcqlQuery(credentials = listOf(query(version)))
+                val request =
+                    verifierService
+                        .createAuthorizationRequest(
+                            CreateAuthorizationRequestArgs(
+                                instanceId = "jwks-vcdm-verifier",
+                                dcqlQuery = query,
+                                clientId = verifier,
+                                responseUri = "$verifier/response",
+                                responseMode = ResponseMode.DIRECT_POST,
+                                nonce = "jwks-vcdm-nonce",
+                                state = "jwks-vcdm-state-${version.name.lowercase()}",
+                                clientMetadata = ClientMetadata(vpFormatsSupported = mapOf(version.format.value to jwtVcFormatInfo(listOf("ES256")))),
                             ),
-                    ),
-                )
-            assertTrue(
-                response.isOk,
-                "production holder VP construction must succeed: ${if (response.isErr) response.error else ""}",
-            )
-
-            val parsed =
-                verifierService.parseAuthorizationResponse(
-                    ParseAuthorizationResponseArgs(
-                        responseParams =
-                            mapOf(
-                                "vp_token" to
-                                    json.encodeToString(
-                                        JsonElement.serializer(),
-                                        VpToken.run { response.value.vpToken!!.toJson() },
+                        ).also {
+                            assertTrue(it.isOk, "production JWKS verifier request must be created: ${if (it.isErr) it.error else ""}")
+                        }.value
+                val resolved =
+                    ResolvedOid4vpRequest(
+                        request = request.request,
+                        dcqlQuery = query,
+                        clientMetadata = ClientMetadata(vpFormatsSupported = mapOf(version.format.value to jwtVcFormatInfo(listOf("ES256")))),
+                        verifierInfo = VerifierInfo(clientId = verifier, clientIdScheme = ClientIdScheme.REDIRECT_URI),
+                    )
+                val credential = issue(issuerKey.alias, version)
+                assertIssuerJwtHasNoEmbeddedKeyMaterial(credential)
+                assertCredentialShape(credential, version)
+                val response =
+                    (ctx.session.graph as VcdmJwksVerifierTestGraph).oid4vpHolder.commands.createAuthorizationResponse.execute(
+                        CreateAuthorizationResponseArgs(
+                            request = resolved,
+                            selectedCredentials =
+                                listOf(
+                                    SelectedCredential(
+                                        credentialQueryId = QUERY_ID,
+                                        credentialId = "jwks-vcdm-credential",
+                                        presentation = JsonPrimitive(credential),
+                                        credentialFormat = version.format,
+                                        holderKeyRef = holderKey.keyRef,
+                                        holderId = holder,
+                                        holderVerificationMethod = holderKey.kid,
+                                        holderSigningAlgorithm = SignatureAlgorithm.ECDSA_SHA256,
+                                        holderJwtVpSigningIdentifier =
+                                            HolderJwtVpSigningIdentifier.JwksKid(holderKey.kid),
+                                        holderJwtVpOperationBinding = "jwks-vcdm-attended-operation",
+                                        holderJwtVpWalletUnitId = holderWalletUnitId,
                                     ),
-                                "state" to assertNotNull(response.value.state),
-                            ),
-                        originalRequest = request.request,
-                    ),
+                                ),
+                        ),
+                    )
+                assertTrue(
+                    response.isOk,
+                    "production holder VP construction must succeed: ${if (response.isErr) response.error else ""}",
                 )
-            assertTrue(
-                parsed.isOk,
-                "production response parser must accept holder output: ${if (parsed.isErr) parsed.error else ""}",
-            )
 
-            val issuerAuthentication = resolveJwks(http, issuerJwtKid(credential))
-            val validation = verifierService.validateAuthorizationResponse(
-                ValidateAuthorizationResponseArgs(
-                    parsedResponse = parsed.value,
-                    originalRequest = request.request,
-                    dcqlQuery = query,
-                    expectedNonce = "jwks-vcdm-nonce",
-                    trustedAuthentications = listOf(issuerAuthentication, holderAuthentication(holderKey)),
-                ),
-            )
-            assertTrue(
-                validation.isOk,
-                "production verifier should return structured validation: ${if (validation.isErr) validation.error else ""}",
-            )
-            assertTrue(validation.value.valid, "issuer and holder signatures must verify: ${validation.value.errors}")
-            assertTrue(http.fetches > 0, "issuer key must be fetched through the configured JWKS resolver")
-            assertVpBinding(
-                assertNotNull(response.value.vpToken!!.getSinglePresentation(QUERY_ID)),
-                nonce = "jwks-vcdm-nonce",
-            )
-            assertVpShape(assertNotNull(response.value.vpToken!!.getSinglePresentation(QUERY_ID)), version)
+                val parsed =
+                    verifierService.parseAuthorizationResponse(
+                        ParseAuthorizationResponseArgs(
+                            responseParams =
+                                mapOf(
+                                    "vp_token" to
+                                        json.encodeToString(
+                                            JsonElement.serializer(),
+                                            VpToken.run { response.value.vpToken!!.toJson() },
+                                        ),
+                                    "state" to assertNotNull(response.value.state),
+                                ),
+                            originalRequest = request.request,
+                        ),
+                    )
+                assertTrue(
+                    parsed.isOk,
+                    "production response parser must accept holder output: ${if (parsed.isErr) parsed.error else ""}",
+                )
+
+                val issuerAuthentication = resolveJwks(http, issuerJwtKid(credential))
+                val validation =
+                    verifierService.validateAuthorizationResponse(
+                        ValidateAuthorizationResponseArgs(
+                            parsedResponse = parsed.value,
+                            originalRequest = request.request,
+                            dcqlQuery = query,
+                            expectedNonce = "jwks-vcdm-nonce",
+                            trustedAuthentications = listOf(issuerAuthentication, holderAuthentication(holderKey)),
+                        ),
+                    )
+                assertTrue(
+                    validation.isOk,
+                    "production verifier should return structured validation: ${if (validation.isErr) validation.error else ""}",
+                )
+                assertTrue(validation.value.valid, "issuer and holder signatures must verify: ${validation.value.errors}")
+                assertTrue(http.fetches > 0, "issuer key must be fetched through the configured JWKS resolver")
+                assertVpBinding(
+                    assertNotNull(response.value.vpToken!!.getSinglePresentation(QUERY_ID)),
+                    nonce = "jwks-vcdm-nonce",
+                )
+                assertVpShape(assertNotNull(response.value.vpToken!!.getSinglePresentation(QUERY_ID)), version)
             }
         }
 
@@ -229,21 +229,22 @@ class VcdmJwtJwksIdentifierNeutralE2ETest {
             assertIssuerJwtHasNoEmbeddedKeyMaterial(credential)
             val verifierService = verifierService()
             val query = DcqlQuery(credentials = listOf(query()))
-            val request =
-                verifierService.createAuthorizationRequest(
-                    CreateAuthorizationRequestArgs(
-                        instanceId = "jwks-vcdm-negative-verifier",
-                        dcqlQuery = query,
-                        clientId = verifier,
-                        responseUri = "$verifier/response",
-                        responseMode = ResponseMode.DIRECT_POST,
-                        nonce = "jwks-vcdm-negative-nonce",
-                        state = "jwks-vcdm-negative-state",
-                        clientMetadata = ClientMetadata(vpFormatsSupported = mapOf(JwtVersion.V20.format.value to jwtVcFormatInfo(listOf("ES256")))),
-                    ),
-                ).also {
-                    assertTrue(it.isOk, "production JWKS verifier request must be created: ${if (it.isErr) it.error else ""}")
-                }.value
+            var request =
+                verifierService
+                    .createAuthorizationRequest(
+                        CreateAuthorizationRequestArgs(
+                            instanceId = "jwks-vcdm-negative-verifier",
+                            dcqlQuery = query,
+                            clientId = verifier,
+                            responseUri = "$verifier/response",
+                            responseMode = ResponseMode.DIRECT_POST,
+                            nonce = "jwks-vcdm-negative-nonce",
+                            state = "jwks-vcdm-negative-state",
+                            clientMetadata = ClientMetadata(vpFormatsSupported = mapOf(JwtVersion.V20.format.value to jwtVcFormatInfo(listOf("ES256")))),
+                        ),
+                    ).also {
+                        assertTrue(it.isOk, "production JWKS verifier request must be created: ${if (it.isErr) it.error else ""}")
+                    }.value
             val resolved =
                 ResolvedOid4vpRequest(
                     request = request.request,
@@ -278,7 +279,7 @@ class VcdmJwtJwksIdentifierNeutralE2ETest {
                 response.isOk,
                 "production holder VP construction must succeed for negative verification cases: ${if (response.isErr) response.error else ""}",
             )
-            val parsed = parse(verifierService, request.request, response.value)
+            var parsed = parse(verifierService, request.request, response.value)
 
             val unrelatedKey = generateKey("jwks-vcdm-unrelated-key")
             val wrongHttp =
@@ -287,42 +288,63 @@ class VcdmJwtJwksIdentifierNeutralE2ETest {
                     publishedJwks(unrelatedKey, kidOverride = issuerJwtKid(credential)),
                 )
             val issuerAuthentication = resolveJwks(wrongHttp, issuerJwtKid(credential))
-            val wrong = verifierService.validateAuthorizationResponse(
-                ValidateAuthorizationResponseArgs(
-                    parsedResponse = parsed,
-                    originalRequest = request.request,
-                    dcqlQuery = query,
-                    expectedNonce = "jwks-vcdm-negative-nonce",
-                    trustedAuthentications = listOf(issuerAuthentication, holderAuthentication(holderKey)),
-                ),
-            )
+            val wrong =
+                verifierService.validateAuthorizationResponse(
+                    ValidateAuthorizationResponseArgs(
+                        parsedResponse = parsed,
+                        originalRequest = request.request,
+                        dcqlQuery = query,
+                        expectedNonce = "jwks-vcdm-negative-nonce",
+                        trustedAuthentications = listOf(issuerAuthentication, holderAuthentication(holderKey)),
+                    ),
+                )
             assertTrue(wrong.isOk, "wrong JWKS verification must return a structured result: ${if (wrong.isErr) wrong.error else ""}")
             assertFalse(wrong.value.valid, "a JWKS containing an unrelated key must fail cryptographic verification: ${wrong.value.errors}")
             assertTrue(wrongHttp.fetches > 0)
 
             val unconfiguredHttp = StaticJwksHttpClientFactory("https://configured-only.example/jwks", publishedJwks(issuerKey))
-            val unconfiguredAuthentication = resolveJwksOrNull(
-                unconfiguredHttp,
-                endpoint = "https://unconfigured.example/jwks",
-                kid = issuerJwtKid(credential),
-            )
+            val unconfiguredAuthentication =
+                resolveJwksOrNull(
+                    unconfiguredHttp,
+                    endpoint = "https://unconfigured.example/jwks",
+                    kid = issuerJwtKid(credential),
+                )
             assertTrue(unconfiguredAuthentication == null, "unconfigured JWKS resolution must fail closed")
-            val unconfigured = verifierService.validateAuthorizationResponse(
-                ValidateAuthorizationResponseArgs(
-                    parsedResponse = parsed,
-                    originalRequest = request.request,
-                    dcqlQuery = query,
-                    expectedNonce = "jwks-vcdm-negative-nonce",
-                    trustedAuthentications = emptyList(),
-                ),
-            )
+            request =
+                verifierService
+                    .createAuthorizationRequest(
+                        CreateAuthorizationRequestArgs(
+                            instanceId = "jwks-vcdm-negative-verifier",
+                            dcqlQuery = query,
+                            clientId = verifier,
+                            responseUri = "$verifier/response",
+                            responseMode = ResponseMode.DIRECT_POST,
+                            nonce = "jwks-vcdm-negative-nonce",
+                            state = "jwks-vcdm-unconfigured-state",
+                            clientMetadata = ClientMetadata(vpFormatsSupported = mapOf(JwtVersion.V20.format.value to jwtVcFormatInfo(listOf("ES256")))),
+                        ),
+                    ).getOrThrow()
+            parsed = parse(verifierService, request.request, response.value.copy(state = request.request.state))
+            val unconfigured =
+                verifierService.validateAuthorizationResponse(
+                    ValidateAuthorizationResponseArgs(
+                        parsedResponse = parsed,
+                        originalRequest = request.request,
+                        dcqlQuery = query,
+                        expectedNonce = "jwks-vcdm-negative-nonce",
+                        trustedAuthentications = emptyList(),
+                    ),
+                )
             assertTrue(unconfigured.isOk, "unconfigured JWKS verification must return a structured result: ${if (unconfigured.isErr) unconfigured.error else ""}")
             assertFalse(unconfigured.value.valid, "an unconfigured JWKS endpoint must fail closed: ${unconfigured.value.errors}")
             assertTrue(unconfiguredHttp.fetches > 0)
         }
 
     private suspend fun generateKey(alias: String): ManagedKeyInfoType<*> {
-        val kms = ctx.session.graph.asKeyManagerServiceGraph().keyManagerService
+        val kms =
+            ctx.session.graph
+                .asKeyManagerServiceGraph()
+                .keyManagerService
         val generated = kms.generateKeyResult(alias = alias, use = JwkUse.sig, alg = SignatureAlgorithm.ECDSA_SHA256)
         assertTrue(generated.isOk, "software KMS key generation must succeed: ${if (generated.isErr) generated.error else ""}")
         return assertNotNull(generated.value.keyPair?.joseToManagedKeyInfo(com.sphereon.crypto.core.KeyVisibility.PRIVATE))
@@ -343,7 +365,10 @@ class VcdmJwtJwksIdentifierNeutralE2ETest {
         return HolderMaterial(keyRef = assertNotNull(key.keyRef ?: key.keyId), kid = kid, publicJwk = publicJwk.copy(kid = kid))
     }
 
-    private suspend fun issue(alias: String, version: JwtVersion = JwtVersion.V20): String {
+    private suspend fun issue(
+        alias: String,
+        version: JwtVersion = JwtVersion.V20
+    ): String {
         ctx.registerIssuerSigningKey(alias)
         val configuration =
             CredentialConfigurationSupported(
@@ -352,7 +377,8 @@ class VcdmJwtJwksIdentifierNeutralE2ETest {
             )
         val graph = ctx.session.graph as VcdmJwksIssuerTestGraph
         val handler: CredentialFormatHandler = if (version == JwtVersion.V11) graph.jwtVcJsonFormatHandler else graph.vcLdJsonJwtFormatHandler
-        val result = handler.issueCredential(
+        val result =
+            handler.issueCredential(
                 CredentialRequest(format = version.format.value),
                 IssuanceContext(
                     subject = "https://jwks-vcdm-holder.example/subject",
@@ -372,7 +398,10 @@ class VcdmJwtJwksIdentifierNeutralE2ETest {
         return result.value.credential.jsonPrimitive.content
     }
 
-    private fun publishedJwks(key: ManagedKeyInfoType<*>, kidOverride: String? = null): String {
+    private fun publishedJwks(
+        key: ManagedKeyInfoType<*>,
+        kidOverride: String? = null
+    ): String {
         val jwk = assertNotNull(key.toManagedPublicKeyInfo().key as? Jwk)
         val kid = kidOverride ?: generateJwkThumbprintUri(jwk.toPublicKey())
         return json.encodeToString(JwkSet.serializer(), JwkSet(keys = arrayOf(jwk.copy(kid = kid))))
@@ -387,23 +416,19 @@ class VcdmJwtJwksIdentifierNeutralE2ETest {
 
     private fun issuerJwtKid(jwt: String): String = assertNotNull(issuerJwtHeader(jwt)["kid"]?.jsonPrimitive?.content)
 
-    private fun holderAuthentication(holderKey: HolderMaterial): TrustedAuthenticationResolution {
-        return TrustedAuthenticationResolution(
+    private fun holderAuthentication(holderKey: HolderMaterial): TrustedAuthenticationResolution =
+        TrustedAuthenticationResolution(
             controller = holder,
             purpose = TrustedAuthenticationPurpose.HOLDER,
             trustedJwks = JsonObject(mapOf("keys" to JsonArray(listOf(holderKey.publicJwk.toJsonObject())))),
         )
-    }
 
-    private fun issuerJwtHeader(jwt: String) =
-        json.parseToJsonElement(jwt.substringBefore('.').decodeFromBase64Url().decodeToString()).jsonObject
+    private fun issuerJwtHeader(jwt: String) = json.parseToJsonElement(jwt.substringBefore('.').decodeFromBase64Url().decodeToString()).jsonObject
 
     private suspend fun resolveJwks(
         http: StaticJwksHttpClientFactory,
         kid: String,
-    ): TrustedAuthenticationResolution {
-        return checkNotNull(resolveJwksOrNull(http, jwksUrl, kid))
-    }
+    ): TrustedAuthenticationResolution = checkNotNull(resolveJwksOrNull(http, jwksUrl, kid))
 
     private suspend fun resolveJwksOrNull(
         http: StaticJwksHttpClientFactory,
@@ -441,13 +466,19 @@ class VcdmJwtJwksIdentifierNeutralE2ETest {
         )
     }
 
-    private fun assertVpBinding(vp: String, nonce: String) {
+    private fun assertVpBinding(
+        vp: String,
+        nonce: String
+    ) {
         val payload = json.parseToJsonElement(vp.split('.')[1].decodeFromBase64Url().decodeToString()).jsonObject
         assertEquals(nonce, payload["nonce"]?.jsonPrimitive?.content)
         assertEquals(verifier, payload["aud"]?.jsonPrimitive?.content)
     }
 
-    private fun assertCredentialShape(jwt: String, version: JwtVersion) {
+    private fun assertCredentialShape(
+        jwt: String,
+        version: JwtVersion
+    ) {
         val header = issuerJwtHeader(jwt)
         val payload = json.parseToJsonElement(jwt.split('.')[1].decodeFromBase64Url().decodeToString()).jsonObject
         assertEquals(version.credentialTyp, header["typ"]?.jsonPrimitive?.content)
@@ -473,7 +504,10 @@ class VcdmJwtJwksIdentifierNeutralE2ETest {
         assertFalse(anonymousSubject.containsKey("id"), "credential subject must remain anonymous")
     }
 
-    private fun assertVpShape(jwt: String, version: JwtVersion) {
+    private fun assertVpShape(
+        jwt: String,
+        version: JwtVersion
+    ) {
         val header = issuerJwtHeader(jwt)
         if (version == JwtVersion.V11) {
             assertEquals("JWT", header["typ"]?.jsonPrimitive?.content)
@@ -505,8 +539,8 @@ class VcdmJwtJwksIdentifierNeutralE2ETest {
         verifier: Oid4vpVerifierService,
         request: com.sphereon.oauth2.common.model.AuthorizationRequest,
         response: com.sphereon.oauth2.common.model.AuthorizationResponse,
-    ) =
-        verifier.parseAuthorizationResponse(
+    ) = verifier
+        .parseAuthorizationResponse(
             ParseAuthorizationResponseArgs(
                 responseParams =
                     mapOf(

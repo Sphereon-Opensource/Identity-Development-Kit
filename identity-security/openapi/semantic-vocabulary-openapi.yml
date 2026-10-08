@@ -1,0 +1,503 @@
+openapi: 3.0.4
+info:
+  title: Semantic Vocabulary API
+  version: 0.1.0
+  description: |
+    Manage the controlled vocabularies that attribute definitions reference for shared meaning. A
+    vocabulary is a set of canonical terms. Each term is a stable URI with locale-keyed labels and
+    descriptions, an optional data type, and an optional place in a broader/narrower hierarchy. An
+    attribute definition that references a term inherits that agreed meaning.
+
+    Vocabularies are usually imported from existing sources, such as schema.org, eIDAS attribute
+    schemas, or a sector ontology, in JSON-LD, SKOS, RDF/XML, Turtle, or OCA form. They can also be
+    authored directly.
+
+    This API supports:
+      - registering and maintaining vocabularies (create, import from serialized content, update,
+        soft-delete, and list);
+      - looking up a single term by its URI and searching terms across all of a tenant's
+        vocabularies;
+      - reading the SKOS concept schemes a vocabulary defines, which back the entry-code (enum)
+        choices on an attribute.
+
+    Vocabularies are tenant-owned, but terms are URI-addressed so they can align with external
+    standards and sector vocabularies.
+servers:
+  - url: http://localhost:8080/api/semantic/vocabulary/v1
+    description: Local development.
+security:
+  - bearer: []
+tags:
+  - name: Vocabularies
+    description: Create, import, update, soft-delete, and list semantic vocabularies.
+  - name: Terms
+    description: List, look up by URI, and search the canonical terms within vocabularies.
+  - name: ConceptSchemes
+    description: Read the SKOS concept-scheme hierarchies a vocabulary defines.
+paths:
+  /vocabularies:
+    post:
+      tags: [Vocabularies]
+      summary: Create a vocabulary with initial terms and concept schemes
+      operationId: createSemanticVocabulary
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSemanticVocabularyInput'
+      responses:
+        '201':
+          description: Vocabulary created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SemanticVocabulary'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+    get:
+      tags: [Vocabularies]
+      summary: List vocabularies
+      operationId: listSemanticVocabularies
+      description: |
+        Returns a page of vocabularies matching the optional filter. Pagination accepts both
+        `limit`/`offset` and OpenAPI-style `page`/`size`; the parser normalises and clamps `limit`
+        to `[1, 100]` (default `20`). Default sort is `createdAt DESC`.
+      parameters:
+        - name: nameContains
+          in: query
+          description: Case-insensitive substring match against the vocabulary name.
+          schema:
+            type: string
+        - name: namespace
+          in: query
+          description: Filter to vocabularies whose namespace exactly matches this value.
+          schema:
+            type: string
+        - $ref: './common-components.yml#/components/parameters/Limit'
+        - $ref: './common-components.yml#/components/parameters/Offset'
+        - $ref: './common-components.yml#/components/parameters/Page'
+        - $ref: './common-components.yml#/components/parameters/Size'
+        - $ref: './common-components.yml#/components/parameters/Sort'
+        - $ref: './common-components.yml#/components/parameters/SortDirection'
+      responses:
+        '200':
+          description: Page of vocabularies.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VocabularyPageResponse'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /vocabularies/import:
+    post:
+      tags: [Vocabularies]
+      summary: Import and persist a vocabulary from serialized content
+      operationId: importSemanticVocabulary
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ImportSemanticVocabularyInput'
+      responses:
+        '201':
+          description: Vocabulary imported and persisted.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SemanticVocabulary'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /vocabularies/terms/search:
+    get:
+      tags: [Terms]
+      summary: Search terms across all vocabularies of the current tenant
+      operationId: searchSemanticVocabularyTerms
+      parameters:
+        - name: query
+          in: query
+          required: true
+          description: Free-text query matched against term URIs, labels, and descriptions.
+          schema:
+            type: string
+            minLength: 1
+        - name: limit
+          in: query
+          description: Maximum number of items to return. Clamped to `[1, 100]`. Defaults to `100`.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 100
+        - $ref: './common-components.yml#/components/parameters/Offset'
+      responses:
+        '200':
+          description: Matching terms.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TermListResponse'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /vocabularies/{vocabId}:
+    parameters:
+      - $ref: '#/components/parameters/VocabId'
+    get:
+      tags: [Vocabularies]
+      summary: Get one vocabulary
+      operationId: getSemanticVocabulary
+      responses:
+        '200':
+          description: Vocabulary.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SemanticVocabulary'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+    put:
+      tags: [Vocabularies]
+      summary: Update a vocabulary
+      operationId: updateSemanticVocabulary
+      description: |
+        Update vocabulary metadata. When the request body's `content` field is **null**, only
+        metadata fields (name, version, description) are updated; null fields in the input are
+        left unchanged. When `content` is provided, a full content refresh is performed: all
+        terms and concept schemes are atomically replaced, `sourceFormat` is required in that
+        case.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateSemanticVocabularyInput'
+      responses:
+        '200':
+          description: Updated vocabulary.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SemanticVocabulary'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+    delete:
+      tags: [Vocabularies]
+      summary: Soft-delete a vocabulary
+      operationId: deleteSemanticVocabulary
+      responses:
+        '204':
+          description: Vocabulary soft-deleted.
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /vocabularies/{vocabId}/terms:
+    parameters:
+      - $ref: '#/components/parameters/VocabId'
+    get:
+      tags: [Terms]
+      summary: List terms within a vocabulary
+      operationId: listSemanticVocabularyTerms
+      description: |
+        Returns terms within a vocabulary, optionally filtered by `labelContains`, `dataType`,
+        and `parentTermUri`, with `limit`/`offset` pagination. The response shape is
+        `{ "data": [...] }` without pagination metadata.
+      parameters:
+        - name: labelContains
+          in: query
+          description: Free-text substring match against any locale label (or description).
+          schema:
+            type: string
+        - name: dataType
+          in: query
+          description: Filter to terms whose `dataType` exactly matches (e.g. `xsd:string`).
+          schema:
+            type: string
+        - name: parentTermUri
+          in: query
+          description: Filter to terms whose `parentTermUri` exactly matches.
+          schema:
+            type: string
+        - name: limit
+          in: query
+          description: Maximum number of items to return. Clamped to `[1, 100]`. Defaults to `100`.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 100
+        - $ref: './common-components.yml#/components/parameters/Offset'
+      responses:
+        '200':
+          description: Terms in the vocabulary.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TermListResponse'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /vocabularies/{vocabId}/terms/byuri:
+    parameters:
+      - $ref: '#/components/parameters/VocabId'
+    get:
+      tags: [Terms]
+      summary: Get a single term by URI
+      operationId: getSemanticVocabularyTermByUri
+      parameters:
+        - name: uri
+          in: query
+          required: true
+          description: Canonical URI of the term to fetch (e.g. `https://schema.org/givenName`).
+          schema:
+            type: string
+            minLength: 1
+      responses:
+        '200':
+          description: Term.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SemanticVocabularyTerm'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /vocabularies/{vocabId}/concepts:
+    parameters:
+      - $ref: '#/components/parameters/VocabId'
+    get:
+      tags: [ConceptSchemes]
+      summary: Return SKOS concept-scheme hierarchies for the vocabulary
+      operationId: listSemanticVocabularyConceptSchemes
+      responses:
+        '200':
+          description: Concept schemes belonging to the vocabulary.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConceptSchemeListResponse'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+components:
+  # Shared parameters (TenantId), pagination params (Limit/Offset/Sort/SortDirection),
+  # error responses (NotFound/ValidationError/Unauthorized/Forbidden/Error), and the
+  # ApiError/ErrorResponse/PageMeta schemas are defined in the canonical shared
+  # ./common-components.yml (owned by IDK lib-core-api-public, copied in at build time).
+  # Only vocabulary-specific components are defined locally below.
+  parameters:
+    VocabId:
+      $ref: './semantic-vocabulary-components.yml#/components/parameters/VocabId'
+
+  schemas:
+    VocabularyPageResponse:
+      type: object
+      description: Paged list of vocabularies.
+      required: [data, pagination]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/SemanticVocabulary'
+        pagination:
+          $ref: './common-components.yml#/components/schemas/PageMeta'
+
+    TermListResponse:
+      type: object
+      description: List of terms (no pagination metadata, the underlying service returns `List<T>`).
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/SemanticVocabularyTerm'
+
+    ConceptSchemeListResponse:
+      type: object
+      description: List of SKOS concept schemes (no pagination metadata).
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/SkosConceptScheme'
+
+    SemanticVocabulary:
+      $ref: './semantic-vocabulary-components.yml#/components/schemas/SemanticVocabulary'
+
+    SemanticVocabularyTerm:
+      $ref: './semantic-vocabulary-components.yml#/components/schemas/SemanticVocabularyTerm'
+
+    SkosConceptScheme:
+      $ref: './semantic-vocabulary-components.yml#/components/schemas/SkosConceptScheme'
+
+    SkosConcept:
+      $ref: './semantic-vocabulary-components.yml#/components/schemas/SkosConcept'
+
+    CreateSemanticVocabularyInput:
+      type: object
+      description: |
+        Input for creating a new vocabulary together with its initial terms and optional concept
+        schemes. On each nested term the `id`, `semanticVocabularyId` and `tenantId` are assigned by
+        the server (the tenant from the session, the vocabulary id from the newly created record),
+        so any values supplied for them are overwritten.
+      required: [name, version, namespace, sourceFormat, terms]
+      example:
+        name: "Schema.org Person (subset)"
+        version: "1.0.0"
+        namespace: "https://schema.org/"
+        description: "Person attributes drawn from schema.org for credential interoperability"
+        sourceUri: "https://schema.org/version/latest/schemaorg-current-https.jsonld"
+        sourceFormat: JSON_LD
+        terms:
+          - id: "00000000-0000-0000-0000-000000000000"
+            semanticVocabularyId: "00000000-0000-0000-0000-000000000000"
+            tenantId: "acme"
+            termUri: "https://schema.org/givenName"
+            labels:
+              en: "Given Name"
+              nl: "Voornaam"
+            descriptions:
+              en: "The first name of a person."
+            dataType: "xsd:string"
+            mandatory: true
+            relatedTermUris: []
+            properties: {}
+        conceptSchemes: []
+      properties:
+        name:
+          type: string
+        version:
+          type: string
+        namespace:
+          type: string
+        description:
+          type: string
+          nullable: true
+        sourceUri:
+          type: string
+          nullable: true
+        sourceFormat:
+          $ref: '#/components/schemas/SemanticVocabularySourceFormat'
+        terms:
+          type: array
+          items:
+            $ref: '#/components/schemas/SemanticVocabularyTerm'
+        conceptSchemes:
+          type: array
+          items:
+            $ref: '#/components/schemas/SkosConceptScheme'
+          default: []
+
+    UpdateSemanticVocabularyInput:
+      type: object
+      description: |
+        Update payload. When `content` is null, only metadata fields are updated; null fields are
+        left unchanged. When `content` is provided, a full vocabulary refresh is performed: all
+        terms and concept schemes are replaced and `sourceFormat` is required.
+      properties:
+        name:
+          type: string
+          nullable: true
+        version:
+          type: string
+          nullable: true
+        description:
+          type: string
+          nullable: true
+        content:
+          type: string
+          nullable: true
+          description: Raw vocabulary content for a full refresh. Required together with `sourceFormat`.
+        sourceFormat:
+          allOf:
+            - $ref: '#/components/schemas/SemanticVocabularySourceFormat'
+          type: string
+          nullable: true
+          description: Required when `content` is non-null; the format of the supplied content.
+
+    ImportSemanticVocabularyInput:
+      type: object
+      description: Input for importing a vocabulary from serialized content.
+      required: [content, sourceFormat]
+      example:
+        sourceFormat: JSON_LD
+        name: "Schema.org Person (subset)"
+        version: "1.0.0"
+        namespace: "https://schema.org/"
+        content: "{\"@context\":{\"schema\":\"https://schema.org/\"},\"@graph\":[{\"@id\":\"schema:givenName\",\"@type\":\"rdf:Property\",\"rdfs:label\":\"Given Name\"}]}"
+      properties:
+        content:
+          type: string
+          description: Raw vocabulary content to parse.
+        sourceFormat:
+          $ref: '#/components/schemas/SemanticVocabularySourceFormat'
+        name:
+          type: string
+          nullable: true
+          description: Optional override for the vocabulary name; otherwise derived from the content.
+        version:
+          type: string
+          nullable: true
+        namespace:
+          type: string
+          nullable: true
+
+    SemanticVocabularySourceFormat:
+      $ref: './semantic-vocabulary-components.yml#/components/schemas/SemanticVocabularySourceFormat'
+
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Bearer JWT token. Tenant context is resolved from this token.

@@ -1,0 +1,1109 @@
+openapi: 3.0.4
+info:
+  title: Invitation API Components
+  version: 0.1.0
+  description: >-
+    Entity schemas, value objects, and path parameters for the Invitation API.
+    These components are referenced by invitation-openapi.yml and are not served
+    on their own.
+paths: {}
+components:
+  parameters:
+    InvitationId:
+      name: invitationId
+      in: path
+      required: true
+      description: >-
+        Stable opaque identifier of the invitation record. This is the durable id
+        used in URLs; it is not the invitation token and cannot be exchanged for one.
+      schema:
+        type: string
+      example: inv_3fa85f6429fc
+
+    BatchId:
+      name: batchId
+      in: path
+      required: true
+      description: Stable opaque identifier of the invitation batch record.
+      schema:
+        type: string
+      example: btch_9b2c1f04
+
+  schemas:
+    # ---- Recipient value objects --------------------------------------------
+    ChannelAddress:
+      type: object
+      description: A single delivery address bound to one channel.
+      required:
+        - channel
+        - address
+      properties:
+        channel:
+          type: string
+          description: >-
+            Delivery channel this address belongs to. Channels delivered today are
+            `email`, `webhook`, and `out-of-band` (mint only, no automated send).
+            `sms`, `slack`, `teams`, and `wallet-push` are reserved channel ids.
+          example: email
+        address:
+          type: string
+          description: >-
+            The channel-specific address: an RFC 5322 mailbox for `email`, an HTTPS
+            URL for `webhook`, an E.164 number for `sms`.
+          example: alice@example.com
+        displayName:
+          type: string
+          nullable: true
+          description: Optional human-readable display name (email only).
+          example: Alice Smith
+
+    RecipientRef:
+      type: object
+      description: >-
+        Durable, multi-channel handle for the intended recipient, recorded at mint
+        time. The primary address is tried first; alternates provide fallback
+        targets when the delivery engine fans out across channels.
+      required:
+        - primary
+      properties:
+        primary:
+          $ref: '#/components/schemas/ChannelAddress'
+        alternates:
+          type: array
+          description: Ordered fallback addresses, most preferred first.
+          items:
+            $ref: '#/components/schemas/ChannelAddress'
+
+    OutcomeRef:
+      type: object
+      description: >-
+        Pointer to the artefact a redemption produced. Null until the invitation
+        is claimed.
+      required:
+        - type
+        - id
+      properties:
+        type:
+          type: string
+          description: Kind of artefact produced, for example `tenant`, `idv-session`, `credential`, or `presentation`.
+          example: credential
+        id:
+          type: string
+          description: Identifier of the produced artefact.
+          example: cred_7c1e9a
+        attributes:
+          type: object
+          nullable: true
+          additionalProperties: true
+          description: Opaque, outcome-specific payload.
+
+    ChannelPreference:
+      type: object
+      description: >-
+        One entry in an ordered preference list that drives channel fan-out and
+        fallback at delivery time. The delivery engine attempts channels in array
+        order until one succeeds.
+      required:
+        - channel
+      properties:
+        channel:
+          type: string
+          description: >-
+            Target delivery channel id. See [ChannelAddress.channel] for the
+            channels delivered today and the reserved ids.
+          example: email
+        addressOverride:
+          type: string
+          nullable: true
+          description: >-
+            Explicit delivery address for this preference only, overriding the
+            address resolved from the recipient. For example a specific mailbox for
+            one resend.
+          example: alice.work@example.com
+        configRef:
+          type: string
+          nullable: true
+          description: >-
+            Reference to the tenant-configured channel configuration to use (for
+            example a Slack workspace token id or SMS provider profile). Email
+            sender selection is purpose-routed and does not use this field.
+          example: primary-slack-workspace
+        parameters:
+          type: object
+          additionalProperties: true
+          description: Additional channel-specific delivery parameters, for example an email template name and subject.
+
+    # ---- Invitation projections ---------------------------------------------
+    InvitationOriginRef:
+      type: object
+      description: >-
+        Which feature minted this invitation. Product-neutral by design: the invitation service
+        stays action-agnostic, so it records an originator as an opaque (kind, id) pair rather than
+        gaining a field per consuming product.
+
+
+        This exists so a consuming surface can list ITS OWN invitations. A business wallet, for
+        example, lists with `originKind=business-wallet&originId=<slug>`; without it a wallet in a
+        multi-wallet tenant can only show every invitation the tenant ever sent, which reads to an
+        operator as though they were all its own.
+
+
+        Deliberately NOT encoded into `targetId`. That is a free-form, action-specific string the
+        service cannot index or validate, and for a tabular batch row it already carries the
+        documented `sourceId:batchId:rowId` shape, so overloading it would collide.
+      required:
+        - kind
+        - id
+      properties:
+        kind:
+          type: string
+          description: Kind of originator. Known value `business-wallet`; the set is open-ended.
+          example: business-wallet
+        id:
+          type: string
+          description: Identifier of the originator within its kind, for example a wallet slug.
+          example: sales
+
+    InvitationSummary:
+      type: object
+      description: |
+        Lightweight projection of an invitation for list responses. It exposes the
+        stable record id; the token is not part of this projection and cannot be
+        recovered from it.
+
+        There is exactly one exception to that across the whole API: [MintedInvitation]
+        carries the raw token in its `token` field, returned once by `POST /invitations`
+        at the moment of minting. Every other response, this one included, carries the
+        record id instead, and the server stores only the token's hash, so a token can
+        never be read back after that single response.
+      required:
+        - id
+        - action
+        - scope
+        - targetId
+        - status
+        - deliveryState
+        - usagePolicy
+        - usageCount
+        - createdAt
+        - expiresAt
+      properties:
+        originRef:
+          allOf:
+            - $ref: '#/components/schemas/InvitationOriginRef'
+          nullable: true
+          description: >-
+            The feature that minted this invitation, when it recorded one. Absent on invitations
+            minted before origin tracking, and on any minted by a caller that supplied none, so a
+            consumer filtering by origin must treat absence as "not mine" rather than "unknown".
+        id:
+          type: string
+          description: Stable opaque identifier of the invitation record.
+          example: inv_3fa85f6429fc
+        action:
+          type: string
+          description: >-
+            The action this invitation drives. Well-known values are
+            `tenant.onboarding`, `idv.verification`, `credential.issuance`, and
+            `credential.verification`. The set is open-ended; deployments may
+            register additional action handlers.
+          example: credential.issuance
+        scope:
+          type: string
+          description: >-
+            Binding discriminator that narrows what the action applies to. For
+            credential-issuance invitations minted from a tabular batch this is
+            `tabular.batch_row`.
+          example: tabular.batch_row
+        targetId:
+          type: string
+          description: >-
+            Identifier of the entity the invitation addresses. Its shape is
+            action- and scope-specific; for `tabular.batch_row` it is
+            `sourceId:batchId:rowId`.
+          example: src_42:btch_9b2c1f04:row_017
+        status:
+          type: string
+          description: |
+            Lifecycle status, tracked independently of delivery. Terminal statuses are
+            CLAIMED, EXHAUSTED, REVOKED, EXPIRED, and FAILED.
+          enum: [PENDING, DELIVERED, OPENED, IN_PROGRESS, CLAIMED, EXHAUSTED, REVOKED, EXPIRED, FAILED]
+          example: DELIVERED
+        deliveryState:
+          type: string
+          description: |
+            Delivery progress, an orthogonal track to status. An invitation can be
+            CLAIMED while a follow-up reminder is still QUEUED. NOT_REQUESTED means it
+            was minted with no channel preferences (an out-of-band hand-off).
+          enum: [PENDING, QUEUED, SENT, DELIVERED, BOUNCED, FAILED, NOT_REQUESTED]
+          example: DELIVERED
+        recipientRef:
+          $ref: '#/components/schemas/RecipientRef'
+        batchId:
+          type: string
+          nullable: true
+          description: Identifier of the batch this invitation was minted from, if any.
+          example: btch_9b2c1f04
+        usagePolicy:
+          type: string
+          description: |
+            Redemption policy applied at mint time. SINGLE_USE invitations become
+            CLAIMED on the first successful redemption; MULTI_USE invitations may be
+            redeemed up to a cap and become EXHAUSTED only when the cap is reached.
+          enum: [SINGLE_USE, MULTI_USE]
+          example: SINGLE_USE
+        usageCount:
+          type: integer
+          description: Number of times this invitation has been successfully redeemed.
+          example: 0
+        createdAt:
+          type: string
+          format: date-time
+          description: When the invitation was minted (RFC 3339 / ISO 8601, UTC).
+        expiresAt:
+          type: string
+          format: date-time
+          description: When the invitation expires and can no longer be redeemed.
+        claimedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: When the lifecycle last reached a claimed or exhausted terminal state, if it has.
+        lastActionAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: When the most recent lifecycle transition or operator action occurred.
+        failureReason:
+          type: string
+          nullable: true
+          description: Human-readable detail for the most recent failure, if any.
+
+    InvitationDetail:
+      allOf:
+        - $ref: '#/components/schemas/InvitationSummary'
+        - type: object
+          description: Full detail of one invitation, extending the summary with mint context and delivery info.
+          properties:
+            context:
+              type: object
+              additionalProperties: true
+              description: >-
+                Structured context embedded at mint time. Its shape is action-specific,
+                for example the per-row claims projected for a credential-issuance
+                invitation.
+            outcomeRef:
+              $ref: '#/components/schemas/OutcomeRef'
+            deliveryAttempts:
+              type: integer
+              description: Total number of delivery attempts made for this invitation.
+              example: 1
+            channelPreferences:
+              type: array
+              description: Ordered delivery channel preferences applied at mint or resend time.
+              items:
+                $ref: '#/components/schemas/ChannelPreference'
+
+    InvitationEvent:
+      type: object
+      description: A single entry in the append-only audit timeline of an invitation.
+      required:
+        - id
+        - type
+        - occurredAt
+        - actorKind
+      properties:
+        id:
+          type: string
+          description: Stable identifier of the event record.
+        type:
+          type: string
+          description: |
+            Machine-readable, lowercase-hyphen event type. Lifecycle events include
+            `invitation-created`, `invitation-opened`, `invitation-offered`,
+            `invitation-token-exchanged`, `invitation-redeemed`, `invitation-claimed`,
+            `invitation-revoked`, `invitation-expired`, and `invitation-failed`.
+            Delivery events include `delivery-requested`, `delivery-queued`,
+            `delivery-sent`, `delivery-delivered`, `delivery-opened`,
+            `delivery-bounced`, `delivery-soft-failed`, `delivery-hard-failed`,
+            `delivery-abandoned`, and `delivery-channel-switched`.
+          example: invitation-created
+        occurredAt:
+          type: string
+          format: date-time
+          description: When the event occurred.
+        actorKind:
+          type: string
+          description: The kind of actor that produced the event.
+          enum: [SYSTEM, OPERATOR, RECIPIENT, EXTERNAL, CHANNEL]
+          example: SYSTEM
+        actorId:
+          type: string
+          nullable: true
+          description: Identifier of the specific actor, when known (an operator user id, a service id).
+        payload:
+          type: object
+          nullable: true
+          additionalProperties: true
+          description: Event-type-specific structured payload. Its shape varies by event type.
+
+    # ---- Batch projections --------------------------------------------------
+    InvitationBatchSummary:
+      type: object
+      description: >-
+        Lightweight projection of an invitation batch for list responses. A batch
+        groups the invitations minted in one operator action, for example one CSV
+        upload for credential issuance.
+      required:
+        - id
+        - tenantId
+        - createdAt
+        - state
+        - total
+        - minted
+        - delivered
+        - failed
+      properties:
+        id:
+          type: string
+          description: Stable opaque identifier of the batch record.
+          example: btch_9b2c1f04
+        tenantId:
+          type: string
+          description: Tenant the batch belongs to. Always the caller's tenant.
+        createdAt:
+          type: string
+          format: date-time
+          description: When the batch was created.
+        createdBy:
+          type: string
+          nullable: true
+          description: Identifier of the operator or system that created the batch.
+        state:
+          type: string
+          description: |
+            Processing state of the batch. RUNNING means the asynchronous processor is
+            in progress; PARTIAL means some recipients were rejected while others
+            succeeded.
+          enum: [PENDING, RUNNING, COMPLETED, PARTIAL, FAILED]
+          example: COMPLETED
+        total:
+          type: integer
+          description: Total number of recipients in the batch.
+          example: 250
+        minted:
+          type: integer
+          description: Number of invitations successfully minted.
+          example: 250
+        delivered:
+          type: integer
+          description: Number of invitations successfully delivered.
+          example: 248
+        failed:
+          type: integer
+          description: Number of recipients for which minting or delivery failed.
+          example: 2
+        completedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: When the batch reached a terminal state, if it has.
+
+    InvitationBatchDetail:
+      allOf:
+        - $ref: '#/components/schemas/InvitationBatchSummary'
+        - type: object
+          description: Full detail of one invitation batch, extending the summary with the source descriptor.
+          properties:
+            source:
+              type: object
+              additionalProperties: true
+              description: >-
+                Structured descriptor of the input that produced the batch, for example
+                the tabular source and batch ids and the credential configuration. Its
+                shape is source-specific.
+
+    # ---- Delivery outcome ---------------------------------------------------
+    DeliveryError:
+      type: object
+      description: |
+        Typed reason a delivery attempt failed. `kind` drives the fallback policy:
+
+          - RECIPIENT_INVALID is hard and stops channel fan-out, because the address
+            itself is the problem rather than the transport.
+          - CHANNEL_MISCONFIGURED and REJECTED are hard for this channel only and fall
+            through to the next preference.
+          - TRANSIENT, RATE_LIMITED, and UNKNOWN are soft and retried on the same
+            channel before fanning out, UNKNOWN with a smaller retry budget.
+      required:
+        - kind
+        - reason
+      properties:
+        kind:
+          type: string
+          description: Kind of delivery failure.
+          enum: [RECIPIENT_INVALID, CHANNEL_MISCONFIGURED, TRANSIENT, RATE_LIMITED, REJECTED, UNKNOWN]
+          example: TRANSIENT
+        reason:
+          type: string
+          minLength: 1
+          description: Non-blank, human-readable detail for this failure.
+          example: SMTP connection reset by peer
+        retryAfter:
+          type: string
+          nullable: true
+          description: >-
+            ISO 8601 duration to wait before retrying, when the transport supplied one.
+            Populated for TRANSIENT and RATE_LIMITED.
+          example: PT30S
+        causeMessage:
+          type: string
+          nullable: true
+          description: UNKNOWN only. The underlying cause message, when one was captured.
+
+    # ---- Mint and resolve results -------------------------------------------
+    MintedInvitation:
+      type: object
+      description: >-
+        The result of minting one invitation, bundling the raw token with the addressing
+        fields a caller needs to build an out-of-band delivery of its own. This is the
+        only schema in the API that carries the token.
+      required:
+        - id
+        - token
+        - action
+        - scope
+        - targetId
+        - context
+        - expiresAt
+      properties:
+        id:
+          type: string
+          description: Stable opaque identifier of the invitation record, for use in URLs.
+          example: inv_3fa85f6429fc
+        token:
+          type: string
+          description: >-
+            The raw invitation token: the bearer of authority for this invitation.
+            Anyone holding it can redeem the invitation. It is returned exactly once,
+            here, at mint time. The server persists only its SHA-256 hash, so it can
+            never be retrieved again through any endpoint. Treat it as a credential:
+            never log it, never place it in a URL path or query string, and pass it on
+            only over the delivery channel intended for the recipient.
+        action:
+          type: string
+          description: The action this invitation drives. See [InvitationSummary.action].
+          example: credential.issuance
+        scope:
+          type: string
+          description: Binding discriminator for the action. See [InvitationSummary.scope].
+          example: tabular.batch_row
+        targetId:
+          type: string
+          description: Identifier of the entity the invitation addresses. See [InvitationSummary.targetId].
+          example: src_42:btch_9b2c1f04:row_017
+        context:
+          type: object
+          additionalProperties: true
+          description: The structured context embedded at mint time, after any action handler rewrote it.
+        expiresAt:
+          type: string
+          format: date-time
+          description: When the invitation expires and can no longer be redeemed.
+
+    CreatedInvitation:
+      type: object
+      description: >-
+        The result of minting and delivering one invitation in a single call. Delivery
+        failure does not fail the call: the caller already holds a valid token and can
+        retry delivery separately, so branch on `delivered` and `deliveryError`.
+      required:
+        - minted
+        - delivered
+      properties:
+        minted:
+          $ref: '#/components/schemas/MintedInvitation'
+        delivered:
+          type: boolean
+          description: >-
+            True when a channel accepted the invitation for delivery. False both when
+            delivery failed and when no channel preferences were supplied.
+          example: true
+        deliveryError:
+          allOf:
+            - $ref: '#/components/schemas/DeliveryError'
+          nullable: true
+          description: Why delivery failed. Null when `delivered` is true or no delivery was requested.
+
+    ResolvedInvitation:
+      type: object
+      description: >-
+        An invitation resolved from a presented token. It exposes the typed action plus
+        enough lifecycle state for a handler to decide what to do, and never echoes the
+        token back.
+      required:
+        - id
+        - tenantId
+        - action
+        - scope
+        - targetId
+        - context
+        - status
+        - usagePolicy
+        - usageCount
+        - expiresAt
+      properties:
+        id:
+          type: string
+          description: Stable opaque identifier of the invitation record.
+          example: inv_3fa85f6429fc
+        tenantId:
+          type: string
+          description: Tenant the invitation belongs to. Always the caller's tenant.
+        action:
+          type: string
+          description: The action this invitation drives. See [InvitationSummary.action].
+          example: credential.issuance
+        scope:
+          type: string
+          description: Binding discriminator for the action. See [InvitationSummary.scope].
+          example: tabular.batch_row
+        targetId:
+          type: string
+          description: Identifier of the entity the invitation addresses. See [InvitationSummary.targetId].
+          example: src_42:btch_9b2c1f04:row_017
+        context:
+          type: object
+          additionalProperties: true
+          description: The structured context embedded at mint time.
+        status:
+          type: string
+          description: Lifecycle status. See [InvitationSummary.status].
+          enum: [PENDING, DELIVERED, OPENED, IN_PROGRESS, CLAIMED, EXHAUSTED, REVOKED, EXPIRED, FAILED]
+          example: OPENED
+        usagePolicy:
+          type: string
+          description: Redemption policy applied at mint time. See [InvitationSummary.usagePolicy].
+          enum: [SINGLE_USE, MULTI_USE]
+          example: SINGLE_USE
+        usageCount:
+          type: integer
+          description: Number of times this invitation has been successfully redeemed.
+          example: 0
+        maxRedemptions:
+          type: integer
+          nullable: true
+          description: Redemption cap. Non-null only for MULTI_USE invitations.
+          example: 25
+        expiresAt:
+          type: string
+          format: date-time
+          description: When the invitation expires and can no longer be redeemed.
+        outcomeRef:
+          allOf:
+            - $ref: '#/components/schemas/OutcomeRef'
+          nullable: true
+          description: Pointer to the artefact a redemption produced. Null until the invitation is claimed.
+        recipientRef:
+          allOf:
+            - $ref: '#/components/schemas/RecipientRef'
+          nullable: true
+          description: >-
+            The server-bound delivery recipient recorded at mint time. Present on this
+            operator-facing resolve; it is never copied to a recipient-facing response.
+
+    # ---- Batch submission results -------------------------------------------
+    BatchSubmissionResult:
+      type: object
+      description: >-
+        Aggregate outcome of submitting one batch. The counters cover the mint pass;
+        full per-recipient detail lives behind the batch endpoints.
+      required:
+        - batchId
+        - total
+        - accepted
+        - rejectedAtMint
+      properties:
+        batchId:
+          type: string
+          description: Identifier of the batch record the submission created.
+          example: btch_9b2c1f04
+        total:
+          type: integer
+          description: Total number of items the source produced.
+          example: 250
+        accepted:
+          type: integer
+          description: Number of items that minted successfully.
+          example: 248
+        rejectedAtMint:
+          type: integer
+          description: Number of items that failed to mint.
+          example: 2
+        rejectedRecipients:
+          type: array
+          description: >-
+            Sample of the per-item mint failures, so a caller can surface "these rows
+            did not make it" without a follow-up call. Capped; the batch endpoints carry
+            the full set.
+          default: []
+          items:
+            $ref: '#/components/schemas/RejectedRecipient'
+        deliverySync:
+          allOf:
+            - $ref: '#/components/schemas/BatchDeliveryStats'
+          nullable: true
+          description: >-
+            Delivery counters, present only when the batch was small enough to be
+            delivered synchronously. Asynchronous batches report delivery through the
+            batch status instead.
+
+    RejectedRecipient:
+      type: object
+      description: One item the batch source produced that could not be minted.
+      required:
+        - sourceItemId
+        - reason
+        - errorCode
+      properties:
+        sourceItemId:
+          type: string
+          description: The source's stable handle for this item, for example a CSV row id.
+          example: row_017
+        reason:
+          type: string
+          description: Human-readable detail for the rejection.
+          example: Recipient column 'email' was empty
+        errorCode:
+          type: string
+          description: Stable machine-readable code for the rejection.
+          example: INVITATION_INVALID_INPUT
+
+    BatchDeliveryStats:
+      type: object
+      description: Delivery counters for one synchronously delivered batch.
+      required:
+        - attempted
+        - delivered
+        - failed
+      properties:
+        attempted:
+          type: integer
+          description: Number of invitations delivery was attempted for.
+          example: 248
+        delivered:
+          type: integer
+          description: Number of invitations a channel accepted.
+          example: 246
+        failed:
+          type: integer
+          description: Number of invitations every preferred channel refused.
+          example: 2
+
+    # ---- Batch sources (open extension point) -------------------------------
+    InvitationBatchSource:
+      type: object
+      description: |
+        Descriptor of where a batch's recipients come from. `type` selects the source
+        parser registered for it and the remaining properties are that parser's own
+        shape, so this schema is deliberately open: it constrains only `type` and
+        accepts any further properties.
+
+        Do not treat the list below as closed. A deployment registers its own source
+        parsers, so a valid request may carry a `type` this specification has never
+        heard of; a client must send such a body through unchanged rather than reject
+        it.
+
+        Source types shipped today:
+
+          - `direct` - an inline recipient list. See [DirectBatchSource].
+          - `tabular.batch` - an uploaded tabular batch, one invitation per unused row.
+            See [TabularBatchSource].
+      required:
+        - type
+      additionalProperties: true
+      properties:
+        type:
+          type: string
+          minLength: 1
+          description: >-
+            Discriminator naming the registered source parser, by convention
+            `<module>.<source-shape>`.
+          example: tabular.batch
+
+    DirectBatchSource:
+      description: >-
+        The `direct` source: the caller hands over the recipients inline and the server
+        mints one invitation per entry. Documented shape of an
+        [InvitationBatchSource] whose `type` is `direct`.
+      allOf:
+        - $ref: '#/components/schemas/InvitationBatchSource'
+        - type: object
+          required:
+            - recipients
+          properties:
+            recipients:
+              type: array
+              description: The recipients to mint invitations for, one invitation per entry.
+              items:
+                $ref: '#/components/schemas/DirectRecipient'
+
+    DirectRecipient:
+      type: object
+      description: >-
+        One entry in a [DirectBatchSource], carrying both the invitation binding and the
+        address to deliver to.
+      required:
+        - sourceItemId
+        - action
+        - scope
+        - targetId
+        - recipient
+      properties:
+        originRef:
+          allOf:
+            - $ref: '#/components/schemas/InvitationOriginRef'
+          nullable: true
+          description: >-
+            Records which feature is minting this invitation, so the originating surface can later
+            list only its own. Omit and the invitation is not attributable to a surface.
+        sourceItemId:
+          type: string
+          minLength: 1
+          description: >-
+            Stable handle for this entry, used for batch idempotency: re-running the
+            same source skips entries whose sourceItemId already minted successfully.
+          example: row_017
+        action:
+          type: string
+          description: The action this invitation drives. See [InvitationSummary.action].
+          example: credential.issuance
+        scope:
+          type: string
+          description: Binding discriminator for the action. See [InvitationSummary.scope].
+          example: identity.credential
+        targetId:
+          type: string
+          description: Identifier of the entity this invitation addresses.
+          example: src_42:btch_9b2c1f04:row_017
+        context:
+          type: object
+          additionalProperties: true
+          default: {}
+          description: Structured, action-specific context to embed at mint time.
+        recipient:
+          $ref: '#/components/schemas/RecipientRef'
+        channelPreferences:
+          type: array
+          description: >-
+            Ordered channel preferences for this entry. When non-empty they override the
+            batch-level list; when empty the batch-level list applies.
+          default: []
+          items:
+            $ref: '#/components/schemas/ChannelPreference'
+        usagePolicy:
+          type: string
+          description: Redemption policy for this entry. See [InvitationSummary.usagePolicy].
+          enum: [SINGLE_USE, MULTI_USE]
+          default: SINGLE_USE
+        maxRedemptions:
+          type: integer
+          nullable: true
+          description: Redemption cap. Required and positive for MULTI_USE, omitted for SINGLE_USE.
+          example: 25
+        metadata:
+          type: object
+          additionalProperties: true
+          default: {}
+          description: Free-form metadata for handler and audit use. Not covered by the token signature.
+
+    TabularBatchSource:
+      description: >-
+        The `tabular.batch` source: one invitation per unused row of an uploaded tabular
+        batch, with the row's recipient column as the delivery address. Documented shape
+        of an [InvitationBatchSource] whose `type` is `tabular.batch`.
+      allOf:
+        - $ref: '#/components/schemas/InvitationBatchSource'
+        - type: object
+          required:
+            - sourceId
+            - batchId
+          properties:
+            originRef:
+              allOf:
+                    - $ref: '#/components/schemas/InvitationOriginRef'
+              nullable: true
+              description: >-
+                Records which feature is minting this invitation, so the originating surface can later
+                list only its own. Omit and the invitation is not attributable to a surface.
+            sourceId:
+              type: string
+              minLength: 1
+              description: Identifier of the tabular source the rows belong to.
+              example: src_42
+            batchId:
+              type: string
+              minLength: 1
+              description: Identifier of the tabular batch to iterate.
+              example: btch_9b2c1f04
+            action:
+              type: string
+              description: >-
+                Action stamped on every emitted invitation. Defaults to `credential.issuance`.
+                Any other action must be given what its handler requires through `sharedContext`;
+                `credential.verification`, for example, refuses to mint a row whose context carries
+                no `clientId` or `dcqlQuery`.
+              default: credential.issuance
+            scope:
+              type: string
+              description: Binding scope stamped on every emitted invitation.
+              default: tabular.batch_row
+            recipientColumn:
+              type: string
+              description: Name of the row column carrying the recipient email address.
+              default: email
+            channelPreferences:
+              type: array
+              description: Ordered channel preferences applied to every row.
+              default: []
+              items:
+                $ref: '#/components/schemas/ChannelPreference'
+            usagePolicy:
+              type: string
+              description: Redemption policy applied to every row. See [InvitationSummary.usagePolicy].
+              enum: [SINGLE_USE, MULTI_USE]
+              default: SINGLE_USE
+            mappingTemplateRef:
+              type: string
+              nullable: true
+              description: >-
+                Reference (a UUID string) to a saved mapping template whose column
+                transforms project each row into a credential `claims` object before the
+                invitation is minted. `inlineColumns` takes precedence when both are set.
+              example: 6f1d6c8e-4f4a-4a3a-9f4a-2c3f2b7f9a11
+            inlineColumns:
+              type: array
+              nullable: true
+              description: >-
+                Mapping carried inline on the source, preferred over `mappingTemplateRef`
+                so the mapping still travels with the batch when the operator did not
+                promote it to a reusable template.
+              items:
+                $ref: '#/components/schemas/ColumnMapping'
+            credentialConfigurationId:
+              type: string
+              nullable: true
+              description: >-
+                OID4VCI credential configuration id this batch issues. Required when
+                either `mappingTemplateRef` or `inlineColumns` is set, so the per-row
+                context carries enough metadata for the redemption handler.
+              example: EmployeeID
+            issuerInstanceId:
+              type: string
+              nullable: true
+              description: >-
+                OID4VCI issuer instance that owns the public claim landing for this batch. Omit to
+                use the tenant's primary issuer.
+              example: 4ca2a7cc-f5ef-4e13-8c0d-6a8bd7f6d211
+            sharedContext:
+              type: object
+              additionalProperties: true
+              nullable: true
+              description: >-
+                Invitation context copied onto every row of the batch, before the row's own keys, so
+                a key the row also carries wins.
+
+
+                This is what lets a tabular batch drive an action other than issuance. A
+                `credential.verification` batch verifies the same request from many recipients, so
+                the request itself — `clientId`, `dcqlQuery`, and a `responseUri` or `redirectUri` —
+                is a property of the batch rather than of any row, and the verification handler
+                refuses a mint whose context lacks them. Carry `verifierInstanceId` here too: a
+                batch-sourced invitation's target identifies the row that produced it, so it cannot
+                also name the verifier.
+
+
+                Left as a free-form object because the tabular source reads tables and does not
+                interpret any action's context. Do not put secrets here: the object is stored with
+                the invitation.
+              example:
+                verifierInstanceId: b12f86b9-fab4-48c7-9e14-e0a930a64182
+                clientId: 'x509_san_dns:verifier.acme.example'
+                responseUri: https://verifier.acme.example/oid4vp/response
+                dcqlQuery:
+                  credentials:
+                    - id: badge
+                      format: dc+sd-jwt
+                      meta:
+                        vct_values: ['https://acme.example/vct/badge']
+
+    ColumnMapping:
+      type: object
+      description: >-
+        One column-to-claim binding used to project a tabular row into credential
+        claims.
+      required:
+        - sourceColumn
+        - targetClaim
+      properties:
+        sourceColumn:
+          type: string
+          description: Name of the column on the source row to read.
+          example: date_of_birth
+        targetClaim:
+          type: array
+          description: >-
+            OID4VCI claims-path-pointer addressing where the value lands in the issued
+            credential's claims object, as a list of path segments.
+          items:
+            type: string
+          example: [address, locality]
+        transform:
+          allOf:
+            - $ref: '#/components/schemas/ClaimTransform'
+          description: Value transform applied between the raw cell and the claim. Defaults to identity.
+        required:
+          type: boolean
+          description: When true, a row missing or failing this column is rejected instead of projected.
+          default: false
+
+    # NOTE: this block is duplicated verbatim in issuance-batch-components.yml. Both model the
+    # same Kotlin type, com.sphereon.data.tabular.mapping.template.ClaimTransform, which lives in
+    # a third module (vdx/data/store/tabular-mapping-template) that neither bundle owns. Keep the
+    # two copies identical; if one changes, change both.
+    ClaimTransform:
+      type: object
+      description: |
+        Value transform applied between the raw tabular cell and the credential claim.
+        The set is closed so the operator UI, the server projection layer, and the audit
+        trail agree on every supported transform. The `type` discriminator selects the kind:
+          - `identity`: use the cell value unchanged.
+          - `constant`: ignore the cell and emit a fixed value.
+          - `date-format`: reparse the cell with `sourceFormat` and re-render it with `targetFormat`.
+          - `lower-case` / `upper-case`: change the case of the cell value.
+          - `trim`: strip leading and trailing whitespace.
+          - `split`: split the cell on `separator` and take the element at `index`.
+          - `concat`: join the named source columns with `separator`.
+      required: [type]
+      discriminator:
+        propertyName: type
+        mapping:
+          identity: '#/components/schemas/ClaimTransformIdentity'
+          constant: '#/components/schemas/ClaimTransformConstant'
+          date-format: '#/components/schemas/ClaimTransformDateFormat'
+          lower-case: '#/components/schemas/ClaimTransformLowerCase'
+          upper-case: '#/components/schemas/ClaimTransformUpperCase'
+          trim: '#/components/schemas/ClaimTransformTrim'
+          split: '#/components/schemas/ClaimTransformSplit'
+          concat: '#/components/schemas/ClaimTransformConcat'
+      oneOf:
+        - $ref: '#/components/schemas/ClaimTransformIdentity'
+        - $ref: '#/components/schemas/ClaimTransformConstant'
+        - $ref: '#/components/schemas/ClaimTransformDateFormat'
+        - $ref: '#/components/schemas/ClaimTransformLowerCase'
+        - $ref: '#/components/schemas/ClaimTransformUpperCase'
+        - $ref: '#/components/schemas/ClaimTransformTrim'
+        - $ref: '#/components/schemas/ClaimTransformSplit'
+        - $ref: '#/components/schemas/ClaimTransformConcat'
+
+    ClaimTransformIdentity:
+      type: object
+      description: Use the cell value unchanged. This is the default transform.
+      required: [type]
+      properties:
+        type:
+          type: string
+          enum: [identity]
+
+    ClaimTransformConstant:
+      type: object
+      description: Ignore the cell and emit a fixed value for every row.
+      required: [type, value]
+      properties:
+        type:
+          type: string
+          enum: [constant]
+        value:
+          type: string
+          description: The literal value written to the target claim.
+          example: NL
+
+    ClaimTransformDateFormat:
+      type: object
+      description: Reparse the cell with `sourceFormat` and re-render it with `targetFormat`.
+      required: [type, sourceFormat, targetFormat]
+      properties:
+        type:
+          type: string
+          enum: [date-format]
+        sourceFormat:
+          type: string
+          description: Pattern the cell value is parsed with.
+          example: dd-MM-yyyy
+        targetFormat:
+          type: string
+          description: Pattern the claim value is rendered with.
+          example: yyyy-MM-dd
+
+    ClaimTransformLowerCase:
+      type: object
+      description: Lower-case the cell value.
+      required: [type]
+      properties:
+        type:
+          type: string
+          enum: [lower-case]
+
+    ClaimTransformUpperCase:
+      type: object
+      description: Upper-case the cell value.
+      required: [type]
+      properties:
+        type:
+          type: string
+          enum: [upper-case]
+
+    ClaimTransformTrim:
+      type: object
+      description: Strip leading and trailing whitespace from the cell value.
+      required: [type]
+      properties:
+        type:
+          type: string
+          enum: [trim]
+
+    ClaimTransformSplit:
+      type: object
+      description: Split the cell value on `separator` and keep the element at `index`.
+      required: [type, separator, index]
+      properties:
+        type:
+          type: string
+          enum: [split]
+        separator:
+          type: string
+          description: The literal separator the cell value is split on.
+          example: " "
+        index:
+          type: integer
+          description: Zero-based index of the element to keep.
+          example: 0
+
+    ClaimTransformConcat:
+      type: object
+      description: Join the values of the named source columns with `separator`.
+      required: [type, sources, separator]
+      properties:
+        type:
+          type: string
+          enum: [concat]
+        sources:
+          type: array
+          description: Ordered source column names whose values are joined.
+          items:
+            type: string
+          example: [firstName, lastName]
+        separator:
+          type: string
+          description: The literal separator inserted between joined values.
+          example: " "

@@ -1,0 +1,72 @@
+{
+  "version": "1.0.0",
+  "contract": "enableu-v1-openapi.yml",
+  "bindings": [
+    {
+      "bindingId": "brp-via-enableu.get-person.v1",
+      "connectorId": "brp-via-enableu",
+      "operationId": "GetPerson",
+      "method": "POST",
+      "uriTemplate": "/{oin}/GetPerson/{consumerApplication}/{sourceApplication}",
+      "pathParameterDefaults": {
+        "consumerApplication": "SVS",
+        "sourceApplication": "MKS"
+      },
+      "trustedExecutionFields": ["oin", "organisationCode", "system", "caller", "requestTime"],
+      "businessInputFields": ["bsn", "requestedFields"],
+      "configuration": {
+        "providerName": "Enable-U",
+        "contractVersion": "1.0.0",
+        "trustedExecutionProfile": "enableu-simulator-v1"
+      },
+      "provenance": {
+        "eventName": "FIDES Business Wallets in Action",
+        "sourceName": "BRP via Enable-U"
+      }
+    },
+    {
+      "bindingId": "kvk-via-enableu.get-company.v1",
+      "connectorId": "kvk-via-enableu",
+      "operationId": "GetCompany",
+      "method": "POST",
+      "uriTemplate": "/{oin}/GetCompany/{consumerApplication}/{sourceApplication}",
+      "pathParameterDefaults": {
+        "consumerApplication": "SVS",
+        "sourceApplication": "MKS"
+      },
+      "trustedExecutionFields": ["oin", "organisationCode", "system", "caller", "requestTime"],
+      "businessInputFields": ["kvk", "ves", "requestedFields"],
+      "configuration": {
+        "providerName": "Enable-U",
+        "contractVersion": "1.0.0",
+        "trustedExecutionProfile": "enableu-simulator-v1"
+      },
+      "provenance": {
+        "eventName": "FIDES Business Wallets in Action",
+        "sourceName": "KVK via Enable-U"
+      }
+    },
+    {
+      "bindingId": "kvk-via-enableu.check-company-representative-authority.v1",
+      "connectorId": "kvk-via-enableu",
+      "operationId": "CheckCompanyRepresentativeAuthority",
+      "method": "POST",
+      "uriTemplate": "/{oin}/CheckCompanyRepresentativeAuthority/{consumerApplication}/{sourceApplication}",
+      "pathParameterDefaults": {
+        "consumerApplication": "SVS",
+        "sourceApplication": "MKS"
+      },
+      "trustedExecutionFields": ["oin", "organisationCode", "system", "caller", "requestTime"],
+      "businessInputFields": ["bsn", "kvk", "ves", "purpose"],
+      "configuration": {
+        "providerName": "Enable-U",
+        "contractVersion": "1.0.0",
+        "trustedExecutionProfile": "enableu-simulator-v1"
+      },
+      "provenance": {
+        "eventName": "FIDES Business Wallets in Action",
+        "sourceName": "KVK representative authority via Enable-U"
+      }
+    }
+  ]
+}

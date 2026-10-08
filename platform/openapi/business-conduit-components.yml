@@ -1,0 +1,245 @@
+openapi: 3.0.4
+info:
+  title: Business Conduit Components
+  version: 0.1.0
+  description: UI-safe request and response schemas for assigned business-wallet operations.
+paths: {}
+components:
+  parameters:
+    AssignmentRef:
+      name: assignmentRef
+      in: path
+      required: true
+      schema: { type: string, minLength: 1 }
+    InteractionRef:
+      name: interactionRef
+      in: path
+      required: true
+      schema: { type: string, minLength: 1 }
+  schemas:
+    BusinessConduitAssignmentState:
+      type: string
+      enum: [OFFERED, ACCEPTED, ACTIVE, SUSPENDED, REVOKED, EXPIRED]
+    BusinessConduitApprovalMode:
+      type: string
+      enum: [SINGLE_USER, MULTI_APPROVER, UNATTENDED]
+    BusinessConduitApprovalStatus:
+      type: string
+      enum: [PENDING, APPROVED, REJECTED, STALE]
+    BusinessConduitApprovalDecisionKind:
+      type: string
+      enum: [APPROVE, REJECT]
+    BusinessConduitInitiationSource:
+      type: string
+      enum: [BUSINESS_WEB_UI, AUTHENTICATED_API, MOBILE_QR, MOBILE_DEEPLINK, PUSH_ASSIGNMENT]
+    BusinessConduitAccountRoutingMode:
+      type: string
+      enum: [PRESELECTED, BACKEND_DERIVED]
+    BusinessConduitProtocol:
+      type: string
+      enum: [OID4VCI, OID4VP]
+    ProtocolExecutionOwner:
+      type: string
+      enum: [WALLET_APP, WALLET_BACKEND]
+    BusinessConduitInteractionState:
+      type: string
+      enum: [CAPTURED, ACCOUNT_SELECTION_REQUIRED, APPROVAL_PENDING, APPROVED, EXECUTING, COMPLETED, FAILED, REVOKED]
+    CreateBusinessConduitAssignmentHttpBody:
+      type: object
+      additionalProperties: false
+      required: [assignmentAuthorityRef, idempotencyKey]
+      properties:
+        assignmentAuthorityRef:
+          type: string
+          minLength: 1
+          writeOnly: true
+          description: Opaque server-authorized assignment-offer reference.
+        idempotencyKey: { type: string, minLength: 1, writeOnly: true }
+    ActivateBusinessConduitAssignmentHttpBody:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion, acceptanceEvidenceRef, idvEvidenceRef, idempotencyKey]
+      properties:
+        expectedVersion: { type: integer, format: int64, minimum: 1 }
+        acceptanceEvidenceRef: { type: string, minLength: 1, writeOnly: true }
+        idvEvidenceRef: { type: string, minLength: 1, writeOnly: true }
+        idempotencyKey: { type: string, minLength: 1, writeOnly: true }
+    RevalidateBusinessConduitAssignmentHttpBody:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion, idempotencyKey]
+      properties:
+        expectedVersion: { type: integer, format: int64, minimum: 1 }
+        idempotencyKey: { type: string, minLength: 1, writeOnly: true }
+    RevokeBusinessConduitAssignmentHttpBody:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion, reasonCode, idempotencyKey]
+      properties:
+        expectedVersion: { type: integer, format: int64, minimum: 1 }
+        reasonCode: { type: string, minLength: 1, pattern: '^[a-z0-9][a-z0-9._-]{0,127}$' }
+        idempotencyKey: { type: string, minLength: 1, writeOnly: true }
+    BusinessConduitCaptureSourceMetadata:
+      type: object
+      additionalProperties: false
+      required: [source, sourceBindingRef]
+      properties:
+        source:
+          $ref: '#/components/schemas/BusinessConduitInitiationSource'
+        sourceBindingRef:
+          type: string
+          minLength: 1
+          writeOnly: true
+          description: Authenticated host binding, not an authority supplied by the caller.
+        appRegistrationRef: { type: string, minLength: 1, nullable: true, writeOnly: true }
+        pushAssignmentRef: { type: string, minLength: 1, nullable: true, writeOnly: true }
+    InitiateBusinessConduitInteractionHttpBody:
+      type: object
+      additionalProperties: false
+      required: [source, routingMode, opaqueCaptureBase64Url, payloadDigest, idempotencyKey]
+      properties:
+        source:
+          $ref: '#/components/schemas/BusinessConduitCaptureSourceMetadata'
+        routingMode:
+          $ref: '#/components/schemas/BusinessConduitAccountRoutingMode'
+        preselectedBusinessAccountRef: { type: string, minLength: 1, nullable: true }
+        opaqueCaptureBase64Url:
+          type: string
+          minLength: 1
+          maxLength: 1398104
+          pattern: '^[A-Za-z0-9_-]+$'
+          writeOnly: true
+          description: Single-use opaque protocol capture, limited to 1 MiB after decoding.
+        payloadDigest:
+          type: string
+          pattern: '^sha256:[0-9a-f]{64}$'
+          writeOnly: true
+        idempotencyKey: { type: string, minLength: 1, writeOnly: true }
+    SelectBusinessConduitAccountHttpBody:
+      type: object
+      additionalProperties: false
+      required: [businessAccountRef, controllerLeaseRef, expectedVersion, idempotencyKey]
+      properties:
+        businessAccountRef: { type: string, minLength: 1 }
+        controllerLeaseRef: { type: string, minLength: 1, writeOnly: true }
+        expectedVersion: { type: integer, format: int64, minimum: 1 }
+        idempotencyKey: { type: string, minLength: 1, writeOnly: true }
+    SubmitBusinessConduitApprovalHttpBody:
+      type: object
+      additionalProperties: false
+      required: [controllerLeaseRef, expectedVersion, decision, approvalBindingDigest, activationDecisionRef, idempotencyKey]
+      properties:
+        controllerLeaseRef: { type: string, minLength: 1, writeOnly: true }
+        expectedVersion: { type: integer, format: int64, minimum: 1 }
+        decision:
+          $ref: '#/components/schemas/BusinessConduitApprovalDecisionKind'
+        approvalBindingDigest: { type: string, pattern: '^sha256:[0-9a-f]{64}$', writeOnly: true }
+        activationDecisionRef: { type: string, minLength: 1, writeOnly: true }
+        idempotencyKey: { type: string, minLength: 1, writeOnly: true }
+    ExecuteBusinessConduitInteractionHttpBody:
+      type: object
+      additionalProperties: false
+      required: [controllerLeaseRef, expectedVersion, idempotencyKey]
+      properties:
+        controllerLeaseRef: { type: string, minLength: 1, writeOnly: true }
+        expectedVersion: { type: integer, format: int64, minimum: 1 }
+        idempotencyKey: { type: string, minLength: 1, writeOnly: true }
+    BusinessConduitAssignmentHttpView:
+      type: object
+      additionalProperties: false
+      required: [assignmentRef, displayAccountRefs, actionScopes, state, version, requiresAcceptance, expiresAtEpochSeconds]
+      properties:
+        assignmentRef: { type: string, minLength: 1 }
+        displayAccountRefs:
+          type: array
+          uniqueItems: true
+          items: { type: string, minLength: 1 }
+        actionScopes:
+          type: array
+          uniqueItems: true
+          items: { type: string, minLength: 1 }
+        state:
+          $ref: '#/components/schemas/BusinessConduitAssignmentState'
+        version: { type: integer, format: int64, minimum: 1 }
+        requiresAcceptance: { type: boolean }
+        expiresAtEpochSeconds: { type: integer, format: int64, minimum: 1 }
+    BusinessConduitAssignmentList:
+      type: object
+      additionalProperties: false
+      required: [assignments]
+      properties:
+        assignments:
+          type: array
+          items:
+            $ref: '#/components/schemas/BusinessConduitAssignmentHttpView'
+    BusinessConduitControllerLeaseHttpView:
+      type: object
+      additionalProperties: false
+      required: [leaseRef, expiresAtEpochSeconds, revision]
+      properties:
+        leaseRef: { type: string, minLength: 1 }
+        expiresAtEpochSeconds: { type: integer, format: int64, minimum: 1 }
+        revision: { type: integer, format: int64, minimum: 1 }
+    BusinessConduitApprovalHttpView:
+      type: object
+      additionalProperties: false
+      required: [mode, status, requiredApprovals, receivedApprovals, bindingDigest, expiresAtEpochSeconds]
+      properties:
+        mode:
+          $ref: '#/components/schemas/BusinessConduitApprovalMode'
+        status:
+          $ref: '#/components/schemas/BusinessConduitApprovalStatus'
+        requiredApprovals: { type: integer, minimum: 0 }
+        receivedApprovals: { type: integer, minimum: 0 }
+        bindingDigest: { type: string, pattern: '^sha256:[0-9a-f]{64}$' }
+        expiresAtEpochSeconds: { type: integer, format: int64, minimum: 1 }
+    BusinessConduitInteractionHttpView:
+      type: object
+      additionalProperties: false
+      required:
+        - interactionRef
+        - assignmentRef
+        - initiationSource
+        - routingMode
+        - eligibleBusinessAccountRefs
+        - executionOwner
+        - controllerLease
+        - state
+        - version
+        - createdAtEpochSeconds
+        - updatedAtEpochSeconds
+        - expiresAtEpochSeconds
+        - backendEgressVerified
+      properties:
+        interactionRef: { type: string, minLength: 1 }
+        assignmentRef: { type: string, minLength: 1 }
+        initiationSource:
+          $ref: '#/components/schemas/BusinessConduitInitiationSource'
+        routingMode:
+          $ref: '#/components/schemas/BusinessConduitAccountRoutingMode'
+        eligibleBusinessAccountRefs:
+          type: array
+          uniqueItems: true
+          items: { type: string, minLength: 1 }
+        selectedBusinessAccountRef: { type: string, minLength: 1, nullable: true }
+        protocol:
+          type: string
+          nullable: true
+          allOf: [{ $ref: '#/components/schemas/BusinessConduitProtocol' }]
+        actionScope: { type: string, minLength: 1, nullable: true }
+        executionOwner:
+          $ref: '#/components/schemas/ProtocolExecutionOwner'
+        approval:
+          type: object
+          nullable: true
+          allOf: [{ $ref: '#/components/schemas/BusinessConduitApprovalHttpView' }]
+        controllerLease:
+          $ref: '#/components/schemas/BusinessConduitControllerLeaseHttpView'
+        state:
+          $ref: '#/components/schemas/BusinessConduitInteractionState'
+        version: { type: integer, format: int64, minimum: 1 }
+        createdAtEpochSeconds: { type: integer, format: int64, minimum: 1 }
+        updatedAtEpochSeconds: { type: integer, format: int64, minimum: 1 }
+        expiresAtEpochSeconds: { type: integer, format: int64, minimum: 1 }
+        backendEgressVerified: { type: boolean }
+        failureReasonCode: { type: string, nullable: true }

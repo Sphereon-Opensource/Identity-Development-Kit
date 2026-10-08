@@ -1,0 +1,1545 @@
+openapi: 3.0.4
+info:
+  title: Party Manager API
+  version: 0.1.0
+  x-products: [edk, vdx]
+  description: |
+    Manage the parties in a tenant and the relationships between them. A party is any participant in
+    the ecosystem, following the "Everything is a Party" model. Each party is one coherent, typed JSON
+    object that is itself a party, discriminated by `partyType`: a person, an organization, an
+    organization unit, a service, or a group. There is no separate detail record to reassemble; a
+    person object carries its name and birth date directly, an organization object carries its legal
+    name and contact details directly, and so on.
+
+    A party bears zero or more specializations (roles), each optionally bound to a semantic profile,
+    which is how the same organization can act as both customer and supplier. Parties sit in a single
+    home organization unit, and organization units nest, so a tenant's structure is itself expressed
+    in parties.
+
+    ## Working with parties
+
+    Each party type has its own resource (`/persons`, `/organizations`, `/services`,
+    `/ou`, `/groups`) that creates, reads, updates, lists, and soft-deletes that one
+    type and returns the typed object. The `/parties` resource is the polymorphic view across all
+    types: listing and reading there yields the discriminated [PartyEntity], so a caller that does not
+    know a party's type in advance can still read it and inspect its relationships.
+
+    ## Pagination
+
+    List endpoints accept both `limit`/`offset` and OpenAPI-style `page`/`size`; the server normalises
+    and clamps `limit` to `[1, 100]` (default `20`) and returns a `pagination` block alongside the
+    `data` array. Identifiers are UUIDs, timestamps are RFC 3339 / ISO 8601 in UTC, and errors share
+    a stable machine-readable [ApiError] body.
+  license:
+    name: Apache 2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0
+
+servers:
+  - url: https://api.example.com/api/party/v1
+    description: Production server.
+  - url: http://localhost:8080/api/party/v1
+    description: Local development server.
+
+security:
+  - bearer: []
+
+tags:
+  - name: Persons
+    description: Create, read, update, soft-delete, and list `natural_person` parties.
+  - name: Organizations
+    description: Create, read, update, soft-delete, and list `organization` parties.
+  - name: OrganizationUnits
+    description: Create, read, update, soft-delete, and list `organization_unit` parties, and walk their children and members.
+  - name: Services
+    description: Create, read, update, soft-delete, and list `service` parties, and configure their login surface.
+  - name: Groups
+    description: Create, read, update, soft-delete, and list `group` parties, and manage their membership.
+  - name: Parties
+    description: The polymorphic view across all party types.
+  - name: Relationships
+    description: Typed, directional relationships between parties.
+  - name: Addresses
+    description: Electronic and physical addresses attached to a party.
+  - name: OrganizationRegistrations
+    description: Business registrations (VAT, LEI, DUNS, Chamber of Commerce, and similar) held by an organization.
+  - name: ApplicationBindings
+    description: Bind identities to an application's login surface.
+
+paths:
+
+  # --- Persons --------------------------------------------------
+
+  /persons:
+    get:
+      operationId: listPersons
+      tags: [Persons]
+      summary: List persons
+      description: Returns a page of `natural_person` parties in the caller's tenant.
+      parameters:
+        - $ref: '#/components/parameters/OrganizationUnitFilter'
+        - $ref: '#/components/parameters/PartySubtypeFilter'
+        - $ref: '#/components/parameters/OriginFilter'
+        - $ref: '#/components/parameters/SearchFilter'
+        - $ref: '#/components/parameters/IncludeParam'
+        - $ref: './common-components.yml#/components/parameters/Limit'
+        - $ref: './common-components.yml#/components/parameters/Offset'
+        - $ref: './common-components.yml#/components/parameters/Page'
+        - $ref: './common-components.yml#/components/parameters/Size'
+        - $ref: './common-components.yml#/components/parameters/Sort'
+        - $ref: './common-components.yml#/components/parameters/SortDirection'
+      responses:
+        '200':
+          description: Page of persons.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PersonPage'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+    post:
+      operationId: createPerson
+      tags: [Persons]
+      summary: Create a person
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PersonCreateRequest'
+      responses:
+        '201':
+          description: Person created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Person'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /persons/{id}:
+    parameters:
+      - $ref: '#/components/parameters/PartyId'
+    get:
+      operationId: getPerson
+      tags: [Persons]
+      summary: Get a person
+      parameters:
+        - $ref: '#/components/parameters/IncludeParam'
+      responses:
+        '200':
+          description: The person.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Person'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+    put:
+      operationId: updatePerson
+      tags: [Persons]
+      summary: Update a person
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PersonUpdateRequest'
+      responses:
+        '200':
+          description: The updated person.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Person'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+    delete:
+      operationId: deletePerson
+      tags: [Persons]
+      summary: Soft-delete a person
+      responses:
+        '204':
+          description: Person soft-deleted.
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+
+  # --- Organizations --------------------------------------------
+
+  /organizations:
+    get:
+      operationId: listOrganizations
+      tags: [Organizations]
+      summary: List organizations
+      description: Returns a page of `organization` parties in the caller's tenant.
+      parameters:
+        - $ref: '#/components/parameters/OrganizationUnitFilter'
+        - $ref: '#/components/parameters/PartySubtypeFilter'
+        - $ref: '#/components/parameters/OriginFilter'
+        - $ref: '#/components/parameters/SearchFilter'
+        - $ref: '#/components/parameters/IncludeParam'
+        - $ref: './common-components.yml#/components/parameters/Limit'
+        - $ref: './common-components.yml#/components/parameters/Offset'
+        - $ref: './common-components.yml#/components/parameters/Page'
+        - $ref: './common-components.yml#/components/parameters/Size'
+        - $ref: './common-components.yml#/components/parameters/Sort'
+        - $ref: './common-components.yml#/components/parameters/SortDirection'
+      responses:
+        '200':
+          description: Page of organizations.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrganizationPage'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+    post:
+      operationId: createOrganization
+      tags: [Organizations]
+      summary: Create an organization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrganizationCreateRequest'
+      responses:
+        '201':
+          description: Organization created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Organization'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /organizations/{id}:
+    parameters:
+      - $ref: '#/components/parameters/PartyId'
+    get:
+      operationId: getOrganization
+      tags: [Organizations]
+      summary: Get an organization
+      parameters:
+        - $ref: '#/components/parameters/IncludeParam'
+      responses:
+        '200':
+          description: The organization.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Organization'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+    put:
+      operationId: updateOrganization
+      tags: [Organizations]
+      summary: Update an organization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrganizationUpdateRequest'
+      responses:
+        '200':
+          description: The updated organization.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Organization'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+    delete:
+      operationId: deleteOrganization
+      tags: [Organizations]
+      summary: Soft-delete an organization
+      responses:
+        '204':
+          description: Organization soft-deleted.
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+
+  # --- Services -------------------------------------------------
+
+  /services:
+    get:
+      operationId: listServices
+      tags: [Services]
+      summary: List services
+      description: Returns a page of `service` parties in the caller's tenant.
+      parameters:
+        - $ref: '#/components/parameters/OrganizationUnitFilter'
+        - $ref: '#/components/parameters/PartySubtypeFilter'
+        - $ref: '#/components/parameters/OriginFilter'
+        - $ref: '#/components/parameters/SearchFilter'
+        - $ref: '#/components/parameters/IncludeParam'
+        - $ref: './common-components.yml#/components/parameters/Limit'
+        - $ref: './common-components.yml#/components/parameters/Offset'
+        - $ref: './common-components.yml#/components/parameters/Page'
+        - $ref: './common-components.yml#/components/parameters/Size'
+        - $ref: './common-components.yml#/components/parameters/Sort'
+        - $ref: './common-components.yml#/components/parameters/SortDirection'
+      responses:
+        '200':
+          description: Page of services.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServicePage'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+    post:
+      operationId: createService
+      tags: [Services]
+      summary: Create a service
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ServiceCreateRequest'
+      responses:
+        '201':
+          description: Service created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Service'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /services/{id}:
+    parameters:
+      - $ref: '#/components/parameters/PartyId'
+    get:
+      operationId: getService
+      tags: [Services]
+      summary: Get a service
+      parameters:
+        - $ref: '#/components/parameters/IncludeParam'
+      responses:
+        '200':
+          description: The service.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Service'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+    put:
+      operationId: updateService
+      tags: [Services]
+      summary: Update a service
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ServiceUpdateRequest'
+      responses:
+        '200':
+          description: The updated service.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Service'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+    delete:
+      operationId: deleteService
+      tags: [Services]
+      summary: Soft-delete a service
+      responses:
+        '204':
+          description: Service soft-deleted.
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+
+  /services/{id}/login-config:
+    parameters:
+      - $ref: '#/components/parameters/PartyId'
+    get:
+      operationId: getApplicationLoginConfig
+      tags: [Services]
+      summary: Get an application's login configuration
+      description: >-
+        Returns the login-surface configuration for a `service` party that acts as an application: the
+        accepted authentication methods, the identifier types usable to log in, the permitted external
+        IdPs, and whether self-registration is open.
+      responses:
+        '200':
+          description: The login configuration.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApplicationLoginConfig'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+    put:
+      operationId: setApplicationLoginConfig
+      tags: [Services]
+      summary: Set an application's login configuration
+      description: >-
+        Sets the login-surface configuration for a `service` party that acts as an application: the
+        accepted authentication methods, the identifier types usable to log in, the permitted external
+        IdPs, and whether self-registration is open.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApplicationLoginConfigRequest'
+      responses:
+        '200':
+          description: The stored login configuration.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApplicationLoginConfig'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+
+  # --- Organization units ---------------------------------------
+
+  /ou:
+    get:
+      operationId: listOrganizationUnits
+      tags: [OrganizationUnits]
+      summary: List organization units
+      description: Returns a page of `organization_unit` parties in the caller's tenant.
+      parameters:
+        - $ref: '#/components/parameters/OrganizationUnitFilter'
+        - $ref: '#/components/parameters/PartySubtypeFilter'
+        - $ref: '#/components/parameters/OriginFilter'
+        - $ref: '#/components/parameters/SearchFilter'
+        - $ref: '#/components/parameters/IncludeParam'
+        - $ref: './common-components.yml#/components/parameters/Limit'
+        - $ref: './common-components.yml#/components/parameters/Offset'
+        - $ref: './common-components.yml#/components/parameters/Page'
+        - $ref: './common-components.yml#/components/parameters/Size'
+        - $ref: './common-components.yml#/components/parameters/Sort'
+        - $ref: './common-components.yml#/components/parameters/SortDirection'
+      responses:
+        '200':
+          description: Page of organization units.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrganizationUnitPage'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+    post:
+      operationId: createOrganizationUnit
+      tags: [OrganizationUnits]
+      summary: Create an organization unit
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrganizationUnitCreateRequest'
+      responses:
+        '201':
+          description: Organization unit created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrganizationUnit'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /ou/{id}:
+    parameters:
+      - $ref: '#/components/parameters/PartyId'
+    get:
+      operationId: getOrganizationUnit
+      tags: [OrganizationUnits]
+      summary: Get an organization unit
+      parameters:
+        - $ref: '#/components/parameters/IncludeParam'
+      responses:
+        '200':
+          description: The organization unit.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrganizationUnit'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+    put:
+      operationId: updateOrganizationUnit
+      tags: [OrganizationUnits]
+      summary: Update an organization unit
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrganizationUnitUpdateRequest'
+      responses:
+        '200':
+          description: The updated organization unit.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrganizationUnit'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+    delete:
+      operationId: deleteOrganizationUnit
+      tags: [OrganizationUnits]
+      summary: Soft-delete an organization unit
+      responses:
+        '204':
+          description: Organization unit soft-deleted.
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+
+  /ou/{id}/children:
+    parameters:
+      - $ref: '#/components/parameters/PartyId'
+    get:
+      operationId: listOrganizationUnitChildren
+      tags: [OrganizationUnits]
+      summary: List an organization unit's child units
+      description: Returns a page of the organization units whose `parentOuId` is this unit.
+      parameters:
+        - $ref: './common-components.yml#/components/parameters/Limit'
+        - $ref: './common-components.yml#/components/parameters/Offset'
+        - $ref: './common-components.yml#/components/parameters/Page'
+        - $ref: './common-components.yml#/components/parameters/Size'
+        - $ref: './common-components.yml#/components/parameters/Sort'
+        - $ref: './common-components.yml#/components/parameters/SortDirection'
+      responses:
+        '200':
+          description: Page of child organization units.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrganizationUnitPage'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+
+  /ou/{id}/members:
+    parameters:
+      - $ref: '#/components/parameters/PartyId'
+    get:
+      operationId: listOrganizationUnitMembers
+      tags: [OrganizationUnits]
+      summary: List an organization unit's members
+      description: >-
+        Returns a page of the parties whose home organization unit is this unit. Members may be of any
+        type, so each item is a polymorphic [PartyEntity].
+      parameters:
+        - $ref: '#/components/parameters/PartyTypeFilter'
+        - $ref: './common-components.yml#/components/parameters/Limit'
+        - $ref: './common-components.yml#/components/parameters/Offset'
+        - $ref: './common-components.yml#/components/parameters/Page'
+        - $ref: './common-components.yml#/components/parameters/Size'
+        - $ref: './common-components.yml#/components/parameters/Sort'
+        - $ref: './common-components.yml#/components/parameters/SortDirection'
+      responses:
+        '200':
+          description: Page of member parties.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartyEntityPage'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+
+  # --- Groups ---------------------------------------------------
+
+  /groups:
+    get:
+      operationId: listGroups
+      tags: [Groups]
+      summary: List groups
+      description: Returns a page of `group` parties in the caller's tenant.
+      parameters:
+        - $ref: '#/components/parameters/OrganizationUnitFilter'
+        - $ref: '#/components/parameters/OriginFilter'
+        - $ref: '#/components/parameters/SearchFilter'
+        - $ref: '#/components/parameters/IncludeParam'
+        - $ref: './common-components.yml#/components/parameters/Limit'
+        - $ref: './common-components.yml#/components/parameters/Offset'
+        - $ref: './common-components.yml#/components/parameters/Page'
+        - $ref: './common-components.yml#/components/parameters/Size'
+        - $ref: './common-components.yml#/components/parameters/Sort'
+        - $ref: './common-components.yml#/components/parameters/SortDirection'
+      responses:
+        '200':
+          description: Page of groups.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupPage'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+    post:
+      operationId: createGroup
+      tags: [Groups]
+      summary: Create a group
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GroupCreateRequest'
+      responses:
+        '201':
+          description: Group created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Group'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /groups/{id}:
+    parameters:
+      - $ref: '#/components/parameters/PartyId'
+    get:
+      operationId: getGroup
+      tags: [Groups]
+      summary: Get a group
+      parameters:
+        - $ref: '#/components/parameters/IncludeParam'
+      responses:
+        '200':
+          description: The group.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Group'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+    put:
+      operationId: updateGroup
+      tags: [Groups]
+      summary: Update a group
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GroupUpdateRequest'
+      responses:
+        '200':
+          description: The updated group.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Group'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+    delete:
+      operationId: deleteGroup
+      tags: [Groups]
+      summary: Soft-delete a group
+      responses:
+        '204':
+          description: Group soft-deleted.
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+
+  /groups/{id}/members:
+    parameters:
+      - $ref: '#/components/parameters/PartyId'
+    get:
+      operationId: listGroupMembers
+      tags: [Groups]
+      summary: List a group's members
+      description: >-
+        Returns a page of the parties that are members of the group. Members may be of any type, so
+        each item is a polymorphic [PartyEntity].
+      parameters:
+        - $ref: '#/components/parameters/PartyTypeFilter'
+        - $ref: './common-components.yml#/components/parameters/Limit'
+        - $ref: './common-components.yml#/components/parameters/Offset'
+        - $ref: './common-components.yml#/components/parameters/Page'
+        - $ref: './common-components.yml#/components/parameters/Size'
+        - $ref: './common-components.yml#/components/parameters/Sort'
+        - $ref: './common-components.yml#/components/parameters/SortDirection'
+      responses:
+        '200':
+          description: Page of member parties.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartyEntityPage'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+    put:
+      operationId: replaceGroupMembers
+      tags: [Groups]
+      summary: Replace a group's membership
+      description: Replaces the full membership of the group with the supplied set of party ids.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GroupMembersUpdateRequest'
+      responses:
+        '200':
+          description: The membership after the update.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartyEntityPage'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+
+  /groups/{id}/members/{memberId}:
+    parameters:
+      - $ref: '#/components/parameters/PartyId'
+      - $ref: '#/components/parameters/MemberId'
+    put:
+      operationId: addGroupMember
+      tags: [Groups]
+      summary: Add a party to a group
+      description: Adds the party to the group's membership. Idempotent.
+      responses:
+        '204':
+          description: The party is a member of the group.
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+    delete:
+      operationId: removeGroupMember
+      tags: [Groups]
+      summary: Remove a party from a group
+      description: Removes the party from the group's membership. Idempotent.
+      responses:
+        '204':
+          description: The party is no longer a member of the group.
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+
+  # --- Polymorphic parties --------------------------------------
+
+  /parties:
+    get:
+      operationId: listParties
+      tags: [Parties]
+      summary: List parties of any type
+      description: >-
+        Returns a page of parties in the caller's tenant across all types. Each item is a polymorphic
+        [PartyEntity] discriminated by `partyType`.
+      parameters:
+        - $ref: '#/components/parameters/PartyTypeFilter'
+        - $ref: '#/components/parameters/PartySubtypeFilter'
+        - $ref: '#/components/parameters/OrganizationUnitFilter'
+        - $ref: '#/components/parameters/OriginFilter'
+        - $ref: '#/components/parameters/SearchFilter'
+        - $ref: '#/components/parameters/IncludeParam'
+        - $ref: './common-components.yml#/components/parameters/Limit'
+        - $ref: './common-components.yml#/components/parameters/Offset'
+        - $ref: './common-components.yml#/components/parameters/Page'
+        - $ref: './common-components.yml#/components/parameters/Size'
+        - $ref: './common-components.yml#/components/parameters/Sort'
+        - $ref: './common-components.yml#/components/parameters/SortDirection'
+      responses:
+        '200':
+          description: Page of parties.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartyEntityPage'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /parties/{id}:
+    parameters:
+      - $ref: '#/components/parameters/PartyId'
+    get:
+      operationId: getParty
+      tags: [Parties]
+      summary: Get a party of any type
+      description: Returns the party as a polymorphic [PartyEntity], whatever its type.
+      parameters:
+        - $ref: '#/components/parameters/IncludeParam'
+      responses:
+        '200':
+          description: The party.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartyEntity'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+
+  /parties/{id}/relationships:
+    parameters:
+      - $ref: '#/components/parameters/PartyId'
+    get:
+      operationId: listPartyRelationships
+      tags: [Parties]
+      summary: List a party's relationships
+      description: Returns the relationships the party participates in, on either side.
+      responses:
+        '200':
+          description: The party's relationships.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartyRelationshipList'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+
+  # --- Addresses ------------------------------------------------
+
+  /parties/{id}/addresses/electronic:
+    parameters:
+      - $ref: '#/components/parameters/PartyId'
+    get:
+      operationId: listElectronicAddresses
+      tags: [Addresses]
+      summary: List a party's electronic addresses
+      description: Returns the party's electronic addresses, primary addresses first.
+      responses:
+        '200':
+          description: The party's electronic addresses.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ElectronicAddressList'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+    post:
+      operationId: addElectronicAddress
+      tags: [Addresses]
+      summary: Add an electronic address to a party
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ElectronicAddressCreateRequest'
+      responses:
+        '201':
+          description: Electronic address created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ElectronicAddress'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+
+  /parties/{id}/addresses/physical:
+    parameters:
+      - $ref: '#/components/parameters/PartyId'
+    get:
+      operationId: listPhysicalAddresses
+      tags: [Addresses]
+      summary: List a party's physical addresses
+      description: Returns the physical and postal addresses attached to the party.
+      responses:
+        '200':
+          description: The party's physical addresses.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PhysicalAddressList'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+    post:
+      operationId: addPhysicalAddress
+      tags: [Addresses]
+      summary: Add a physical address to a party
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PhysicalAddressCreateRequest'
+      responses:
+        '201':
+          description: Physical address created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PhysicalAddress'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+
+  /parties/{id}/addresses/electronic/{addressId}:
+    parameters:
+      - $ref: '#/components/parameters/PartyId'
+      - name: addressId
+        in: path
+        required: true
+        description: The electronic address id.
+        schema:
+          type: string
+          format: uuid
+    get:
+      operationId: getElectronicAddress
+      tags: [Addresses]
+      summary: Get one electronic address
+      responses:
+        '200':
+          description: The electronic address.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ElectronicAddress'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+    put:
+      operationId: updateElectronicAddress
+      tags: [Addresses]
+      summary: Update an electronic address
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ElectronicAddressUpdateRequest'
+      responses:
+        '200':
+          description: The updated electronic address.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ElectronicAddress'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+    delete:
+      operationId: deleteElectronicAddress
+      tags: [Addresses]
+      summary: Delete an electronic address
+      responses:
+        '204':
+          description: Electronic address deleted.
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+
+  /parties/{id}/addresses/physical/{addressId}:
+    parameters:
+      - $ref: '#/components/parameters/PartyId'
+      - name: addressId
+        in: path
+        required: true
+        description: The physical address id.
+        schema:
+          type: string
+          format: uuid
+    get:
+      operationId: getPhysicalAddress
+      tags: [Addresses]
+      summary: Get one physical address
+      responses:
+        '200':
+          description: The physical address.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PhysicalAddress'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+    put:
+      operationId: updatePhysicalAddress
+      tags: [Addresses]
+      summary: Update a physical address
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PhysicalAddressUpdateRequest'
+      responses:
+        '200':
+          description: The updated physical address.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PhysicalAddress'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+    delete:
+      operationId: deletePhysicalAddress
+      tags: [Addresses]
+      summary: Delete a physical address
+      responses:
+        '204':
+          description: Physical address deleted.
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+
+  # --- Organization registrations -------------------------------
+
+  /organizations/{id}/registrations:
+    parameters:
+      - $ref: '#/components/parameters/PartyId'
+    get:
+      operationId: listOrganizationRegistrations
+      tags: [OrganizationRegistrations]
+      summary: List an organization's registrations
+      description: Returns the business registrations held by the organization.
+      responses:
+        '200':
+          description: The organization's registrations.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrganizationRegistrationList'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+    post:
+      operationId: addOrganizationRegistration
+      tags: [OrganizationRegistrations]
+      summary: Add a registration to an organization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrganizationRegistrationCreateRequest'
+      responses:
+        '201':
+          description: Registration created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrganizationRegistration'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+
+  # --- Relationships --------------------------------------------
+
+  /relationships:
+    get:
+      operationId: listRelationships
+      tags: [Relationships]
+      summary: List relationships
+      description: >-
+        Returns a page of relationships in the caller's tenant. Filters combine with AND. Use
+        `partyId` to match either side, or `leftId`/`rightId` to match a specific side. Both
+        counter-parties are resolvable to their full [PartyEntity] through the party endpoints.
+      parameters:
+        - name: partyId
+          in: query
+          description: Match relationships where this party is on either side.
+          schema:
+            type: string
+            format: uuid
+        - name: leftId
+          in: query
+          description: Match relationships with this left (source) party.
+          schema:
+            type: string
+            format: uuid
+        - name: rightId
+          in: query
+          description: Match relationships with this right (target) party.
+          schema:
+            type: string
+            format: uuid
+        - name: relationshipType
+          in: query
+          description: Match a single relationship type (exact match).
+          schema:
+            type: string
+        - name: status
+          in: query
+          description: Match a single relationship status.
+          schema:
+            $ref: './party-manager-components.yml#/components/schemas/RelationshipStatus'
+        - name: validAt
+          in: query
+          description: Match relationships whose validity window contains this instant.
+          schema:
+            type: string
+            format: date-time
+        - $ref: './common-components.yml#/components/parameters/Limit'
+        - $ref: './common-components.yml#/components/parameters/Offset'
+        - $ref: './common-components.yml#/components/parameters/Page'
+        - $ref: './common-components.yml#/components/parameters/Size'
+        - $ref: './common-components.yml#/components/parameters/Sort'
+        - $ref: './common-components.yml#/components/parameters/SortDirection'
+      responses:
+        '200':
+          description: Page of relationships.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartyRelationshipPage'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+    post:
+      operationId: createRelationship
+      tags: [Relationships]
+      summary: Create a relationship
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PartyRelationshipCreateRequest'
+      responses:
+        '201':
+          description: Relationship created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartyRelationship'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /relationships/{id}:
+    parameters:
+      - $ref: '#/components/parameters/RelationshipId'
+    get:
+      operationId: getRelationship
+      tags: [Relationships]
+      summary: Get a relationship
+      description: Returns a single relationship by id. Both counter-parties are resolvable to their full [PartyEntity] through the party endpoints.
+      responses:
+        '200':
+          description: The relationship.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartyRelationship'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+    patch:
+      operationId: updateRelationship
+      tags: [Relationships]
+      summary: Update a relationship
+      description: Updates status, validity end, and verification. Omitted fields are left unchanged.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PartyRelationshipUpdateRequest'
+      responses:
+        '200':
+          description: The updated relationship.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartyRelationship'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+    delete:
+      operationId: deleteRelationship
+      tags: [Relationships]
+      summary: Delete a relationship
+      responses:
+        '204':
+          description: Relationship deleted.
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+
+  # --- Application bindings -------------------------------------
+
+  /identities/{identityId}/applications/{applicationId}:
+    parameters:
+      - $ref: '#/components/parameters/IdentityId'
+      - $ref: '#/components/parameters/ApplicationId'
+    get:
+      operationId: getIdentityApplicationBinding
+      tags: [ApplicationBindings]
+      summary: Get an identity's application binding
+      description: >-
+        Returns the binding between an identity and an application's login surface, including the
+        permitted authentication methods and the binding status.
+      responses:
+        '200':
+          description: The stored binding.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IdentityApplicationBinding'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+    put:
+      operationId: setIdentityApplicationBinding
+      tags: [ApplicationBindings]
+      summary: Bind an identity to an application
+      description: >-
+        Creates or replaces the binding between an identity and an application's login surface, making
+        the identity authenticable against that application with the permitted methods.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IdentityApplicationBindingRequest'
+      responses:
+        '200':
+          description: The stored binding.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IdentityApplicationBinding'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+    delete:
+      operationId: deleteIdentityApplicationBinding
+      tags: [ApplicationBindings]
+      summary: Remove an identity's application binding
+      responses:
+        '204':
+          description: Binding removed.
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+
+components:
+  # Shared error/header/pagination components and the bearer scheme live in
+  # ./common-components.yml. Entity, request, enum, and page schemas live in
+  # ./party-manager-components.yml and are re-exported below so operations can
+  # reference them with spec-internal `#/components/schemas/...` refs.
+
+  securitySchemes:
+    bearer:
+      $ref: './common-components.yml#/components/securitySchemes/bearer'
+
+  parameters:
+    PartyId:
+      $ref: './party-manager-components.yml#/components/parameters/PartyId'
+    RelationshipId:
+      $ref: './party-manager-components.yml#/components/parameters/RelationshipId'
+    MemberId:
+      $ref: './party-manager-components.yml#/components/parameters/MemberId'
+    IdentityId:
+      $ref: './party-manager-components.yml#/components/parameters/IdentityId'
+    ApplicationId:
+      $ref: './party-manager-components.yml#/components/parameters/ApplicationId'
+
+    PartyTypeFilter:
+      name: partyType
+      in: query
+      description: Filter results to a single party type, for example `natural_person` or `organization`.
+      schema:
+        $ref: './party-manager-components.yml#/components/schemas/PartyType'
+
+    PartySubtypeFilter:
+      name: partySubtype
+      in: query
+      description: Filter to parties that bear a specialization with this subtype (role) label, for example `supplier` for organizations or `employee` for persons.
+      schema:
+        type: string
+        example: supplier
+
+    OrganizationUnitFilter:
+      name: organizationUnitId
+      in: query
+      description: Filter to parties whose home organization unit is this unit.
+      schema:
+        type: string
+        format: uuid
+        example: "5c1a9d80-7e3b-4f21-9c44-0b2e6f8a1d3c"
+
+    OriginFilter:
+      name: origin
+      in: query
+      description: Filter by party origin. Use `managed` for parties maintained natively in this tenant, or `external` for parties synced in from an outside source.
+      schema:
+        $ref: './party-manager-components.yml#/components/schemas/PartyOrigin'
+
+    SearchFilter:
+      name: q
+      in: query
+      description: Free-text filter. Case-insensitive substring match against the party's display name or URI.
+      schema:
+        type: string
+        example: "Lindqvist"
+
+    IncludeParam:
+      name: include
+      in: query
+      required: false
+      style: form
+      explode: false
+      description: |
+        Comma-separated association keys to hydrate into the response (default none). Each requested
+        association is populated inline on the returned party; unrequested associations are left
+        absent. Valid keys depend on the resource:
+          - `specializations`: the party's specializations (person, organization, service, organization unit).
+          - `members`: the member parties (group, organization unit).
+          - `children`: the child organization units (organization unit).
+          - `electronicAddresses`: the electronic addresses anchored at the party (any type).
+          - `physicalAddresses`: the physical addresses anchored at the party (any type).
+        Serialized as a comma-separated list (`style: form`, `explode: false`), for example
+        `include=electronicAddresses,physicalAddresses,specializations`. Keys that do not apply to the
+        requested resource are ignored.
+      schema:
+        type: array
+        items:
+          type: string
+          enum:
+            - specializations
+            - members
+            - children
+            - electronicAddresses
+            - physicalAddresses
+      example:
+        - electronicAddresses
+        - physicalAddresses
+        - specializations
+
+  schemas:
+    PartyType:
+      $ref: './party-manager-components.yml#/components/schemas/PartyType'
+    PartyOrigin:
+      $ref: './party-manager-components.yml#/components/schemas/PartyOrigin'
+    PartySpecialization:
+      $ref: './party-manager-components.yml#/components/schemas/PartySpecialization'
+    PartyEntity:
+      $ref: './party-manager-components.yml#/components/schemas/PartyEntity'
+    Person:
+      $ref: './party-manager-components.yml#/components/schemas/Person'
+    Organization:
+      $ref: './party-manager-components.yml#/components/schemas/Organization'
+    OrganizationUnit:
+      $ref: './party-manager-components.yml#/components/schemas/OrganizationUnit'
+    Service:
+      $ref: './party-manager-components.yml#/components/schemas/Service'
+    Group:
+      $ref: './party-manager-components.yml#/components/schemas/Group'
+    PersonCreateRequest:
+      $ref: './party-manager-components.yml#/components/schemas/PersonCreateRequest'
+    PersonUpdateRequest:
+      $ref: './party-manager-components.yml#/components/schemas/PersonUpdateRequest'
+    OrganizationCreateRequest:
+      $ref: './party-manager-components.yml#/components/schemas/OrganizationCreateRequest'
+    OrganizationUpdateRequest:
+      $ref: './party-manager-components.yml#/components/schemas/OrganizationUpdateRequest'
+    OrganizationUnitCreateRequest:
+      $ref: './party-manager-components.yml#/components/schemas/OrganizationUnitCreateRequest'
+    OrganizationUnitUpdateRequest:
+      $ref: './party-manager-components.yml#/components/schemas/OrganizationUnitUpdateRequest'
+    ServiceCreateRequest:
+      $ref: './party-manager-components.yml#/components/schemas/ServiceCreateRequest'
+    ServiceUpdateRequest:
+      $ref: './party-manager-components.yml#/components/schemas/ServiceUpdateRequest'
+    GroupCreateRequest:
+      $ref: './party-manager-components.yml#/components/schemas/GroupCreateRequest'
+    GroupUpdateRequest:
+      $ref: './party-manager-components.yml#/components/schemas/GroupUpdateRequest'
+    GroupMembersUpdateRequest:
+      $ref: './party-manager-components.yml#/components/schemas/GroupMembersUpdateRequest'
+    PartyRelationship:
+      $ref: './party-manager-components.yml#/components/schemas/PartyRelationship'
+    PartyRelationshipCreateRequest:
+      $ref: './party-manager-components.yml#/components/schemas/PartyRelationshipCreateRequest'
+    PartyRelationshipUpdateRequest:
+      $ref: './party-manager-components.yml#/components/schemas/PartyRelationshipUpdateRequest'
+    IdentityApplicationBinding:
+      $ref: './party-manager-components.yml#/components/schemas/IdentityApplicationBinding'
+    IdentityApplicationBindingRequest:
+      $ref: './party-manager-components.yml#/components/schemas/IdentityApplicationBindingRequest'
+    ApplicationLoginConfig:
+      $ref: './party-manager-components.yml#/components/schemas/ApplicationLoginConfig'
+    ApplicationLoginConfigRequest:
+      $ref: './party-manager-components.yml#/components/schemas/ApplicationLoginConfigRequest'
+    PartyEntityPage:
+      $ref: './party-manager-components.yml#/components/schemas/PartyEntityPage'
+    PersonPage:
+      $ref: './party-manager-components.yml#/components/schemas/PersonPage'
+    OrganizationPage:
+      $ref: './party-manager-components.yml#/components/schemas/OrganizationPage'
+    OrganizationUnitPage:
+      $ref: './party-manager-components.yml#/components/schemas/OrganizationUnitPage'
+    ServicePage:
+      $ref: './party-manager-components.yml#/components/schemas/ServicePage'
+    GroupPage:
+      $ref: './party-manager-components.yml#/components/schemas/GroupPage'
+    PartyRelationshipPage:
+      $ref: './party-manager-components.yml#/components/schemas/PartyRelationshipPage'
+    PartyRelationshipList:
+      $ref: './party-manager-components.yml#/components/schemas/PartyRelationshipList'
+    OrganizationRegistration:
+      $ref: './party-manager-components.yml#/components/schemas/OrganizationRegistration'
+    OrganizationRegistrationCreateRequest:
+      $ref: './party-manager-components.yml#/components/schemas/OrganizationRegistrationCreateRequest'
+    OrganizationRegistrationList:
+      $ref: './party-manager-components.yml#/components/schemas/OrganizationRegistrationList'
+    ElectronicAddress:
+      $ref: './party-manager-components.yml#/components/schemas/ElectronicAddress'
+    ElectronicAddressCreateRequest:
+      $ref: './party-manager-components.yml#/components/schemas/ElectronicAddressCreateRequest'
+    ElectronicAddressUpdateRequest:
+      $ref: './party-manager-components.yml#/components/schemas/ElectronicAddressUpdateRequest'
+    ElectronicAddressList:
+      $ref: './party-manager-components.yml#/components/schemas/ElectronicAddressList'
+    AddressType:
+      $ref: './party-manager-components.yml#/components/schemas/AddressType'
+    PhysicalAddress:
+      $ref: './party-manager-components.yml#/components/schemas/PhysicalAddress'
+    PhysicalAddressCreateRequest:
+      $ref: './party-manager-components.yml#/components/schemas/PhysicalAddressCreateRequest'
+    PhysicalAddressUpdateRequest:
+      $ref: './party-manager-components.yml#/components/schemas/PhysicalAddressUpdateRequest'
+    PhysicalAddressList:
+      $ref: './party-manager-components.yml#/components/schemas/PhysicalAddressList'

@@ -1,0 +1,1205 @@
+openapi: 3.0.4
+info:
+  title: Wallet Unit API
+  version: 0.1.0
+  x-products: [edk, vdx]
+  description: |
+    Wallet Unit is the optional backend control plane for an EUDI wallet
+    instance that needs server-side lifecycle state, activation assurance,
+    attestation issuance/validation, status-list allocation, and policy-gated
+    cryptographic operations.
+
+    A typical production flow is:
+
+    1. Install a Wallet Unit for a wallet account and register the key refs it
+       may later use.
+    2. Enroll and unlock activation with blinded or derived proof material.
+       Raw PIN values are never part of this API contract.
+    3. Issue and validate TS 119 472-3 Wallet Instance Attestation (WIA) and
+       Key Attestation (KA) artifacts using configured Wallet Provider signing
+       evidence.
+    4. Resolve Wallet Provider and Wallet Solution trust against trusted-list
+       evidence, including expiry, revocation, and supported-profile checks.
+    5. Allocate status-list entries for WIA/KA or related secure components and
+       publish irreversible revocation through the existing status-list backend.
+    6. Authorize wallet-key signing only after the Wallet Unit is VALID and the
+       activation decision exactly matches the requested operation.
+
+    The Wallet Unit backend is optional. IDK wallet/client flows and local or
+    backendless wallet setups continue to work without these services. Generic
+    WSCA/WSCD and keystore evidence remains usable outside Wallet Unit for
+    regular eIDAS signatures and seals.
+
+    This surface exposes evidence and commands needed for Wallet Unit lifecycle,
+    activation, attestation, trust, status, and signing support. It deliberately
+    does not implement or enforce OID4VCI PAR/token/credential-request policy,
+    reset or factory-delete workflows, user notification dispatch, or
+    conformance reporting.
+servers:
+  - url: https://api.example.com/api/wallet-unit/v1
+    description: Production server.
+  - url: http://localhost:8080/api/wallet-unit/v1
+    description: Local development server.
+security:
+  - bearer: []
+tags:
+  - name: WalletUnitLifecycle
+    description: Install, query, and transition Wallet Units through persisted lifecycle state.
+  - name: WalletUnitPartyBinding
+    description: Bind Wallet Units to VDX party identifiers used by tenant party and relationship graphs.
+  - name: WalletUnitActivation
+    description: Activation proof and decision endpoints. Requests use blinded or derived activation material, never raw PINs.
+  - name: WalletUnitAttestation
+    description: Issue and validate TS 119 472-3 WIA and KA artifacts, including stored validation evidence.
+  - name: WalletUnitTrust
+    description: Resolve Wallet Provider and Wallet Solution trusted-list evidence and failure reasons.
+  - name: WalletUnitStatus
+    description: Allocate, check, and irreversibly revoke Wallet Unit status subjects through existing status-list modules.
+  - name: WalletUnitKeyManagement
+    description: Provision and resolve wallet-unit-owned WSCD key references without exposing KMS providers, resource handles, locators, or private material.
+  - name: WalletUnitKeySigning
+    description: Create policy-gated Wallet Unit key signatures after activation-decision and lifecycle checks.
+paths:
+  /units:
+    post:
+      tags: [WalletUnitLifecycle]
+      summary: Install a wallet unit
+      operationId: installWalletUnit
+      x-command-id: wallet.unit.install
+      description: |
+        Creates the persisted Wallet Unit and wallet-account records used by
+        later activation, attestation, status, and signing commands. The
+        request may include remote key references, policy references, and party
+        binding evidence, but it does not make the Wallet Unit production VALID;
+        VALID is only reached after the production evidence gate is satisfied.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './wallet-unit-components.yml#/components/schemas/InstallWalletUnitHttpRequest'
+      responses:
+        '201':
+          description: Wallet unit installed.
+          content:
+            application/json:
+              schema:
+                $ref: './wallet-unit-components.yml#/components/schemas/WalletUnitLifecycleResult'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '409':
+          $ref: './common-components.yml#/components/responses/Conflict'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+    get:
+      tags: [WalletUnitLifecycle]
+      summary: List wallet units
+      operationId: listWalletUnits
+      x-command-id: wallet.unit.list
+      description: |
+        Lists Wallet Units visible to the caller. Use `walletAccountId` when a
+        caller needs the units belonging to one wallet account; omit it for the
+        tenant-scoped view exposed by the service policy.
+      parameters:
+        - name: walletAccountId
+          in: query
+          required: false
+          description: Wallet account identifier used to narrow the result.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Wallet units.
+          content:
+            application/json:
+              schema:
+                $ref: './wallet-unit-components.yml#/components/schemas/ListWalletUnitsResult'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /party-bindings:
+    get:
+      tags: [WalletUnitPartyBinding]
+      summary: List wallet-unit party bindings
+      operationId: listWalletUnitPartyBindings
+      x-command-id: wallet.party-binding.list
+      description: |
+        Lists Wallet Unit to party-graph bindings. These bindings let VDX party
+        and relationship services associate a wallet account, a Wallet Unit, and
+        their relationship hints without making the Wallet Unit backend mandatory
+        for backendless IDK wallets.
+      parameters:
+        - name: walletAccountId
+          in: query
+          required: false
+          description: Wallet account identifier linked to the binding.
+          schema:
+            type: string
+        - name: walletAccountPartyId
+          in: query
+          required: false
+          description: Party identifier representing the wallet account or holder.
+          schema:
+            type: string
+            format: uuid
+        - name: walletUnitPartyId
+          in: query
+          required: false
+          description: Party identifier representing the Wallet Unit instance.
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Wallet-unit party bindings.
+          content:
+            application/json:
+              schema:
+                $ref: './wallet-unit-components.yml#/components/schemas/ListWalletUnitPartyBindingsResult'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /units/{walletUnitId}:
+    parameters:
+      - $ref: './wallet-unit-components.yml#/components/parameters/WalletUnitId'
+    get:
+      tags: [WalletUnitLifecycle]
+      summary: Get a wallet unit
+      operationId: getWalletUnit
+      x-command-id: wallet.unit.get
+      description: |
+        Returns the current Wallet Unit lifecycle state, account state, counters,
+        allowed key references, policy references, and audit history. This is
+        the safest way for clients to check whether a unit is merely installed,
+        operational, production VALID, revoked, or uninstalled.
+      responses:
+        '200':
+          description: Wallet unit.
+          content:
+            application/json:
+              schema:
+                $ref: './wallet-unit-components.yml#/components/schemas/WalletUnitLifecycleResult'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /units/{walletUnitId}/party-binding:
+    parameters:
+      - $ref: './wallet-unit-components.yml#/components/parameters/WalletUnitId'
+    get:
+      tags: [WalletUnitPartyBinding]
+      summary: Get wallet-unit party binding
+      operationId: getWalletUnitPartyBinding
+      x-command-id: wallet.party-binding.get
+      description: |
+        Returns the persisted party binding for one Wallet Unit, including
+        relationship hints and the provenance supplied when the binding was
+        created or updated.
+      responses:
+        '200':
+          description: Wallet-unit party binding.
+          content:
+            application/json:
+              schema:
+                $ref: './wallet-unit-components.yml#/components/schemas/WalletUnitPartyBindingRecord'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+    put:
+      tags: [WalletUnitPartyBinding]
+      summary: Bind wallet unit to party IDs
+      operationId: bindWalletUnitParty
+      x-command-id: wallet.party-binding.bind
+      description: |
+        Creates or replaces the party binding for a Wallet Unit. This endpoint
+        records party identifiers and relationship hints only; it does not alter
+        activation state, attestation evidence, status-list entries, or Wallet
+        Unit lifecycle state.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './wallet-unit-components.yml#/components/schemas/WalletUnitPartyBindingHttpRequest'
+      responses:
+        '200':
+          description: Wallet-unit party binding.
+          content:
+            application/json:
+              schema:
+                $ref: './wallet-unit-components.yml#/components/schemas/WalletUnitPartyBindingRecord'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /units/{walletUnitId}/operational:
+    parameters:
+      - $ref: './wallet-unit-components.yml#/components/parameters/WalletUnitId'
+    post:
+      tags: [WalletUnitLifecycle]
+      summary: Mark wallet unit operational
+      operationId: markWalletUnitOperational
+      x-command-id: wallet.unit.mark-operational
+      description: |
+        Moves an installed Wallet Unit into OPERATIONAL state once the local or
+        backend runtime has completed setup. OPERATIONAL means the unit can
+        collect activation and attestation evidence; it is not sufficient for
+        production key signing.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: './wallet-unit-components.yml#/components/schemas/WalletUnitTransitionHttpRequest'
+      responses:
+        '200':
+          description: Wallet unit marked operational.
+          content:
+            application/json:
+              schema:
+                $ref: './wallet-unit-components.yml#/components/schemas/WalletUnitLifecycleResult'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+
+  /units/{walletUnitId}/valid:
+    parameters:
+      - $ref: './wallet-unit-components.yml#/components/parameters/WalletUnitId'
+    post:
+      tags: [WalletUnitLifecycle]
+      summary: Validate wallet unit
+      operationId: validateWalletUnit
+      x-command-id: wallet.unit.validate
+      description: |
+        Transitions a Wallet Unit to VALID when persisted production evidence
+        satisfies the configured gate. The service evaluates stored activation
+        transcript evidence, WIA/KA evidence, trusted Wallet Provider/Solution
+        evidence, status-list evidence, and secure-component evidence rather
+        than accepting ad-hoc test seeding.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: './wallet-unit-components.yml#/components/schemas/WalletUnitTransitionHttpRequest'
+      responses:
+        '200':
+          description: Wallet unit validated.
+          content:
+            application/json:
+              schema:
+                $ref: './wallet-unit-components.yml#/components/schemas/WalletUnitLifecycleResult'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+
+  /units/{walletUnitId}/revoke:
+    parameters:
+      - $ref: './wallet-unit-components.yml#/components/parameters/WalletUnitId'
+    post:
+      tags: [WalletUnitLifecycle]
+      summary: Revoke wallet unit
+      operationId: revokeWalletUnit
+      x-command-id: wallet.unit.revoke
+      description: |
+        Marks the Wallet Unit REVOKED and records lifecycle evidence. When
+        status subjects exist for WIA, KA, or related secure components, callers
+        should use the status-subject revocation endpoint to publish the
+        irreversible status-list update through the shared status-list backend.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: './wallet-unit-components.yml#/components/schemas/WalletUnitTransitionHttpRequest'
+      responses:
+        '200':
+          description: Wallet unit revoked.
+          content:
+            application/json:
+              schema:
+                $ref: './wallet-unit-components.yml#/components/schemas/WalletUnitLifecycleResult'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+
+  /units/{walletUnitId}/uninstall:
+    parameters:
+      - $ref: './wallet-unit-components.yml#/components/parameters/WalletUnitId'
+    post:
+      tags: [WalletUnitLifecycle]
+      summary: Uninstall wallet unit
+      operationId: uninstallWalletUnit
+      x-command-id: wallet.unit.uninstall
+      description: |
+        Marks the Wallet Unit UNINSTALLED for lifecycle bookkeeping. This API
+        does not implement factory reset or cryptographic asset deletion
+        orchestration; those workflows are outside this phase of the Wallet Unit
+        surface.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: './wallet-unit-components.yml#/components/schemas/WalletUnitTransitionHttpRequest'
+      responses:
+        '200':
+          description: Wallet unit uninstalled.
+          content:
+            application/json:
+              schema:
+                $ref: './wallet-unit-components.yml#/components/schemas/WalletUnitLifecycleResult'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+
+  /activation/enroll:
+    post:
+      tags: [WalletUnitActivation]
+      summary: Enroll wallet activation
+      operationId: enrollWalletActivation
+      x-command-id: wallet.activation.enroll
+      description: |
+        Enrolls the activation verifier for a Wallet Unit. The verifier is
+        blinded or derived proof material; raw PIN values are intentionally not
+        part of this contract and must not cross this production API boundary.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './wallet-unit-components.yml#/components/schemas/BlindPinEnrollmentRequest'
+      responses:
+        '201':
+          description: Activation decision.
+          content:
+            application/json:
+              schema:
+                $ref: './wallet-unit-components.yml#/components/schemas/ActivationDecisionRecord'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+
+  /activation/unlock:
+    post:
+      tags: [WalletUnitActivation]
+      summary: Unlock wallet activation
+      operationId: unlockWalletActivation
+      x-command-id: wallet.activation.unlock
+      description: |
+        Evaluates a blinded or derived activation proof for one operation-bound
+        challenge and returns an activation decision. Accepted decisions are
+        short-lived, single-use inputs for wallet-key signing and must match the
+        operation type, hash, nonce, and audience exactly.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './wallet-unit-components.yml#/components/schemas/BlindPinUnlockRequest'
+      responses:
+        '200':
+          description: Activation decision.
+          content:
+            application/json:
+              schema:
+                $ref: './wallet-unit-components.yml#/components/schemas/ActivationDecisionRecord'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+
+  /activation/re-enroll:
+    post:
+      tags: [WalletUnitActivation]
+      summary: Re-enroll wallet activation
+      operationId: reEnrollWalletActivation
+      x-command-id: wallet.activation.re-enroll
+      description: |
+        Rotates the activation verifier after proving control of the current
+        verifier. Both current and replacement values are blinded or derived
+        proof material; this is not a reset or account-recovery workflow.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './wallet-unit-components.yml#/components/schemas/BlindPinReEnrollmentRequest'
+      responses:
+        '200':
+          description: Activation decision.
+          content:
+            application/json:
+              schema:
+                $ref: './wallet-unit-components.yml#/components/schemas/ActivationDecisionRecord'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+
+  /activation/revoke:
+    post:
+      tags: [WalletUnitActivation]
+      summary: Revoke wallet activation
+      operationId: revokeWalletActivation
+      x-command-id: wallet.activation.revoke
+      description: |
+        Revokes an activation profile/key binding so it can no longer issue
+        activation decisions. This endpoint is limited to activation state and
+        does not dispatch user notifications or perform factory-delete logic.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './wallet-unit-components.yml#/components/schemas/BlindPinRevocationRequest'
+      responses:
+        '200':
+          description: Activation decision.
+          content:
+            application/json:
+              schema:
+                $ref: './wallet-unit-components.yml#/components/schemas/ActivationDecisionRecord'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+
+  /passkeys/registration/begin:
+    post:
+      tags: [WalletUnitActivation]
+      summary: Begin passkey registration ceremony
+      operationId: beginPasskeyRegistration
+      x-command-id: wallet.passkey.begin-registration
+      description: |
+        Creates a WebAuthn registration challenge for an Identity-bound passkey
+        credential. The browser or wallet application performs
+        `navigator.credentials.create` at the edge and submits the resulting
+        public credential response to the finish endpoint.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './wallet-unit-components.yml#/components/schemas/BeginPasskeyRegistrationRequest'
+      responses:
+        '201':
+          description: WebAuthn registration options.
+          content:
+            application/json:
+              schema:
+                $ref: './wallet-unit-components.yml#/components/schemas/PasskeyCeremonyOptions'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+
+  /passkeys/registration/finish:
+    post:
+      tags: [WalletUnitActivation]
+      summary: Finish passkey registration ceremony
+      operationId: finishPasskeyRegistration
+      x-command-id: wallet.passkey.finish-registration
+      description: |
+        Verifies the WebAuthn registration response cryptographically and stores
+        only public credential material and Identity/Identifier metadata.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './wallet-unit-components.yml#/components/schemas/FinishPasskeyRegistrationRequest'
+      responses:
+        '201':
+          description: Stored public passkey credential.
+          content:
+            application/json:
+              schema:
+                $ref: './wallet-unit-components.yml#/components/schemas/PasskeyCredentialRecord'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+
+  /passkeys/assertion/begin:
+    post:
+      tags: [WalletUnitActivation]
+      summary: Begin passkey assertion ceremony
+      operationId: beginPasskeyAssertion
+      x-command-id: wallet.passkey.begin-assertion
+      description: |
+        Creates a WebAuthn assertion challenge for login, step-up, or wallet
+        activation. The browser or wallet application performs
+        `navigator.credentials.get` at the edge and submits the assertion
+        response to the finish endpoint.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './wallet-unit-components.yml#/components/schemas/BeginPasskeyAssertionRequest'
+      responses:
+        '201':
+          description: WebAuthn assertion options.
+          content:
+            application/json:
+              schema:
+                $ref: './wallet-unit-components.yml#/components/schemas/PasskeyCeremonyOptions'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+
+  /passkeys/assertion/finish:
+    post:
+      tags: [WalletUnitActivation]
+      summary: Finish passkey assertion ceremony
+      operationId: finishPasskeyAssertion
+      x-command-id: wallet.passkey.finish-assertion
+      description: |
+        Verifies the WebAuthn assertion cryptographically, enforces RP/origin,
+        user verification, backup, transport, replay, ownership, and sign-count
+        policy, and returns operation-bound assertion evidence.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './wallet-unit-components.yml#/components/schemas/FinishPasskeyAssertionRequest'
+      responses:
+        '200':
+          description: Verified passkey assertion evidence.
+          content:
+            application/json:
+              schema:
+                $ref: './wallet-unit-components.yml#/components/schemas/PasskeyAssertionEvidence'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+
+  /activation/passkey/begin:
+    post:
+      tags: [WalletUnitActivation]
+      summary: Begin passkey wallet activation ceremony
+      operationId: beginPasskeyActivation
+      x-command-id: wallet.activation.passkey-begin
+      description: |
+        Creates an operation-bound passkey assertion challenge for remote
+        HSM-backed Wallet Unit activation. The returned challenge is bound to
+        wallet unit, wallet account, activation key, operation hash, nonce, and
+        audience, but does not reveal WSCD provider details to OIDC callers.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './wallet-unit-components.yml#/components/schemas/BeginPasskeyActivationRequest'
+      responses:
+        '201':
+          description: WebAuthn assertion options for wallet activation.
+          content:
+            application/json:
+              schema:
+                $ref: './wallet-unit-components.yml#/components/schemas/PasskeyCeremonyOptions'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+
+  /activation/passkey/decision:
+    post:
+      tags: [WalletUnitActivation]
+      summary: Issue passkey wallet activation decision
+      operationId: issuePasskeyActivationDecision
+      x-command-id: wallet.activation.passkey-decision
+      description: |
+        Finishes an operation-bound passkey assertion and issues a short-lived,
+        single-use activation decision for remote HSM-backed WSCD signing.
+        Wallet signing still happens through the WSCD signing endpoints using
+        the returned activation decision id.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './wallet-unit-components.yml#/components/schemas/FinishPasskeyActivationDecisionRequest'
+      responses:
+        '201':
+          description: Passkey activation decision.
+          content:
+            application/json:
+              schema:
+                $ref: './wallet-unit-components.yml#/components/schemas/ActivationDecisionRecord'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+
+  /attestation/wia/issue:
+    post:
+      tags: [WalletUnitAttestation]
+      summary: Issue wallet instance attestation
+      operationId: issueWalletInstanceAttestation
+      x-command-id: wallet.attestation.issue-wia
+      description: |
+        Issues a Wallet Instance Attestation for a Wallet Unit. Production TS03
+        issuance requires configured Wallet Provider signing, Wallet Provider
+        trust evidence, Wallet Solution evidence, status subject evidence, and
+        secure-component evidence; local/test reference material remains
+        explicit and cannot satisfy production VALID evidence.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './wallet-unit-components.yml#/components/schemas/WalletInstanceAttestationIssueRequest'
+      responses:
+        '201':
+          description: Wallet instance attestation.
+          content:
+            application/json:
+              schema:
+                $ref: './wallet-unit-components.yml#/components/schemas/WalletInstanceAttestationIssueResult'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+
+  /attestation/ka/issue:
+    post:
+      tags: [WalletUnitAttestation]
+      summary: Issue key attestation
+      operationId: issueKeyAttestation
+      x-command-id: wallet.attestation.issue-ka
+      description: |
+        Issues a Key Attestation for one or more attested keys. Production KA
+        issuance is bound to key-storage evidence, user-authentication evidence,
+        configured Wallet Provider signing, and status-list evidence for
+        revocation checks.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './wallet-unit-components.yml#/components/schemas/KeyAttestationIssueRequest'
+      responses:
+        '201':
+          description: Key attestation.
+          content:
+            application/json:
+              schema:
+                $ref: './wallet-unit-components.yml#/components/schemas/KeyAttestationIssueResult'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+
+  /attestation/ts1194723/wia/validate:
+    post:
+      tags: [WalletUnitAttestation]
+      summary: Validate wallet instance attestation
+      operationId: validateWalletInstanceAttestation
+      x-command-id: wallet.attestation.validate-wia
+      description: |
+        Validates WIA material or a stored WIA reference against expected
+        audience/issuer, JOSE material, Wallet Provider trust, Wallet Solution
+        trust, and status evidence. Missing, expired, revoked, unsupported, or
+        untrusted evidence fails closed.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './wallet-unit-components.yml#/components/schemas/ValidateWalletInstanceAttestationHttpRequest'
+      responses:
+        '200':
+          description: TS 119 472-3 validation result.
+          content:
+            application/json:
+              schema:
+                $ref: './wallet-unit-components.yml#/components/schemas/Ts1194723ValidationHttpResponse'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+
+  /attestation/ts1194723/ka/validate:
+    post:
+      tags: [WalletUnitAttestation]
+      summary: Validate key attestation
+      operationId: validateKeyAttestation
+      x-command-id: wallet.attestation.validate-ka
+      description: |
+        Validates KA material or a stored KA reference against audience, nonce,
+        signer trust, key-storage assurance, user-authentication evidence, and
+        status evidence. This is evidence production for later OID4VCI checks;
+        it does not enforce credential-request processing.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './wallet-unit-components.yml#/components/schemas/ValidateKeyAttestationHttpRequest'
+      responses:
+        '200':
+          description: TS 119 472-3 validation result.
+          content:
+            application/json:
+              schema:
+                $ref: './wallet-unit-components.yml#/components/schemas/Ts1194723ValidationHttpResponse'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+
+  /attestation/{kind}/{attestationRef}/validation-evidence:
+    parameters:
+      - $ref: './wallet-unit-components.yml#/components/parameters/AttestationKind'
+      - $ref: './wallet-unit-components.yml#/components/parameters/AttestationRef'
+    get:
+      tags: [WalletUnitAttestation]
+      summary: Get wallet attestation validation evidence
+      operationId: getWalletAttestationValidationEvidence
+      x-command-id: wallet.attestation.get-validation-evidence
+      description: |
+        Returns the persisted evidence summary for a previously issued or
+        validated WIA/KA artifact, including failure reasons and provenance when
+        validation was rejected.
+      responses:
+        '200':
+          description: Persisted validation evidence for an attestation.
+          content:
+            application/json:
+              schema:
+                $ref: './wallet-unit-components.yml#/components/schemas/WalletAttestationValidationEvidenceResult'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+
+  /trust/provider/resolve:
+    post:
+      tags: [WalletUnitTrust]
+      summary: Resolve wallet provider trust evidence
+      operationId: resolveWalletProviderTrust
+      x-command-id: wallet.trust.resolve-provider
+      description: |
+        Resolves Wallet Provider or attestation-signer trust using the configured
+        trusted-list adapter and ETSI/LoTE trust primitives. The response
+        carries explicit rejection decisions for missing, expired, revoked,
+        unsupported-profile, and untrusted evidence.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './wallet-unit-components.yml#/components/schemas/ResolveWalletProviderTrustRequest'
+      responses:
+        '200':
+          description: Wallet Provider trust evidence.
+          content:
+            application/json:
+              schema:
+                $ref: './wallet-unit-components.yml#/components/schemas/EudiWalletTrustEvidence'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+
+  /trust/solution/resolve:
+    post:
+      tags: [WalletUnitTrust]
+      summary: Resolve wallet solution trust evidence
+      operationId: resolveWalletSolutionTrust
+      x-command-id: wallet.trust.resolve-solution
+      description: |
+        Resolves Wallet Solution trust for a named solution/version and optional
+        certification evidence. This is the Wallet Unit facade over the trusted
+        list evidence needed by WIA issuance and validation.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './wallet-unit-components.yml#/components/schemas/ResolveWalletSolutionTrustRequest'
+      responses:
+        '200':
+          description: Wallet Solution trust evidence.
+          content:
+            application/json:
+              schema:
+                $ref: './wallet-unit-components.yml#/components/schemas/EudiWalletTrustEvidence'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+
+  /status-subjects/allocate:
+    post:
+      tags: [WalletUnitStatus]
+      summary: Allocate wallet-unit status subject
+      operationId: allocateWalletUnitStatusSubject
+      x-command-id: wallet.status-subject.allocate
+      description: |
+        Allocates a backing entry in an existing status list for WIA client
+        status, KA key-storage status, Wallet Unit status, WSCD/keystore status,
+        or related attestation status. The allocation uses the shared status-list
+        modules and returns the compact reference that can be embedded in
+        attestation claims.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './wallet-unit-components.yml#/components/schemas/WalletUnitStatusSubjectAllocationRequest'
+      responses:
+        '201':
+          description: Status subject allocation.
+          content:
+            application/json:
+              schema:
+                $ref: './wallet-unit-components.yml#/components/schemas/WalletUnitStatusSubjectAllocationResult'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '409':
+          $ref: './common-components.yml#/components/responses/Conflict'
+
+  /status-subjects/check:
+    post:
+      tags: [WalletUnitStatus]
+      summary: Check wallet-unit status subject
+      operationId: checkWalletUnitStatusSubject
+      x-command-id: wallet.status-subject.check
+      description: |
+        Resolves the current status of a Wallet Unit status subject by compact
+        reference or by subject kind and subject id. When unauthenticated
+        status-list hosting is configured, the public status-list URI returned
+        from allocation exposes the same revocation state.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './wallet-unit-components.yml#/components/schemas/WalletUnitStatusSubjectCheckRequest'
+      responses:
+        '200':
+          description: Status subject check result.
+          content:
+            application/json:
+              schema:
+                $ref: './wallet-unit-components.yml#/components/schemas/WalletUnitStatusSubjectCheckResult'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+
+  /status-subjects/revoke:
+    post:
+      tags: [WalletUnitStatus]
+      summary: Revoke wallet-unit status subject
+      operationId: revokeWalletUnitStatusSubject
+      x-command-id: wallet.status-subject.revoke
+      description: |
+        Records an irreversible revocation event and updates the backing
+        status-list entry when a status subject reference is supplied. This is
+        the production publishing path for WIA/KA and secure-component
+        revocation; it does not implement notification, reset, or PID-provider
+        orchestration.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './wallet-unit-components.yml#/components/schemas/WalletUnitRevocationRequest'
+      responses:
+        '200':
+          description: Revocation result.
+          content:
+            application/json:
+              schema:
+                $ref: './wallet-unit-components.yml#/components/schemas/WalletUnitRevocationResult'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '409':
+          $ref: './common-components.yml#/components/responses/Conflict'
+
+  /units/{walletUnitId}/wscd/keys:
+    parameters:
+      - name: walletUnitId
+        in: path
+        required: true
+        description: Wallet Unit whose authenticated key allowlist is being accessed.
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 128
+    post:
+      tags: [WalletUnitKeyManagement]
+      summary: Provision a wallet-unit WSCD key reference
+      operationId: provisionWalletUnitWscdKeyReference
+      x-command-id: wallet.wscd.provision-key
+      description: |
+        Provisions a managed holder-proof key through the tenant KMS execution
+        boundary, then associates a new opaque `wscd_` reference with
+        the authenticated Wallet Unit and its account. The server resolves the
+        typed KMS assignment and derives all internal aliases. Callers cannot
+        select providers, KMS resources, handles, locators, or raw algorithms.
+        Private key material is never returned.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './wallet-unit-components.yml#/components/schemas/ProvisionWalletUnitWscdKeyRequest'
+      responses:
+        '201':
+          description: Wallet-unit WSCD key provisioned and associated.
+          content:
+            application/json:
+              schema:
+                $ref: './wallet-unit-components.yml#/components/schemas/WalletUnitWscdKeyDetail'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '409':
+          $ref: './common-components.yml#/components/responses/Conflict'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+    get:
+      tags: [WalletUnitKeyManagement]
+      summary: List wallet-unit WSCD key references
+      operationId: listWalletUnitWscdKeyReferences
+      x-command-id: wallet.wscd.list-keys
+      description: |
+        Lists only opaque key references already associated with the
+        authenticated Wallet Unit. Each entry is resolved through the internal
+        tenant KMS public-material command; this operation never performs a
+        tenant-wide key or provider enumeration.
+      responses:
+        '200':
+          description: Wallet-unit-owned WSCD keys.
+          content:
+            application/json:
+              schema:
+                $ref: './wallet-unit-components.yml#/components/schemas/ListWalletUnitWscdKeysResult'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /units/{walletUnitId}/wscd/keys/{keyRef}:
+    parameters:
+      - name: walletUnitId
+        in: path
+        required: true
+        description: Wallet Unit whose authenticated key allowlist is being accessed.
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 128
+      - name: keyRef
+        in: path
+        required: true
+        description: Opaque wallet-unit key reference returned by this API.
+        schema:
+          type: string
+          pattern: '^wscd_[A-Za-z0-9_-]{20,128}$'
+    get:
+      tags: [WalletUnitKeyManagement]
+      summary: Get wallet-unit WSCD public key detail
+      operationId: getWalletUnitWscdKeyReference
+      x-command-id: wallet.wscd.get-key
+      description: |
+        Resolves public verification material only after proving that the
+        opaque key reference belongs to the authenticated Wallet Unit. Cross-
+        tenant, cross-account, and cross-unit references fail closed.
+      responses:
+        '200':
+          description: Safe public detail for the associated WSCD key.
+          content:
+            application/json:
+              schema:
+                $ref: './wallet-unit-components.yml#/components/schemas/WalletUnitWscdKeyDetail'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /wscd/raw-sign:
+    post:
+      tags: [WalletUnitWscd]
+      summary: Create policy-gated WSCD raw signature
+      operationId: walletUnitWscdRawSign
+      x-command-id: wallet.wscd.raw-sign
+      description: |
+        Signs raw input with a Wallet Unit WSCD key after lifecycle, account status,
+        key-reference policy, and activation-decision checks. The activation
+        decision must be accepted, unexpired, unconsumed, and bound to the
+        exact operation type, hash, nonce, and audience in this request.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './wallet-unit-components.yml#/components/schemas/WalletRawSignHttpRequest'
+      responses:
+        '200':
+          description: Signature result.
+          content:
+            application/json:
+              schema:
+                $ref: './wallet-unit-components.yml#/components/schemas/WalletSignatureHttpResponse'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+
+  /wscd/sign-digest:
+    post:
+      tags: [WalletUnitWscd]
+      summary: Create policy-gated WSCD digest signature
+      operationId: walletUnitWscdSignDigest
+      x-command-id: wallet.wscd.sign-digest
+      description: |
+        Signs a precomputed digest with a Wallet Unit WSCD key after the same
+        lifecycle and activation-decision checks as raw signing. This endpoint
+        is intended for flows that already compute the operation digest before
+        invoking the Wallet Unit WSCD policy layer.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './wallet-unit-components.yml#/components/schemas/WalletDigestSignHttpRequest'
+      responses:
+        '200':
+          description: Signature result.
+          content:
+            application/json:
+              schema:
+                $ref: './wallet-unit-components.yml#/components/schemas/WalletSignatureHttpResponse'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+
+components:
+  securitySchemes:
+    bearer:
+      $ref: './common-components.yml#/components/securitySchemes/bearer'

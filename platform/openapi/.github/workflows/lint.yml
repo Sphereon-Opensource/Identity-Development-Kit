@@ -1,0 +1,94 @@
+name: OpenAPI lint
+
+on:
+  pull_request:
+    paths:
+      - "**/*.yml"
+      - "**/*.yaml"
+      - "redocly.yaml"
+      - ".github/scripts/check-wallet-unit-key-contract.mjs"
+      - ".github/workflows/lint.yml"
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - "**/*.yml"
+      - "**/*.yaml"
+      - "redocly.yaml"
+      - ".github/scripts/check-wallet-unit-key-contract.mjs"
+      - ".github/workflows/lint.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  redocly:
+    name: Redocly lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out specs
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Check Wallet Unit key-management source contract
+        run: node .github/scripts/check-wallet-unit-key-contract.mjs
+
+      # The repo still has known warning-only cleanup debt in admin-console-critical
+      # specs. Keep redocly.yaml as the policy source and promote warning rules after
+      # the current warning set is burned down.
+      - name: Lint OpenAPI specs
+        run: npx --yes @redocly/cli lint
+
+  oasdiff:
+    name: Breaking-change check
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - name: Check out specs
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Compare changed OpenAPI specs with PR base
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git fetch --no-tags --depth=1 origin "${BASE_SHA}"
+
+          deleted_specs="$(git diff --name-only --diff-filter=D "${BASE_SHA}"...HEAD -- '*openapi*.yml' '*openapi*.yaml' ':!:external/**')"
+          if [[ -n "${deleted_specs}" ]]; then
+            echo "::error::Deleted OpenAPI specs require manual breaking-change review:"
+            echo "${deleted_specs}"
+            exit 1
+          fi
+
+          changed_yaml="$(git diff --name-only --diff-filter=ACMRT "${BASE_SHA}"...HEAD -- '*.yml' '*.yaml' ':!:external/**')"
+          if [[ -z "${changed_yaml}" ]]; then
+            echo "No changed OpenAPI YAML files to compare."
+            exit 0
+          fi
+
+          mkdir -p .oasdiff-base-tree
+          git archive "${BASE_SHA}" | tar -x -C .oasdiff-base-tree
+
+          # Compare every root OpenAPI spec so component-only edits are checked through
+          # their real referrers. New root specs are linted by Redocly and skipped here
+          # because there is no PR-base version to diff.
+          root_specs="$(git ls-files '*openapi*.yml' '*openapi*.yaml' ':!:external/**')"
+          while IFS= read -r spec; do
+            if [[ -f ".oasdiff-base-tree/${spec}" ]]; then
+              echo "Checking ${spec} for breaking changes"
+              docker run --rm -v "${PWD}:/work" -w /work tufin/oasdiff \
+                breaking --fail-on ERR --format githubactions ".oasdiff-base-tree/${spec}" "${spec}"
+            else
+              echo "Skipping new OpenAPI spec without base version: ${spec}"
+            fi
+          done <<< "${root_specs}"

@@ -34,7 +34,15 @@ set APP_HOME=%DIRNAME%
 for %%i in ("%APP_HOME%") do set APP_HOME=%%~fi
 
 @rem Local coordinator policy; clean CI/other checkouts need no Python.
-set "VDX_COORDINATOR_ROOT=%APP_HOME%\..\..\.."
+set "VDX_COORDINATOR_ROOT=%APP_HOME%"
+:vdxCoordinatorSearch
+if exist "%VDX_COORDINATOR_ROOT%\.vdx-build-required.json" goto vdxCoordinatorFound
+if exist "%VDX_COORDINATOR_ROOT%\tooling\build-coordinator\cli.py" goto vdxCoordinatorFound
+for %%i in ("%VDX_COORDINATOR_ROOT%\..") do set "VDX_COORDINATOR_PARENT=%%~fi"
+if /I "%VDX_COORDINATOR_PARENT%"=="%VDX_COORDINATOR_ROOT%" goto vdxCoordinatorFound
+set "VDX_COORDINATOR_ROOT=%VDX_COORDINATOR_PARENT%"
+goto vdxCoordinatorSearch
+:vdxCoordinatorFound
 if defined VDX_BUILD_STATE goto vdxCoordinatorGuard
 if exist "%VDX_COORDINATOR_ROOT%\.vdx-build-required.json" goto vdxCoordinatorGuard
 goto vdxCoordinatorReady

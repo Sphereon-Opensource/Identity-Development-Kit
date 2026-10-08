@@ -5,6 +5,9 @@
 
 package com.sphereon.oidf.conformance.services
 
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import java.net.CookieManager
 import java.net.CookiePolicy
 import java.net.URI
@@ -18,9 +21,6 @@ import java.time.Duration
 import java.util.Base64
 import java.util.UUID
 import javax.net.ssl.SSLContext
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 
 /** Production operator authorization and RFC 8693 tenant token exchange used by deployed drivers. */
 internal class OidfEnterpriseOperatorTokenClient(
@@ -84,9 +84,10 @@ internal class OidfEnterpriseOperatorTokenClient(
         var logicalUri = authorizationUri
         repeat(MAX_LOGIN_REDIRECTS) {
             if (response.statusCode() !in 300..399) return@repeat
-            val location = response.headers().firstValue("Location").orElseThrow {
-                IllegalStateException("Operator authorization redirect omitted Location")
-            }
+            val location =
+                response.headers().firstValue("Location").orElseThrow {
+                    IllegalStateException("Operator authorization redirect omitted Location")
+                }
             logicalUri = logicalUri.resolve(location)
             response = sendGet(logicalUri)
         }
@@ -95,7 +96,8 @@ internal class OidfEnterpriseOperatorTokenClient(
         }
         val loginFields =
             OidfIssuerAuthorizationBrowser.REQUIRED_HIDDEN_FIELDS.associateWith { name ->
-                OidfIssuerAuthorizationBrowser.hiddenInput(name)
+                OidfIssuerAuthorizationBrowser
+                    .hiddenInput(name)
                     .find(response.body())
                     ?.groupValues
                     ?.get(1)
@@ -138,7 +140,11 @@ internal class OidfEnterpriseOperatorTokenClient(
 
     private fun sendGet(uri: URI): HttpResponse<String> =
         client.send(
-            HttpRequest.newBuilder(uri).timeout(Duration.ofSeconds(20)).GET().build(),
+            HttpRequest
+                .newBuilder(uri)
+                .timeout(Duration.ofSeconds(20))
+                .GET()
+                .build(),
             HttpResponse.BodyHandlers.ofString(),
         )
 
@@ -163,7 +169,11 @@ internal class OidfEnterpriseOperatorTokenClient(
         require(response.statusCode() in 200..299) {
             "$operation failed with HTTP ${response.statusCode()}: ${response.body().take(800)}"
         }
-        return Json.parseToJsonElement(response.body()).jsonObject["access_token"]?.jsonPrimitive?.content
+        return Json
+            .parseToJsonElement(response.body())
+            .jsonObject["access_token"]
+            ?.jsonPrimitive
+            ?.content
             ?: error("$operation response omitted access_token")
     }
 
@@ -179,8 +189,7 @@ internal class OidfEnterpriseOperatorTokenClient(
         )
     }
 
-    private fun formEncode(fields: List<Pair<String, String>>): String =
-        fields.joinToString("&") { (name, value) -> "${encode(name)}=${encode(value)}" }
+    private fun formEncode(fields: List<Pair<String, String>>): String = fields.joinToString("&") { (name, value) -> "${encode(name)}=${encode(value)}" }
 
     private fun String.formParameters(): Map<String, String> =
         split('&')

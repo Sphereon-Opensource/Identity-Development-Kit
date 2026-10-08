@@ -1,0 +1,150 @@
+openapi: 3.0.4
+info:
+  title: Status List Management API Components
+  version: 0.1.0
+  description: Entity schemas, enums, and path parameters for the Status List Management REST API.
+paths: {}
+components:
+  parameters:
+    StatusListId:
+      name: id
+      in: path
+      required: true
+      description: Technical id of the status list.
+      schema:
+        type: string
+
+  schemas:
+    StatusListSpec:
+      type: string
+      description: Credential status-list specification as serialized in request and response bodies.
+      enum: [token_status_list, bitstring_status_list]
+      example: token_status_list
+
+    StatusProofFormat:
+      type: string
+      description: >-
+        Proof envelope securing the status-list token. `jwt` and `cwt` are distinct signed
+        representations. A CWT is served as raw `application/statuslist+cwt` COSE_Sign1 bytes;
+        it must not be inferred from a JWT capture. `vc+jwt` is the VC-JWT container.
+      enum: [jwt, cwt, vc+jwt]
+      example: jwt
+
+    MdocStatusListProfile:
+      type: string
+      nullable: true
+      description: >-
+        ISO/IEC 18013-5 mdoc status mechanism carried by MSO metadata. `status_list` is a
+        one-bit index-based Token Status List; `identifier_list` is an identifier-based list.
+        This field is only meaningful with `spec: token_status_list` and `proofFormat: cwt`.
+      enum: [status_list, identifier_list]
+      example: status_list
+
+    StatusListHostingMode:
+      type: string
+      description: |
+        Serving mode for the signed status-list token. `hosted` means the platform public
+        endpoint serves the token. `export` means management returns the signed token for
+        external hosting and the platform public endpoint does not serve it.
+      enum: [hosted, export]
+      example: hosted
+
+    StatusPurpose:
+      type: string
+      description: Status purpose carried by the list.
+      enum: [revocation, suspension, message, refresh]
+      example: revocation
+
+    StatusListSummary:
+      type: object
+      description: Lightweight projection for list endpoints (no embedded token).
+      required:
+        - id
+        - correlationId
+        - spec
+        - purposes
+        - proofFormat
+        - hostingMode
+        - bitsPerStatus
+        - length
+        - issuedCount
+        - remainingCapacity
+        - createdAt
+        - updatedAt
+      example:
+        id: "sl-1"
+        correlationId: "employee-revocation-2026"
+        spec: "token_status_list"
+        purposes:
+          - "revocation"
+        proofFormat: "jwt"
+        hostingMode: "hosted"
+        bitsPerStatus: 1
+        length: 131072
+        issuedCount: 3
+        remainingCapacity: 131069
+        createdAt: "2026-06-06T09:00:00Z"
+        updatedAt: "2026-06-06T09:00:00Z"
+      properties:
+        id:
+          type: string
+        correlationId:
+          type: string
+        spec:
+          $ref: '#/components/schemas/StatusListSpec'
+        purposes:
+          type: array
+          items:
+            $ref: '#/components/schemas/StatusPurpose'
+        proofFormat:
+          $ref: '#/components/schemas/StatusProofFormat'
+        hostingMode:
+          $ref: '#/components/schemas/StatusListHostingMode'
+        bitsPerStatus:
+          type: integer
+        length:
+          type: integer
+        issuedCount:
+          type: integer
+        remainingCapacity:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        mdocProfile:
+          $ref: '#/components/schemas/MdocStatusListProfile'
+
+    StatusListEntry:
+      type: object
+      description: A single allocated entry within a status list.
+      required: [statusListId, statusListIndex, value, purpose]
+      example:
+        statusListId: "sl-1"
+        statusListIndex: 42
+        entryCorrelationId: "employee-credential-42"
+        credentialId: "urn:uuid:3b14b1a8-f9d2-4c38-8a0a-e2f2bdbf4c2d"
+        credentialHash: null
+        value: 1
+        purpose: "revocation"
+      properties:
+        statusListId:
+          type: string
+        statusListIndex:
+          type: integer
+        entryCorrelationId:
+          type: string
+          nullable: true
+        credentialId:
+          type: string
+          nullable: true
+        credentialHash:
+          type: string
+          nullable: true
+        value:
+          type: integer
+          description: Current status value (0 = VALID, 1 = INVALID, 2 = SUSPENDED).
+        purpose:
+          $ref: '#/components/schemas/StatusPurpose'

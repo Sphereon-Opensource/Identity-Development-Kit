@@ -12,7 +12,7 @@ package com.sphereon.example.byo
 
 import com.sphereon.ktor.server.inject.KotlinInjectPlugin
 import com.sphereon.ktor.server.inject.resolver.FixedTenantResolver
-import com.sphereon.ktor.server.jwt.JwtAuthentication
+import com.sphereon.ktor.server.jwt.JwtRouteAuthentication
 import com.sphereon.oauth2.jwt.validation.IdpConfig
 import io.ktor.server.application.Application
 import io.ktor.server.application.install
@@ -33,7 +33,7 @@ import io.ktor.server.routing.routing
  *     and builds a per-request session graph on every call. This exposes
  *     `call.getAppService<T>()` and `call.getSessionService<T>()` to the rest
  *     of the stack.
- *  2. [JwtAuthentication] validates the bearer token, resolves identity, and
+ *  2. [JwtRouteAuthentication] validates the bearer token, resolves identity, and
  *     stashes a `SessionContext` on the call. With [KotlinInjectPlugin]
  *     installed, it pulls IDK's session-scoped
  *     [com.sphereon.oauth2.jwt.validation.JwtValidationService] and the
@@ -96,13 +96,13 @@ data class ByoOidcConfig(
 
 /**
  * Ktor module. Builds the IDK AppGraph, installs [KotlinInjectPlugin] so the
- * session graph is available per request, installs [JwtAuthentication] (its
+ * session graph is available per request, installs [JwtRouteAuthentication] (its
  * default service resolvers read from the kotlin-inject graphs), and exposes
  * the demo routes.
  *
- * Plugin install order matters: [KotlinInjectPlugin] must be installed before
- * [JwtAuthentication] so that the per-call session graph is attached by the
- * time the JWT plugin's `onCall` handler fires.
+ * Install [KotlinInjectPlugin] first, then [JwtRouteAuthentication] inside
+ * routing so authentication runs after the selected route's request graph
+ * is attached. Application-level install order alone is insufficient.
  */
 fun Application.configureByoOidcModule(config: ByoOidcConfig) {
     val idpConfig =
@@ -130,17 +130,17 @@ fun Application.configureByoOidcModule(config: ByoOidcConfig) {
         tenantResolver = FixedTenantResolver(config.issuer)
     }
 
-    install(JwtAuthentication) {
-        // jwtValidationService, identityResolutionPipeline, and
-        // sessionContextFactory all default to reading from the kotlin-inject
-        // graphs via call.getSessionService / call.getAppService. No wiring
-        // needed beyond installing both plugins.
-        this.requireAuth = true
-        this.anonymousPaths = listOf("/health", "/ready")
-        this.expectedAudience = config.audience
-    }
-
     routing {
+        install(JwtRouteAuthentication) {
+            // jwtValidationService, identityResolutionPipeline, and
+            // sessionContextFactory all default to reading from the kotlin-inject
+            // graphs via call.getSessionService / call.getAppService. No wiring
+            // needed beyond installing both plugins.
+            this.requireAuth = true
+            this.anonymousPaths = listOf("/health", "/ready")
+            this.expectedAudience = config.audience
+        }
+
         get("/health") { call.respondText("ok") }
         get("/ready") { call.respondText("ok") }
         meEndpoint()

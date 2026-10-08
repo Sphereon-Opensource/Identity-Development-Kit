@@ -101,7 +101,13 @@ class VcLdJsonJwtRealSignatureE2ETest {
             assertNotNull(payload["vc"], "VCDM 1.1 JWT representation retains its vc wrapper")
             assertFalse(payload.containsKey("vp"))
             val vc = payload["vc"]!!.jsonObject
-            assertEquals("https://www.w3.org/2018/credentials/v1", vc["@context"]!!.jsonArray.first().jsonPrimitive.content)
+            assertEquals(
+                "https://www.w3.org/2018/credentials/v1",
+                vc["@context"]!!
+                    .jsonArray
+                    .first()
+                    .jsonPrimitive.content
+            )
             assertNotNull(vc["issuanceDate"], "VCDM 1.1 uses issuanceDate inside vc")
             assertFalse(vc.containsKey("validFrom"), "VCDM 1.1 does not use the VCDM 2.0 validFrom field")
             assertFalse(payload.containsKey("validFrom"))
@@ -179,7 +185,10 @@ class VcLdJsonJwtRealSignatureE2ETest {
 
     private fun handlers(): RealIssuerFormatHandlersTestGraph = ctx.session.graph as RealIssuerFormatHandlersTestGraph
 
-    private fun keyManagerService(): KeyManagerService = ctx.session.graph.asKeyManagerServiceGraph().keyManagerService
+    private fun keyManagerService(): KeyManagerService =
+        ctx.session.graph
+            .asKeyManagerServiceGraph()
+            .keyManagerService
 
     private fun decodeCompact(jwt: String): Pair<JsonObject, JsonObject> {
         val parts = jwt.split('.')
@@ -188,7 +197,10 @@ class VcLdJsonJwtRealSignatureE2ETest {
             json.parseToJsonElement(parts[1].decodeFromBase64Url().decodeToString()).jsonObject
     }
 
-    private suspend fun verifyRawJws(jwt: String, publicKey: ManagedKeyInfoType<*>): Boolean {
+    private suspend fun verifyRawJws(
+        jwt: String,
+        publicKey: ManagedKeyInfoType<*>
+    ): Boolean {
         val parts = jwt.split('.')
         if (parts.size != 3) return false
         return keyManagerService().isValidRawSignature(
@@ -200,7 +212,12 @@ class VcLdJsonJwtRealSignatureE2ETest {
 
     private fun tamperHeader(jwt: String): String {
         val parts = jwt.split('.')
-        val tampered = buildJsonObject { put("alg", "none"); put("typ", "vc+jwt"); put("cty", "vc") }
+        val tampered =
+            buildJsonObject {
+                put("alg", "none")
+                put("typ", "vc+jwt")
+                put("cty", "vc")
+            }
         return "${tampered.toString().encodeToByteArray().encodeToBase64Url()}.${parts[1]}.${parts[2]}"
     }
 

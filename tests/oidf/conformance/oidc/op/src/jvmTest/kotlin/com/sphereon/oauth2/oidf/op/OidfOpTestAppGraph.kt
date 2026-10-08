@@ -91,6 +91,7 @@ fun createOidfOpTestAppGraph(
     profile: String = "oidf-op",
     version: String = "1.0.0",
 ): OidfOpTestAppGraph {
+    OidfOpTestOpaqueSecrets.installHandle()
     val graph =
         createGraphFactory<OidfOpTestAppGraph.Factory>().create(
             application = application,

@@ -1,0 +1,1007 @@
+openapi: 3.0.4
+info:
+  title: Invitation API
+  version: 0.1.0
+  x-products: [vdx]
+  description: |
+    Manage in-flight invitations and let recipients redeem them. An invitation is a
+    tenant-scoped, time-bounded token that grants its holder a single capability:
+    onboarding a tenant owner, running an identity verification, receiving a
+    credential offer, or presenting a credential. This API is the one place to
+    track, inspect, and act on invitations regardless of which feature minted them,
+    and the public surface a recipient uses to redeem one.
+
+    ## Where invitations are created
+
+    This API does not, by itself, create the bulk of a deployment's invitations.
+    Invitations are minted by the feature that needs them, so the minting endpoint
+    can carry that feature's context. The main creation path is the credential
+    issuance flow: an operator uploads a recipient list (a CSV, optionally promoted
+    to a reusable source) and the issuance run mints one invitation per row and
+    sends each recipient an email. That run lives in the issuance batch surface, not
+    here. Tenant owner onboarding, identity verification, and credential
+    presentation each mint their invitations the same way, through their own flow.
+
+    What every one of those flows shares is the invitation lifecycle, and that is
+    what this API exposes: a single, action-neutral surface to list and filter
+    invitations and the batches they came from, read one invitation's detail and
+    audit timeline, and cancel or resend an in-flight invitation. A small set of
+    low-level mint, resolve, and revoke endpoints also lives under this base path
+    for direct integrations; the feature flows above build on them.
+
+    ## Redeeming an invitation
+
+    The redemption endpoints are the recipient-facing half of the API. A holder
+    lands on an invite page from a tokenised link, the page posts the token to
+    `POST /redeem`, and the server returns the next step: a credential offer URL to
+    render as a QR code, a redirect URL to start identity verification, or a safe
+    error message. When verification is required, the verification engine calls
+    `POST /redeem/idv-callback` and the holder re-enters the flow. These two
+    endpoints are public. A client may send `X-Correlation-ID` to correlate a
+    request with its logs; when absent the server generates one and echoes it on
+    the response.
+
+    ## Pagination and errors
+
+    List endpoints accept `limit`/`offset` (and the OpenAPI-style `page`/`size`);
+    `limit` is clamped to `[1, 100]` and defaults to `20`. They return a `data`
+    array alongside a `pagination` block ([PageMeta]). Errors share the stable,
+    machine-readable [ApiError] body. Timestamps are RFC 3339 / ISO 8601 in UTC.
+  license:
+    name: Apache 2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0
+
+servers:
+  - url: https://api.example.com/api/invitation/v1
+    description: Production server.
+  - url: http://localhost:8080/api/invitation/v1
+    description: Local development server.
+
+security:
+  - bearer: []
+
+tags:
+  - name: Invitations
+    description: >-
+      Operator surface for in-flight invitations: list and filter invitations and
+      batches, read one invitation's detail and timeline, and cancel or resend.
+  - name: Redemption
+    description: >-
+      Public, recipient-facing endpoints for redeeming an invitation token and for
+      the identity-verification callback.
+
+paths:
+  /invitations:
+    get:
+      tags: [Invitations]
+      summary: List invitations
+      operationId: listInvitations
+      description: |
+        Returns a page of invitations in the caller's tenant, narrowed by the optional
+        filters. Default sort is newest first (`createdAt` descending).
+      parameters:
+        - name: scope
+          in: query
+          description: Filter by binding scope, for example `tabular.batch_row`.
+          schema:
+            type: string
+        - name: targetId
+          in: query
+          description: Filter by the target entity identifier the invitation addresses.
+          schema:
+            type: string
+        - name: status
+          in: query
+          description: Filter by lifecycle status.
+          schema:
+            type: string
+            enum: [PENDING, DELIVERED, OPENED, IN_PROGRESS, CLAIMED, EXHAUSTED, REVOKED, EXPIRED, FAILED]
+        - name: action
+          in: query
+          description: Filter by the action the invitation drives, for example `credential.issuance`.
+          schema:
+            type: string
+        - name: deliveryState
+          in: query
+          description: Filter by delivery state.
+          schema:
+            type: string
+            enum: [PENDING, QUEUED, SENT, DELIVERED, BOUNCED, FAILED, NOT_REQUESTED]
+        - name: batchId
+          in: query
+          description: Restrict to invitations that belong to this batch.
+          schema:
+            type: string
+        - name: originKind
+          in: query
+          description: >-
+            Restrict to invitations minted by this kind of originator, for example `business-wallet`.
+            Pair with `originId` to scope a listing to one originator; `originKind` alone lists every
+            invitation of that kind across the tenant.
+          schema:
+            type: string
+          example: business-wallet
+        - name: originId
+          in: query
+          description: >-
+            Restrict to invitations minted by the originator with this id, within `originKind`.
+            Supplying `originId` without `originKind` is a validation error, because an id is only
+            unique inside its kind.
+          schema:
+            type: string
+          example: sales
+        - name: since
+          in: query
+          description: Return only invitations created at or after this RFC 3339 / ISO 8601 instant.
+          schema:
+            type: string
+            format: date-time
+        - $ref: './common-components.yml#/components/parameters/Limit'
+        - $ref: './common-components.yml#/components/parameters/Offset'
+        - $ref: './common-components.yml#/components/parameters/Page'
+        - $ref: './common-components.yml#/components/parameters/Size'
+      responses:
+        '200':
+          description: A page of invitations.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PageOfInvitationSummary'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+    post:
+      tags: [Invitations]
+      summary: Mint a single invitation, optionally delivering via a channel
+      operationId: mintInvitation
+      description: |
+        Mints one invitation in the caller's tenant and returns the raw token. This is
+        the low-level entry point the feature flows build on; use it for direct
+        integrations that own their own delivery, or supply a `recipient` to have the
+        server mint and deliver in one call.
+
+        The result is flat and discriminated by `type`:
+
+          - `MINT_ONLY`: no `recipient` was supplied. `minted` carries the invitation
+            and its token, and this call sends nothing. The invitation is recorded as
+            NOT_REQUESTED when `channelPreferences` is empty and PENDING otherwise.
+          - `MINT_AND_DELIVER`: a `recipient` was supplied. `created` carries the same
+            minted invitation plus the delivery outcome. A delivery failure does not
+            fail the request, because the token is already valid, so inspect
+            `created.delivered` and `created.deliveryError` and retry delivery
+            separately with the resend action.
+
+        `minted.token` is the one and only place the raw token appears in any response.
+        The server keeps only its hash and cannot return it a second time.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MintInvitationArgs'
+      responses:
+        '200':
+          description: The invitation was minted; `type` says whether delivery was also attempted.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MintInvitationResult'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /invitations/{invitationId}:
+    parameters:
+      - $ref: '#/components/parameters/InvitationId'
+    get:
+      tags: [Invitations]
+      summary: Get an invitation
+      operationId: getInvitation
+      description: >-
+        Returns the full detail of a single invitation, including its mint context,
+        delivery info, and redemption outcome. The invitation token is never returned.
+      responses:
+        '200':
+          description: The invitation detail.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvitationDetail'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /invitations/{invitationId}/events:
+    parameters:
+      - $ref: '#/components/parameters/InvitationId'
+    get:
+      tags: [Invitations]
+      summary: List an invitation's events
+      operationId: listInvitationEvents
+      description: >-
+        Returns the append-only audit timeline for one invitation: lifecycle
+        transitions, delivery attempts, and operator actions, in the order they
+        occurred.
+      responses:
+        '200':
+          description: The ordered event timeline.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/InvitationEvent'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /invitations/{invitationId}/actions/cancel:
+    parameters:
+      - $ref: '#/components/parameters/InvitationId'
+    post:
+      tags: [Invitations]
+      summary: Cancel an invitation
+      operationId: cancelInvitation
+      description: >-
+        Revokes an invitation so it can no longer be redeemed. The operation is
+        idempotent: cancelling an already-cancelled invitation returns its current
+        detail without error.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CancelInvitationRequest'
+      responses:
+        '200':
+          description: The invitation detail after cancellation.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvitationDetail'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /invitations/{invitationId}/actions/resend:
+    parameters:
+      - $ref: '#/components/parameters/InvitationId'
+    post:
+      tags: [Invitations]
+      summary: Resend an invitation
+      operationId: resendInvitation
+      description: |
+        Re-delivers an invitation. Because the raw token is never stored, a resend
+        currently mints a fresh invitation, delivers it, and revokes the original,
+        linking the two. The response reports the mode that was applied (`REISSUED`
+        today) and returns the effective invitation. A future `RETRIED` mode will
+        re-deliver the same token without minting a replacement.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResendInvitationRequest'
+      responses:
+        '200':
+          description: The resend outcome, with the mode applied and the resulting invitation.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResendInvitationResponse'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /invitations/batches:
+    get:
+      tags: [Invitations]
+      summary: List invitation batches
+      operationId: listInvitationBatches
+      description: >-
+        Returns a page of invitation batches in the caller's tenant. A batch groups
+        the invitations minted in one operator action, for example one credential
+        issuance run. Default sort is newest first (`createdAt` descending).
+      parameters:
+        - name: state
+          in: query
+          description: Filter by batch processing state.
+          schema:
+            type: string
+            enum: [PENDING, RUNNING, COMPLETED, PARTIAL, FAILED]
+        - name: createdBy
+          in: query
+          description: Filter by the operator or system identifier that created the batch.
+          schema:
+            type: string
+        - name: since
+          in: query
+          description: Return only batches created at or after this RFC 3339 / ISO 8601 instant.
+          schema:
+            type: string
+            format: date-time
+        - $ref: './common-components.yml#/components/parameters/Limit'
+        - $ref: './common-components.yml#/components/parameters/Offset'
+        - $ref: './common-components.yml#/components/parameters/Page'
+        - $ref: './common-components.yml#/components/parameters/Size'
+      responses:
+        '200':
+          description: A page of invitation batches.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PageOfInvitationBatchSummary'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+    post:
+      tags: [Invitations]
+      summary: Mint and deliver a batch of invitations from a source
+      operationId: createInvitationBatch
+      description: |
+        Mints one invitation per item produced by `source` and delivers each along the
+        supplied channel preferences, recording the whole run as one batch. The
+        response reports the aggregate mint counters and, when the run was small enough
+        to complete synchronously, the delivery counters as well; per-recipient detail
+        is read back from the batch endpoints.
+
+        `source` is an open extension point. Its required `type` selects the registered
+        source parser and the rest of the object is that parser's own shape. See
+        [InvitationBatchSource] for the source types shipped today and for how to send
+        one this specification does not describe.
+
+        Raw tokens are never returned here. Each minted token goes to its recipient over
+        the delivery channel only.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateInvitationBatchArgs'
+      responses:
+        '200':
+          description: The batch was submitted; the result carries the mint and delivery counters.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateInvitationBatchResult'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /invitations/batches/{batchId}:
+    parameters:
+      - $ref: '#/components/parameters/BatchId'
+    get:
+      tags: [Invitations]
+      summary: Get an invitation batch
+      operationId: getInvitationBatch
+      description: Returns the full detail of a single invitation batch, including its source descriptor and progress counts.
+      responses:
+        '200':
+          description: The invitation batch detail.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvitationBatchDetail'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /invitations/resolve:
+    post:
+      tags: [Invitations]
+      summary: Resolve a presented invitation token
+      operationId: resolveInvitation
+      description: |
+        Exchanges a presented token for the invitation it is bound to. The server hashes
+        the token, looks the record up in the caller's tenant, validates expiry and
+        revocation, and emits an `invitation-opened` event on the first resolve.
+
+        The token travels in the request body, never in the URL. The response describes
+        the invitation but does not echo the token back.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResolveInvitationArgs'
+      responses:
+        '200':
+          description: The token resolved to an active invitation.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResolveInvitationResult'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /invitations/revoke:
+    post:
+      tags: [Invitations]
+      summary: Revoke an invitation by token
+      operationId: revokeInvitation
+      description: >-
+        Revokes the invitation the presented token is bound to, so it can no longer be
+        redeemed. Idempotent: revoking an already-revoked or otherwise terminal
+        invitation succeeds and changes nothing. Use the cancel action instead when the
+        caller holds the record id rather than the token.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RevokeInvitationArgs'
+      responses:
+        '200':
+          description: The invitation is revoked.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RevokeInvitationResult'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /redeem:
+    post:
+      tags: [Redemption]
+      summary: Redeem an invitation token
+      operationId: redeem
+      description: |
+        Public endpoint that the recipient's invite page posts the
+        token to. The server validates the token, loads the bound batch row, and
+        returns the next step as a flat result discriminated by `type`:
+
+          - `RENDER_QR`: issuance is ready. Render a QR for `credentialOfferUrl` (an
+            `openid-credential-offer://` URI) for the wallet to scan. `correlationId`
+            and `credentialType` are included so the page can poll issuance progress
+            and name the credential without re-parsing the URI.
+          - `IDV_REDIRECT`: identity verification is required first. Navigate the
+            user-agent to `dispatchUrl`.
+          - `ERROR`: the flow halted with a message safe to show the recipient in
+            `publicMessage`.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RedeemFlowArgs'
+      responses:
+        '200':
+          description: Redemption proceeded; the result `type` indicates the next step.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RedeemFlowResult'
+        '400':
+          description: The request body was malformed, or the token's target is not a redeemable batch row.
+          content:
+            application/json:
+              schema:
+                $ref: './common-components.yml#/components/schemas/ApiError'
+        '403':
+          description: The invitation is expired or revoked, or identity verification did not match the expected recipient.
+          content:
+            application/json:
+              schema:
+                $ref: './common-components.yml#/components/schemas/ApiError'
+        '404':
+          description: The token is unknown, or its bound batch row no longer exists.
+          content:
+            application/json:
+              schema:
+                $ref: './common-components.yml#/components/schemas/ApiError'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /redeem/idv-callback:
+    post:
+      tags: [Redemption]
+      summary: Complete the identity-verification step
+      operationId: redeemIdvCallback
+      description: >-
+        Public callback invoked by the identity-verification engine
+        after its graph completes. The server stores the verification result against
+        the token and returns a `resumeUrl` so the user-agent can re-enter
+        `POST /redeem` with the verified attributes available.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IdvCallbackArgs'
+      responses:
+        '200':
+          description: The callback was recorded; the client should follow `resumeUrl`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IdvCallbackResult'
+        '400':
+          description: The request body was malformed.
+          content:
+            application/json:
+              schema:
+                $ref: './common-components.yml#/components/schemas/ApiError'
+        '404':
+          description: The token is unknown or has no in-flight verification.
+          content:
+            application/json:
+              schema:
+                $ref: './common-components.yml#/components/schemas/ApiError'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+components:
+  # Shared pagination parameters (Limit, Offset, Page, Size), error responses,
+  # ApiError, PageMeta, the X-Correlation-ID header, and the bearer
+  # security scheme are defined in the canonical ./common-components.yml (owned by
+  # IDK lib-core-api-public, copied in at build time). Only invitation-specific
+  # components are defined here or re-exported from ./invitation-components.yml.
+
+  securitySchemes:
+    bearer:
+      $ref: './common-components.yml#/components/securitySchemes/bearer'
+
+  parameters:
+    InvitationId:
+      $ref: './invitation-components.yml#/components/parameters/InvitationId'
+    BatchId:
+      $ref: './invitation-components.yml#/components/parameters/BatchId'
+
+  schemas:
+    # ---- Re-exported entity schemas -----------------------------------------
+    ChannelAddress:
+      $ref: './invitation-components.yml#/components/schemas/ChannelAddress'
+    RecipientRef:
+      $ref: './invitation-components.yml#/components/schemas/RecipientRef'
+    OutcomeRef:
+      $ref: './invitation-components.yml#/components/schemas/OutcomeRef'
+    InvitationOriginRef:
+      $ref: './invitation-components.yml#/components/schemas/InvitationOriginRef'
+    ChannelPreference:
+      $ref: './invitation-components.yml#/components/schemas/ChannelPreference'
+    InvitationSummary:
+      $ref: './invitation-components.yml#/components/schemas/InvitationSummary'
+    InvitationDetail:
+      $ref: './invitation-components.yml#/components/schemas/InvitationDetail'
+    InvitationEvent:
+      $ref: './invitation-components.yml#/components/schemas/InvitationEvent'
+    InvitationBatchSummary:
+      $ref: './invitation-components.yml#/components/schemas/InvitationBatchSummary'
+    InvitationBatchDetail:
+      $ref: './invitation-components.yml#/components/schemas/InvitationBatchDetail'
+    DeliveryError:
+      $ref: './invitation-components.yml#/components/schemas/DeliveryError'
+    MintedInvitation:
+      $ref: './invitation-components.yml#/components/schemas/MintedInvitation'
+    CreatedInvitation:
+      $ref: './invitation-components.yml#/components/schemas/CreatedInvitation'
+    ResolvedInvitation:
+      $ref: './invitation-components.yml#/components/schemas/ResolvedInvitation'
+    BatchSubmissionResult:
+      $ref: './invitation-components.yml#/components/schemas/BatchSubmissionResult'
+    RejectedRecipient:
+      $ref: './invitation-components.yml#/components/schemas/RejectedRecipient'
+    BatchDeliveryStats:
+      $ref: './invitation-components.yml#/components/schemas/BatchDeliveryStats'
+    InvitationBatchSource:
+      $ref: './invitation-components.yml#/components/schemas/InvitationBatchSource'
+    DirectBatchSource:
+      $ref: './invitation-components.yml#/components/schemas/DirectBatchSource'
+    DirectRecipient:
+      $ref: './invitation-components.yml#/components/schemas/DirectRecipient'
+    TabularBatchSource:
+      $ref: './invitation-components.yml#/components/schemas/TabularBatchSource'
+    ColumnMapping:
+      $ref: './invitation-components.yml#/components/schemas/ColumnMapping'
+    ClaimTransform:
+      $ref: './invitation-components.yml#/components/schemas/ClaimTransform'
+
+    # ---- Management action bodies -------------------------------------------
+    CancelInvitationRequest:
+      type: object
+      description: Optional body for the cancel action.
+      properties:
+        reason:
+          type: string
+          description: Human-readable reason for cancellation, recorded in the audit timeline.
+          example: Recipient left the organization
+
+    ResendInvitationRequest:
+      type: object
+      description: Optional body for the resend action. When omitted the tenant and original-invitation defaults are used.
+      properties:
+        channelPreferences:
+          type: array
+          description: >-
+            Ordered channel preferences for this resend. When supplied these override
+            the channel preferences recorded on the original invitation.
+          items:
+            $ref: '#/components/schemas/ChannelPreference'
+        ttlSeconds:
+          type: integer
+          format: int64
+          description: >-
+            Lifetime in seconds for the reissued invitation, measured from when the
+            resend is processed. When absent the tenant default is applied.
+          example: 1209600
+
+    ResendInvitationResponse:
+      type: object
+      description: Outcome of a resend action.
+      required:
+        - mode
+        - invitation
+      properties:
+        mode:
+          type: string
+          description: |
+            REISSUED: a replacement invitation was minted, delivered, and the original
+            revoked. RETRIED (reserved): the original token was re-delivered without
+            minting a replacement.
+          enum: [RETRIED, REISSUED]
+          example: REISSUED
+        invitation:
+          allOf:
+            - $ref: '#/components/schemas/InvitationDetail'
+          description: The effective invitation after the resend.
+        replacedInvitationId:
+          type: string
+          nullable: true
+          description: When `mode` is REISSUED, the id of the original invitation that was revoked. Null for RETRIED.
+
+    # ---- Mint, batch, resolve, and revoke bodies ----------------------------
+    MintInvitationArgs:
+      type: object
+      description: Body of `POST /invitations`.
+      required:
+        - action
+        - scope
+        - targetId
+        - ttlSeconds
+      properties:
+        originRef:
+          allOf:
+            - $ref: '#/components/schemas/InvitationOriginRef'
+          nullable: true
+          description: >-
+            Records which feature is minting this invitation, so the originating surface can later
+            list its own. Omit and the invitation is untraceable to a surface.
+        action:
+          type: string
+          minLength: 1
+          description: >-
+            The action this invitation drives. See [InvitationSummary.action] for the
+            well-known values; the set is open-ended.
+          example: credential.issuance
+        scope:
+          type: string
+          minLength: 1
+          description: >-
+            Binding discriminator that narrows what the action applies to. See
+            [InvitationSummary.scope].
+          example: tabular.batch_row
+        targetId:
+          type: string
+          minLength: 1
+          description: >-
+            Identifier of the entity the invitation addresses. Its shape is action- and
+            scope-specific. See [InvitationSummary.targetId].
+          example: src_42:btch_9b2c1f04:row_017
+        context:
+          type: object
+          additionalProperties: true
+          default: {}
+          description: >-
+            Structured, action-specific context to embed at mint time, for example the
+            claims to project into a credential. Defaults to an empty object. A
+            registered action handler may rewrite it before the invitation is minted.
+        ttlSeconds:
+          type: integer
+          format: int64
+          description: Lifetime in seconds, measured from when the mint is processed.
+          example: 1209600
+        recipient:
+          allOf:
+            - $ref: '#/components/schemas/RecipientRef'
+          description: >-
+            Optional recipient handle. When present the server mints and delivers in one
+            step and the result `type` is MINT_AND_DELIVER; when absent it only mints
+            and the result `type` is MINT_ONLY.
+        channelPreferences:
+          type: array
+          description: >-
+            Ordered channel preferences for delivery. An empty list means no automated
+            delivery is attempted and the invitation is recorded as NOT_REQUESTED, an
+            out-of-band hand-off in which the caller delivers the token itself.
+          default: []
+          items:
+            $ref: '#/components/schemas/ChannelPreference'
+        usagePolicy:
+          type: string
+          description: >-
+            Redemption policy to apply. See [InvitationSummary.usagePolicy]. Defaults to
+            SINGLE_USE.
+          enum: [SINGLE_USE, MULTI_USE]
+          default: SINGLE_USE
+        maxRedemptions:
+          type: integer
+          nullable: true
+          description: >-
+            Redemption cap. Required and positive when `usagePolicy` is MULTI_USE; must
+            be omitted for SINGLE_USE.
+          example: 25
+
+    MintInvitationResult:
+      type: object
+      description: |
+        Flat result of `POST /invitations`, discriminated by `type`. Each type populates
+        a different payload member:
+
+          - MINT_ONLY: `minted`.
+          - MINT_AND_DELIVER: `created`.
+      required:
+        - type
+      properties:
+        type:
+          type: string
+          enum: [MINT_ONLY, MINT_AND_DELIVER]
+          description: Whether the request only minted, or minted and attempted delivery.
+        minted:
+          allOf:
+            - $ref: '#/components/schemas/MintedInvitation'
+          nullable: true
+          description: MINT_ONLY only. The minted invitation, carrying the raw token.
+        created:
+          allOf:
+            - $ref: '#/components/schemas/CreatedInvitation'
+          nullable: true
+          description: MINT_AND_DELIVER only. The minted invitation plus the delivery outcome.
+
+    CreateInvitationBatchArgs:
+      type: object
+      description: Body of `POST /invitations/batches`.
+      required:
+        - source
+        - ttlSeconds
+      properties:
+        source:
+          $ref: '#/components/schemas/InvitationBatchSource'
+        ttlSeconds:
+          type: integer
+          format: int64
+          description: Lifetime in seconds applied to every invitation the batch mints.
+          example: 1209600
+        channelPreferences:
+          type: array
+          description: >-
+            Ordered channel preferences applied to every recipient in the batch. An
+            empty list mints without delivering.
+          default: []
+          items:
+            $ref: '#/components/schemas/ChannelPreference'
+
+    CreateInvitationBatchResult:
+      type: object
+      description: Result of `POST /invitations/batches`.
+      required:
+        - result
+      properties:
+        result:
+          $ref: '#/components/schemas/BatchSubmissionResult'
+
+    ResolveInvitationArgs:
+      type: object
+      description: Body of `POST /invitations/resolve`.
+      required:
+        - token
+      properties:
+        token:
+          type: string
+          minLength: 1
+          description: >-
+            The raw invitation token as presented by its holder. Sent in the body so it
+            never lands in a URL, an access log, or a referrer header.
+
+    ResolveInvitationResult:
+      type: object
+      description: Result of `POST /invitations/resolve`.
+      required:
+        - resolved
+      properties:
+        resolved:
+          $ref: '#/components/schemas/ResolvedInvitation'
+
+    RevokeInvitationArgs:
+      type: object
+      description: Body of `POST /invitations/revoke`.
+      required:
+        - token
+      properties:
+        token:
+          type: string
+          minLength: 1
+          description: The raw invitation token identifying the invitation to revoke.
+
+    RevokeInvitationResult:
+      type: object
+      description: Result of `POST /invitations/revoke`.
+      properties:
+        revoked:
+          type: boolean
+          description: Always true on success; the operation is idempotent.
+          default: true
+          example: true
+
+    # ---- Redemption bodies (recipient-facing) -------------------------------
+    RedeemFlowArgs:
+      type: object
+      description: Body of `POST /redeem`.
+      required:
+        - token
+        - redemptionBaseUrl
+      properties:
+        token:
+          type: string
+          minLength: 1
+          description: The raw invitation token, taken from the `?t=` query parameter of the invite link.
+        redemptionBaseUrl:
+          type: string
+          format: uri
+          description: >-
+            Absolute base URL the identity-verification callback should target. The
+            flow appends `/redeem/idv-callback?t=<token>`. Typically the same origin
+            the invite page was loaded from.
+          example: https://wallet.example.com
+
+    RedeemFlowResult:
+      type: object
+      description: |
+        Flat result of `POST /redeem`, discriminated by `type`. Each type populates a
+        different subset of the optional fields:
+
+          - RENDER_QR: `credentialOfferUrl`, `correlationId`, `credentialType`.
+          - IDV_REDIRECT: `dispatchUrl`.
+          - ERROR: `publicMessage`.
+      required:
+        - type
+      properties:
+        type:
+          type: string
+          enum: [IDV_REDIRECT, RENDER_QR, ERROR]
+          description: The next step for the recipient's user-agent.
+        credentialOfferUrl:
+          type: string
+          nullable: true
+          description: RENDER_QR only. The OID4VCI credential offer URI to render as a QR code.
+          example: openid-credential-offer://?credential_offer_uri=https%3A%2F%2Fissuer.example.com%2Foffers%2Fabc123
+        correlationId:
+          type: string
+          nullable: true
+          description: >-
+            RENDER_QR only. The OID4VCI session correlation id, also carried as the
+            trailing segment of the offer URI. Use it to poll issuance progress.
+          example: abc123
+        credentialType:
+          type: string
+          nullable: true
+          description: RENDER_QR only. The credential type or configuration id being offered, for naming it in the UI.
+          example: EmployeeID
+        dispatchUrl:
+          type: string
+          format: uri
+          nullable: true
+          description: IDV_REDIRECT only. The identity-verification engine URL to navigate the user-agent to.
+        publicMessage:
+          type: string
+          nullable: true
+          description: ERROR only. A sanitized message safe to display to the recipient.
+
+    IdvCallbackArgs:
+      type: object
+      description: Body of `POST /redeem/idv-callback`.
+      required:
+        - token
+        - callbackParams
+      properties:
+        token:
+          type: string
+          minLength: 1
+          description: The invitation token the verification was started for.
+        callbackParams:
+          type: object
+          additionalProperties:
+            type: string
+          description: >-
+            Method-specific callback parameters forwarded by the verification engine,
+            for example `code` and `state` for an OAuth-style return.
+
+    IdvCallbackResult:
+      type: object
+      description: Result of `POST /redeem/idv-callback`.
+      required:
+        - resumeUrl
+      properties:
+        resumeUrl:
+          type: string
+          format: uri
+          description: The URL the user-agent should follow to re-enter the redemption flow.
+
+    # ---- Page envelopes ({ data, pagination }, per ResponseBuilder.paginated) ----
+    PageOfInvitationSummary:
+      type: object
+      description: A page of invitation summaries.
+      required:
+        - data
+        - pagination
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/InvitationSummary'
+        pagination:
+          $ref: './common-components.yml#/components/schemas/PageMeta'
+
+    PageOfInvitationBatchSummary:
+      type: object
+      description: A page of invitation batch summaries.
+      required:
+        - data
+        - pagination
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/InvitationBatchSummary'
+        pagination:
+          $ref: './common-components.yml#/components/schemas/PageMeta'

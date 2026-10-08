@@ -1,0 +1,831 @@
+openapi: 3.0.4
+info:
+  title: OID4VP DCQL Query Configuration API Components
+  version: 0.1.0
+  description: Entity schemas and path parameters for the OID4VP DCQL Query Configuration Admin API.
+paths: {}
+components:
+  parameters:
+    QueryId:
+      name: queryId
+      in: path
+      required: true
+      description: >
+        Stable identifier of the DCQL query configuration, unique within the tenant.
+        This is the value you chose at create time and use to reference the
+        configuration in presentation requests.
+      schema:
+        type: string
+        minLength: 1
+        example: identity-verification
+
+    VerifierId:
+      name: verifierId
+      in: path
+      required: true
+      description: Identifier of the verifier instance.
+      schema:
+        type: string
+        minLength: 1
+
+    ActivationId:
+      name: activationId
+      in: path
+      required: true
+      description: Identifier of a verifier DCQL binding activation.
+      schema:
+        type: string
+        minLength: 1
+
+    Version:
+      name: version
+      in: path
+      required: true
+      description: Version number of the DCQL query configuration.
+      schema:
+        type: integer
+        minimum: 1
+
+  schemas:
+    DcqlQueryConfiguration:
+      type: object
+      description: >
+        A stored DCQL query configuration, referenced by `queryId`. Holds the DCQL
+        query the verifier sends to a wallet plus its metadata and audit timestamps.
+      required: [queryId, name, dcqlQuery, enabled, createdAt, updatedAt]
+      properties:
+        queryId:
+          type: string
+          description: Stable identifier for the configuration, unique within the tenant.
+          example: identity-verification
+        name:
+          type: string
+          description: Human-readable name shown in admin tooling.
+          example: Identity verification
+        description:
+          type: string
+          nullable: true
+          description: Optional free-text description of the configuration's purpose.
+          example: Verify a person's identity credential
+        dcqlQuery:
+          $ref: "#/components/schemas/DcqlQuery"
+        trustedAuthorityProvenance:
+          type: array
+          nullable: true
+          description: >
+            Authoring metadata recording which `trusted_authorities` entries in `dcqlQuery` were
+            snapshotted from a trust domain. Never part of the wire DCQL query.
+          items:
+            $ref: "#/components/schemas/DcqlTrustedAuthorityProvenanceEntry"
+        enabled:
+          type: boolean
+          description: >
+            Whether the configuration is available for use. Disabled configurations
+            remain stored but should not be referenced by new presentation requests.
+          example: true
+        createdAt:
+          type: integer
+          format: int64
+          description: Creation timestamp, epoch milliseconds (UTC).
+          example: 1749312000000
+        updatedAt:
+          type: integer
+          format: int64
+          description: Last-update timestamp, epoch milliseconds (UTC).
+          example: 1749312000000
+      example:
+        queryId: identity-verification
+        name: Identity verification
+        description: Verify a person's identity credential
+        dcqlQuery:
+          credentials:
+            - id: EuPid
+              format: dc+sd-jwt
+              meta:
+                vct_values: [https://issuer.example.com/public/schema/vct/EuPid]
+              claims:
+                - path: [given_name]
+        enabled: true
+        createdAt: 1749312000000
+        updatedAt: 1749312000000
+
+    DcqlQuery:
+      type: object
+      description: >
+        An OpenID4VP 1.0 DCQL query: the verifier's statement of which credentials and
+        claims it wants from the wallet. `credentials` is required and non-empty;
+        `credential_sets`, when present, constrains identifiers from that array. See the OpenID4VP 1.0 Final specification,
+        section 6 (Digital Credentials Query Language), for the full grammar.
+      properties:
+        credentials:
+          type: array
+          description: The credentials requested by the verifier. Each entry is a single credential query.
+          items:
+            $ref: "#/components/schemas/DcqlCredentialQuery"
+          minItems: 1
+        credential_sets:
+          type: array
+          description: >
+            Disjunctions of credentials that satisfy the verifier's request: the holder
+            may present any one option from a set. Use this when several credential types
+            can satisfy the same need (for example a passport OR a national ID).
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/DcqlCredentialSetQuery"
+      required: [credentials]
+      example:
+        credentials:
+          - id: EuPid
+            format: dc+sd-jwt
+            meta:
+              vct_values:
+                - https://issuer.example.com/public/schema/vct/EuPid
+            claims:
+              - path: [given_name]
+              - path: [family_name]
+              - path: [email]
+          - id: Mdl
+            format: mso_mdoc
+            meta:
+              doctype_value: org.iso.18013.5.1.mDL
+            claims:
+              - path: [org.iso.18013.5.1, given_name]
+
+    DcqlCredentialQuery:
+      oneOf:
+        - $ref: "#/components/schemas/DcqlSdJwtCredentialQuery"
+        - $ref: "#/components/schemas/DcqlMdocCredentialQuery"
+        - $ref: "#/components/schemas/DcqlJwtVcJsonCredentialQuery"
+        - $ref: "#/components/schemas/DcqlJwtVcJsonLdCredentialQuery"
+        - $ref: "#/components/schemas/DcqlLdpVcCredentialQuery"
+        - $ref: "#/components/schemas/DcqlExtensionCredentialQuery"
+      description: OpenID4VP 1.0 Final Credential Query, discriminated by Credential Format Identifier.
+      example:
+        id: EuPid
+        format: dc+sd-jwt
+        meta:
+          vct_values:
+            - https://issuer.example.com/public/schema/vct/EuPid
+        claims:
+          - path: [given_name]
+          - path: [family_name]
+          - path: [email]
+          - path: [birth_date]
+
+    DcqlCredentialQueryCommon:
+      type: object
+      description: >
+        Properties shared by every OpenID4VP 1.0 Final Credential Query. Format, meta,
+        and format-specific Claims Query properties are supplied by the discriminated schema.
+      required: [id]
+      properties:
+        id:
+          type: string
+          minLength: 1
+          pattern: '^[A-Za-z0-9_-]+$'
+          description: >
+            Identifier for this credential query, unique within the DCQL query. The
+            wallet echoes it back so the verifier can match each presented credential
+            to the request that asked for it.
+          example: EuPid
+        claim_sets:
+          type: array
+          nullable: true
+          description: >
+            Disjunctions of claim groups: the holder may satisfy this credential query
+            by disclosing any one of the listed claim sets.
+          minItems: 1
+          items:
+            type: array
+            minItems: 1
+            items:
+              type: string
+        multiple:
+          type: boolean
+          default: false
+          description: Whether multiple matching credentials may be returned for this query.
+          example: false
+        require_cryptographic_holder_binding:
+          type: boolean
+          default: true
+          description: >
+            Whether the Verifier requires a cryptographic Holder Binding proof. Defaults to
+            true when omitted.
+        trusted_authorities:
+          type: array
+          nullable: true
+          description: >
+            Trusted authority constraints: only credentials issued under one of these
+            authorities satisfy the query.
+          items:
+            $ref: "#/components/schemas/DcqlTrustedAuthority"
+
+    DcqlSdJwtVcMeta:
+      type: object
+      required: [vct_values]
+      properties:
+        vct_values:
+          type: array
+          minItems: 1
+          items:
+            type: string
+            minLength: 1
+      additionalProperties: true
+
+    DcqlMdocMeta:
+      type: object
+      required: [doctype_value]
+      properties:
+        doctype_value:
+          type: string
+          minLength: 1
+      additionalProperties: true
+
+    DcqlW3cVcMeta:
+      type: object
+      required: [type_values]
+      properties:
+        type_values:
+          type: array
+          minItems: 1
+          items:
+            type: array
+            minItems: 1
+            items:
+              type: string
+              minLength: 1
+      additionalProperties: true
+
+    DcqlSdJwtCredentialQuery:
+      allOf:
+        - $ref: "#/components/schemas/DcqlCredentialQueryCommon"
+        - type: object
+          required: [format, meta]
+          properties:
+            format:
+              type: string
+              enum: [dc+sd-jwt]
+            meta:
+              $ref: "#/components/schemas/DcqlSdJwtVcMeta"
+            claims:
+              type: array
+              nullable: true
+              minItems: 1
+              items:
+                $ref: "#/components/schemas/DcqlClaimQuery"
+
+    DcqlMdocCredentialQuery:
+      allOf:
+        - $ref: "#/components/schemas/DcqlCredentialQueryCommon"
+        - type: object
+          required: [format, meta]
+          properties:
+            format:
+              type: string
+              enum: [mso_mdoc]
+            meta:
+              $ref: "#/components/schemas/DcqlMdocMeta"
+            claims:
+              type: array
+              nullable: true
+              minItems: 1
+              items:
+                $ref: "#/components/schemas/MdocDcqlClaimQuery"
+
+    DcqlJwtVcJsonCredentialQuery:
+      allOf:
+        - $ref: "#/components/schemas/DcqlCredentialQueryCommon"
+        - type: object
+          required: [format, meta]
+          properties:
+            format:
+              type: string
+              enum: [jwt_vc_json]
+            meta:
+              $ref: "#/components/schemas/DcqlW3cVcMeta"
+            claims:
+              type: array
+              nullable: true
+              minItems: 1
+              items:
+                $ref: "#/components/schemas/DcqlClaimQuery"
+
+    DcqlJwtVcJsonLdCredentialQuery:
+      allOf:
+        - $ref: "#/components/schemas/DcqlCredentialQueryCommon"
+        - type: object
+          required: [format, meta]
+          properties:
+            format:
+              type: string
+              enum: [jwt_vc_json-ld]
+            meta:
+              $ref: "#/components/schemas/DcqlW3cVcMeta"
+            claims:
+              type: array
+              nullable: true
+              minItems: 1
+              items:
+                $ref: "#/components/schemas/DcqlClaimQuery"
+
+    DcqlLdpVcCredentialQuery:
+      allOf:
+        - $ref: "#/components/schemas/DcqlCredentialQueryCommon"
+        - type: object
+          required: [format, meta]
+          properties:
+            format:
+              type: string
+              enum: [ldp_vc]
+            meta:
+              $ref: "#/components/schemas/DcqlW3cVcMeta"
+            claims:
+              type: array
+              nullable: true
+              minItems: 1
+              items:
+                $ref: "#/components/schemas/DcqlClaimQuery"
+
+    DcqlExtensionCredentialQuery:
+      allOf:
+        - $ref: "#/components/schemas/DcqlCredentialQueryCommon"
+        - type: object
+          required: [format, meta]
+          properties:
+            format:
+              type: string
+              minLength: 1
+              not:
+                enum: [dc+sd-jwt, mso_mdoc, jwt_vc_json, jwt_vc_json-ld, ldp_vc]
+              pattern: '^(?!jwt_vp_json$|ldp_vp$).+'
+            meta:
+              type: object
+              additionalProperties: true
+            claims:
+              type: array
+              nullable: true
+              minItems: 1
+              items:
+                $ref: "#/components/schemas/DcqlClaimQuery"
+    DcqlClaimQuery:
+      type: object
+      description: >
+        A claim requested within a credential query. The claim is addressed by a `path`,
+        an array that navigates the credential's JSON structure.
+      required: [path]
+      properties:
+        id:
+          type: string
+          minLength: 1
+          pattern: '^[A-Za-z0-9_-]+$'
+          nullable: true
+          description: Required when this Claim Query is referenced from `claim_sets`.
+        path:
+          type: array
+          description: >
+            JSON path components addressing the requested claim. A single-element path
+            such as `["given_name"]` targets a top-level claim; for `mso_mdoc` the first
+            element is the namespace, for example `["org.acme.businesscard.1",
+            "given_name"]`. Nested SD-JWT claims use one element per level, for example
+            `["address", "street_address"]`.
+          items:
+            oneOf:
+              - type: string
+              - type: integer
+                format: int64
+                minimum: 0
+              - type: string
+                nullable: true
+                enum: [null]
+          minItems: 1
+          example: [given_name]
+        values:
+          type: array
+          nullable: true
+          description: >
+            If present, the claim only satisfies the query when its value matches one of
+            these values. For example `{"path": ["over_18"], "values": [true]}`.
+          minItems: 1
+          items:
+            oneOf:
+              - type: string
+              - type: integer
+                format: int64
+              - type: boolean
+      example:
+        path: [email]
+
+    MdocDcqlClaimQuery:
+      allOf:
+        - $ref: "#/components/schemas/DcqlClaimQuery"
+        - type: object
+          properties:
+            path:
+              type: array
+              minItems: 2
+              maxItems: 2
+              items:
+                type: string
+            intent_to_retain:
+              type: boolean
+              nullable: true
+              description: ISO mdoc IntentToRetain value from OpenID4VP 1.0 Final Appendix B.2.4.
+
+    DcqlCredentialSetQuery:
+      type: object
+      required: [options]
+      properties:
+        required:
+          type: boolean
+          default: true
+          description: Whether one option must be satisfied. Defaults to true when omitted.
+        options:
+          type: array
+          minItems: 1
+          description: Preferred alternatives; every inner array lists Credential Query ids required together.
+          items:
+            type: array
+            minItems: 1
+            items:
+              type: string
+              minLength: 1
+              pattern: '^[A-Za-z0-9_-]+$'
+      example:
+        required: true
+        options:
+          - [pid]
+          - [mdl]
+
+    DcqlTrustedAuthorityType:
+      type: string
+      description: >
+        The trusted-authority mechanism (OpenID4VP 1.0 Section 6.1.1): base64url-encoded key
+        identifiers for `aki`, ETSI Trusted List identifiers for `etsi_tl`, and entity
+        identifiers for `openid_federation`.
+      enum: [aki, etsi_tl, openid_federation]
+      example: aki
+
+    DcqlTrustedAuthority:
+      type: object
+      description: >
+        A trusted-authorities query (OpenID4VP 1.0 Section 6.1.1). Constrains the
+        authorities that may have issued the credential. Value format depends on type:
+        base64url-encoded key identifiers for `aki`, ETSI Trusted List identifiers for
+        `etsi_tl`, and entity identifiers for `openid_federation`.
+      required: [type, values]
+      properties:
+        type:
+          $ref: "#/components/schemas/DcqlTrustedAuthorityType"
+        values:
+          type: array
+          minItems: 1
+          items:
+            type: string
+            minLength: 1
+          example: [s9tIpPmhxdiuNkHMEWNpYim8S8Y]
+
+    DcqlTrustedAuthorityProvenanceEntry:
+      type: object
+      description: >
+        Records that a trusted-authority entry in the stored DCQL query was snapshotted
+        from a trust domain, so admin tooling can show provenance and offer a refresh.
+        This is authoring metadata; it is never part of the wire DCQL query.
+      required: [credentialQueryId, type, domainId, resolvedAt]
+      properties:
+        credentialQueryId:
+          type: string
+          description: The credential query (by id) the snapshot was inserted into.
+          example: EuPid
+        type:
+          $ref: "#/components/schemas/DcqlTrustedAuthorityType"
+        domainId:
+          type: string
+          description: Trust domain the values were derived from.
+          example: trust-domain-eu-wallet
+        resolvedAt:
+          type: string
+          format: date-time
+          description: When the domain's anchors were resolved into values.
+          example: '2026-07-19T10:00:00Z'
+        merged:
+          type: boolean
+          default: false
+          description: >
+            True when the snapshot merged into an entry that already had manually
+            entered values.
+          example: false
+
+    # -- Authoring / versioning (EDK enterprise layer) --
+    ChannelRef:
+      type: object
+      description: >
+        A version-pinned reference to a verifiable-credential channel.
+        Each reference resolves to one data-product-bound channel and contributes exactly one
+        credential query to the derived DCQL query.
+      required: [channelId, channelVersion]
+      properties:
+        channelId:
+          type: string
+          format: uuid
+          description: The referenced verifiable-credential channel id.
+          example: 0d4f9c2e-7b1a-4e8f-9c3d-2a6b5e8f1c4d
+        channelVersion:
+          type: integer
+          format: int64
+          minimum: 1
+          description: The pinned channel snapshot version (monotonic, starting at 1).
+          example: 3
+
+    DcqlCredentialProvenance:
+      type: object
+      description: >
+        The resolution provenance of one credential query within a derived DCQL query:
+        which channel produced it, the wire claim paths that were emitted, and the
+        derived wire-format identity.
+      required: [credentialQueryId, channelRef, generatedClaimPaths, format]
+      properties:
+        credentialQueryId:
+          type: string
+          description: >
+            The id of the credential query within the derived DCQL query this provenance
+            belongs to.
+          example: EmployeeCredential
+        channelRef:
+          $ref: '#/components/schemas/ChannelRef'
+        generatedClaimPaths:
+          type: array
+          description: >
+            The wire claim paths emitted for this credential query, in order. Each path is
+            a flat list of wire segments; a segment may itself contain dots (for example an
+            mdoc namespace).
+          items:
+            type: array
+            items:
+              type: string
+          example: [[given_name], [family_name]]
+        format:
+          $ref: './wallet-credential-components.yml#/components/schemas/CredentialFormat'
+        vct:
+          type: string
+          nullable: true
+          description: The SD-JWT VC type identifier, when the format carries one.
+          example: https://issuer.example.com/public/schema/vct/EuPid
+        doctype:
+          type: string
+          nullable: true
+          description: The mdoc document type, when the format carries one.
+          example: org.iso.18013.5.1.mDL
+
+    PreviewDcqlQueryRequest:
+      type: object
+      description: >
+        Request to derive a DCQL query from version-pinned verifiable-credential
+        channels without persisting it.
+      required: [channelRefs]
+      properties:
+        channelRefs:
+          type: array
+          minItems: 1
+          description: >
+            The version-pinned channel references to project, in order. Each contributes
+            exactly one credential query to the derived DCQL query.
+          items:
+            $ref: '#/components/schemas/ChannelRef'
+        useCredentialSets:
+          type: boolean
+          default: false
+          description: >
+            When true, wraps the derived credential query ids in a single required
+            credential set.
+
+    PreviewDcqlQueryResult:
+      type: object
+      description: >
+        The derived DCQL query plus per-credential-query provenance. Nothing is persisted.
+      required: [dcqlQuery, provenance]
+      properties:
+        dcqlQuery:
+          $ref: '#/components/schemas/DcqlQuery'
+        provenance:
+          type: array
+          description: Per-credential-query resolution provenance, in input order.
+          items:
+            $ref: '#/components/schemas/DcqlCredentialProvenance'
+        warnings:
+          type: array
+          description: Non-fatal conversion warnings.
+          items:
+            type: string
+
+    AuthorDcqlQueryRequest:
+      type: object
+      description: >
+        Request to derive a DCQL query from version-pinned verifiable-credential
+        channels and persist it to the versioned DCQL store.
+      required: [queryId, name, channelRefs]
+      properties:
+        queryId:
+          type: string
+          minLength: 1
+          description: >
+            The DCQL store key to persist under, unique within the tenant. Authoring an
+            existing `queryId` appends a new version.
+          example: identity-verification
+        name:
+          type: string
+          description: Human-readable name stored on the DCQL query configuration.
+          example: Identity verification
+        description:
+          type: string
+          nullable: true
+          description: Optional free-text description stored on the configuration.
+        channelRefs:
+          type: array
+          minItems: 1
+          description: >
+            The version-pinned channel references to project, in order. Each contributes
+            exactly one credential query to the derived DCQL query.
+          items:
+            $ref: '#/components/schemas/ChannelRef'
+        useCredentialSets:
+          type: boolean
+          default: false
+          description: >
+            When true, wraps the derived credential query ids in a single required
+            credential set.
+
+    AuthoredDcqlQueryResult:
+      type: object
+      description: >
+        The persisted DCQL query: its store key and version, the derived query body, and
+        the per-credential-query provenance the usage lineage was recorded from.
+      required: [queryId, version, dcqlQuery, provenance]
+      properties:
+        queryId:
+          type: string
+          description: The DCQL store key the query was persisted under.
+          example: identity-verification
+        version:
+          type: integer
+          format: int64
+          description: >
+            The version the versioned store advanced to (1 for a fresh query, monotonic
+            thereafter).
+          example: 1
+        dcqlQuery:
+          $ref: '#/components/schemas/DcqlQuery'
+        provenance:
+          type: array
+          description: Per-credential-query resolution provenance, in input order.
+          items:
+            $ref: '#/components/schemas/DcqlCredentialProvenance'
+        warnings:
+          type: array
+          description: Non-fatal conversion warnings.
+          items:
+            type: string
+
+    DcqlQueryVersionSummary:
+      type: object
+      description: Summary of a single version in a DCQL query configuration's history.
+      required: [version, createdAt]
+      properties:
+        version:
+          type: integer
+          description: Monotonic version number.
+        createdAt:
+          type: integer
+          format: int64
+          description: Version creation timestamp, epoch milliseconds.
+        createdBy:
+          type: string
+          nullable: true
+          description: Principal that created this version.
+
+    DcqlQueryVersionRecord:
+      type: object
+      description: A full version record of a DCQL query configuration.
+      required: [identifier, version, dcqlQuery, createdAt]
+      properties:
+        identifier:
+          type: string
+          description: Stable identifier of the configuration this version belongs to.
+        version:
+          type: integer
+          description: Monotonic version number.
+        dcqlQuery:
+          $ref: '#/components/schemas/DcqlQuery'
+        createdAt:
+          type: integer
+          format: int64
+          description: Version creation timestamp, epoch milliseconds.
+        createdBy:
+          type: string
+          nullable: true
+          description: Principal that created this version.
+
+    RestoreDcqlQueryVersionRequest:
+      type: object
+      description: Request body for restoring a previous version of a DCQL query configuration.
+      properties:
+        note:
+          type: string
+          nullable: true
+          description: Optional note recorded with the restore operation.
+
+    # -- Verifier bindings / activations (VDX platform layer) --
+    VerifierDcqlBinding:
+      type: object
+      description: A binding between a verifier instance and a DCQL query configuration.
+      required: [id, tenantId, verifierId, queryId, pinnedVersion, enabled, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+        tenantId:
+          type: string
+        verifierId:
+          type: string
+        queryId:
+          type: string
+          description: Identifier of the bound DCQL query configuration.
+        pinnedVersion:
+          type: integer
+          description: The configuration version this binding is pinned to.
+        enabled:
+          type: boolean
+        alias:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    BindVerifierDcqlRequest:
+      type: object
+      description: Request body for binding a DCQL query to a verifier.
+      required: [queryId]
+      properties:
+        queryId:
+          type: string
+          description: Identifier of the DCQL query to bind.
+        version:
+          type: integer
+          nullable: true
+          description: Version to pin. Defaults to the current version at bind time when omitted.
+
+    UpdateVerifierDcqlBindingRequest:
+      type: object
+      description: Request body for updating a verifier's DCQL binding.
+      properties:
+        pinnedVersion:
+          type: integer
+          nullable: true
+          description: New pinned version (advance or roll back).
+        enabled:
+          type: boolean
+          nullable: true
+        alias:
+          type: string
+          nullable: true
+
+    VerifierDcqlBindingActivation:
+      type: object
+      description: A scheduled future activation of a verifier's DCQL binding to a target version.
+      required: [activationId, verifierId, queryId, pinnedVersion, effectiveAt, status]
+      properties:
+        activationId:
+          type: string
+          description: Identifier of the scheduled activation.
+        verifierId:
+          type: string
+        queryId:
+          type: string
+          description: Identifier of the bound DCQL query configuration.
+        pinnedVersion:
+          type: integer
+          description: The configuration version this activation will pin.
+        effectiveAt:
+          type: string
+          format: date-time
+          description: When the activation takes effect.
+        status:
+          type: string
+          enum: [PENDING, APPLIED, CANCELLED, FAILED]
+          description: Lifecycle status of the scheduled activation.
+
+    ActivateVerifierDcqlBindingRequest:
+      type: object
+      description: Request body for scheduling a verifier DCQL binding activation.
+      required: [effectiveAt]
+      properties:
+        pinnedVersion:
+          type: integer
+          nullable: true
+          description: Version to pin. Defaults to the latest version when omitted.
+        effectiveAt:
+          type: string
+          format: date-time
+          description: When the activation should take effect.

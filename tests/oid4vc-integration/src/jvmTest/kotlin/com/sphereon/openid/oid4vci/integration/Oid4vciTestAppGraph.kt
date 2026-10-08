@@ -1,20 +1,23 @@
 package com.sphereon.openid.oid4vci.integration
 
-import com.sphereon.core.defaults.app.DefaultRootScopeProvider
 import com.sphereon.core.api.IdkResult
-import com.sphereon.core.api.error.IdkError
+import com.sphereon.core.api.Ok
 import com.sphereon.core.api.conf.DefaultPrincipalMapPropertySource
+import com.sphereon.core.api.error.IdkError
+import com.sphereon.core.defaults.app.DefaultRootScopeProvider
 import com.sphereon.data.store.party.model.IdentityRole
 import com.sphereon.di.app.AbstractAppGraph
 import com.sphereon.di.app.RootScopeProvider
 import com.sphereon.di.session.SessionScope
-import com.sphereon.openid.oid4vci.issuer.spi.IssuerKeyNameResolver
 import com.sphereon.oauth2.jwt.validation.JwtValidationConfig
+import com.sphereon.openid.oid4vci.issuer.impl.http.HttpAsBridge
+import com.sphereon.openid.oid4vci.issuer.spi.IssuerKeyNameResolver
 import com.sphereon.wallet.WalletIdentityResolver
 import com.sphereon.wallet.credential.IdentifierRef
-import com.sphereon.wallet.interaction.WalletInteractionPrivateSessionStore
-import com.sphereon.wallet.interaction.WalletInteractionClient
+import com.sphereon.wallet.interaction.WalletAttendedAuthorizationRegistry
 import com.sphereon.wallet.interaction.WalletCounterpartyEncounterRegistry
+import com.sphereon.wallet.interaction.WalletInteractionClient
+import com.sphereon.wallet.interaction.WalletInteractionPrivateSessionStore
 import com.sphereon.wallet.interaction.WalletInteractionSensitiveInputAuthority
 import com.sphereon.wallet.interaction.impl.DefaultWalletInteractionEngine
 import com.sphereon.wallet.interaction.impl.InMemoryWalletInteractionPrivateSessionStore
@@ -22,27 +25,29 @@ import com.sphereon.wallet.interaction.impl.InMemoryWalletInteractionSessionStor
 import com.sphereon.wallet.interaction.impl.LocalWalletInteractionClient
 import com.sphereon.wallet.interaction.impl.StoreBackedWalletInteractionSensitiveInputAuthority
 import com.sphereon.wallet.interaction.impl.WalletInteractionSessionStore
-import com.sphereon.wallet.wscd.SoftwareWscdKeyStoreConfiguration
-import com.sphereon.core.api.Ok
 import com.sphereon.wallet.wsca.impl.UnavailableWalletUserAuthenticator
 import com.sphereon.wallet.wsca.impl.WalletUserAuthenticator
 import com.sphereon.wallet.wscd.ActivationProof
 import com.sphereon.wallet.wscd.ActivationProofKind
+import com.sphereon.wallet.wscd.SoftwareWscdKeyStoreConfiguration
+import com.sphereon.wallet.wscd.testfixtures.WalletAppGraphInteractionBindings
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.ContributesIntoSet
+import dev.zacsweers.metro.ContributesTo
 import dev.zacsweers.metro.DependencyGraph
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.Named
 import dev.zacsweers.metro.Provides
 import dev.zacsweers.metro.SingleIn
-import dev.zacsweers.metro.ContributesTo
 import dev.zacsweers.metro.binding
 import dev.zacsweers.metro.createGraphFactory
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import com.sphereon.wallet.interaction.WalletInteractionDiagnostics
 
-@DependencyGraph(AppScope::class)
+// This in-process fixture uses the existing Sphereon bridge contribution through its public SPI.
+@DependencyGraph(AppScope::class, excludes = [HttpAsBridge::class])
 abstract class Oid4vciTestAppGraph : AbstractAppGraph() {
     @Provides
     @SingleIn(AppScope::class)
@@ -138,18 +143,20 @@ class Oid4vciTestIssuerKeyNameResolver(
     ): String? = null
 }
 
-@ContributesTo(SessionScope::class)
+@ContributesTo(SessionScope::class, replaces = [WalletAppGraphInteractionBindings::class])
 interface Oid4vciWalletInteractionTestModule {
     @Provides
     @SingleIn(SessionScope::class)
-    fun provideWalletInteractionPrivateSessionStore(): WalletInteractionPrivateSessionStore =
-        InMemoryWalletInteractionPrivateSessionStore()
+    fun provideWalletAttendedAuthorizationRegistry(): WalletAttendedAuthorizationRegistry = WalletAttendedAuthorizationRegistry.none
 
     @Provides
     @SingleIn(SessionScope::class)
-    fun provideWalletInteractionSensitiveInputAuthority(
-        store: WalletInteractionPrivateSessionStore,
-    ): WalletInteractionSensitiveInputAuthority = StoreBackedWalletInteractionSensitiveInputAuthority(store)
+    fun provideWalletInteractionPrivateSessionStore(): WalletInteractionPrivateSessionStore = InMemoryWalletInteractionPrivateSessionStore()
+
+    @Provides
+    @SingleIn(SessionScope::class)
+    fun provideWalletInteractionSensitiveInputAuthority(store: WalletInteractionPrivateSessionStore,): WalletInteractionSensitiveInputAuthority =
+        StoreBackedWalletInteractionSensitiveInputAuthority(store)
 
     @Provides
     @SingleIn(SessionScope::class)
@@ -157,8 +164,7 @@ interface Oid4vciWalletInteractionTestModule {
 
     @Provides
     @SingleIn(SessionScope::class)
-    fun provideWalletCounterpartyEncounterRegistry(): WalletCounterpartyEncounterRegistry =
-        WalletCounterpartyEncounterRegistry.none
+    fun provideWalletCounterpartyEncounterRegistry(): WalletCounterpartyEncounterRegistry = WalletCounterpartyEncounterRegistry.none
 
     @Provides
     @SingleIn(SessionScope::class)
@@ -171,12 +177,13 @@ interface Oid4vciWalletInteractionTestModule {
             sensitiveInputAuthority = sensitiveInputAuthority,
             privateSessionStore = privateSessionStore,
             sessionStore = sessionStore,
+            launchAuthorities = setOf(integrationOrdinaryLaunchAuthority()),
+            diagnostics = WalletInteractionDiagnostics.none,
         )
 
     @Provides
     @SingleIn(SessionScope::class)
-    fun provideWalletInteractionClient(engine: DefaultWalletInteractionEngine): WalletInteractionClient =
-        LocalWalletInteractionClient(engine)
+    fun provideWalletInteractionClient(engine: DefaultWalletInteractionEngine): WalletInteractionClient = LocalWalletInteractionClient(engine)
 }
 
 /** Promptless attended-operation authorization for in-process protocol tests only. */

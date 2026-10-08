@@ -25,7 +25,10 @@ import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.Parameters
 import io.ktor.http.isSuccess
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
@@ -37,12 +40,16 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNotEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
+import kotlin.time.Clock
+import kotlin.time.Duration.Companion.seconds
+import kotlin.time.TimeSource
 
 /**
  * End-to-end coverage for the `grant_type=refresh_token` flow against the `oidf-op-basic`
  * confidential client. The OIDF Basic-OP profile exercises refresh-token rotation per
  * RFC 6749 §6 + §5.2, with token rotation per RFC 6819 §5.2.2.3 (default
- * `oauth2.servers.default.refresh-token-rotation=true`).
+ * `oauth2.servers.default.refresh-token-rotation=true`). This strict rejection fixture explicitly
+ * selects zero retry grace; the production default 60-second retry window is unchanged.
  *
  * Two scenarios:
  *
@@ -59,9 +66,12 @@ class OidfOpRefreshTokenE2ETest {
     private lateinit var fixture: OidfOpServerFixture
     private lateinit var client: HttpClient
     private val json = Json { ignoreUnknownKeys = true }
+    private lateinit var overrides: HarnessPropertyOverride
 
     @BeforeTest
     fun setUp() {
+        // This rejection profile has no retry window; production's default grace remains unchanged.
+        overrides = HarnessPropertyOverride("oauth2.servers.default.refresh-token-retry-grace-period-seconds" to "0")
         fixture = OidfOpServerFixture()
         client = HttpClient(CIO) { followRedirects = false }
     }
@@ -70,6 +80,7 @@ class OidfOpRefreshTokenE2ETest {
     fun tearDown() {
         client.close()
         fixture.stop()
+        overrides.close()
     }
 
     @Test
@@ -249,6 +260,17 @@ class OidfOpRefreshTokenE2ETest {
                 firstRefreshBody["refresh_token"]?.jsonPrimitive?.content
                     ?: error("first refresh must rotate and return refresh_token B")
             assertNotEquals(refreshTokenA, refreshTokenB, "rotation must produce a new token value")
+
+            // Both rotation and verification use Clock.System. Observe a later real instant
+            // than the received rotation response so even a zero-grace equality cannot retry A.
+            val afterRotationResponse = Clock.System.now()
+            withContext(Dispatchers.Default) {
+                val started = TimeSource.Monotonic.markNow()
+                while (Clock.System.now() <= afterRotationResponse) {
+                    check(started.elapsedNow() < 2.seconds) { "Real clock did not advance after rotation" }
+                    delay(1)
+                }
+            }
 
             // Step 3: replay refresh_token A → must be rejected with invalid_grant.
             val replayedA =

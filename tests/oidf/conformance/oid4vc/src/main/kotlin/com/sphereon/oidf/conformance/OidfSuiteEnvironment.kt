@@ -125,8 +125,7 @@ class OidfSuiteEnvironment private constructor(
                             withFixedPort(fixedHostPorts.mtls, CONTAINER_MTLS_PORT)
                             withFixedPort(fixedHostPorts.alternate, CONTAINER_ALTERNATE_PORT)
                         }
-                    }
-                    .waitingFor(
+                    }.waitingFor(
                         Wait
                             .forListeningPorts()
                             .withStartupTimeout(Duration.ofMinutes(2)),
@@ -167,8 +166,7 @@ class OidfSuiteEnvironment private constructor(
                             // Preserve the SUT hostname for TLS and Host validation while
                             // routing it to the host-side production Helm Gateway.
                             sutHostName?.let { withExtraHost(it, "host-gateway") }
-                        }
-                        .withEnv("MONGODB_HOST", "mongodb")
+                        }.withEnv("MONGODB_HOST", "mongodb")
                         .withEnv("BASE_URL", "https://host.testcontainers.internal:${ports.https}")
                         .withEnv("BASE_MTLS_URL", "https://host.testcontainers.internal:${ports.mtls}")
                         .withEnv("OIDC_GITLAB_CLIENTID", "fapi-test-suite-client")
@@ -182,8 +180,7 @@ class OidfSuiteEnvironment private constructor(
                                 "-Djavax.net.ssl.trustStore=$CONTAINER_TRUST_STORE_PATH " +
                                 "-Djavax.net.ssl.trustStorePassword=${String(TRUST_STORE_PASSWORD)} " +
                                 "-Djavax.net.ssl.trustStoreType=PKCS12",
-                        )
-                        .withCopyFileToContainer(MountableFile.forHostPath(trustStorePath), CONTAINER_TRUST_STORE_PATH)
+                        ).withCopyFileToContainer(MountableFile.forHostPath(trustStorePath), CONTAINER_TRUST_STORE_PATH)
                         .waitingFor(
                             Wait
                                 .forLogMessage(".*Started Application in.*\\n", 1)

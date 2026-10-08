@@ -38,6 +38,7 @@ import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
@@ -46,7 +47,7 @@ import kotlin.test.assertTrue
  *    `tokenExchange = SUPPORTED`,
  *  - a valid JWT subject_token grants a fresh access token whose payload preserves the original
  *    subject, and the response carries `issued_token_type`,
- *  - an invalid subject_token surfaces `invalid_grant` (or wraps it in `unauthorized_client`),
+ *  - an invalid subject_token is denied with `invalid_request` per RFC 8693 Section 2.2.2,
  *  - the `audience` request parameter narrows the issued token's `aud`,
  *  - `scope` narrows the granted scope.
  *
@@ -57,10 +58,14 @@ class OidfOpTokenExchangeTest {
     private lateinit var fixture: OidfOpServerFixture
     private lateinit var client: HttpClient
     private val json = Json { ignoreUnknownKeys = true }
+    private lateinit var overrides: HarnessPropertyOverride
 
     @BeforeTest
     fun setUp() {
+        overrides = HarnessPropertyOverride()
         fixture = OidfOpServerFixture()
+        // Register the actual owning AS issuer before minting or verifying any subject token.
+        overrides.publish("oauth2.servers.default.issuer", fixture.baseUrl)
         client = HttpClient(CIO) { followRedirects = false }
     }
 
@@ -68,7 +73,69 @@ class OidfOpTokenExchangeTest {
     fun tearDown() {
         client.close()
         fixture.stop()
+        overrides.close()
     }
+
+    @Test
+    fun tokenExchangePublicCommandAcceptsTheRealSubjectToken() =
+        runTest {
+            val (subjectAccessToken, _) = mintSubjectAccessToken()
+            val context =
+                fixture.graph.userContextManager.createOrGetFromInputs(
+                    tenantInput =
+                        com.sphereon.core.defaults.context
+                            .DefaultTenantInputString("default"),
+                    principalInput =
+                        com.sphereon.core.defaults.context
+                            .DefaultPrincipalInputString("anonymous"),
+                    makeActive = false,
+                )
+            val session =
+                context.sessionContextManager.createOrGetFromId(
+                    "token-exchange-typed-diagnostic",
+                    principalType = com.sphereon.di.context.PrincipalType.USER,
+                )
+            try {
+                val result =
+                    (session.graph as TokenExchangeDiagnosticGraph).handleTokenRequest.execute(
+                        com.sphereon.oauth2.server.authorization.command.token.HandleTokenRequestArgs(
+                            requestBody =
+                                mapOf(
+                                    "grant_type" to listOf("urn:ietf:params:oauth:grant-type:token-exchange"),
+                                    "subject_token" to listOf(subjectAccessToken),
+                                    "subject_token_type" to listOf("urn:ietf:params:oauth:token-type:access_token"),
+                                ),
+                            requestHeaders = mapOf("Authorization" to "Basic ${basicAuth()}"),
+                            httpUrl = "${fixture.baseUrl}/token",
+                            baseUrlOverride = fixture.baseUrl,
+                        ),
+                    )
+                // Report only the typed category and safe static branch description, never token data.
+                val safeBranches =
+                    listOf(
+                        "Missing required parameter: subject_token",
+                        "Missing required parameter: subject_token_type",
+                        "subject token is missing its issuer",
+                        "subject token cannot select a key from its protected header",
+                        "subject token cannot use a DID kid as a trust root",
+                        "subject token uses an unknown local signing key",
+                        "subject token local signing key resolver is unavailable",
+                        "subject token local signing key could not be resolved",
+                        "Authorization server issuer policy is unavailable",
+                    )
+                val diagnostic =
+                    if (result.isErr) {
+                        val message = result.error.message.defaultMessage
+                        val branch = safeBranches.firstOrNull { message.contains(it) } ?: "unclassified typed error"
+                        "${result.error.code}: $branch"
+                    } else {
+                        "success"
+                    }
+                assertTrue(result.isOk, diagnostic)
+            } finally {
+                session.destroy()
+            }
+        }
 
     @Test
     fun discoveryAdvertisesTokenExchangeGrant() =
@@ -128,7 +195,13 @@ class OidfOpTokenExchangeTest {
     @Test
     fun tokenExchangeRejectsInvalidSubjectToken() =
         runTest {
-            val tampered = "header.payload.signature"
+            val (validSubjectToken, _) = mintSubjectAccessToken()
+            val parts = validSubjectToken.split('.')
+            assertEquals(3, parts.size, "Real subject token must have a signed JWT shape")
+            val signature = parts[2]
+            assertTrue(signature.isNotEmpty(), "Real subject token must carry a signature")
+            val changedFirstCharacter = if (signature.first() == 'A') 'B' else 'A'
+            val tampered = "${parts[0]}.${parts[1]}.$changedFirstCharacter${signature.drop(1)}"
             val response =
                 client.submitForm(
                     url = "${fixture.baseUrl}/token",
@@ -148,10 +221,10 @@ class OidfOpTokenExchangeTest {
             )
             val body = json.parseToJsonElement(response.bodyAsText()).jsonObject
             val error = body["error"]?.jsonPrimitive?.content
-            assertTrue(
-                error == "invalid_grant" || error == "access_denied",
-                "rejection must use invalid_grant or access_denied, got '$error'",
-            )
+            // RFC 8693 Section 2.2.2 requires invalid_request for an invalid subject_token.
+            assertEquals("invalid_request", error, "Invalid signature must be denied by the token-exchange contract")
+            assertNull(body["access_token"], "A rejected subject token must not mint an access token")
+            assertNull(body["refresh_token"], "A rejected subject token must not mint a refresh token")
         }
 
     @Test
@@ -328,4 +401,9 @@ private class TxPkceFixture {
             .getUrlEncoder()
             .withoutPadding()
             .encodeToString(MessageDigest.getInstance("SHA-256").digest(verifier.encodeToByteArray()))
+}
+
+@dev.zacsweers.metro.ContributesTo(com.sphereon.di.session.SessionScope::class)
+internal interface TokenExchangeDiagnosticGraph {
+    val handleTokenRequest: com.sphereon.oauth2.server.authorization.command.token.HandleTokenRequestCommand
 }

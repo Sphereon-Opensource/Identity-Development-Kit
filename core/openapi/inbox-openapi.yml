@@ -1,0 +1,2620 @@
+openapi: 3.0.4
+info:
+  title: VDX Cross-product Inbox API
+  version: 0.1.0
+  description: >-
+    Canonical cross-product Inbox contract. Inbox owns act, routing,
+    assignment, placement, and history; source products own authoritative
+    objects and domain actions. Publication of this contract does not assert
+    that a runtime REST adapter is mounted.
+  license:
+    name: Proprietary
+    identifier: LicenseRef-Proprietary
+servers:
+  - url: /api/inbox/v1
+security:
+  - bearerAuth: []
+x-vdx-frozen-contract:
+  tables:
+    - inbox
+    - inbox_folder
+    - inbox_folder_binding
+    - inbox_item
+    - inbox_item_placement
+    - inbox_user_state
+    - inbox_work_assignment
+    - inbox_assignment_history
+    - inbox_action_receipt
+    - inbox_saved_view
+    - inbox_rule
+    - inbox_work_queue
+    - inbox_throughput_fact
+    - inbox_legal_hold
+    - inbox_legal_hold_history
+    - inbox_item_tag
+    - inbox_bulk_operation
+    - projection checkpoints
+    - dead letters
+    - append-only delivery-evidence references
+  ingestionIdentity: [tenant, source, sourceObjectId, sourceVersion, eventId]
+  policyActions:
+    - inbox.read
+    - inbox.claim
+    - inbox.act
+    - inbox.manage
+    - inbox.configure-binding
+    - inbox.view-audit
+    - inbox.take-over
+    - inbox.extend-lease
+    - inbox.escalate
+    - inbox.bulk-reassign
+    - inbox.bulk-tag
+    - inbox.legal-hold
+    - inbox.export
+  connectorOperations:
+    - E2E_CUSTOM_OID4VP_RECEIVE_PRESENTATION
+    - E2E_CUSTOM_OID4VP_SEND_PRESENTATION
+  queryFieldKeys: [nature, kind, folder, holder, checkout, age, due, source, tag, lifecycle, unread]
+  actionOutcomes: [COMMITTED, FAILED, INDETERMINATE]
+  performance:
+    itemsPerTenant: 1000000
+    concurrentReaders: 100
+    firstPageSize: 50
+    firstPageAndSummaryP95Milliseconds: 750
+    acceptedReceiptMilliseconds: 1000
+    committedLiveUpdateMilliseconds: 2000
+tags:
+  - name: Configuration
+    description: Inbox, physical folder, binding, saved-view, and routing-rule configuration.
+  - name: Summary
+    description: Authorization-filtered counts and facets.
+  - name: Items
+    description: Item queries, details, history, user state, and safe artifact retrieval.
+  - name: Actions
+    description: Source-owned domain action intents and durable receipts.
+  - name: Work
+    description: Inbox-owned claim, release, reassignment, and cover transitions.
+  - name: Live
+    description: Authorization-filtered resumable live updates.
+paths:
+  /inboxes:
+    get:
+      tags: [Configuration]
+      summary: List authorized inboxes
+      operationId: listInboxes
+      x-vdx-command-id: inbox.inboxes.list
+      responses:
+        '200':
+          description: Authorized inboxes
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Inbox' }
+    post:
+      tags: [Configuration]
+      summary: Create an inbox
+      operationId: createInbox
+      x-vdx-command-id: inbox.inboxes.create
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateInboxRequest' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Inbox' }
+  /inboxes/{inboxId}:
+    parameters:
+      - $ref: '#/components/parameters/InboxId'
+    get:
+      tags: [Configuration]
+      summary: Get an inbox
+      operationId: getInbox
+      x-vdx-command-id: inbox.inboxes.get
+      responses:
+        '200':
+          description: Inbox
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Inbox' }
+    patch:
+      tags: [Configuration]
+      summary: Update an inbox
+      operationId: updateInbox
+      x-vdx-command-id: inbox.inboxes.update
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateInboxRequest' }
+      responses:
+        '200':
+          description: Updated Inbox
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Inbox' }
+  /inboxes/{inboxId}/folders:
+    parameters:
+      - $ref: '#/components/parameters/InboxId'
+    get:
+      tags: [Configuration]
+      summary: List physical folders
+      operationId: listInboxFolders
+      x-vdx-command-id: inbox.folders.list
+      responses:
+        '200':
+          description: Physical folder hierarchy
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/InboxFolder' }
+    post:
+      tags: [Configuration]
+      summary: Create a physical folder
+      operationId: createInboxFolder
+      x-vdx-command-id: inbox.folders.create
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateInboxFolderRequest' }
+      responses:
+        '201':
+          description: Created physical folder
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InboxFolder' }
+  /inboxes/{inboxId}/folders/{folderId}:
+    parameters:
+      - $ref: '#/components/parameters/InboxId'
+      - $ref: '#/components/parameters/FolderId'
+    get:
+      tags: [Configuration]
+      summary: Get a physical folder
+      operationId: getInboxFolder
+      x-vdx-command-id: inbox.folders.get
+      responses:
+        '200':
+          description: Physical folder
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InboxFolder' }
+    patch:
+      tags: [Configuration]
+      summary: Update a physical folder
+      operationId: updateInboxFolder
+      x-vdx-command-id: inbox.folders.update
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateInboxFolderRequest' }
+      responses:
+        '200':
+          description: Updated physical folder
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InboxFolder' }
+  /inboxes/{inboxId}/queues:
+    parameters:
+      - $ref: '#/components/parameters/InboxId'
+    get:
+      tags: [Configuration]
+      summary: List work queues for an inbox
+      operationId: listInboxWorkQueues
+      x-vdx-command-id: inbox.queues.list
+      responses:
+        '200':
+          description: Authorized work queues, including root queues without folders
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/InboxWorkQueue' }
+    post:
+      tags: [Configuration]
+      summary: Create a versioned work queue
+      operationId: createInboxWorkQueue
+      x-vdx-command-id: inbox.queues.create
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateInboxWorkQueueRequest' }
+      responses:
+        '201':
+          description: Created queue
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InboxWorkQueue' }
+  /inboxes/{inboxId}/queues/{queueId}:
+    parameters:
+      - $ref: '#/components/parameters/InboxId'
+      - $ref: '#/components/parameters/QueueId'
+    get:
+      tags: [Configuration]
+      summary: Get a work queue
+      operationId: getInboxWorkQueue
+      x-vdx-command-id: inbox.queues.get
+      responses:
+        '200':
+          description: Work queue
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InboxWorkQueue' }
+    patch:
+      tags: [Configuration]
+      summary: Update a work queue with optimistic concurrency
+      operationId: updateInboxWorkQueue
+      x-vdx-command-id: inbox.queues.update
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateInboxWorkQueueRequest' }
+      responses:
+        '200':
+          description: Updated queue
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InboxWorkQueue' }
+  /inboxes/{inboxId}/folders/{folderId}/bindings:
+    parameters:
+      - $ref: '#/components/parameters/InboxId'
+      - $ref: '#/components/parameters/FolderId'
+    get:
+      tags: [Configuration]
+      summary: List folder bindings
+      operationId: listFolderBindings
+      x-vdx-command-id: inbox.bindings.list
+      responses:
+        '200':
+          description: Version-reference-only folder bindings
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/FolderBinding' }
+    post:
+      tags: [Configuration]
+      summary: Create a folder binding with a server-generated ID
+      operationId: createFolderBinding
+      x-vdx-command-id: inbox.bindings.create
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateFolderBindingRequest' }
+      responses:
+        '201':
+          description: Created binding with its server-generated ID
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FolderBinding' }
+  /inboxes/{inboxId}/folders/{folderId}/bindings/{bindingId}:
+    parameters:
+      - $ref: '#/components/parameters/InboxId'
+      - $ref: '#/components/parameters/FolderId'
+      - $ref: '#/components/parameters/BindingId'
+    patch:
+      tags: [Configuration]
+      summary: Update a folder binding
+      operationId: updateFolderBinding
+      x-vdx-command-id: inbox.bindings.update
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateFolderBindingRequest' }
+      responses:
+        '200':
+          description: Updated binding
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FolderBinding' }
+  /inboxes/{inboxId}/saved-views:
+    parameters:
+      - $ref: '#/components/parameters/InboxId'
+    get:
+      tags: [Configuration]
+      summary: List saved inbox views
+      operationId: listSavedInboxViews
+      x-vdx-command-id: inbox.saved-views.list
+      responses:
+        '200':
+          description: Authorized saved views
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/SavedInboxView' }
+    post:
+      tags: [Configuration]
+      summary: Create a saved inbox view
+      operationId: createSavedInboxView
+      x-vdx-command-id: inbox.saved-views.create
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateSavedInboxViewRequest' }
+      responses:
+        '201':
+          description: Created saved view
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SavedInboxView' }
+  /inboxes/{inboxId}/saved-views/{savedViewId}:
+    parameters:
+      - $ref: '#/components/parameters/InboxId'
+      - $ref: '#/components/parameters/SavedViewId'
+    get:
+      tags: [Configuration]
+      summary: Get a saved inbox view
+      operationId: getSavedInboxView
+      x-vdx-command-id: inbox.saved-views.get
+      responses:
+        '200':
+          description: Saved view
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SavedInboxView' }
+    patch:
+      tags: [Configuration]
+      summary: Update a saved inbox view
+      operationId: updateSavedInboxView
+      x-vdx-command-id: inbox.saved-views.update
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateSavedInboxViewRequest' }
+      responses:
+        '200':
+          description: Updated saved view
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SavedInboxView' }
+    delete:
+      tags: [Configuration]
+      summary: Delete a saved inbox view
+      operationId: deleteSavedInboxView
+      x-vdx-command-id: inbox.saved-views.delete
+      parameters:
+        - $ref: '#/components/parameters/ExpectedVersionHeader'
+      responses:
+        '204': { description: Deleted }
+  /inboxes/{inboxId}/rules:
+    parameters:
+      - $ref: '#/components/parameters/InboxId'
+    get:
+      tags: [Configuration]
+      summary: List inbox routing rules
+      operationId: listInboxRules
+      x-vdx-command-id: inbox.rules.list
+      responses:
+        '200':
+          description: Authorized routing rules
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/InboxRule' }
+    post:
+      tags: [Configuration]
+      summary: Create an inbox routing rule
+      operationId: createInboxRule
+      x-vdx-command-id: inbox.rules.create
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateInboxRuleRequest' }
+      responses:
+        '201':
+          description: Created routing rule
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InboxRule' }
+  /inboxes/{inboxId}/rules/{ruleId}:
+    parameters:
+      - $ref: '#/components/parameters/InboxId'
+      - $ref: '#/components/parameters/RuleId'
+    get:
+      tags: [Configuration]
+      summary: Get an inbox routing rule
+      operationId: getInboxRule
+      x-vdx-command-id: inbox.rules.get
+      responses:
+        '200':
+          description: Routing rule
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InboxRule' }
+    patch:
+      tags: [Configuration]
+      summary: Update an inbox routing rule
+      operationId: updateInboxRule
+      x-vdx-command-id: inbox.rules.update
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateInboxRuleRequest' }
+      responses:
+        '200':
+          description: Updated routing rule
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InboxRule' }
+    delete:
+      tags: [Configuration]
+      summary: Delete an inbox routing rule
+      operationId: deleteInboxRule
+      x-vdx-command-id: inbox.rules.delete
+      parameters:
+        - $ref: '#/components/parameters/ExpectedVersionHeader'
+      responses:
+        '204': { description: Deleted }
+  /summary:
+    get:
+      tags: [Summary]
+      summary: Get an authorization-filtered unified inbox summary
+      description: >-
+        Counts every inbox the current actor may access when no inboxId values
+        are supplied. Repeated inboxId values only narrow that authorized set.
+      operationId: getInboxSummary
+      x-vdx-command-id: inbox.summary.get
+      parameters:
+        - $ref: '#/components/parameters/InboxIdsQuery'
+        - $ref: '#/components/parameters/Snapshot'
+      responses:
+        '200':
+          description: Authorization-filtered counts and facets
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InboxSummary' }
+        '403': { $ref: '#/components/responses/PolicyDenied' }
+  /items:
+    get:
+      tags: [Items]
+      summary: Query authorized inbox items
+      description: >-
+        Executes the versioned structured query across every inbox the current
+        actor may access when no inboxId values are supplied. Repeated inboxId
+        values only narrow that authorized set. Shared links carry this same
+        `query` parameter as percent-encoded canonical JSON; clients must not
+        translate it into a different filter language.
+      operationId: queryInboxItems
+      x-vdx-command-id: inbox.items.query
+      parameters:
+        - $ref: '#/components/parameters/InboxIdsQuery'
+        - name: query
+          in: query
+          description: >-
+            The single executable item filter and shared-link carrier,
+            serialized as percent-encoded canonical InboxQueryDefinition JSON.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InboxQueryDefinition' }
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Snapshot'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: Stable authorization-filtered page
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InboxItemPage' }
+        '403': { $ref: '#/components/responses/PolicyDenied' }
+  /items/{itemId}:
+    parameters:
+      - $ref: '#/components/parameters/ItemId'
+    get:
+      tags: [Items]
+      summary: Get an inbox item
+      operationId: getInboxItem
+      x-vdx-command-id: inbox.items.get
+      responses:
+        '200':
+          description: Item detail
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InboxItem' }
+        '403': { $ref: '#/components/responses/PolicyDenied' }
+  /items/{itemId}/history:
+    parameters:
+      - $ref: '#/components/parameters/ItemId'
+    get:
+      tags: [Items]
+      summary: Get item history
+      operationId: getInboxItemHistory
+      x-vdx-command-id: inbox.items.history
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Snapshot'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: Authorization-filtered stable history page
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InboxHistoryPage' }
+  /items/{itemId}/legal-holds:
+    parameters:
+      - $ref: '#/components/parameters/ItemId'
+    get:
+      tags: [Items]
+      summary: List auditable legal holds for an item
+      operationId: listInboxItemLegalHolds
+      x-vdx-command-id: inbox.legal-holds.list
+      responses:
+        '200':
+          description: Authorized legal holds
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/InboxLegalHold' }
+    post:
+      tags: [Items]
+      summary: Apply a legal hold that wins over a pending retention sweep
+      operationId: applyInboxItemLegalHold
+      x-vdx-command-id: inbox.legal-holds.apply
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ApplyInboxLegalHoldRequest' }
+      responses:
+        '201':
+          description: Applied legal hold
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InboxLegalHold' }
+  /items/{itemId}/legal-holds/{legalHoldId}/release:
+    parameters:
+      - $ref: '#/components/parameters/ItemId'
+      - $ref: '#/components/parameters/LegalHoldId'
+    post:
+      tags: [Items]
+      summary: Release a legal hold with optimistic concurrency
+      operationId: releaseInboxItemLegalHold
+      x-vdx-command-id: inbox.legal-holds.release
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReleaseInboxLegalHoldRequest' }
+      responses:
+        '200':
+          description: Released legal hold
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InboxLegalHold' }
+  /items/{itemId}/artifacts/{artifactId}:
+    parameters:
+      - $ref: '#/components/parameters/ItemId'
+      - $ref: '#/components/parameters/ArtifactId'
+    get:
+      tags: [Items]
+      summary: Retrieve an authorized safe artifact
+      description: >-
+        Re-evaluates tenant and inbox.read policy and serves only SAFE content
+        from the managed artifact store. It never proxies a client-supplied URL.
+      operationId: retrieveInboxArtifact
+      x-vdx-command-id: inbox.artifacts.retrieve
+      responses:
+        '200':
+          description: Authorized artifact bytes
+          headers:
+            Digest:
+              schema: { type: string }
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+        '403': { $ref: '#/components/responses/PolicyDenied' }
+        '423': { $ref: '#/components/responses/ContentQuarantined' }
+        '503': { $ref: '#/components/responses/SourceUnavailable' }
+  /items/{itemId}/user-state:
+    parameters:
+      - $ref: '#/components/parameters/ItemId'
+    get:
+      tags: [Items]
+      summary: Get the current user's item state
+      operationId: getInboxItemUserState
+      x-vdx-command-id: inbox.user-state.get
+      responses:
+        '200':
+          description: Current actor's item state
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InboxItemState' }
+    put:
+      tags: [Items]
+      summary: Update the current user's item state
+      operationId: updateInboxItemUserState
+      x-vdx-command-id: inbox.user-state.update
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/InboxItemStatePatch' }
+      responses:
+        '200':
+          description: Updated user state
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InboxItemState' }
+  /items/{itemId}/actions/{actionKey}:
+    parameters:
+      - $ref: '#/components/parameters/ItemId'
+      - $ref: '#/components/parameters/ActionKey'
+    post:
+      tags: [Actions]
+      summary: Submit an item action intent
+      operationId: performInboxAction
+      x-vdx-command-id: inbox.actions.perform
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/InboxActionRequest' }
+      responses:
+        '202':
+          description: Durable action receipt; may already be committed
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InboxActionReceipt' }
+        '403': { $ref: '#/components/responses/PolicyDenied' }
+        '409': { $ref: '#/components/responses/ActionConflict' }
+        '422': { $ref: '#/components/responses/FormInvalid' }
+        '423': { $ref: '#/components/responses/ContentQuarantined' }
+        '503': { $ref: '#/components/responses/SourceUnavailable' }
+  /items/{itemId}/action-receipts/{receiptId}:
+    parameters:
+      - $ref: '#/components/parameters/ItemId'
+      - $ref: '#/components/parameters/ReceiptId'
+    get:
+      tags: [Actions]
+      summary: Read the latest durable revision of an action receipt
+      operationId: getInboxActionReceipt
+      x-vdx-command-id: inbox.receipts.get
+      responses:
+        '200':
+          description: Latest authorized receipt revision
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InboxActionReceipt' }
+        '403': { $ref: '#/components/responses/PolicyDenied' }
+  /work-items:
+    get:
+      tags: [Work]
+      summary: Query authorized WORK items across the unified Inbox
+      description: >-
+        Returns WORK items from every inbox the current actor may access when no
+        inboxId values are supplied. Repeated inboxId values only narrow that
+        authorized set. This is a façade over the canonical Inbox item query.
+      x-vdx-fixed-filter: { nature: WORK }
+      operationId: queryWorkItems
+      x-vdx-command-id: inbox.work-items.query
+      parameters:
+        - $ref: '#/components/parameters/InboxIdsQuery'
+        - name: query
+          in: query
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InboxQueryDefinition' }
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Snapshot'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: Stable authorization-filtered WORK page
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InboxItemPage' }
+        '403': { $ref: '#/components/responses/PolicyDenied' }
+        '503': { $ref: '#/components/responses/SourceUnavailable' }
+  /work-items/{itemId}/approve:
+    post:
+      tags: [Work]
+      summary: Submit the fixed approve action through the shared receipt engine
+      operationId: approveWorkItem
+      x-vdx-command-id: inbox.work-items.approve
+      parameters:
+        - $ref: '#/components/parameters/ItemId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/InboxActionRequest' }
+      responses:
+        '202': { $ref: '#/components/responses/InboxActionReceiptAccepted' }
+        '403': { $ref: '#/components/responses/PolicyDenied' }
+        '409': { $ref: '#/components/responses/ActionConflict' }
+        '422': { $ref: '#/components/responses/FormInvalid' }
+        '423': { $ref: '#/components/responses/ContentQuarantined' }
+        '503': { $ref: '#/components/responses/SourceUnavailable' }
+  /work-items/{itemId}/reject:
+    post:
+      tags: [Work]
+      summary: Submit the fixed reject action through the shared receipt engine
+      operationId: rejectWorkItem
+      x-vdx-command-id: inbox.work-items.reject
+      parameters:
+        - $ref: '#/components/parameters/ItemId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/InboxActionRequest' }
+      responses:
+        '202': { $ref: '#/components/responses/InboxActionReceiptAccepted' }
+        '403': { $ref: '#/components/responses/PolicyDenied' }
+        '409': { $ref: '#/components/responses/ActionConflict' }
+        '422': { $ref: '#/components/responses/FormInvalid' }
+        '423': { $ref: '#/components/responses/ContentQuarantined' }
+        '503': { $ref: '#/components/responses/SourceUnavailable' }
+  /work-items/{itemId}/complete:
+    post:
+      tags: [Work]
+      summary: Submit the fixed complete action through the shared receipt engine
+      operationId: completeWorkItem
+      x-vdx-command-id: inbox.work-items.complete
+      parameters:
+        - $ref: '#/components/parameters/ItemId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/InboxActionRequest' }
+      responses:
+        '202': { $ref: '#/components/responses/InboxActionReceiptAccepted' }
+        '403': { $ref: '#/components/responses/PolicyDenied' }
+        '409': { $ref: '#/components/responses/ActionConflict' }
+        '422': { $ref: '#/components/responses/FormInvalid' }
+        '423': { $ref: '#/components/responses/ContentQuarantined' }
+        '503': { $ref: '#/components/responses/SourceUnavailable' }
+  /work-items/{itemId}/claim:
+    post:
+      tags: [Work]
+      summary: Atomically claim a work item
+      operationId: claimWorkItem
+      x-vdx-command-id: inbox.work-items.claim
+      parameters:
+        - $ref: '#/components/parameters/ItemId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WorkVersionRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/WorkAssignmentResult' }
+        '403': { $ref: '#/components/responses/PolicyDenied' }
+        '409': { $ref: '#/components/responses/ActionConflict' }
+        '503': { $ref: '#/components/responses/SourceUnavailable' }
+  /work-items/{itemId}/release:
+    post:
+      tags: [Work]
+      summary: Atomically release a work item assignment
+      operationId: releaseWorkItem
+      x-vdx-command-id: inbox.work-items.release
+      parameters:
+        - $ref: '#/components/parameters/ItemId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WorkVersionRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/WorkAssignmentResult' }
+        '403': { $ref: '#/components/responses/PolicyDenied' }
+        '409': { $ref: '#/components/responses/ActionConflict' }
+        '503': { $ref: '#/components/responses/SourceUnavailable' }
+  /work-items/{itemId}/reassign:
+    post:
+      tags: [Work]
+      summary: Atomically reassign a work item
+      operationId: reassignWorkItem
+      x-vdx-command-id: inbox.work-items.reassign
+      parameters:
+        - $ref: '#/components/parameters/ItemId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WorkReassignRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/WorkAssignmentResult' }
+        '403': { $ref: '#/components/responses/PolicyDenied' }
+        '409': { $ref: '#/components/responses/ActionConflict' }
+        '503': { $ref: '#/components/responses/SourceUnavailable' }
+  /work-items/{itemId}/cover:
+    post:
+      tags: [Work]
+      summary: Atomically set bounded cover for a work item
+      operationId: setWorkItemCover
+      x-vdx-command-id: inbox.work-items.set-cover
+      parameters:
+        - $ref: '#/components/parameters/ItemId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WorkCoverRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/WorkAssignmentResult' }
+        '403': { $ref: '#/components/responses/PolicyDenied' }
+        '409': { $ref: '#/components/responses/ActionConflict' }
+        '503': { $ref: '#/components/responses/SourceUnavailable' }
+  /work-items/{itemId}/cover/clear:
+    post:
+      tags: [Work]
+      summary: Atomically clear bounded cover for a work item
+      operationId: clearWorkItemCover
+      x-vdx-command-id: inbox.work-items.clear-cover
+      parameters:
+        - $ref: '#/components/parameters/ItemId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WorkVersionRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/WorkAssignmentResult' }
+        '403': { $ref: '#/components/responses/PolicyDenied' }
+        '409': { $ref: '#/components/responses/ActionConflict' }
+        '503': { $ref: '#/components/responses/SourceUnavailable' }
+  /work-items/{itemId}/lease/extend:
+    post:
+      tags: [Work]
+      summary: Explicitly extend a checkout lease; client activity never extends it implicitly
+      operationId: extendWorkItemLease
+      x-vdx-command-id: inbox.work-items.extend-lease
+      parameters:
+        - $ref: '#/components/parameters/ItemId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WorkVersionRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/WorkAssignmentResult' }
+        '403': { $ref: '#/components/responses/PolicyDenied' }
+        '409': { $ref: '#/components/responses/ActionConflict' }
+        '503': { $ref: '#/components/responses/SourceUnavailable' }
+  /work-items/{itemId}/take-over:
+    post:
+      tags: [Work]
+      summary: Take over a held or expired checkout and record both holders
+      operationId: takeOverWorkItem
+      x-vdx-command-id: inbox.work-items.take-over
+      parameters:
+        - $ref: '#/components/parameters/ItemId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WorkVersionRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/WorkAssignmentResult' }
+        '403': { $ref: '#/components/responses/PolicyDenied' }
+        '409': { $ref: '#/components/responses/ActionConflict' }
+        '503': { $ref: '#/components/responses/SourceUnavailable' }
+  /work-items/{itemId}/escalate:
+    post:
+      tags: [Work]
+      summary: Commit an Inbox-owned SLA escalation synchronously
+      operationId: escalateWorkItem
+      x-vdx-command-id: inbox.work-items.escalate
+      parameters:
+        - $ref: '#/components/parameters/ItemId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WorkEscalationRequest' }
+      responses:
+        '200':
+          description: Synchronous committed Inbox-owned escalation result, never an action receipt
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkEscalationResult' }
+        '403': { $ref: '#/components/responses/PolicyDenied' }
+        '409': { $ref: '#/components/responses/ActionConflict' }
+        '503': { $ref: '#/components/responses/SourceUnavailable' }
+  /work-items/bulk/reassign:
+    post:
+      tags: [Work]
+      summary: Reassign a bounded item set as one correlated operation
+      operationId: bulkReassignWorkItems
+      x-vdx-command-id: inbox.work-items.bulk-reassign
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/InboxBulkReassignRequest' }
+      responses:
+        '200':
+          description: One bulk ID with per-item committed assignment history
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InboxBulkOperationResult' }
+        '403': { $ref: '#/components/responses/PolicyDenied' }
+        '409': { $ref: '#/components/responses/ActionConflict' }
+        '503': { $ref: '#/components/responses/SourceUnavailable' }
+  /items/bulk/tags:
+    post:
+      tags: [Items]
+      summary: Apply tags to a bounded item set as one correlated operation
+      description: Source-domain approve, reject, and complete are forbidden as bulk list operations.
+      operationId: bulkTagInboxItems
+      x-vdx-command-id: inbox.items.bulk-tag
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/InboxBulkTagRequest' }
+      responses:
+        '200':
+          description: One bulk ID with per-item history
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InboxBulkOperationResult' }
+        '403': { $ref: '#/components/responses/PolicyDenied' }
+        '409': { $ref: '#/components/responses/ActionConflict' }
+  /work-items/supervisor/query:
+    post:
+      tags: [Work]
+      summary: Query authorization-filtered supervisor metrics
+      operationId: queryInboxSupervisorMetrics
+      x-vdx-command-id: inbox.supervisor.query
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/InboxQueryDefinition' }
+      responses:
+        '200':
+          description: Every count and aggregate is computed after policy
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InboxSupervisorMetrics' }
+  /evidence-exports:
+    post:
+      tags: [Items]
+      summary: Request a policy-filtered evidentiary export job
+      description: >-
+        The server derives export ID, tenant, requester, and request time from
+        authenticated context. This asynchronous evidence archive is separate
+        from management metrics and never returns unbounded correlations inline.
+      operationId: createInboxEvidenceExport
+      x-vdx-command-id: inbox.evidence-exports.create
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateInboxEvidenceExportRequest' }
+      responses:
+        '202':
+          description: Export job accepted
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InboxEvidenceExportJob' }
+  /evidence-exports/{exportId}:
+    parameters:
+      - $ref: '#/components/parameters/ExportId'
+    get:
+      tags: [Items]
+      summary: Get an evidentiary export job
+      operationId: getInboxEvidenceExportJob
+      x-vdx-command-id: inbox.evidence-exports.get
+      responses:
+        '200':
+          description: Tenant-bound export job and completed manifest when available
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InboxEvidenceExportJob' }
+  /evidence-exports/{exportId}/artifact:
+    parameters:
+      - $ref: '#/components/parameters/ExportId'
+    get:
+      tags: [Items]
+      summary: Download a completed evidentiary export archive
+      description: >-
+        Reauthorizes inbox.export for the current tenant and requester, requires
+        COMPLETED status, audits access, and serves the manifest-bound archive
+        through a short-lived controlled download. It is not a management report.
+      operationId: downloadInboxEvidenceExportArtifact
+      x-vdx-command-id: inbox.evidence-exports.download
+      responses:
+        '200':
+          description: Authorized evidence archive bytes
+          headers:
+            Digest:
+              schema: { type: string }
+            Content-Disposition:
+              schema: { type: string }
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+  /throughput-facts:
+    get:
+      tags: [Summary]
+      summary: List authorized append-only arrival and completion facts
+      operationId: listInboxThroughputFacts
+      x-vdx-command-id: inbox.throughput-facts.list
+      parameters:
+        - $ref: '#/components/parameters/InboxIdsQuery'
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Snapshot'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: Policy-filtered event facts, not current projections or aggregates
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InboxThroughputFactPage' }
+  /live:
+    get:
+      tags: [Live]
+      summary: Stream resumable authorized inbox updates
+      description: >-
+        Streams every inbox the current actor may access when no inboxId values
+        are supplied. Repeated inboxId values only narrow that authorized set.
+      operationId: streamInboxUpdates
+      x-vdx-command-id: inbox.live.stream
+      parameters:
+        - $ref: '#/components/parameters/InboxIdsQuery'
+        - name: resumeCursor
+          in: query
+          description: Opaque actor-, tenant-, policy-, and stream-bound resume cursor.
+          schema: { type: string }
+      responses:
+        '200':
+          description: Resumable server-sent update stream
+          content:
+            text/event-stream:
+              schema: { $ref: '#/components/schemas/InboxLiveEvent' }
+        '403': { $ref: '#/components/responses/PolicyDenied' }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Tenant-bound OAuth 2.0 access token; every operation re-evaluates authorization.
+  parameters:
+    InboxId:
+      name: inboxId
+      in: path
+      required: true
+      schema: { type: string }
+    InboxIdsQuery:
+      name: inboxId
+      in: query
+      required: false
+      description: >-
+        Optional repeated inbox filter. When omitted, the operation spans every
+        inbox the current actor is authorized to access.
+      style: form
+      explode: true
+      schema:
+        type: array
+        minItems: 1
+        uniqueItems: true
+        items: { type: string, minLength: 1 }
+    FolderId:
+      name: folderId
+      in: path
+      required: true
+      schema: { type: string }
+    QueueId:
+      name: queueId
+      in: path
+      required: true
+      schema: { type: string }
+    BindingId:
+      name: bindingId
+      in: path
+      required: true
+      schema: { type: string }
+    SavedViewId:
+      name: savedViewId
+      in: path
+      required: true
+      schema: { type: string }
+    RuleId:
+      name: ruleId
+      in: path
+      required: true
+      schema: { type: string }
+    ArtifactId:
+      name: artifactId
+      in: path
+      required: true
+      schema: { type: string }
+    LegalHoldId:
+      name: legalHoldId
+      in: path
+      required: true
+      schema: { type: string }
+    ExportId:
+      name: exportId
+      in: path
+      required: true
+      schema: { type: string, minLength: 1 }
+    ItemId:
+      name: itemId
+      in: path
+      required: true
+      schema: { type: string }
+    ActionKey:
+      name: actionKey
+      in: path
+      required: true
+      schema: { type: string, minLength: 1, maxLength: 128 }
+    ReceiptId:
+      name: receiptId
+      in: path
+      required: true
+      schema: { type: string, minLength: 1 }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema: { type: string, minLength: 16, maxLength: 200 }
+    ExpectedVersionHeader:
+      name: If-Match-Version
+      in: header
+      required: true
+      description: Current resource version required for delete concurrency control.
+      schema: { type: integer, format: int64, minimum: 0 }
+    Cursor:
+      name: cursor
+      in: query
+      description: Opaque cursor bound to actor, authorization epoch, query, and snapshot.
+      schema: { type: string }
+    Snapshot:
+      name: snapshot
+      in: query
+      description: Stable snapshot identifier returned by the first page.
+      schema: { type: string }
+    PageSize:
+      name: pageSize
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+  responses:
+    WorkAssignmentResult:
+      description: Synchronous committed Inbox-owned assignment result
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/WorkAssignmentResult' }
+    InboxActionReceiptAccepted:
+      description: Durable action receipt; may already be committed
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/InboxActionReceipt' }
+    PolicyDenied:
+      description: Current tenant policy, membership, assignment, or separation-of-duty rules deny the operation.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/InboxPolicyDeniedError' }
+    ActionConflict:
+      description: The item, assignment, action availability, or connector-delivery state conflicts with the request.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/InboxActionConflictError' }
+    FormInvalid:
+      description: The typed payload or referenced FormSession submission is invalid.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/InboxFormInvalidError' }
+    ContentQuarantined:
+      description: The requested content is quarantined and cannot be used for this operation.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/InboxContentQuarantinedError' }
+    SourceUnavailable:
+      description: The authoritative source cannot currently revalidate or execute the operation.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/InboxSourceUnavailableError' }
+  schemas:
+    Inbox:
+      type: object
+      additionalProperties: false
+      description: The server enforces owner.tenantId == tenantId on every write and read.
+      required: [id, tenantId, owner, name, version]
+      properties:
+        id: { type: string }
+        tenantId: { type: string }
+        owner: { $ref: '#/components/schemas/InboxOwnerRef' }
+        name: { type: string }
+        description: { type: string }
+        version: { type: integer, format: int64, minimum: 0 }
+    InboxOwnerKind:
+      type: string
+      enum: [PERSON, GROUP, PRODUCT, TENANT_FUNCTION]
+    InboxOwnerRef:
+      type: object
+      additionalProperties: false
+      description: tenantId must equal the containing Inbox.tenantId; the server rejects mismatches.
+      required: [kind, ownerId, tenantId]
+      properties:
+        kind: { $ref: '#/components/schemas/InboxOwnerKind' }
+        ownerId: { type: string, minLength: 1 }
+        tenantId: { type: string, minLength: 1 }
+    CreateInboxRequest:
+      type: object
+      additionalProperties: false
+      description: The server rejects an owner whose tenantId differs from the authenticated tenant.
+      required: [owner, name]
+      properties:
+        owner: { $ref: '#/components/schemas/InboxOwnerRef' }
+        name: { type: string, minLength: 1, maxLength: 200 }
+        description: { type: [string, 'null'], maxLength: 2000 }
+    UpdateInboxRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion]
+      minProperties: 2
+      properties:
+        expectedVersion: { type: integer, format: int64, minimum: 0 }
+        name: { type: string, minLength: 1, maxLength: 200 }
+        description: { type: [string, 'null'], maxLength: 2000 }
+    InboxFolder:
+      type: object
+      additionalProperties: false
+      required: [id, inboxId, name, version]
+      properties:
+        id: { type: string }
+        inboxId: { type: string }
+        parentFolderId: { type: [string, 'null'] }
+        name: { type: string }
+        ordinal: { type: integer }
+        version: { type: integer, format: int64, minimum: 0 }
+    CreateInboxFolderRequest:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        parentFolderId: { type: [string, 'null'] }
+        name: { type: string, minLength: 1, maxLength: 200 }
+        ordinal: { type: integer, minimum: 0 }
+    UpdateInboxFolderRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion]
+      minProperties: 2
+      properties:
+        expectedVersion: { type: integer, format: int64, minimum: 0 }
+        parentFolderId: { type: [string, 'null'] }
+        name: { type: string, minLength: 1, maxLength: 200 }
+        ordinal: { type: integer, minimum: 0 }
+    FolderBinding:
+      type: object
+      additionalProperties: false
+      description: Contains version references only; endpoints and secrets are not allowed.
+      required: [id, folderId, routeId, operationBindingId, dcqlQueryVersions, version]
+      properties:
+        id: { type: string }
+        folderId: { type: string }
+        routeId: { type: string }
+        operationBindingId: { type: string }
+        dcqlQueryVersions:
+          type: array
+          default: []
+          uniqueItems: true
+          items: { $ref: '#/components/schemas/DcqlQueryVersionRef' }
+        version: { type: integer, format: int64, minimum: 0 }
+    DcqlQueryVersionRef:
+      type: object
+      additionalProperties: false
+      required: [queryId, version]
+      properties:
+        queryId: { type: string, minLength: 1 }
+        version: { type: integer, format: int64, minimum: 0 }
+    CreateFolderBindingRequest:
+      type: object
+      additionalProperties: false
+      description: >-
+        Accepts governed identifiers and DCQL version references only. Endpoint, secret, authentication,
+        certificate, and provider configuration fields are rejected.
+      required: [routeId, operationBindingId]
+      properties:
+        routeId: { type: string, minLength: 1 }
+        operationBindingId: { type: string, minLength: 1 }
+        dcqlQueryVersions:
+          type: array
+          default: []
+          uniqueItems: true
+          items: { $ref: '#/components/schemas/DcqlQueryVersionRef' }
+    UpdateFolderBindingRequest:
+      type: object
+      additionalProperties: false
+      description: >-
+        Updates governed identifiers and DCQL version references only. Endpoint,
+        secret, authentication, certificate, and provider configuration fields are rejected.
+      required: [expectedVersion]
+      minProperties: 2
+      properties:
+        expectedVersion: { type: integer, format: int64, minimum: 0 }
+        routeId: { type: string, minLength: 1 }
+        operationBindingId: { type: string, minLength: 1 }
+        dcqlQueryVersions:
+          type: array
+          default: []
+          uniqueItems: true
+          items: { $ref: '#/components/schemas/DcqlQueryVersionRef' }
+    InboxItemNature:
+      type: string
+      enum: [WORK, MESSAGE, SIGNAL]
+    InboxItemLifecycle:
+      type: string
+      enum: [ACTIVE, HISTORICAL, TOMBSTONED]
+    InboxItemTypeKey:
+      type: string
+      minLength: 1
+      description: Extensible registry key; clients must not generate a closed enum.
+      x-initial-registered-values:
+        - WORKFLOW_TASK
+        - FORM_TASK
+        - CREDENTIAL_REVIEW
+        - CREDENTIAL_RENEWAL
+        - EINVOICE
+        - EMAIL
+        - DOCUMENT_REVIEW
+        - MATCH_REVIEW
+        - QUALITY_EXCEPTION
+        - GENERIC_TASK
+    RendererLayout:
+      type: string
+      enum: [DETAIL, FULL_WORKSPACE, SPLIT_WORKSPACE]
+    InboxItem:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - tenantId
+        - nature
+        - itemTypeKey
+        - lifecycle
+        - sourceRef
+        - retention
+        - version
+        - createdAt
+        - updatedAt
+      properties:
+        id: { type: string }
+        tenantId: { type: string }
+        nature: { $ref: '#/components/schemas/InboxItemNature' }
+        itemTypeKey: { $ref: '#/components/schemas/InboxItemTypeKey' }
+        lifecycle: { $ref: '#/components/schemas/InboxItemLifecycle' }
+        title: { type: string, minLength: 1 }
+        summary: { type: [string, 'null'] }
+        sourceRef: { $ref: '#/components/schemas/InboxSourceRef' }
+        placements:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          description: >-
+            Authorization-filtered placements visible to the current actor;
+            placements in inaccessible inboxes or folders are never disclosed.
+          items: { $ref: '#/components/schemas/InboxPlacement' }
+        workFacet: { $ref: '#/components/schemas/WorkFacet' }
+        messageFacet: { $ref: '#/components/schemas/MessageFacet' }
+        signalFacet: { $ref: '#/components/schemas/SignalFacet' }
+        renderer: { $ref: '#/components/schemas/RendererDescriptor' }
+        artifacts:
+          type: array
+          items: { $ref: '#/components/schemas/ArtifactRef' }
+        availableActions:
+          type: array
+          items: { $ref: '#/components/schemas/InboxAvailableAction' }
+        retention: { $ref: '#/components/schemas/InboxRetention' }
+        tags:
+          type: array
+          uniqueItems: true
+          items: { $ref: '#/components/schemas/InboxTagRef' }
+        authorizationDecision:
+          description: Recipient-safe authorization decision projection when this item is decision-backed.
+          $ref: '#/components/schemas/AuthorizationDecisionProjection'
+        version: { type: integer, format: int64, minimum: 0 }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+      allOf:
+        - if:
+            properties:
+              lifecycle: { const: TOMBSTONED }
+            required: [lifecycle]
+          then:
+            description: Safe tombstones retain identity and ordering only; content fields are forbidden.
+            properties:
+              title: false
+              summary: false
+              placements: false
+              workFacet: false
+              messageFacet: false
+              signalFacet: false
+              renderer: false
+              artifacts: false
+              availableActions: false
+              tags: false
+              authorizationDecision: false
+          else:
+            required: [title, placements, renderer]
+            properties:
+              title: { type: string, minLength: 1 }
+              placements:
+                type: array
+                minItems: 1
+                uniqueItems: true
+                items: { $ref: '#/components/schemas/InboxPlacement' }
+              renderer: { $ref: '#/components/schemas/RendererDescriptor' }
+            oneOf:
+              - title: WORK content has exactly WorkFacet.
+                required: [workFacet]
+                properties:
+                  nature: { const: WORK }
+                  workFacet: { $ref: '#/components/schemas/WorkFacet' }
+                  messageFacet: false
+                  signalFacet: false
+              - title: MESSAGE content has exactly MessageFacet.
+                required: [messageFacet]
+                properties:
+                  nature: { const: MESSAGE }
+                  workFacet: false
+                  messageFacet: { $ref: '#/components/schemas/MessageFacet' }
+                  signalFacet: false
+              - title: SIGNAL content has exactly SignalFacet.
+                required: [signalFacet]
+                properties:
+                  nature: { const: SIGNAL }
+                  workFacet: false
+                  messageFacet: false
+                  signalFacet: { $ref: '#/components/schemas/SignalFacet' }
+    InboxPlacement:
+      type: object
+      additionalProperties: false
+      required: [id, itemId, inboxId, folderId, placedAt]
+      properties:
+        id: { type: string }
+        itemId: { type: string }
+        inboxId: { type: string, minLength: 1 }
+        folderId:
+          type: [string, 'null']
+          minLength: 1
+          description: Null for an inbox-root or product-owned placement with no physical folder.
+        placedAt: { type: string, format: date-time }
+        routingRuleId: { type: [string, 'null'] }
+    InboxSourceRef:
+      type: object
+      additionalProperties: false
+      required: [sourceSystem, objectType, objectId, sourceVersion, tenantId]
+      properties:
+        sourceSystem: { type: string, minLength: 1 }
+        objectType: { type: string, minLength: 1 }
+        objectId: { type: string, minLength: 1 }
+        sourceVersion: { type: integer, format: int64, minimum: 0 }
+        tenantId: { type: string, minLength: 1 }
+        workflowCorrelationId: { type: [string, 'null'] }
+        interactionCorrelationId: { type: [string, 'null'] }
+    WorkFacet:
+      type: object
+      additionalProperties: false
+      required: [assignmentState, queueId, sla, checkoutLease]
+      properties:
+        assignmentState:
+          type: string
+          enum: [UNASSIGNED, OFFERED, ASSIGNED, CLAIMED, COMPLETED]
+        assigneeUserId: { type: [string, 'null'] }
+        assigneeGroupId: { type: [string, 'null'] }
+        dueAt: { type: [string, 'null'], format: date-time }
+        claimable: { type: boolean }
+        dualControlRequired: { type: boolean }
+        coverExpiresAt: { type: [string, 'null'], format: date-time }
+        sourceWorkflowState: { type: [string, 'null'] }
+        queueId: { type: string, minLength: 1 }
+        sla: { $ref: '#/components/schemas/WorkSlaTarget' }
+        checkoutLease: { $ref: '#/components/schemas/WorkCheckoutLease' }
+        assigneeDisplayName:
+          type: [string, 'null']
+          minLength: 1
+          description: >-
+            Readable name of the assignee party, resolved by the server. Absent when the party
+            cannot be named; a client shows the name or nothing, never the id.
+        assigneeGroupDisplayName:
+          type: [string, 'null']
+          minLength: 1
+          description: Readable name of the assignee group party, on the same terms as assigneeDisplayName.
+      dependentRequired:
+        assigneeDisplayName: [assigneeUserId]
+        assigneeGroupDisplayName: [assigneeGroupId]
+    WorkAssignmentResult:
+      type: object
+      additionalProperties: false
+      description: >-
+        Synchronous result of an atomic Inbox-owned claim, release, reassign,
+        set-cover, clear-cover, explicit lease extension, or take-over operation.
+        It is not a source action receipt. Lease extension is never inferred from client activity.
+      required:
+        - itemId
+        - operation
+        - assignmentState
+        - itemVersion
+        - assignmentVersion
+        - checkoutLease
+        - historyEvent
+        - committedAt
+      properties:
+        itemId: { type: string }
+        operation: { type: string, enum: [CLAIM, RELEASE, REASSIGN, SET_COVER, CLEAR_COVER, EXTEND_LEASE, TAKE_OVER] }
+        assignmentState:
+          type: string
+          enum: [UNASSIGNED, OFFERED, ASSIGNED, CLAIMED, COMPLETED]
+        assigneeUserId: { type: [string, 'null'] }
+        assigneeGroupId: { type: [string, 'null'] }
+        coverUserId: { type: [string, 'null'] }
+        coverStartsAt: { type: [string, 'null'], format: date-time }
+        coverExpiresAt: { type: [string, 'null'], format: date-time }
+        checkoutLease: { $ref: '#/components/schemas/WorkCheckoutLease' }
+        itemVersion: { type: integer, format: int64, minimum: 0 }
+        assignmentVersion: { type: integer, format: int64, minimum: 0 }
+        historyEvent: { $ref: '#/components/schemas/InboxHistoryEvent' }
+        committedAt: { type: string, format: date-time }
+      allOf:
+        - if:
+            required: [operation]
+            properties:
+              operation: { const: TAKE_OVER }
+          then:
+            required: [assigneeUserId]
+            properties:
+              assigneeUserId: { type: string, minLength: 1 }
+            description: >-
+              A take-over has distinct previous and new lease holders,
+              assigneeUserId equals the new holderUserId, and
+              historyEvent.relatedActorIds is exactly [previousHolderUserId,
+              holderUserId] in that order.
+            x-vdx-take-over-provenance:
+              distinct: [checkoutLease.previousHolderUserId, checkoutLease.holderUserId]
+              equal: [assigneeUserId, checkoutLease.holderUserId]
+              orderedHistoryActors: [checkoutLease.previousHolderUserId, checkoutLease.holderUserId]
+    WorkingCalendarVersionRef:
+      type: object
+      additionalProperties: false
+      required: [calendarId, version, timeZoneId]
+      properties:
+        calendarId: { type: string, minLength: 1 }
+        version: { type: integer, format: int64, minimum: 0 }
+        timeZoneId: { type: string, minLength: 1 }
+    SlaPolicyVersionRef:
+      type: object
+      additionalProperties: false
+      required: [policyId, version]
+      properties:
+        policyId: { type: string, minLength: 1 }
+        version: { type: integer, format: int64, minimum: 0 }
+    InboxWorkQueue:
+      type: object
+      additionalProperties: false
+      description: A queue may target a physical folder or the root of a zero-folder product-owned inbox.
+      required: [id, tenantId, inboxId, folderId, name, workingCalendar, version]
+      properties:
+        id: { type: string, minLength: 1 }
+        tenantId: { type: string, minLength: 1 }
+        inboxId: { type: string, minLength: 1 }
+        folderId: { type: [string, 'null'], minLength: 1 }
+        name: { type: string, minLength: 1 }
+        workingCalendar: { $ref: '#/components/schemas/WorkingCalendarVersionRef' }
+        version: { type: integer, format: int64, minimum: 0 }
+    CreateInboxWorkQueueRequest:
+      type: object
+      additionalProperties: false
+      required: [folderId, name, workingCalendar]
+      properties:
+        folderId: { type: [string, 'null'], minLength: 1 }
+        name: { type: string, minLength: 1 }
+        workingCalendar: { $ref: '#/components/schemas/WorkingCalendarVersionRef' }
+    UpdateInboxWorkQueueRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion]
+      minProperties: 2
+      properties:
+        expectedVersion: { type: integer, format: int64, minimum: 0 }
+        folderId: { type: [string, 'null'], minLength: 1 }
+        name: { type: string, minLength: 1 }
+        workingCalendar: { $ref: '#/components/schemas/WorkingCalendarVersionRef' }
+    WorkSlaState:
+      type: string
+      enum: [ON_TRACK, PAST_TARGET, BREACHED]
+    WorkEscalationTargetKind:
+      type: string
+      enum: [USER, GROUP, QUEUE, INBOX_OWNER]
+    WorkEscalationTargetRef:
+      type: object
+      additionalProperties: false
+      required: [kind, targetId]
+      properties:
+        kind: { $ref: '#/components/schemas/WorkEscalationTargetKind' }
+        targetId: { type: string, minLength: 1 }
+    WorkEscalationStep:
+      type: object
+      additionalProperties: false
+      required: [level, triggerAt, target]
+      properties:
+        level: { type: integer, minimum: 1 }
+        triggerAt: { type: string, format: date-time }
+        target: { $ref: '#/components/schemas/WorkEscalationTargetRef' }
+    WorkSlaTarget:
+      type: object
+      additionalProperties: false
+      description: Resolved target; breachAt is not before targetAt and escalation levels/times are ordered.
+      required: [targetAt, breachAt, state, policy, workingCalendar, escalationSteps, currentEscalationLevel]
+      properties:
+        targetAt: { type: string, format: date-time }
+        breachAt: { type: string, format: date-time }
+        state: { $ref: '#/components/schemas/WorkSlaState' }
+        policy: { $ref: '#/components/schemas/SlaPolicyVersionRef' }
+        workingCalendar: { $ref: '#/components/schemas/WorkingCalendarVersionRef' }
+        escalationSteps:
+          type: array
+          items: { $ref: '#/components/schemas/WorkEscalationStep' }
+        currentEscalationLevel: { type: integer, minimum: 0 }
+    WorkCheckoutStatus:
+      type: string
+      enum: [FREE, HELD, EXPIRED]
+    WorkCheckoutLease:
+      type: object
+      additionalProperties: false
+      description: Expiry is distinct from free; extension is explicit and take-over is distinct from reassign.
+      required: [leaseId, status, holderUserId, previousHolderUserId, startedAt, expiresAt, leaseDurationSeconds, workingCalendar]
+      properties:
+        leaseId: { type: [string, 'null'], minLength: 1 }
+        status: { $ref: '#/components/schemas/WorkCheckoutStatus' }
+        holderUserId: { type: [string, 'null'], minLength: 1 }
+        previousHolderUserId: { type: [string, 'null'], minLength: 1 }
+        startedAt: { type: [string, 'null'], format: date-time }
+        expiresAt: { type: [string, 'null'], format: date-time }
+        leaseDurationSeconds: { type: integer, format: int64, minimum: 0 }
+        workingCalendar: { $ref: '#/components/schemas/WorkingCalendarVersionRef' }
+        holderDisplayName:
+          type: [string, 'null']
+          minLength: 1
+          description: Readable name of the lease holder party, resolved by the server; absent when it cannot be named.
+        previousHolderDisplayName:
+          type: [string, 'null']
+          minLength: 1
+          description: Readable name of the previous lease holder party, on the same terms as holderDisplayName.
+      dependentRequired:
+        holderDisplayName: [holderUserId]
+        previousHolderDisplayName: [previousHolderUserId]
+      if:
+        properties:
+          status: { const: FREE }
+      then:
+        properties:
+          holderUserId: { type: 'null' }
+          startedAt: { type: 'null' }
+          expiresAt: { type: 'null' }
+      else:
+        if:
+          properties:
+            status: { const: HELD }
+        then:
+          properties:
+            leaseId: { type: string, minLength: 1 }
+            holderUserId: { type: string, minLength: 1 }
+            startedAt: { type: string, format: date-time }
+            expiresAt: { type: string, format: date-time }
+        else:
+          properties:
+            status: { const: EXPIRED }
+            leaseId: { type: string, minLength: 1 }
+            holderUserId: { type: 'null' }
+            previousHolderUserId: { type: string, minLength: 1 }
+            expiresAt: { type: string, format: date-time }
+    WorkEscalationRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion, level]
+      properties:
+        expectedVersion: { type: integer, format: int64, minimum: 0 }
+        level: { type: integer, minimum: 1 }
+        reason: { type: [string, 'null'] }
+    WorkEscalationResult:
+      type: object
+      additionalProperties: false
+      description: Synchronous Inbox-owned result; never an InboxActionReceipt.
+      required: [itemId, queueId, level, target, slaState, itemVersion, historyEvent, committedAt]
+      properties:
+        itemId: { type: string, minLength: 1 }
+        queueId: { type: string, minLength: 1 }
+        level: { type: integer, minimum: 1 }
+        target: { $ref: '#/components/schemas/WorkEscalationTargetRef' }
+        slaState: { $ref: '#/components/schemas/WorkSlaState' }
+        itemVersion: { type: integer, format: int64, minimum: 0 }
+        historyEvent: { $ref: '#/components/schemas/InboxHistoryEvent' }
+        committedAt: { type: string, format: date-time }
+    RetentionClassVersionRef:
+      type: object
+      additionalProperties: false
+      required: [classId, version]
+      properties:
+        classId: { type: string, minLength: 1 }
+        version: { type: integer, format: int64, minimum: 0 }
+    InboxRetention:
+      type: object
+      additionalProperties: false
+      required: [retentionClass, eligibleForDeletionAt]
+      properties:
+        retentionClass: { $ref: '#/components/schemas/RetentionClassVersionRef' }
+        eligibleForDeletionAt: { type: string, format: date-time }
+    InboxLegalHoldStatus:
+      type: string
+      enum: [ACTIVE, RELEASED]
+    InboxLegalHold:
+      type: object
+      additionalProperties: false
+      description: Hold state changes only through audited optimistic writes and wins over a pending sweep.
+      required: [id, tenantId, itemId, status, reason, appliedBy, appliedAt, releasedBy, releasedAt, version]
+      properties:
+        id: { type: string, minLength: 1 }
+        tenantId: { type: string, minLength: 1 }
+        itemId: { type: string, minLength: 1 }
+        status: { $ref: '#/components/schemas/InboxLegalHoldStatus' }
+        reason: { type: string, minLength: 1 }
+        appliedBy: { type: string, minLength: 1 }
+        appliedAt: { type: string, format: date-time }
+        releasedBy: { type: [string, 'null'], minLength: 1 }
+        releasedAt: { type: [string, 'null'], format: date-time }
+        version: { type: integer, format: int64, minimum: 0 }
+      if:
+        required: [status]
+        properties:
+          status: { const: ACTIVE }
+      then:
+        properties:
+          releasedBy: { type: 'null' }
+          releasedAt: { type: 'null' }
+      else:
+        properties:
+          releasedBy: { type: string, minLength: 1 }
+          releasedAt: { type: string, format: date-time }
+        x-vdx-temporal-constraint: releasedAt >= appliedAt
+    ApplyInboxLegalHoldRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion, reason]
+      properties:
+        expectedVersion: { type: integer, format: int64, minimum: 0 }
+        reason: { type: string, minLength: 1 }
+    ReleaseInboxLegalHoldRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion]
+      properties:
+        expectedVersion: { type: integer, format: int64, minimum: 0 }
+        reason: { type: [string, 'null'] }
+    CreateInboxEvidenceExportRequest:
+      type: object
+      additionalProperties: false
+      description: Client-supplied export intent; identity and actor facts are server-derived.
+      required: [query, purpose]
+      properties:
+        query: { $ref: '#/components/schemas/InboxQueryDefinition' }
+        purpose: { type: string, minLength: 1 }
+    InboxEvidenceExportStatus:
+      type: string
+      enum: [PENDING, RUNNING, COMPLETED, FAILED]
+    InboxEvidenceExportManifest:
+      type: [object, 'null']
+      additionalProperties: false
+      description: Completeness and integrity metadata for a snapshot-bound evidence archive.
+      required: [snapshot, counts, complete, generatedAt, archive, digest]
+      properties:
+        snapshot: { type: string, minLength: 1 }
+        counts:
+          type: object
+          minProperties: 1
+          propertyNames: { minLength: 1 }
+          additionalProperties: { type: integer, format: int64, minimum: 0 }
+        complete: { type: boolean }
+        generatedAt: { type: string, format: date-time }
+        archive: { $ref: '#/components/schemas/ArtifactRef' }
+        digest: { type: string, minLength: 1 }
+      x-vdx-digest-constraint: digest == archive.digest
+      x-vdx-archive-entry-schema: InboxEvidenceCorrelation
+    InboxEvidenceExportJob:
+      type: object
+      additionalProperties: false
+      description: >-
+        Server-derived asynchronous evidence job. Correlations are contained in
+        the controlled archive and are never an unbounded synchronous response.
+      required: [id, tenantId, query, purpose, requestedBy, requestedAt, status, manifest, failureReason]
+      properties:
+        id: { type: string, minLength: 1 }
+        tenantId: { type: string, minLength: 1 }
+        query: { $ref: '#/components/schemas/InboxQueryDefinition' }
+        purpose: { type: string, minLength: 1 }
+        requestedBy: { type: string, minLength: 1 }
+        requestedAt: { type: string, format: date-time }
+        status: { $ref: '#/components/schemas/InboxEvidenceExportStatus' }
+        manifest: { $ref: '#/components/schemas/InboxEvidenceExportManifest' }
+        failureReason: { type: [string, 'null'], minLength: 1 }
+      allOf:
+        - if:
+            properties:
+              status: { enum: [PENDING, RUNNING] }
+          then:
+            properties:
+              manifest: { type: 'null' }
+              failureReason: { type: 'null' }
+        - if:
+            properties:
+              status: { const: COMPLETED }
+          then:
+            properties:
+              manifest:
+                allOf:
+                  - $ref: '#/components/schemas/InboxEvidenceExportManifest'
+                  - type: object
+              failureReason: { type: 'null' }
+        - if:
+            properties:
+              status: { const: FAILED }
+          then:
+            properties:
+              manifest: { type: 'null' }
+              failureReason: { type: string, minLength: 1 }
+    InboxThroughputFactKind:
+      type: string
+      enum: [ARRIVAL, COMPLETION]
+    InboxThroughputFact:
+      type: object
+      additionalProperties: false
+      description: Append-only fact; ARRIVAL is accepted ingestion and COMPLETION is the closing committed source event.
+      required: [id, tenantId, inboxId, folderId, queueId, itemId, itemTypeKey, kind, occurredAt, sourceEventId]
+      properties:
+        id: { type: string, minLength: 1 }
+        tenantId: { type: string, minLength: 1 }
+        inboxId: { type: string, minLength: 1 }
+        folderId: { type: [string, 'null'], minLength: 1 }
+        queueId: { type: [string, 'null'], minLength: 1 }
+        itemId: { type: string, minLength: 1 }
+        itemTypeKey: { $ref: '#/components/schemas/InboxItemTypeKey' }
+        kind: { $ref: '#/components/schemas/InboxThroughputFactKind' }
+        occurredAt: { type: string, format: date-time }
+        sourceEventId: { type: string, minLength: 1 }
+    InboxThroughputFactPage:
+      type: object
+      additionalProperties: false
+      required: [facts, snapshot, nextCursor]
+      properties:
+        facts:
+          type: array
+          items: { $ref: '#/components/schemas/InboxThroughputFact' }
+        snapshot: { type: string, minLength: 1 }
+        nextCursor: { type: [string, 'null'], minLength: 1 }
+    MessageFacet:
+      type: object
+      properties:
+        senderLabel: { type: [string, 'null'] }
+        receivedAt: { type: [string, 'null'], format: date-time }
+        threadId: { type: [string, 'null'] }
+        deliveryEvidence:
+          type: array
+          items: { $ref: '#/components/schemas/DeliveryEvidenceRef' }
+    SignalFacet:
+      type: object
+      properties:
+        severity: { type: string, enum: [INFO, WARNING, CRITICAL] }
+        conditionKey: { type: string }
+        wakeAt: { type: [string, 'null'], format: date-time }
+    AuthorizationDecisionProjection:
+      type: object
+      additionalProperties: false
+      required: [decisionId, caseId, tenantId, outcome, action, principal, policy, recordedAt, evidenceCount, availability]
+      properties:
+        decisionId: { type: string, minLength: 1 }
+        caseId: { type: string, minLength: 1 }
+        tenantId: { type: string, minLength: 1 }
+        outcome: { type: string, enum: [PERMIT, DENY, INDETERMINATE] }
+        action: { type: string, minLength: 1 }
+        principal: { type: string, minLength: 1 }
+        representedParty: { type: string }
+        resource: { type: string }
+        policy: { type: string, minLength: 1 }
+        explanation: { type: string }
+        recordedAt: { type: string, format: date-time }
+        evidenceCount: { type: integer, format: int32, minimum: 0 }
+        availability: { type: string, enum: [available, unavailable] }
+        adl: { type: object, additionalProperties: true }
+    InboxItemState:
+      type: object
+      required: [itemId, read, pinned, watching, dismissed, version]
+      properties:
+        itemId: { type: string }
+        read: { type: boolean }
+        pinned: { type: boolean }
+        watching: { type: boolean }
+        dismissed: { type: boolean }
+        snoozedUntil: { type: [string, 'null'], format: date-time }
+        version: { type: integer, format: int64, minimum: 0 }
+    InboxHistoryEvent:
+      type: object
+      additionalProperties: false
+      required: [id, itemId, eventType, occurredAt, relatedActorIds]
+      properties:
+        id: { type: string }
+        itemId: { type: string }
+        eventType: { type: string }
+        actorId: { type: [string, 'null'] }
+        occurredAt: { type: string, format: date-time }
+        safeSummary: { type: [string, 'null'] }
+        sourceVersion: { type: [integer, 'null'], format: int64 }
+        relatedActorIds:
+          type: array
+          uniqueItems: true
+          items: { type: string, minLength: 1 }
+    InboxActionReceipt:
+      type: object
+      required: [state]
+      properties:
+        state: { $ref: '#/components/schemas/InboxActionReceiptState' }
+      oneOf:
+        - $ref: '#/components/schemas/PendingInboxActionReceipt'
+        - $ref: '#/components/schemas/FinalInboxActionReceipt'
+      discriminator:
+        propertyName: state
+        mapping:
+          PENDING: '#/components/schemas/PendingInboxActionReceipt'
+          FINAL: '#/components/schemas/FinalInboxActionReceipt'
+    InboxActionReceiptState:
+      type: string
+      enum: [PENDING, FINAL]
+    PendingInboxActionReceipt:
+      type: object
+      additionalProperties: false
+      description: >-
+        Append-only first receipt revision: the source-dispatched intent is
+        durably accepted and downstream completion is pending.
+      required: [id, attemptId, revision, itemId, actionKey, idempotencyKey, state, acceptedAt]
+      properties:
+        id: { type: string }
+        attemptId: { type: string }
+        revision: { type: integer, format: int64, minimum: 1 }
+        itemId: { type: string }
+        actionKey: { type: string }
+        idempotencyKey: { type: string }
+        acceptedAt: { type: string, format: date-time }
+        state: { type: string, enum: [PENDING] }
+    FinalInboxActionReceipt:
+      type: object
+      additionalProperties: false
+      description: >-
+        Append-only final revision for the attempted source dispatch. It directly
+        carries exactly one outcome. A later source fact may append another FINAL
+        revision that supersedes this receipt; existing history is never rewritten.
+      required: [id, attemptId, revision, supersedesReceiptId, itemId, actionKey, idempotencyKey, state, outcome, acceptedAt, completedAt]
+      properties:
+        id: { type: string }
+        attemptId: { type: string }
+        revision: { type: integer, format: int64, minimum: 2 }
+        supersedesReceiptId: { type: string }
+        itemId: { type: string }
+        actionKey: { type: string }
+        idempotencyKey: { type: string }
+        outcome:
+          type: string
+          enum: [COMMITTED, FAILED, INDETERMINATE]
+        acceptedAt: { type: string, format: date-time }
+        completedAt: { type: string, format: date-time }
+        sourceReceiptId: { type: [string, 'null'] }
+        correctionReason: { type: [string, 'null'] }
+        error:
+          $ref: '#/components/schemas/InboxApiError'
+        state: { type: string, enum: [FINAL] }
+    SavedInboxView:
+      type: object
+      additionalProperties: false
+      required: [id, inboxId, name, query, version]
+      properties:
+        id: { type: string }
+        inboxId: { type: string }
+        name: { type: string }
+        query: { $ref: '#/components/schemas/InboxQueryDefinition' }
+        version: { type: integer, format: int64, minimum: 0 }
+    CreateSavedInboxViewRequest:
+      type: object
+      additionalProperties: false
+      required: [name, query]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 200 }
+        query: { $ref: '#/components/schemas/InboxQueryDefinition' }
+    UpdateSavedInboxViewRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion]
+      minProperties: 2
+      properties:
+        expectedVersion: { type: integer, format: int64, minimum: 0 }
+        name: { type: string, minLength: 1, maxLength: 200 }
+        query: { $ref: '#/components/schemas/InboxQueryDefinition' }
+    InboxQueryDefinition:
+      type: object
+      additionalProperties: false
+      required: [schemaVersion, predicates]
+      properties:
+        schemaVersion: { type: integer, minimum: 1 }
+        predicates:
+          type: array
+          items: { $ref: '#/components/schemas/InboxQueryPredicate' }
+        search: { type: [string, 'null'], maxLength: 500 }
+        sort: { type: string, enum: [UPDATED_DESC, CREATED_DESC, DUE_ASC] }
+    InboxQueryOperator:
+      type: string
+      enum: [EQ, IN, LT, LTE, GT, GTE, CONTAINS]
+    InboxQueryPredicate:
+      type: object
+      additionalProperties: false
+      description: Extensible field keys initially include nature, kind, folder, holder, checkout, age, due, source, tag, lifecycle, and unread.
+      required: [field, operator, values, negated]
+      properties:
+        field: { type: string, minLength: 1 }
+        operator: { $ref: '#/components/schemas/InboxQueryOperator' }
+        values:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: { type: string, minLength: 1 }
+        negated: { type: boolean }
+      if:
+        properties:
+          operator: { const: IN }
+      else:
+        properties:
+          values: { maxItems: 1 }
+    InboxQueryWarning:
+      type: object
+      additionalProperties: false
+      required: [code, message]
+      properties:
+        code: { type: string, minLength: 1 }
+        field: { type: [string, 'null'], minLength: 1 }
+        reference: { type: [string, 'null'], minLength: 1 }
+        message: { type: string, minLength: 1 }
+    InboxQueryDiagnostics:
+      type: object
+      additionalProperties: false
+      description: Missing folders and retired kinds produce warnings and a working result set, never an error or silent semantic change.
+      required: [usesAdvancedSyntax, warnings]
+      properties:
+        usesAdvancedSyntax: { type: boolean }
+        warnings:
+          type: array
+          items: { $ref: '#/components/schemas/InboxQueryWarning' }
+    InboxRule:
+      type: object
+      additionalProperties: false
+      required: [id, inboxId, name, query, targetFolderId, version]
+      properties:
+        id: { type: string }
+        inboxId: { type: string }
+        name: { type: string }
+        query: { $ref: '#/components/schemas/InboxQueryDefinition' }
+        targetFolderId: { type: string }
+        enabled: { type: boolean }
+        version: { type: integer, format: int64, minimum: 0 }
+    CreateInboxRuleRequest:
+      type: object
+      additionalProperties: false
+      required: [name, query, targetFolderId]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 200 }
+        query: { $ref: '#/components/schemas/InboxQueryDefinition' }
+        targetFolderId: { type: string }
+        enabled: { type: boolean, default: true }
+    UpdateInboxRuleRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion]
+      minProperties: 2
+      properties:
+        expectedVersion: { type: integer, format: int64, minimum: 0 }
+        name: { type: string, minLength: 1, maxLength: 200 }
+        query: { $ref: '#/components/schemas/InboxQueryDefinition' }
+        targetFolderId: { type: string }
+        enabled: { type: boolean }
+    ArtifactRef:
+      type: object
+      required: [id, mediaType, size, digest, disposition]
+      properties:
+        id: { type: string }
+        mediaType: { type: string }
+        size: { type: integer, format: int64, minimum: 0 }
+        digest: { type: string }
+        disposition: { type: string, enum: [SAFE, QUARANTINED, REJECTED] }
+        fileName: { type: [string, 'null'] }
+    DeliveryEvidenceRef:
+      type: object
+      required: [id, digest, status, recordedAt, attemptNumber]
+      properties:
+        id: { type: string }
+        digest: { type: string }
+        status: { type: string }
+        recordedAt: { type: string, format: date-time }
+        attemptNumber: { type: integer, minimum: 1 }
+        connectorReceiptId: { type: [string, 'null'] }
+    RendererDescriptor:
+      type: object
+      required: [rendererKey, rendererVersion, layout]
+      properties:
+        rendererKey: { type: string }
+        rendererVersion: { type: string }
+        layout: { $ref: '#/components/schemas/RendererLayout' }
+        presentationContractVersion: { type: [string, 'null'] }
+    InboxAvailableAction:
+      type: object
+      additionalProperties: false
+      required: [key, label, available]
+      properties:
+        key: { type: string }
+        label: { type: string }
+        available: { type: boolean }
+        unavailableReason: { type: [string, 'null'], minLength: 1 }
+        destructive: { type: boolean, default: false }
+        formContract:
+          type: [object, 'null']
+          additionalProperties: true
+          x-field-extra-annotation: '@Contextual'
+        primary: { type: [boolean, 'null'] }
+        keyboardHint: { type: [string, 'null'], minLength: 1 }
+      if:
+        properties:
+          available: { const: true }
+      then:
+        properties:
+          unavailableReason: { type: 'null' }
+      else:
+        required: [unavailableReason]
+        properties:
+          unavailableReason: { type: string, minLength: 1 }
+    InboxTagScope:
+      type: string
+      enum: [PERSONAL, TENANT, RULE]
+    InboxTagRef:
+      type: object
+      additionalProperties: false
+      description: Tags never affect authorization; personal tags are per-user and tenant/rule tags never copy ACLs.
+      required: [id, label, scope, colorKey, vocabularyVersion, appliedByRuleId]
+      properties:
+        id: { type: string, minLength: 1 }
+        label: { type: string, minLength: 1 }
+        scope: { $ref: '#/components/schemas/InboxTagScope' }
+        colorKey: { type: [string, 'null'], minLength: 1 }
+        vocabularyVersion: { type: [integer, 'null'], format: int64, minimum: 0 }
+        appliedByRuleId: { type: [string, 'null'], minLength: 1 }
+      if:
+        properties:
+          scope: { const: RULE }
+      then:
+        properties:
+          appliedByRuleId: { type: string, minLength: 1 }
+      else:
+        properties:
+          appliedByRuleId: { type: 'null' }
+    InboxActionRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion]
+      properties:
+        expectedVersion: { type: integer, format: int64, minimum: 0 }
+        sourcePayload: { $ref: '#/components/schemas/InboxTypedActionPayload' }
+        formSessionSubmissionRef: { $ref: '#/components/schemas/FormSessionSubmissionRef' }
+      if:
+        required: [sourcePayload]
+        properties:
+          sourcePayload: { $ref: '#/components/schemas/InboxTypedActionPayload' }
+      then:
+        not:
+          required: [formSessionSubmissionRef]
+          properties:
+            formSessionSubmissionRef: { $ref: '#/components/schemas/FormSessionSubmissionRef' }
+      else:
+        required: [formSessionSubmissionRef]
+        properties:
+          formSessionSubmissionRef: { $ref: '#/components/schemas/FormSessionSubmissionRef' }
+    InboxTypedActionPayload:
+      type: object
+      additionalProperties: false
+      description: >-
+        Extensible typed and versioned payload dispatched to the authoritative
+        source adapter. The payload contains no caller-provided tenant or actor.
+      required: [typeKey, schemaVersion, payload]
+      properties:
+        typeKey: { type: string, minLength: 1, maxLength: 200 }
+        schemaVersion: { type: string, minLength: 1, maxLength: 100 }
+        payload:
+          type: object
+          additionalProperties: true
+          x-field-extra-annotation: '@Contextual'
+    FormSessionSubmissionRef:
+      type: object
+      additionalProperties: false
+      description: Opaque reference to a server-validated FormSession submission.
+      required: [submissionRef]
+      properties:
+        submissionRef: { type: string, minLength: 16, maxLength: 500 }
+    WorkVersionRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion]
+      properties:
+        expectedVersion: { type: integer, format: int64, minimum: 0 }
+        reason: { type: [string, 'null'] }
+    WorkReassignRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion]
+      properties:
+        expectedVersion: { type: integer, format: int64, minimum: 0 }
+        reason: { type: [string, 'null'] }
+        assigneeUserId: { type: string }
+        assigneeGroupId: { type: string }
+      if:
+        required: [assigneeUserId]
+        properties:
+          assigneeUserId: { type: string }
+      then:
+        not:
+          required: [assigneeGroupId]
+          properties:
+            assigneeGroupId: { type: string }
+      else:
+        required: [assigneeGroupId]
+        properties:
+          assigneeGroupId: { type: string }
+    WorkCoverRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion, coverUserId, startsAt, expiresAt]
+      properties:
+        expectedVersion: { type: integer, format: int64, minimum: 0 }
+        reason: { type: [string, 'null'] }
+        coverUserId: { type: string }
+        startsAt: { type: string, format: date-time }
+        expiresAt: { type: string, format: date-time }
+    InboxBulkItemVersion:
+      type: object
+      additionalProperties: false
+      required: [itemId, expectedVersion]
+      properties:
+        itemId: { type: string, minLength: 1 }
+        expectedVersion: { type: integer, format: int64, minimum: 0 }
+    InboxBulkReassignRequest:
+      type: object
+      additionalProperties: false
+      required: [items]
+      maxProperties: 4
+      properties:
+        items:
+          type: array
+          minItems: 1
+          maxItems: 200
+          uniqueItems: true
+          items: { $ref: '#/components/schemas/InboxBulkItemVersion' }
+        assigneeUserId: { type: string, minLength: 1 }
+        assigneeGroupId: { type: string, minLength: 1 }
+        reason: { type: [string, 'null'] }
+      if:
+        required: [assigneeUserId]
+        properties:
+          assigneeUserId: { type: string, minLength: 1 }
+      then:
+        not:
+          required: [assigneeGroupId]
+          properties:
+            assigneeGroupId: { type: string, minLength: 1 }
+      else:
+        required: [assigneeGroupId]
+        properties:
+          assigneeGroupId: { type: string, minLength: 1 }
+    InboxBulkTagRequest:
+      type: object
+      additionalProperties: false
+      required: [items, tags]
+      properties:
+        items:
+          type: array
+          minItems: 1
+          maxItems: 200
+          uniqueItems: true
+          items: { $ref: '#/components/schemas/InboxBulkItemVersion' }
+        tags:
+          type: array
+          minItems: 1
+          maxItems: 50
+          uniqueItems: true
+          x-vdx-unique-by: id
+          description: >-
+            Resolved PERSONAL or TENANT tag facts. The authenticated actor and any persisted PERSONAL
+            owner are server-derived; tenant, owner, actor, and time are never accepted from the client.
+            RULE tags are read-only routing projections and are rejected for manual bulk application.
+          items: { $ref: '#/components/schemas/InboxBulkApplicableTagRef' }
+        reason: { type: [string, 'null'] }
+    InboxBulkApplicableTagRef:
+      type: object
+      additionalProperties: false
+      description: A resolved manually applicable tag; RULE routing projections are excluded.
+      required: [id, label, scope, colorKey, vocabularyVersion, appliedByRuleId]
+      properties:
+        id: { type: string, minLength: 1 }
+        label: { type: string, minLength: 1 }
+        scope: { type: string, enum: [PERSONAL, TENANT] }
+        colorKey: { type: [string, 'null'], minLength: 1 }
+        vocabularyVersion: { type: [integer, 'null'], format: int64, minimum: 0 }
+        appliedByRuleId: { type: [string, 'null'] }
+      not:
+        required: [appliedByRuleId]
+        properties:
+          appliedByRuleId: { type: string }
+      if:
+        properties:
+          scope: { const: TENANT }
+      then:
+        properties:
+          vocabularyVersion: { type: integer, format: int64, minimum: 0 }
+      else:
+        properties:
+          vocabularyVersion: { type: 'null' }
+    InboxBulkItemResult:
+      type: object
+      additionalProperties: false
+      required: [itemId, itemVersion, historyEvent]
+      properties:
+        itemId: { type: string, minLength: 1 }
+        itemVersion: { type: integer, format: int64, minimum: 0 }
+        historyEvent: { $ref: '#/components/schemas/InboxHistoryEvent' }
+    InboxBulkOperationResult:
+      type: object
+      additionalProperties: false
+      description: One correlated bulk operation with one bulk ID and per-item history.
+      required: [bulkId, results, committedAt]
+      properties:
+        bulkId: { type: string, minLength: 1 }
+        results:
+          type: array
+          minItems: 1
+          maxItems: 200
+          items: { $ref: '#/components/schemas/InboxBulkItemResult' }
+        committedAt: { type: string, format: date-time }
+    InboxItemStatePatch:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion]
+      minProperties: 2
+      properties:
+        expectedVersion: { type: integer, format: int64, minimum: 0 }
+        read: { type: boolean }
+        pinned: { type: boolean }
+        watching: { type: boolean }
+        dismissed: { type: boolean }
+        snoozedUntil: { type: [string, 'null'], format: date-time }
+    InboxApiErrorCode:
+      type: string
+      enum:
+        - ITEM_STALE
+        - ACTION_NOT_AVAILABLE
+        - CLAIM_CONFLICT
+        - ASSIGNMENT_EXPIRED
+        - POLICY_DENIED
+        - SOURCE_UNAVAILABLE
+        - FORM_INVALID
+        - CONNECTOR_DELIVERY_PENDING
+        - CONTENT_QUARANTINED
+    InboxApiError:
+      type: object
+      additionalProperties: false
+      required: [code, title, status, traceId]
+      properties:
+        code: { $ref: '#/components/schemas/InboxApiErrorCode' }
+        title: { type: string }
+        status: { type: integer, minimum: 400, maximum: 599 }
+        traceId: { type: string }
+        detail: { type: [string, 'null'] }
+        fieldErrors:
+          type: object
+          additionalProperties:
+            type: array
+            items: { type: string }
+        reason: { type: [string, 'null'], minLength: 1 }
+      if:
+        properties:
+          code: { const: POLICY_DENIED }
+      then:
+        required: [reason]
+        properties:
+          reason: { type: string, minLength: 1 }
+    InboxPolicyDeniedError:
+      allOf:
+        - $ref: '#/components/schemas/InboxApiError'
+        - type: object
+          properties:
+            code: { type: string, enum: [POLICY_DENIED] }
+            status: { type: integer, enum: [403] }
+    InboxActionConflictError:
+      allOf:
+        - $ref: '#/components/schemas/InboxApiError'
+        - type: object
+          properties:
+            code:
+              type: string
+              enum: [ITEM_STALE, ACTION_NOT_AVAILABLE, CLAIM_CONFLICT, ASSIGNMENT_EXPIRED, CONNECTOR_DELIVERY_PENDING]
+            status: { type: integer, enum: [409] }
+    InboxFormInvalidError:
+      allOf:
+        - $ref: '#/components/schemas/InboxApiError'
+        - type: object
+          properties:
+            code: { type: string, enum: [FORM_INVALID] }
+            status: { type: integer, enum: [422] }
+    InboxContentQuarantinedError:
+      allOf:
+        - $ref: '#/components/schemas/InboxApiError'
+        - type: object
+          properties:
+            code: { type: string, enum: [CONTENT_QUARANTINED] }
+            status: { type: integer, enum: [423] }
+    InboxSourceUnavailableError:
+      allOf:
+        - $ref: '#/components/schemas/InboxApiError'
+        - type: object
+          properties:
+            code: { type: string, enum: [SOURCE_UNAVAILABLE] }
+            status: { type: integer, enum: [503] }
+    InboxSummary:
+      type: object
+      additionalProperties: false
+      required: [snapshot, totalAuthorized, counts, diagnostics]
+      properties:
+        snapshot: { type: string }
+        totalAuthorized: { type: integer, format: int64, minimum: 0 }
+        counts: { $ref: '#/components/schemas/InboxNatureCounts' }
+        facets:
+          type: object
+          additionalProperties: true
+          x-field-extra-annotation: '@Contextual'
+        diagnostics: { $ref: '#/components/schemas/InboxQueryDiagnostics' }
+      x-vdx-count-constraint: totalAuthorized == counts.work + counts.message + counts.signal
+    InboxNatureCounts:
+      type: object
+      additionalProperties: false
+      description: Separate authorization-filtered counts for every Inbox item nature.
+      required: [work, message, signal]
+      properties:
+        work: { type: integer, format: int64, minimum: 0 }
+        message: { type: integer, format: int64, minimum: 0 }
+        signal: { type: integer, format: int64, minimum: 0 }
+    InboxItemPage:
+      type: object
+      required: [items, snapshot, diagnostics]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/InboxItem' }
+        snapshot: { type: string }
+        nextCursor: { type: [string, 'null'] }
+        diagnostics: { $ref: '#/components/schemas/InboxQueryDiagnostics' }
+    InboxCycleTimeMetrics:
+      type: object
+      additionalProperties: false
+      description: Policy-filtered completion cycle-time distribution in seconds.
+      required: [sampleCount, averageSeconds, p50Seconds, p95Seconds]
+      properties:
+        sampleCount: { type: integer, format: int64, minimum: 0 }
+        averageSeconds: { type: [number, 'null'], minimum: 0 }
+        p50Seconds: { type: [number, 'null'], minimum: 0 }
+        p95Seconds: { type: [number, 'null'], minimum: 0 }
+      if:
+        properties:
+          sampleCount: { const: 0 }
+      then:
+        properties:
+          averageSeconds: { type: 'null' }
+          p50Seconds: { type: 'null' }
+          p95Seconds: { type: 'null' }
+      else:
+        properties:
+          averageSeconds: { type: number, minimum: 0 }
+          p50Seconds: { type: number, minimum: 0 }
+          p95Seconds: { type: number, minimum: 0 }
+        x-vdx-percentile-constraint: p95Seconds >= p50Seconds
+    InboxFirstPassYieldMetrics:
+      type: object
+      additionalProperties: false
+      description: Policy-filtered completed work and first-pass completion rate.
+      required: [completedCount, firstPassCount, rate]
+      properties:
+        completedCount: { type: integer, format: int64, minimum: 0 }
+        firstPassCount: { type: integer, format: int64, minimum: 0 }
+        rate: { type: [number, 'null'], minimum: 0, maximum: 1 }
+      x-vdx-count-constraint: firstPassCount <= completedCount
+      if:
+        properties:
+          completedCount: { const: 0 }
+      then:
+        properties:
+          firstPassCount: { const: 0 }
+          rate: { type: 'null' }
+      else:
+        properties:
+          rate: { type: number, minimum: 0, maximum: 1 }
+    InboxSupervisorMetrics:
+      type: object
+      additionalProperties: false
+      description: >-
+        Every count, aggregate, cycle-time sample, and first-pass-yield sample is
+        computed after policy. These management metrics are not evidence exports.
+      required: [snapshot, diagnostics, openCount, arrivalsPerDay, completionsPerDay, cycleTime, firstPassYield]
+      properties:
+        snapshot: { type: string, minLength: 1 }
+        diagnostics: { $ref: '#/components/schemas/InboxQueryDiagnostics' }
+        openCount: { type: integer, format: int64, minimum: 0 }
+        arrivalsPerDay: { type: number, minimum: 0 }
+        completionsPerDay: { type: number, minimum: 0 }
+        cycleTime: { $ref: '#/components/schemas/InboxCycleTimeMetrics' }
+        firstPassYield: { $ref: '#/components/schemas/InboxFirstPassYieldMetrics' }
+    InboxHistoryPage:
+      type: object
+      required: [events, snapshot]
+      properties:
+        events:
+          type: array
+          items: { $ref: '#/components/schemas/InboxHistoryEvent' }
+        snapshot: { type: string }
+        nextCursor: { type: [string, 'null'] }
+    InboxLiveEvent:
+      type: object
+      additionalProperties: false
+      required: [eventId, projectionRevision, resumeCursor, eventType, occurredAt]
+      properties:
+        eventId:
+          type: string
+          minLength: 1
+          description: Durable event identifier used as the server-stream event ID.
+        projectionRevision:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Durable tenant projection revision after applying this event.
+        resumeCursor: { type: string }
+        eventType: { type: string }
+        itemId: { type: [string, 'null'] }
+        itemVersion: { type: [integer, 'null'], format: int64 }
+        occurredAt: { type: string, format: date-time }

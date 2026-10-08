@@ -1,0 +1,2050 @@
+openapi: 3.0.4
+info:
+  title: Resource & Booking API
+  version: 0.4.0
+  description: |
+    Manage resources, availability, bookings, and policy checks for resource scheduling.
+    Resources are first-class ecosystem participants in the Party model, with tenant-defined
+    categories, reusable usage policies, verification requirements, and visual branding support.
+
+    The API covers resource cataloging, availability lookup, reservation and booking lifecycle,
+    ownership and policy metadata, and audit-oriented status transitions such as maintenance,
+    retirement, verification, and cancellation.
+servers:
+  - url: http://localhost:5011/api/booking/v1
+
+security:
+  - bearer: []
+
+tags:
+  - name: Resources
+    description: Resource lifecycle and availability.
+  - name: ResourceGroups
+    description: Resource grouping for shared configuration.
+  - name: Bookings
+    description: Booking creation, updates, and credential verification status.
+  - name: Verifications
+    description: Pre-booking credential verifications.
+  - name: ResourceCategories
+    description: Tenant-defined resource category configuration.
+  - name: RequirementCategories
+    description: Tenant-defined requirement category configuration.
+  - name: UsagePolicies
+    description: Reusable booking constraint policies.
+  - name: PolicyAssignments
+    description: Policy assignment to categories, groups, or resources.
+  - name: ScheduleSets
+    description: Composite schedule sets with rules and composition.
+  - name: ScheduleSetAssignments
+    description: Schedule set assignment to categories, groups, or resources.
+paths:
+  /categories/resources:
+    get:
+      tags: [ResourceCategories]
+      summary: List resource categories
+      operationId: listResourceCategories
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+        - name: size
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        '200':
+          description: Paged list of resource categories.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResourceCategoryListResponse'
+    post:
+      tags: [ResourceCategories]
+      summary: Create resource category
+      operationId: createResourceCategory
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResourceCategoryCreateRequest'
+      responses:
+        '201':
+          description: Resource category created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResourceCategory'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+  /categories/resources/{resourceCategoryId}:
+    parameters:
+      - name: resourceCategoryId
+        in: path
+        required: true
+        description: Unique identifier of the resource category.
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags: [ResourceCategories]
+      summary: Get resource category
+      operationId: getResourceCategory
+      responses:
+        '200':
+          description: Category details.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResourceCategory'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+    put:
+      tags: [ResourceCategories]
+      summary: Update resource category
+      operationId: updateResourceCategory
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResourceCategoryUpdateRequest'
+      responses:
+        '200':
+          description: Updated category.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResourceCategory'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+    delete:
+      tags: [ResourceCategories]
+      summary: Soft-delete resource category
+      operationId: deleteResourceCategory
+      responses:
+        '204':
+          description: Deleted.
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+
+  /categories/requirements:
+    get:
+      tags: [RequirementCategories]
+      summary: List requirement categories
+      operationId: listRequirementCategories
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+        - name: size
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        '200':
+          description: Paged list of requirement categories.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RequirementCategoryListResponse'
+    post:
+      tags: [RequirementCategories]
+      summary: Create requirement category
+      operationId: createRequirementCategory
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RequirementCategoryCreateRequest'
+      responses:
+        '201':
+          description: Requirement category created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RequirementCategory'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+  /categories/requirements/{requirementCategoryId}:
+    parameters:
+      - name: requirementCategoryId
+        in: path
+        required: true
+        description: Unique identifier of the requirement category.
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags: [RequirementCategories]
+      summary: Get requirement category
+      operationId: getRequirementCategory
+      responses:
+        '200':
+          description: Requirement category details.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RequirementCategory'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+    patch:
+      tags: [RequirementCategories]
+      summary: Update requirement category
+      operationId: updateRequirementCategory
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RequirementCategoryUpdateRequest'
+      responses:
+        '200':
+          description: Updated requirement category.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RequirementCategory'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+    delete:
+      tags: [RequirementCategories]
+      summary: Soft-delete requirement category
+      operationId: deleteRequirementCategory
+      responses:
+        '204':
+          description: Deleted.
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+
+  /policies/usage:
+    get:
+      tags: [UsagePolicies]
+      summary: List usage policies
+      operationId: listUsagePolicies
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+        - name: size
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        '200':
+          description: Paged list of usage policies.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UsagePolicyListResponse'
+    post:
+      tags: [UsagePolicies]
+      summary: Create usage policy
+      operationId: createUsagePolicy
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UsagePolicyCreateRequest'
+      responses:
+        '201':
+          description: Usage policy created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UsagePolicy'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+  /policies/usage/default:
+    get:
+      tags: [UsagePolicies]
+      summary: Get the default usage policy
+      operationId: getDefaultUsagePolicy
+      description: Returns the default usage policy for the tenant.
+      responses:
+        '200':
+          description: Default usage policy details.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UsagePolicy'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+  /policies/usage/{usagePolicyId}:
+    parameters:
+      - name: usagePolicyId
+        in: path
+        required: true
+        description: Unique identifier of the usage policy.
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags: [UsagePolicies]
+      summary: Get usage policy
+      operationId: getUsagePolicy
+      responses:
+        '200':
+          description: Usage policy details.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UsagePolicy'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+    patch:
+      tags: [UsagePolicies]
+      summary: Update usage policy
+      operationId: updateUsagePolicy
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UsagePolicyUpdateRequest'
+      responses:
+        '200':
+          description: Updated usage policy.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UsagePolicy'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+    delete:
+      tags: [UsagePolicies]
+      summary: Delete usage policy
+      operationId: deleteUsagePolicy
+      responses:
+        '204':
+          description: Deleted.
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '409':
+          description: Policy is still in use by resources.
+          content:
+            application/json:
+              schema:
+                $ref: './common-components.yml#/components/schemas/ApiError'
+
+  # Policy Assignments
+  /policies/assignments:
+    get:
+      tags: [PolicyAssignments]
+      summary: List policy assignments
+      operationId: listPolicyAssignments
+      parameters:
+        - name: policyId
+          in: query
+          schema:
+            type: string
+            format: uuid
+          description: Filter by policy ID.
+        - name: categoryId
+          in: query
+          schema:
+            type: string
+            format: uuid
+          description: Filter by category ID.
+        - name: groupId
+          in: query
+          schema:
+            type: string
+            format: uuid
+          description: Filter by group ID.
+        - name: resourceId
+          in: query
+          schema:
+            type: string
+            format: uuid
+          description: Filter by resource ID.
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+        - name: size
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        '200':
+          description: Paged list of policy assignments.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PolicyAssignmentListResponse'
+    post:
+      tags: [PolicyAssignments]
+      summary: Create policy assignment
+      operationId: createPolicyAssignment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PolicyAssignmentCreateRequest'
+      responses:
+        '201':
+          description: Policy assignment created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PolicyAssignment'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+  /policies/assignments/{assignmentId}:
+    parameters:
+      - name: assignmentId
+        in: path
+        required: true
+        description: Unique identifier of the policy assignment.
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags: [PolicyAssignments]
+      summary: Get policy assignment
+      operationId: getPolicyAssignment
+      responses:
+        '200':
+          description: Policy assignment details.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PolicyAssignment'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+    patch:
+      tags: [PolicyAssignments]
+      summary: Update policy assignment
+      operationId: updatePolicyAssignment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PolicyAssignmentUpdateRequest'
+      responses:
+        '200':
+          description: Updated policy assignment.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PolicyAssignment'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+    delete:
+      tags: [PolicyAssignments]
+      summary: Delete policy assignment
+      operationId: deletePolicyAssignment
+      responses:
+        '204':
+          description: Deleted.
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+
+  # Resource Groups
+  /groups:
+    get:
+      tags: [ResourceGroups]
+      summary: List resource groups
+      operationId: listResourceGroups
+      parameters:
+        - name: categoryId
+          in: query
+          schema:
+            type: string
+            format: uuid
+          description: Filter by category ID.
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+        - name: size
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        '200':
+          description: Paged list of resource groups.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResourceGroupListResponse'
+    post:
+      tags: [ResourceGroups]
+      summary: Create resource group
+      operationId: createResourceGroup
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResourceGroupCreateRequest'
+      responses:
+        '201':
+          description: Resource group created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResourceGroup'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+  /groups/{groupId}:
+    parameters:
+      - name: groupId
+        in: path
+        required: true
+        description: Unique identifier of the resource group.
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags: [ResourceGroups]
+      summary: Get resource group
+      operationId: getResourceGroup
+      responses:
+        '200':
+          description: Resource group details.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResourceGroupDetail'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+    put:
+      tags: [ResourceGroups]
+      summary: Update resource group
+      operationId: updateResourceGroup
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResourceGroupUpdateRequest'
+      responses:
+        '200':
+          description: Updated resource group.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResourceGroup'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+    delete:
+      tags: [ResourceGroups]
+      summary: Soft-delete resource group
+      operationId: deleteResourceGroup
+      responses:
+        '204':
+          description: Deleted.
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+
+  # Schedule Sets
+  /schedules/sets:
+    get:
+      tags: [ScheduleSets]
+      summary: List schedule sets
+      operationId: listScheduleSets
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+        - name: size
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        '200':
+          description: Paged list of schedule sets.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScheduleSetListResponse'
+    post:
+      tags: [ScheduleSets]
+      summary: Create schedule set
+      operationId: createScheduleSet
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ScheduleSetCreateRequest'
+      responses:
+        '201':
+          description: Schedule set created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScheduleSet'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+  /schedules/sets/{scheduleSetId}:
+    parameters:
+      - name: scheduleSetId
+        in: path
+        required: true
+        description: Unique identifier of the schedule set.
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags: [ScheduleSets]
+      summary: Get schedule set
+      operationId: getScheduleSet
+      responses:
+        '200':
+          description: Schedule set details with rules and included sets.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScheduleSetDetail'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+    put:
+      tags: [ScheduleSets]
+      summary: Update schedule set
+      operationId: updateScheduleSet
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ScheduleSetUpdateRequest'
+      responses:
+        '200':
+          description: Updated schedule set.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScheduleSet'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+    delete:
+      tags: [ScheduleSets]
+      summary: Delete schedule set
+      operationId: deleteScheduleSet
+      responses:
+        '204':
+          description: Deleted.
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '409':
+          description: Schedule set is still in use.
+          content:
+            application/json:
+              schema:
+                $ref: './common-components.yml#/components/schemas/ApiError'
+
+  # Schedule Set Assignments
+  /schedules/sets/{scheduleSetId}/assignments:
+    parameters:
+      - name: scheduleSetId
+        in: path
+        required: true
+        description: Unique identifier of the schedule set.
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags: [ScheduleSetAssignments]
+      summary: List schedule set assignments
+      operationId: listScheduleSetAssignments
+      parameters:
+        - name: categoryId
+          in: query
+          schema:
+            type: string
+            format: uuid
+          description: Filter by category ID.
+        - name: groupId
+          in: query
+          schema:
+            type: string
+            format: uuid
+          description: Filter by group ID.
+        - name: resourceId
+          in: query
+          schema:
+            type: string
+            format: uuid
+          description: Filter by resource ID.
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+        - name: size
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        '200':
+          description: Paged list of schedule set assignments.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScheduleSetAssignmentListResponse'
+    post:
+      tags: [ScheduleSetAssignments]
+      summary: Create schedule set assignment
+      operationId: createScheduleSetAssignment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ScheduleSetAssignmentCreateRequest'
+      responses:
+        '201':
+          description: Schedule set assignment created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScheduleSetAssignment'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+  /schedules/sets/{scheduleSetId}/assignments/{assignmentId}:
+    parameters:
+      - name: scheduleSetId
+        in: path
+        required: true
+        description: Unique identifier of the schedule set.
+        schema:
+          type: string
+          format: uuid
+      - name: assignmentId
+        in: path
+        required: true
+        description: Unique identifier of the schedule set assignment.
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags: [ScheduleSetAssignments]
+      summary: Get schedule set assignment
+      operationId: getScheduleSetAssignment
+      responses:
+        '200':
+          description: Schedule set assignment details.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScheduleSetAssignment'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+    put:
+      tags: [ScheduleSetAssignments]
+      summary: Update schedule set assignment
+      operationId: updateScheduleSetAssignment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ScheduleSetAssignmentUpdateRequest'
+      responses:
+        '200':
+          description: Updated schedule set assignment.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScheduleSetAssignment'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+    delete:
+      tags: [ScheduleSetAssignments]
+      summary: Delete schedule set assignment
+      operationId: deleteScheduleSetAssignment
+      responses:
+        '204':
+          description: Deleted.
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+  /resources:
+    get:
+      tags: [Resources]
+      summary: List resources
+      description: Filterable resource listing scoped by tenant with optional category filtering.
+      operationId: listResources
+      parameters:
+        - name: resourceCategoryId
+          in: query
+          schema:
+            type: string
+            format: uuid
+          description: Filter by resource category.
+        - name: categorySlug
+          in: query
+          schema:
+            type: string
+          description: Filter by resource category slug.
+        - name: search
+          in: query
+          schema:
+            type: string
+          description: Free text search on name or location label.
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+        - name: size
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 20
+      responses:
+        '200':
+          description: Paged list of resources.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResourceListResponse'
+    post:
+      tags: [Resources]
+      summary: Create resource
+      description: Creates a party-backed resource with optional policy, schedule, and credential requirements.
+      operationId: createResource
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResourceCreateRequest'
+      responses:
+        '201':
+          description: Resource created successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResourceDetail'
+        '400':
+          description: Invalid request.
+          content:
+            application/json:
+              schema:
+                $ref: './common-components.yml#/components/schemas/ApiError'
+  /resources/{resourceId}:
+    parameters:
+      - $ref: '#/components/parameters/ResourceId'
+    get:
+      tags: [Resources]
+      summary: Get resource details
+      operationId: getResource
+      responses:
+        '200':
+          description: Resource with related policy and requirements.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResourceDetail'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+    put:
+      tags: [Resources]
+      summary: Update resource
+      operationId: updateResource
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResourceUpdateRequest'
+      responses:
+        '200':
+          description: Updated resource.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResourceDetail'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+    delete:
+      tags: [Resources]
+      summary: Soft-delete resource
+      operationId: deleteResource
+      responses:
+        '204':
+          description: Resource deleted.
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+  /resources/{resourceId}/availability:
+    parameters:
+      - $ref: '#/components/parameters/ResourceId'
+    get:
+      tags: [Resources]
+      summary: Get availability grid
+      operationId: getResourceAvailability
+      parameters:
+        - name: from
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date-time
+          description: Start of the availability window.
+        - name: to
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date-time
+          description: End of the availability window.
+        - name: timezone
+          in: query
+          schema:
+            type: string
+          description: IANA timezone identifier for slot generation.
+      responses:
+        '200':
+          description: Availability slots for the resource.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AvailabilityResponse'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+  /resources/{resourceId}/effective/policy:
+    parameters:
+      - $ref: '#/components/parameters/ResourceId'
+    get:
+      tags: [Resources]
+      summary: Get effective policy for a resource
+      operationId: getEffectiveResourcePolicy
+      responses:
+        '200':
+          description: Effective policy with source metadata.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EffectivePolicyResponse'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+  /resources/{resourceId}/effective/schedules/set:
+    parameters:
+      - $ref: '#/components/parameters/ResourceId'
+    get:
+      tags: [Resources]
+      summary: Get effective schedule set for a resource
+      operationId: getEffectiveResourceScheduleSet
+      responses:
+        '200':
+          description: Effective schedule set with source metadata.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EffectiveScheduleSetResponse'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+  /resources/{resourceId}/effective/schedules/rules:
+    parameters:
+      - $ref: '#/components/parameters/ResourceId'
+    get:
+      tags: [Resources]
+      summary: Get flattened effective schedule rules for a resource
+      operationId: getEffectiveResourceScheduleRules
+      responses:
+        '200':
+          description: Flattened effective schedule rules with source metadata.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EffectiveScheduleRulesResponse'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+  /bookings:
+    get:
+      tags: [Bookings]
+      summary: List bookings
+      operationId: listBookings
+      parameters:
+        - name: resourceId
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: userId
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: bookingType
+          in: query
+          schema:
+            $ref: '#/components/schemas/BookingType'
+        - name: status
+          in: query
+          schema:
+            $ref: '#/components/schemas/BookingStatus'
+        - name: from
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+        - name: size
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 20
+      responses:
+        '200':
+          description: Paged list of bookings.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BookingListResponse'
+    post:
+      tags: [Bookings]
+      summary: Create booking
+      description: Creates a booking and enforces conflict and verification requirements.
+      operationId: createBooking
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BookingCreateRequest'
+      responses:
+        '201':
+          description: Booking created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Booking'
+        '400':
+          description: Invalid request.
+          content:
+            application/json:
+              schema:
+                $ref: './common-components.yml#/components/schemas/ApiError'
+        '409':
+          $ref: './common-components.yml#/components/responses/Conflict'
+  /bookings/{bookingId}:
+    parameters:
+      - name: bookingId
+        in: path
+        required: true
+        description: Unique identifier of the booking.
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags: [Bookings]
+      summary: Get booking
+      operationId: getBooking
+      responses:
+        '200':
+          description: Booking details.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Booking'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+    put:
+      tags: [Bookings]
+      summary: Update booking
+      operationId: updateBooking
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BookingUpdateRequest'
+      responses:
+        '200':
+          description: Updated booking.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Booking'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '409':
+          $ref: './common-components.yml#/components/responses/Conflict'
+    delete:
+      tags: [Bookings]
+      summary: Cancel booking
+      operationId: cancelBooking
+      responses:
+        '204':
+          description: Booking cancelled.
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+  /verifications:
+    post:
+      tags: [Verifications]
+      summary: Start a verification
+      operationId: createVerification
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VerificationCreateRequest'
+      responses:
+        '201':
+          description: Verification created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Verification'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+  /verifications/{verificationId}:
+    parameters:
+      - name: verificationId
+        in: path
+        required: true
+        description: Unique identifier of the verification.
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags: [Verifications]
+      summary: Get verification status
+      operationId: getVerification
+      responses:
+        '200':
+          description: Verification details.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Verification'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+components:
+  securitySchemes:
+    bearer:
+      $ref: './common-components.yml#/components/securitySchemes/bearer'
+  parameters:
+    ResourceId:
+      $ref: './resource-manager-components.yml#/components/parameters/ResourceId'
+  responses:
+    NotFound:
+      $ref: './common-components.yml#/components/responses/NotFound'
+    Error:
+      $ref: './common-components.yml#/components/responses/Error'
+    ValidationError:
+      $ref: './common-components.yml#/components/responses/ValidationError'
+  schemas:
+    BookingStatus:
+      $ref: './resource-manager-components.yml#/components/schemas/BookingStatus'
+    BookingType:
+      $ref: './resource-manager-components.yml#/components/schemas/BookingType'
+    BookingProofStatus:
+      $ref: './resource-manager-components.yml#/components/schemas/BookingProofStatus'
+    ResourceStatus:
+      $ref: './resource-manager-components.yml#/components/schemas/ResourceStatus'
+    RequirementVerificationStatus:
+      $ref: './resource-manager-components.yml#/components/schemas/RequirementVerificationStatus'
+    PagingMeta:
+      $ref: './common-components.yml#/components/schemas/PagingMeta'
+    ResourceCategory:
+      $ref: './resource-manager-components.yml#/components/schemas/ResourceCategory'
+    ResourceCategoryCreateRequest:
+      type: object
+      required:
+        - name
+        - slug
+      properties:
+        tenantId:
+          type: string
+          format: uuid
+        name:
+          type: string
+        slug:
+          type: string
+        description:
+          type: string
+        iconAssetId:
+          type: string
+        schemaDefinitionId:
+          type: string
+        parentCategoryId:
+          type: string
+          format: uuid
+        displayOrder:
+          type: integer
+        isActive:
+          type: boolean
+          default: true
+    ResourceCategoryUpdateRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        slug:
+          type: string
+        description:
+          type: string
+        iconAssetId:
+          type: string
+        schemaDefinitionId:
+          type: string
+        parentCategoryId:
+          type: string
+          format: uuid
+        displayOrder:
+          type: integer
+        isActive:
+          type: boolean
+    ResourceCategoryListResponse:
+      type: object
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ResourceCategory'
+        page:
+          $ref: '#/components/schemas/PagingMeta'
+    RequirementCategory:
+      $ref: './resource-manager-components.yml#/components/schemas/RequirementCategory'
+    RequirementCategoryCreateRequest:
+      type: object
+      required:
+        - name
+        - slug
+      properties:
+        tenantId:
+          type: string
+          format: uuid
+        name:
+          type: string
+        slug:
+          type: string
+        description:
+          type: string
+        displayOrder:
+          type: integer
+        isActive:
+          type: boolean
+          default: true
+    RequirementCategoryUpdateRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        slug:
+          type: string
+        description:
+          type: string
+        displayOrder:
+          type: integer
+        isActive:
+          type: boolean
+    RequirementCategoryListResponse:
+      type: object
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/RequirementCategory'
+        page:
+          $ref: '#/components/schemas/PagingMeta'
+    UsagePolicy:
+      $ref: './resource-manager-components.yml#/components/schemas/UsagePolicy'
+    UsagePolicyCreateRequest:
+      type: object
+      required:
+        - name
+      properties:
+        tenantId:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+        concurrencyLimit:
+          type: integer
+          default: 1
+        slotIntervalMinutes:
+          type: integer
+          default: 30
+        minBookingDurationMinutes:
+          type: integer
+          default: 30
+        maxBookingDurationMinutes:
+          type: integer
+          nullable: true
+        bufferAfterMinutes:
+          type: integer
+          default: 0
+        maxAdvanceBookingDays:
+          type: integer
+        maxBookingsPerDay:
+          type: integer
+          nullable: true
+        maxConcurrentBookingsPerAdvanceBookingPeriod:
+          type: integer
+          nullable: true
+        maxConcurrentBookings:
+          type: integer
+          nullable: true
+          deprecated: true
+        allowSameDayBooking:
+          type: boolean
+          default: true
+        minAdvanceBookingHours:
+          type: integer
+          description: Minimum hours in advance a booking must be made
+          nullable: true
+        requiresApproval:
+          type: boolean
+          description: Whether bookings require approval before confirmation
+          default: false
+        allowRecurring:
+          type: boolean
+          description: Whether recurring bookings are allowed
+          default: true
+        isDefault:
+          type: boolean
+          default: false
+    UsagePolicyUpdateRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        concurrencyLimit:
+          type: integer
+        slotIntervalMinutes:
+          type: integer
+        minBookingDurationMinutes:
+          type: integer
+        maxBookingDurationMinutes:
+          type: integer
+          nullable: true
+        bufferAfterMinutes:
+          type: integer
+        maxAdvanceBookingDays:
+          type: integer
+        maxBookingsPerDay:
+          type: integer
+          nullable: true
+        maxConcurrentBookingsPerAdvanceBookingPeriod:
+          type: integer
+          nullable: true
+        maxConcurrentBookings:
+          type: integer
+          nullable: true
+          deprecated: true
+        allowSameDayBooking:
+          type: boolean
+        minAdvanceBookingHours:
+          type: integer
+          nullable: true
+        requiresApproval:
+          type: boolean
+        allowRecurring:
+          type: boolean
+        isDefault:
+          type: boolean
+    UsagePolicyListResponse:
+      type: object
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/UsagePolicy'
+        page:
+          $ref: '#/components/schemas/PagingMeta'
+    ResourceUsagePolicy:
+      $ref: './resource-manager-components.yml#/components/schemas/ResourceUsagePolicy'
+    ResourceUsagePolicyInput:
+      $ref: './resource-manager-components.yml#/components/schemas/ResourceUsagePolicyInput'
+    Resource:
+      $ref: './resource-manager-components.yml#/components/schemas/Resource'
+    ResourceRequirementInput:
+      $ref: './resource-manager-components.yml#/components/schemas/ResourceRequirementInput'
+    ResourceRequirement:
+      $ref: './resource-manager-components.yml#/components/schemas/ResourceRequirement'
+    ResourceSchedule:
+      $ref: './resource-manager-components.yml#/components/schemas/ResourceSchedule'
+    AvailabilitySlot:
+      $ref: './resource-manager-components.yml#/components/schemas/AvailabilitySlot'
+    AvailabilityResponse:
+      type: object
+      required:
+        - resourceId
+        - from
+        - to
+        - slots
+      properties:
+        resourceId:
+          type: string
+          format: uuid
+        from:
+          type: string
+          format: date-time
+        to:
+          type: string
+          format: date-time
+        timezone:
+          type: string
+        slots:
+          type: array
+          items:
+            $ref: '#/components/schemas/AvailabilitySlot'
+    EffectiveSourceLevel:
+      $ref: './resource-manager-components.yml#/components/schemas/EffectiveSourceLevel'
+    EffectiveSource:
+      $ref: './resource-manager-components.yml#/components/schemas/EffectiveSource'
+    EffectivePolicyResponse:
+      type: object
+      required:
+        - policy
+        - source
+      properties:
+        policy:
+          $ref: '#/components/schemas/UsagePolicy'
+        source:
+          $ref: '#/components/schemas/EffectiveSource'
+    EffectiveScheduleSetResponse:
+      type: object
+      required:
+        - scheduleSet
+        - source
+      properties:
+        scheduleSet:
+          $ref: '#/components/schemas/ScheduleSetDetail'
+        source:
+          $ref: '#/components/schemas/EffectiveSource'
+    EffectiveScheduleRulesResponse:
+      type: object
+      required:
+        - resourceId
+        - rules
+        - sourceChain
+      properties:
+        resourceId:
+          type: string
+          format: uuid
+        rules:
+          type: array
+          items:
+            $ref: '#/components/schemas/ScheduleRule'
+        sourceChain:
+          type: array
+          items:
+            $ref: '#/components/schemas/EffectiveSource'
+    ResourceCreateRequest:
+      type: object
+      required:
+        - party
+        - resource
+      properties:
+        tenantId:
+          type: string
+          format: uuid
+        party:
+          type: object
+          description: |
+            Party configuration for the resource. Provide EITHER:
+            - `resourceId` to attach resource definition to an existing resource, OR
+            - `displayName` (and other fields) to create a new party with the resource.
+            Note: New party creation is handled via ResourceManagerService orchestration.
+          properties:
+            resourceId:
+              type: string
+              format: uuid
+              description: |
+                ID of an existing party to attach this resource definition to.
+                When provided, other party creation fields are ignored.
+                Mutually exclusive with displayName-based party creation.
+            displayName:
+              type: string
+              description: |
+                Display name for creating a new party.
+                Required when resourceId is not provided.
+            partyType:
+              allOf:
+                - $ref: './party-manager-components.yml#/components/schemas/PartyType'
+              default: RESOURCE
+            origin:
+              $ref: './party-manager-components.yml#/components/schemas/PartyOrigin'
+              default: MANAGED
+            uri:
+              type: string
+              format: uri
+            ownerResourceId:
+              type: string
+              format: uuid
+              description: |
+                ID of the party that owns this party (parent-child relationship).
+                Only applicable when creating a new party (not when using resourceId).
+            description:
+              type: string
+              description: Optional free-form description for the resource.
+            imageAssetId:
+              type: string
+              description: Optional image URL/asset reference for the resource.
+            brandingProfileId:
+              type: string
+              format: uuid
+              description: Optional branding profile for visual identity of this resource.
+        resource:
+          type: object
+          required:
+            - resourceCategoryId
+          properties:
+            resourceCategoryId:
+              type: string
+              format: uuid
+            groupId:
+              type: string
+              format: uuid
+              nullable: true
+              description: Optional resource group membership.
+            timezone:
+              type: string
+              description: IANA timezone identifier (e.g., 'Europe/Amsterdam'). TODO - Consider deriving from party's primary physical address timezone instead.
+            status:
+              $ref: '#/components/schemas/ResourceStatus'
+            capacity:
+              type: integer
+        usagePolicy:
+          $ref: '#/components/schemas/ResourceUsagePolicyInput'
+        schedules:
+          type: array
+          items:
+            $ref: '#/components/schemas/ResourceSchedule'
+        requirements:
+          type: array
+          items:
+            $ref: '#/components/schemas/ResourceRequirementInput'
+        addresses:
+          type: array
+          description: Optional physical addresses for the resource.
+          items:
+            $ref: './party-manager-openapi.yml#/components/schemas/PhysicalAddressCreateRequest'
+    ResourceUpdateInput:
+      $ref: './resource-manager-components.yml#/components/schemas/ResourceUpdateInput'
+    ResourceUpdateRequest:
+      type: object
+      properties:
+        party:
+          type: object
+          description: Party update fields.
+          properties:
+            displayName:
+              type: string
+            description:
+              type: string
+              nullable: true
+              description: Updated description.
+            imageAssetId:
+              type: string
+              nullable: true
+              description: Updated image URL/asset reference.
+            brandingProfileId:
+              type: string
+              format: uuid
+              nullable: true
+              description: Update branding profile. Set to null to remove branding.
+        resource:
+          $ref: '#/components/schemas/ResourceUpdateInput'
+        usagePolicy:
+          $ref: '#/components/schemas/ResourceUsagePolicyInput'
+        schedules:
+          type: array
+          items:
+            $ref: '#/components/schemas/ResourceSchedule'
+        requirements:
+          type: array
+          items:
+            $ref: '#/components/schemas/ResourceRequirementInput'
+        addresses:
+          type: array
+          items:
+            $ref: './party-manager-openapi.yml#/components/schemas/PhysicalAddressCreateRequest'
+    ResourceDetail:
+      $ref: './resource-manager-components.yml#/components/schemas/ResourceDetail'
+    ResourceListResponse:
+      type: object
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ResourceDetail'
+        page:
+          $ref: '#/components/schemas/PagingMeta'
+    Booking:
+      $ref: './resource-manager-components.yml#/components/schemas/Booking'
+    BookingVerification:
+      $ref: './resource-manager-components.yml#/components/schemas/BookingVerification'
+    BookingMetadataEntry:
+      $ref: './resource-manager-components.yml#/components/schemas/BookingMetadataEntry'
+    BookingCreateRequest:
+      type: object
+      required:
+        - resourceId
+        - startTime
+        - endTime
+      properties:
+        userId:
+          type: string
+          format: uuid
+          nullable: true
+        delegateId:
+          type: string
+          format: uuid
+        resourceId:
+          type: string
+          format: uuid
+        bookingType:
+          $ref: '#/components/schemas/BookingType'
+          default: USER_RESERVATION
+        title:
+          type: string
+        description:
+          type: string
+        startTime:
+          type: string
+          format: date-time
+        endTime:
+          type: string
+          format: date-time
+        verificationId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Verified proof required when booking a resource with mandatory credential requirements.
+        headcount:
+          type: integer
+          format: int32
+          description: Number of attendees for this booking
+    BookingUpdateRequest:
+      type: object
+      properties:
+        title:
+          type: string
+        description:
+          type: string
+        startTime:
+          type: string
+          format: date-time
+        endTime:
+          type: string
+          format: date-time
+        bookingType:
+          $ref: '#/components/schemas/BookingType'
+        status:
+          $ref: '#/components/schemas/BookingStatus'
+        proofStatus:
+          $ref: '#/components/schemas/BookingProofStatus'
+        headcount:
+          type: integer
+          format: int32
+          description: Number of attendees for this booking
+    BookingDetail:
+      $ref: './resource-manager-components.yml#/components/schemas/BookingDetail'
+    BookingListResponse:
+      type: object
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Booking'
+        page:
+          $ref: '#/components/schemas/PagingMeta'
+    VerificationStatus:
+      $ref: './resource-manager-components.yml#/components/schemas/VerificationStatus'
+    VerificationCreateRequest:
+      type: object
+      required:
+        - resourceId
+      properties:
+        resourceId:
+          type: string
+          format: uuid
+        bookingId:
+          type: string
+          format: uuid
+          nullable: true
+    Verification:
+      $ref: './resource-manager-components.yml#/components/schemas/Verification'
+    # Resource Groups
+    ResourceGroup:
+      $ref: './resource-manager-components.yml#/components/schemas/ResourceGroup'
+    ResourceGroupCreateRequest:
+      type: object
+      required:
+        - name
+      properties:
+        tenantId:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+        categoryId:
+          type: string
+          format: uuid
+          nullable: true
+        imageAssetId:
+          type: string
+          nullable: true
+        status:
+          type: string
+          enum: [ACTIVE, INACTIVE]
+          default: ACTIVE
+    ResourceGroupUpdateRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        categoryId:
+          type: string
+          format: uuid
+          nullable: true
+        imageAssetId:
+          type: string
+          nullable: true
+        status:
+          type: string
+          enum: [ACTIVE, INACTIVE]
+    ResourceGroupDetail:
+      $ref: './resource-manager-components.yml#/components/schemas/ResourceGroupDetail'
+    ResourceGroupListResponse:
+      type: object
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ResourceGroup'
+        page:
+          $ref: '#/components/schemas/PagingMeta'
+
+    # Schedule Sets (Composite Schedules)
+    ScheduleRule:
+      $ref: './resource-manager-components.yml#/components/schemas/ScheduleRule'
+    ScheduleRuleInput:
+      $ref: './resource-manager-components.yml#/components/schemas/ScheduleRuleInput'
+    ScheduleSet:
+      $ref: './resource-manager-components.yml#/components/schemas/ScheduleSet'
+    ScheduleSetCreateRequest:
+      type: object
+      required:
+        - name
+      properties:
+        tenantId:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+        priority:
+          type: integer
+          format: int32
+          default: 0
+        isDefault:
+          type: boolean
+          default: false
+        rules:
+          type: array
+          items:
+            $ref: '#/components/schemas/ScheduleRuleInput'
+        includedSetIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+          description: IDs of other schedule sets to include (composition).
+    ScheduleSetUpdateRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        priority:
+          type: integer
+          format: int32
+        isDefault:
+          type: boolean
+        rules:
+          type: array
+          items:
+            $ref: '#/components/schemas/ScheduleRuleInput'
+        includedSetIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+    ScheduleSetDetail:
+      $ref: './resource-manager-components.yml#/components/schemas/ScheduleSetDetail'
+    ScheduleSetListResponse:
+      type: object
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ScheduleSet'
+        page:
+          $ref: '#/components/schemas/PagingMeta'
+
+    # Schedule Set Assignments
+    ScheduleSetAssignment:
+      $ref: './resource-manager-components.yml#/components/schemas/ScheduleSetAssignment'
+    ScheduleSetAssignmentCreateRequest:
+      type: object
+      required:
+        - scheduleSetId
+      properties:
+        tenantId:
+          type: string
+          format: uuid
+        scheduleSetId:
+          type: string
+          format: uuid
+        categoryId:
+          type: string
+          format: uuid
+          nullable: true
+        groupId:
+          type: string
+          format: uuid
+          nullable: true
+        resourceId:
+          type: string
+          format: uuid
+          nullable: true
+        isDefault:
+          type: boolean
+          default: false
+        priority:
+          type: integer
+          format: int32
+          default: 0
+        validFrom:
+          type: string
+          format: date-time
+          nullable: true
+        validUntil:
+          type: string
+          format: date-time
+          nullable: true
+    ScheduleSetAssignmentUpdateRequest:
+      type: object
+      properties:
+        scheduleSetId:
+          type: string
+          format: uuid
+        categoryId:
+          type: string
+          format: uuid
+          nullable: true
+        groupId:
+          type: string
+          format: uuid
+          nullable: true
+        resourceId:
+          type: string
+          format: uuid
+          nullable: true
+        isDefault:
+          type: boolean
+        priority:
+          type: integer
+          format: int32
+        validFrom:
+          type: string
+          format: date-time
+          nullable: true
+        validUntil:
+          type: string
+          format: date-time
+          nullable: true
+    ScheduleSetAssignmentListResponse:
+      type: object
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ScheduleSetAssignment'
+        page:
+          $ref: '#/components/schemas/PagingMeta'
+
+    # Policy Assignments
+    PolicyAssignment:
+      $ref: './resource-manager-components.yml#/components/schemas/PolicyAssignment'
+    PolicyAssignmentCreateRequest:
+      type: object
+      required:
+        - policyId
+      properties:
+        tenantId:
+          type: string
+          format: uuid
+        policyId:
+          type: string
+          format: uuid
+        categoryId:
+          type: string
+          format: uuid
+          nullable: true
+        groupId:
+          type: string
+          format: uuid
+          nullable: true
+        resourceId:
+          type: string
+          format: uuid
+          nullable: true
+        isDefault:
+          type: boolean
+          default: false
+        priority:
+          type: integer
+          format: int32
+          default: 0
+        validFrom:
+          type: string
+          format: date-time
+          nullable: true
+        validUntil:
+          type: string
+          format: date-time
+          nullable: true
+    PolicyAssignmentUpdateRequest:
+      type: object
+      properties:
+        policyId:
+          type: string
+          format: uuid
+        categoryId:
+          type: string
+          format: uuid
+          nullable: true
+        groupId:
+          type: string
+          format: uuid
+          nullable: true
+        resourceId:
+          type: string
+          format: uuid
+          nullable: true
+        isDefault:
+          type: boolean
+        priority:
+          type: integer
+          format: int32
+        validFrom:
+          type: string
+          format: date-time
+          nullable: true
+        validUntil:
+          type: string
+          format: date-time
+          nullable: true
+    PolicyAssignmentListResponse:
+      type: object
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/PolicyAssignment'
+        page:
+          $ref: '#/components/schemas/PagingMeta'

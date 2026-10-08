@@ -28,6 +28,10 @@ plugins {
 metro {
 }
 
+// Root integration modules consume owning pack publications. Explicit IDK_LOCAL_PACKS
+// composites substitute these same coordinates for source development.
+val idkArtifactVersion = rootProject.extra["platformVersion"].toString()
+
 kotlin {
     jvm {
         testRuns.named("test") {
@@ -41,45 +45,45 @@ kotlin {
         val jvmMain by getting {
             dependencies {
                 // OAuth2 common models
-                implementation(projects.libOauth2CommonPublic)
-                implementation(projects.libOauth2CommonImpl)
+                implementation("com.sphereon.idk:lib-oauth2-common-public:$idkArtifactVersion")
+                implementation("com.sphereon.idk:lib-oauth2-common-impl:$idkArtifactVersion")
 
                 // JWT validation registry used by the OAuth2 AS REST internal surfaces.
-                implementation(projects.libOauth2JwtValidationApi)
-                implementation(projects.libOauth2JwtValidationImpl)
+                implementation("com.sphereon.idk:lib-oauth2-jwt-validation-api:$idkArtifactVersion")
+                implementation("com.sphereon.idk:lib-oauth2-jwt-validation-impl:$idkArtifactVersion")
 
                 // OAuth2 Authorization Server (OP) impl + REST adapters
-                implementation(projects.libOauth2ServerAuthorizationPublic)
-                implementation(projects.libOauth2ServerAuthorizationImpl)
-                implementation(projects.servicesOauth2AsRest)
+                implementation("com.sphereon.idk:lib-oauth2-server-authorization-public:$idkArtifactVersion")
+                implementation("com.sphereon.idk:lib-oauth2-server-authorization-impl:$idkArtifactVersion")
+                implementation("com.sphereon.idk:services-oauth2-as-rest:$idkArtifactVersion")
 
                 // OAuth2 Resource Server (for `/userinfo` access token verification)
-                implementation(projects.libOauth2ServerResourcePublic)
-                implementation(projects.libOauth2ServerResourceImpl)
+                implementation("com.sphereon.idk:lib-oauth2-server-resource-public:$idkArtifactVersion")
+                implementation("com.sphereon.idk:lib-oauth2-server-resource-impl:$idkArtifactVersion")
 
                 // OAuth2 client (RP-side helpers, also keeps the session graph complete)
-                implementation(projects.libOauth2ClientPublic)
-                implementation(projects.libOauth2ClientImpl)
+                implementation("com.sphereon.idk:lib-oauth2-client-public:$idkArtifactVersion")
+                implementation("com.sphereon.idk:lib-oauth2-client-impl:$idkArtifactVersion")
 
                 // Core API + defaults (config service, classpath properties source, root scope)
-                implementation(projects.libCoreApiPublic)
-                implementation(projects.libCoreApiDefault)
+                implementation("com.sphereon.idk:lib-core-api-public:$idkArtifactVersion")
+                implementation("com.sphereon.idk:lib-core-api-default:$idkArtifactVersion")
 
                 // Events (audit hooks the AS commands emit)
-                implementation(projects.libCoreEventsImpl)
+                implementation("com.sphereon.idk:lib-core-events-impl:$idkArtifactVersion")
 
                 // Crypto core + Software KMS (in-process signing keys for the OP)
-                implementation(projects.libCryptoCorePublic)
-                implementation(projects.libCryptoCoreImpl)
-                implementation(projects.libCryptoCore)
-                implementation(projects.libCryptoKmsProviderSoftware)
+                implementation("com.sphereon.idk:lib-crypto-core-public:$idkArtifactVersion")
+                implementation("com.sphereon.idk:lib-crypto-core-impl:$idkArtifactVersion")
+                implementation("com.sphereon.idk:lib-crypto-core:$idkArtifactVersion")
+                implementation("com.sphereon.idk:lib-crypto-kms-provider-software:$idkArtifactVersion")
 
                 // HTTP client (used internally by the AS for federation / introspection wiring)
-                implementation(projects.libDataLinkHttpClientPublic)
-                implementation(projects.libDataLinkHttpClientImpl)
+                implementation("com.sphereon.idk:lib-data-link-http-client-public:$idkArtifactVersion")
+                implementation("com.sphereon.idk:lib-data-link-http-client-impl:$idkArtifactVersion")
 
                 // Ktor server runtime + KotlinInject plugin for HttpAdapter dispatch
-                implementation(projects.ktorServerKotlinInject)
+                implementation("com.sphereon.idk:ktor-server-kotlin-inject:$idkArtifactVersion")
                 implementation(sphereonlib.io.ktor.server.core)
                 implementation(sphereonlib.io.ktor.server.cio)
                 implementation(sphereonlib.io.ktor.server.content.negotiation)

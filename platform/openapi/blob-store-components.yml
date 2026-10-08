@@ -1,0 +1,263 @@
+openapi: 3.0.4
+info:
+  title: BlobStore Components
+  version: 1.0.0
+  description: Provider-neutral models shared by the canonical BlobStore API.
+paths: {}
+components:
+  schemas:
+    BlobPath:
+      type: string
+      minLength: 1
+      maxLength: 4096
+      description: >-
+        Canonical relative blob path using `/` separators. Absolute paths, backslashes,
+        null bytes, and `.` or `..` traversal segments are invalid.
+      example: documents/contracts/contract-2026.pdf
+
+    BlobMetadata:
+      type: object
+      additionalProperties: false
+      properties:
+        contentType: { type: string, nullable: true }
+        contentEncoding: { type: string, nullable: true }
+        contentDisposition: { type: string, nullable: true }
+        custom:
+          type: object
+          additionalProperties: { type: string }
+        contentHash: { type: string, nullable: true }
+        retentionHint:
+          allOf:
+            - $ref: '#/components/schemas/RetentionHint'
+        classification: { type: string, nullable: true }
+        legalBasis: { type: string, nullable: true }
+        retentionDays: { type: integer, format: int32, minimum: 0, nullable: true }
+        processingPurpose: { type: string, nullable: true }
+        jurisdiction: { type: string, nullable: true }
+
+    RetentionHint:
+      type: object
+      additionalProperties: false
+      properties:
+        retainUntil: { type: string, format: date-time, nullable: true }
+        legalHold: { type: boolean, default: false }
+        policy: { type: string, nullable: true }
+
+    BlobReference:
+      type: object
+      additionalProperties: false
+      required: [storeId, path]
+      properties:
+        storeId: { type: string, minLength: 1 }
+        path: { $ref: '#/components/schemas/BlobPath' }
+
+    BlobDescriptor:
+      type: object
+      additionalProperties: false
+      required: [path, storeId, sizeBytes, metadata]
+      properties:
+        path: { $ref: '#/components/schemas/BlobPath' }
+        storeId: { type: string }
+        sizeBytes: { type: integer, format: int64, minimum: 0 }
+        contentType: { type: string, nullable: true }
+        filename: { type: string, nullable: true }
+        etag: { type: string, nullable: true }
+        revision: { type: integer, format: int64, minimum: 0, nullable: true }
+        createdAt: { type: string, format: date-time, nullable: true }
+        lastModified: { type: string, format: date-time, nullable: true }
+        metadata: { $ref: '#/components/schemas/BlobMetadata' }
+        contentHash: { type: string, nullable: true }
+        classification: { type: string, nullable: true }
+        legalBasis: { type: string, nullable: true }
+        retentionDays: { type: integer, format: int32, minimum: 0, nullable: true }
+        processingPurpose: { type: string, nullable: true }
+        jurisdiction: { type: string, nullable: true }
+
+    BlobStoreCapabilities:
+      type: object
+      additionalProperties: false
+      required:
+        - supportsEtag
+        - supportsRevisions
+        - supportsConditionalWrites
+        - supportsConditionalDelete
+        - supportsStreamingRead
+        - supportsStreamingWrite
+        - supportsCopy
+        - supportsMove
+        - supportsBulkDelete
+        - supportsTempUrls
+        - supportsListing
+        - supportsMetadata
+        - supportsFolders
+        - maxBlobSizeBytes
+      properties:
+        supportsEtag: { type: boolean }
+        supportsRevisions: { type: boolean }
+        supportsConditionalWrites: { type: boolean }
+        supportsConditionalDelete: { type: boolean }
+        supportsStreamingRead: { type: boolean }
+        supportsStreamingWrite: { type: boolean }
+        supportsCopy: { type: boolean }
+        supportsMove: { type: boolean }
+        supportsBulkDelete: { type: boolean }
+        supportsTempUrls: { type: boolean }
+        supportsListing: { type: boolean }
+        supportsMetadata: { type: boolean }
+        supportsFolders: { type: boolean }
+        maxBlobSizeBytes: { type: integer, format: int64, minimum: 0 }
+        maxTempUrlDuration:
+          type: string
+          nullable: true
+          description: ISO-8601 duration.
+
+    BlobListResult:
+      type: object
+      additionalProperties: false
+      required: [descriptors, commonPrefixes]
+      properties:
+        descriptors:
+          type: array
+          items: { $ref: '#/components/schemas/BlobDescriptor' }
+        nextPageToken: { type: string, nullable: true }
+        commonPrefixes:
+          type: array
+          items: { type: string }
+
+    MetadataSearchQuery:
+      type: object
+      additionalProperties: false
+      properties:
+        contentType: { type: string, nullable: true }
+        customMetadata:
+          type: object
+          additionalProperties: { type: string }
+        pathPrefix: { type: string, nullable: true }
+        maxResults: { type: integer, format: int32, minimum: 1, maximum: 1000, default: 100 }
+
+    BlobTransferRequest:
+      type: object
+      additionalProperties: false
+      required: [source, destination]
+      properties:
+        source: { $ref: '#/components/schemas/BlobReference' }
+        destination: { $ref: '#/components/schemas/BlobReference' }
+
+    ContentAddress:
+      type: object
+      additionalProperties: false
+      required: [algorithm, digest]
+      properties:
+        algorithm: { type: string, enum: [sha-256, sha-384, sha-512] }
+        digest: { type: string, minLength: 1 }
+
+    ContentAddressDescriptor:
+      type: object
+      additionalProperties: false
+      required: [descriptor, algorithm, digest]
+      properties:
+        descriptor: { $ref: '#/components/schemas/BlobDescriptor' }
+        algorithm: { type: string, enum: [sha-256, sha-384, sha-512] }
+        digest: { type: string }
+
+    TempUrlRequest:
+      type: object
+      additionalProperties: false
+      required: [method, expiresIn]
+      properties:
+        method: { type: string, enum: [GET, PUT] }
+        expiresIn:
+          type: string
+          description: Requested ISO-8601 duration.
+        contentType: { type: string, nullable: true }
+
+    TempUrlResult:
+      type: object
+      additionalProperties: false
+      required: [url, method, expiresAt]
+      properties:
+        url: { type: string, format: uri }
+        method: { type: string, enum: [GET, PUT] }
+        expiresAt: { type: string, format: date-time }
+        headers:
+          type: object
+          additionalProperties: { type: string }
+
+    DeleteResult:
+      type: object
+      required: [deleted]
+      properties:
+        deleted: { type: boolean }
+
+    VerifyResult:
+      type: object
+      required: [valid]
+      properties:
+        valid: { type: boolean }
+
+    BlobError:
+      type: object
+      additionalProperties: false
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          enum:
+            - BLOB_NOT_FOUND
+            - BLOB_ALREADY_EXISTS
+            - BLOB_IO_ERROR
+            - BLOB_UNSUPPORTED
+            - BLOB_QUOTA_EXCEEDED
+            - BLOB_INTEGRITY_ERROR
+            - BLOB_PERMISSION_DENIED
+            - BLOB_PRECONDITION_FAILED
+            - BLOB_BACKEND_ERROR
+        message: { type: string }
+        operationId: { type: string, nullable: true }
+
+  responses:
+    BlobBadRequest:
+      description: Invalid blob path, metadata, range, or request shape.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/BlobError' }
+    BlobUnauthorized:
+      description: Authentication is required.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/BlobError' }
+    BlobForbidden:
+      description: The caller is not authorized for the store or object.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/BlobError' }
+    BlobNotFound:
+      description: The store or blob does not exist.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/BlobError' }
+    BlobConflict:
+      description: The target already exists.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/BlobError' }
+    BlobPreconditionFailed:
+      description: An ETag, revision, or create-only precondition failed atomically.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/BlobError' }
+    BlobRangeNotSatisfiable:
+      description: The requested byte range is invalid for this object.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/BlobError' }
+    BlobUnsupported:
+      description: The selected backend does not advertise the required capability.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/BlobError' }
+    BlobErrorResponse:
+      description: BlobStore backend or integrity failure.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/BlobError' }

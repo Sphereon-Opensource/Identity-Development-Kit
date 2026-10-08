@@ -99,17 +99,27 @@ class WalletTestInProcessHttpClientFactory(
 
                 val resp =
                     when (val selection = routeSelector.select(method, path)) {
-                        is HttpAdapterRouteSelection.Selected -> dispatcher.dispatch(genericRequest, selection.match)
-                        is HttpAdapterRouteSelection.NotFound ->
+                        is HttpAdapterRouteSelection.Selected -> {
+                            dispatcher.dispatch(genericRequest, selection.match)
+                        }
+
+                        is HttpAdapterRouteSelection.NotFound -> {
                             com.sphereon.core.api.http.GenericHttpResponse(
                                 404,
                                 emptyMap(),
                                 "Not found by WalletTestInProcessHttpClientFactory",
                             )
-                        is HttpAdapterRouteSelection.Ambiguous ->
-                            com.sphereon.core.api.http.GenericHttpResponse(500, emptyMap(), "Ambiguous in-process HTTP route")
-                        is HttpAdapterRouteSelection.Misconfigured ->
-                            com.sphereon.core.api.http.GenericHttpResponse(500, emptyMap(), selection.message)
+                        }
+
+                        is HttpAdapterRouteSelection.Ambiguous -> {
+                            com.sphereon.core.api.http
+                                .GenericHttpResponse(500, emptyMap(), "Ambiguous in-process HTTP route")
+                        }
+
+                        is HttpAdapterRouteSelection.Misconfigured -> {
+                            com.sphereon.core.api.http
+                                .GenericHttpResponse(500, emptyMap(), selection.message)
+                        }
                     }
 
                 WalletTestInProcessHttpCapture.record(genericRequest, resp)
@@ -143,7 +153,10 @@ internal object WalletTestInProcessHttpCapture {
     fun snapshot(): List<WalletTestHttpExchange> = exchanges.toList()
 
     @Synchronized
-    internal fun record(request: GenericHttpRequest, response: GenericHttpResponse) {
+    internal fun record(
+        request: GenericHttpRequest,
+        response: GenericHttpResponse
+    ) {
         exchanges += WalletTestHttpExchange(request.method, request.path, request.body, response)
     }
 }

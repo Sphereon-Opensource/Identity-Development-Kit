@@ -37,7 +37,11 @@ private data class OidfIssuerInitiationEvidence(
 internal class OidfIssuerInitiationDriver(
     private val stack: OidfProductStack,
 ) {
-    private val json = Json { ignoreUnknownKeys = true; prettyPrint = true }
+    private val json =
+        Json {
+            ignoreUnknownKeys = true
+            prettyPrint = true
+        }
     private val productClient =
         HttpClient
             .newBuilder()
@@ -98,8 +102,9 @@ internal class OidfIssuerInitiationDriver(
         }
         val created = json.parseToJsonElement(response.body()).jsonObject
         val offerUri = created.getValue("offerUri").jsonPrimitive.content
-        val offerQuery = URI.create(offerUri).rawQuery
-            ?: error("VDX issuer offer URI did not contain credential-offer query parameters: $offerUri")
+        val offerQuery =
+            URI.create(offerUri).rawQuery
+                ?: error("VDX issuer offer URI did not contain credential-offer query parameters: $offerUri")
         stack.suite.visit("${credentialOfferEndpoint.substringBefore('?')}?$offerQuery")
 
         val txCode = created["txCode"]?.jsonPrimitive?.content
@@ -141,8 +146,7 @@ internal class OidfIssuerInitiationDriver(
         const val CREDENTIAL_OFFER_ENDPOINT = "credential_offer_endpoint"
         const val TX_CODE_ENDPOINT = "tx_code_endpoint"
 
-        fun pathSegment(value: String): String =
-            URLEncoder.encode(value, java.nio.charset.StandardCharsets.UTF_8).replace("+", "%20")
+        fun pathSegment(value: String): String = URLEncoder.encode(value, java.nio.charset.StandardCharsets.UTF_8).replace("+", "%20")
     }
 }
 

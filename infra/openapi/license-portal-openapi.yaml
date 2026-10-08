@@ -1,0 +1,1846 @@
+openapi: 3.0.4
+info:
+  title: License Portal API
+  version: 1.0.0
+  description: |
+    Operator API for managing license partners and customers, deployment records,
+    imported customer license requests, license issuance, revocation, and protected
+    setup bundle downloads.
+
+    Licensee-initiated issuance starts with an imported signed request artifact
+    from the target platform. Issuer-initiated issuance can create a complete
+    protected setup bundle directly from portal-entered customer, deployment,
+    and license details.
+servers:
+  - url: https://api.example.com/api/license-portal/v1
+    description: Production
+  - url: http://localhost:8085/api/license-portal/v1
+    description: Local development
+tags:
+  - name: License Portal
+security:
+  - bearerAuth: []
+paths:
+  /me:
+    get:
+      tags: [License Portal]
+      operationId: getLicensePortalOperator
+      summary: Get the authenticated portal operator
+      responses:
+        '200':
+          description: Current authenticated operator.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LicensePortalOperator'
+  /:
+    get:
+      tags: [License Portal]
+      operationId: licensePortalSnapshot
+      summary: Get the portal dashboard snapshot
+      responses:
+        '200':
+          description: Current portal snapshot.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LicensePortalSnapshot'
+  /partners:
+    get:
+      tags: [License Portal]
+      operationId: listLicensePartners
+      summary: List partners
+      responses:
+        '200':
+          description: Partner list.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListPartnersResult'
+    post:
+      tags: [License Portal]
+      operationId: createLicensePartner
+      summary: Create a partner
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePartnerArgs'
+      responses:
+        '201':
+          description: Created partner.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LicensePartner'
+  /partners/{partyId}:
+    put:
+      tags: [License Portal]
+      operationId: updateLicensePartner
+      summary: Update a partner
+      parameters:
+        - $ref: '#/components/parameters/partyId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdatePartnerArgs'
+      responses:
+        '200':
+          description: Updated partner.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LicensePartner'
+  /customers:
+    get:
+      tags: [License Portal]
+      operationId: listLicenseCustomers
+      summary: List customers
+      responses:
+        '200':
+          description: Customer list.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListCustomersResult'
+    post:
+      tags: [License Portal]
+      operationId: createLicenseCustomer
+      summary: Create a customer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCustomerArgs'
+      responses:
+        '201':
+          description: Created customer.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LicenseCustomer'
+  /customers/{partyId}:
+    put:
+      tags: [License Portal]
+      operationId: updateLicenseCustomer
+      summary: Update a customer
+      parameters:
+        - $ref: '#/components/parameters/partyId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateCustomerArgs'
+      responses:
+        '200':
+          description: Updated customer.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LicenseCustomer'
+  /customers/{partyId}/disable:
+    post:
+      tags: [License Portal]
+      operationId: disableLicenseCustomer
+      summary: Disable a customer
+      parameters:
+        - $ref: '#/components/parameters/partyId'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DisableCustomerArgs'
+      responses:
+        '200':
+          description: Disabled customer.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LicenseCustomer'
+  /deployments:
+    get:
+      tags: [License Portal]
+      operationId: listLicenseDeployments
+      summary: List deployments
+      responses:
+        '200':
+          description: Deployment list.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListDeploymentsResult'
+    post:
+      tags: [License Portal]
+      operationId: registerLicenseDeployment
+      summary: Register a deployment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterDeploymentArgs'
+      responses:
+        '201':
+          description: Registered deployment.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LicenseDeployment'
+  /deployments/{installationId}:
+    put:
+      tags: [License Portal]
+      operationId: updateLicenseDeployment
+      summary: Update a deployment
+      parameters:
+        - $ref: '#/components/parameters/installationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateDeploymentArgs'
+      responses:
+        '200':
+          description: Updated deployment.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LicenseDeployment'
+  /deployments/{installationId}/disable:
+    post:
+      tags: [License Portal]
+      operationId: disableLicenseDeployment
+      summary: Disable a deployment
+      parameters:
+        - $ref: '#/components/parameters/installationId'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DisableDeploymentArgs'
+      responses:
+        '200':
+          description: Disabled deployment.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LicenseDeployment'
+  /templates:
+    get:
+      tags: [License Portal]
+      operationId: listLicenseTemplates
+      summary: List license templates
+      responses:
+        '200':
+          description: Template list.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListTemplatesResult'
+    post:
+      tags: [License Portal]
+      operationId: createLicenseTemplate
+      summary: Create a license template
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTemplateArgs'
+      responses:
+        '201':
+          description: Created template.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LicenseTemplate'
+  /requests:
+    post:
+      tags: [License Portal]
+      operationId: createLicenseRequest
+      summary: Create or import a license request
+      description: |
+        Creates a portal license request. For licensee-initiated issuance,
+        include the signed platform request artifact generated by the target
+        platform. The artifact is validated by the portal before it is used for
+        certificate and license issuance.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateLicenseRequestArgs'
+      responses:
+        '201':
+          description: Created license request.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LicenseIssueRequest'
+  /requests/preview:
+    post:
+      tags: [License Portal]
+      operationId: previewLicenseRequest
+      summary: Preview a license request
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PreviewLicenseRequestArgs'
+      responses:
+        '200':
+          description: License preview.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LicensePreviewResult'
+  /licenses:
+    get:
+      tags: [License Portal]
+      operationId: listIssuedLicenses
+      summary: List issued licenses
+      responses:
+        '200':
+          description: Issued license list.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListLicensesResult'
+    post:
+      tags: [License Portal]
+      operationId: issueLicense
+      summary: Issue a license
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IssueLicenseArgs'
+      responses:
+        '201':
+          description: Issued license.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IssuedLicenseResponse'
+  /licenses/bundle:
+    post:
+      tags: [License Portal]
+      operationId: issueLicenseBundle
+      summary: Issue a protected setup bundle
+      description: |
+        Issues a license and returns a protected setup bundle. When `requestId`
+        is supplied, recipient key and platform certificate data come from
+        the imported license request. When `requestId` is omitted, the portal
+        creates the recipient keypair, certificate, and license in one
+        operation and places the activation files in the protected bundle.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IssueLicenseArgs'
+      responses:
+        '201':
+          description: Multipart response with JSON metadata and the protected setup bundle.
+          content:
+            multipart/mixed:
+              schema:
+                type: string
+                format: binary
+  /licenses/verify:
+    post:
+      tags: [License Portal]
+      operationId: verifyIssuedLicense
+      summary: Verify a license artifact
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VerifyLicenseArgs'
+      responses:
+        '200':
+          description: Verification result.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VerifyLicenseResult'
+  /licenses/{licenseId}:
+    get:
+      tags: [License Portal]
+      operationId: getIssuedLicense
+      summary: Get an issued license
+      parameters:
+        - $ref: '#/components/parameters/licenseId'
+      responses:
+        '200':
+          description: Issued license.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IssuedLicenseResponse'
+  /licenses/{licenseId}/download:
+    get:
+      tags: [License Portal]
+      operationId: downloadIssuedLicense
+      summary: Download an issued license
+      description: |
+        Returns a protected setup bundle ZIP for importing the issued license.
+      parameters:
+        - $ref: '#/components/parameters/licenseId'
+      responses:
+        '200':
+          description: Protected setup license bundle ZIP.
+          content:
+            application/zip:
+              schema:
+                type: string
+                format: binary
+  /licenses/{licenseId}/revoke:
+    post:
+      tags: [License Portal]
+      operationId: revokeIssuedLicense
+      summary: Revoke an issued license
+      parameters:
+        - $ref: '#/components/parameters/licenseId'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RevokeLicenseArgs'
+      responses:
+        '200':
+          description: Revoked license.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IssuedLicenseResponse'
+  /ca:
+    get:
+      tags: [License Portal]
+      operationId: licenseIssuerStatus
+      summary: Get license issuer status
+      responses:
+        '200':
+          description: Issuer status.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LicenseIssuerStatus'
+  /tenants:
+    get:
+      tags: [License Portal]
+      operationId: listLicenseTenants
+      summary: List portal tenants
+      responses:
+        '200':
+          description: Tenant list.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListTenantsResult'
+  /contacts:
+    get:
+      tags: [License Portal]
+      operationId: listLicenseContacts
+      summary: List contacts
+      responses:
+        '200':
+          description: Contact list.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListContactsResult'
+    post:
+      tags: [License Portal]
+      operationId: createLicenseContact
+      summary: Create a contact
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateContactArgs'
+      responses:
+        '201':
+          description: Created contact.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LicenseContact'
+  /contacts/{contactId}:
+    put:
+      tags: [License Portal]
+      operationId: updateLicenseContact
+      summary: Update a contact
+      parameters:
+        - $ref: '#/components/parameters/contactId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateContactArgs'
+      responses:
+        '200':
+          description: Updated contact.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LicenseContact'
+  /contacts/{contactId}/enable-login:
+    post:
+      tags: [License Portal]
+      operationId: enableLicenseContactLogin
+      summary: Enable login for a contact
+      parameters:
+        - $ref: '#/components/parameters/contactId'
+      responses:
+        '200':
+          description: Updated contact.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LicenseContact'
+  /signing-assignments:
+    get:
+      tags: [License Portal]
+      operationId: listLicenseSigningAssignments
+      summary: List signing assignments
+      responses:
+        '200':
+          description: Signing assignment list.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListSigningAssignmentsResult'
+    post:
+      tags: [License Portal]
+      operationId: assignLicenseSigningCertificate
+      summary: Assign a signing certificate
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AssignSigningCertificateArgs'
+      responses:
+        '200':
+          description: Signing assignment.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LicenseSigningAssignment'
+  /partner-ca:
+    post:
+      tags: [License Portal]
+      operationId: assignLicensePartnerCa
+      summary: Assign a partner CA
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AssignPartnerCaArgs'
+      responses:
+        '200':
+          description: Signing assignment.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LicenseSigningAssignment'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    partyId:
+      name: partyId
+      in: path
+      required: true
+      schema:
+        type: string
+    installationId:
+      name: installationId
+      in: path
+      required: true
+      schema:
+        type: string
+    contactId:
+      name: contactId
+      in: path
+      required: true
+      schema:
+        type: string
+    licenseId:
+      name: licenseId
+      in: path
+      required: true
+      schema:
+        type: string
+  schemas:
+    JsonObject:
+      type: object
+      additionalProperties: true
+    StringMap:
+      type: object
+      additionalProperties:
+        type: string
+    LongMap:
+      type: object
+      additionalProperties:
+        type: integer
+        format: int64
+    LicenseGateRules:
+      type: object
+      properties:
+        enabled:
+          type: array
+          items:
+            type: string
+          uniqueItems: true
+          default: []
+        disabled:
+          type: array
+          items:
+            type: string
+          uniqueItems: true
+          default: []
+    LicenseGatePolicy:
+      type: object
+      properties:
+        productFeatures:
+          $ref: '#/components/schemas/LicenseGateRules'
+        commands:
+          $ref: '#/components/schemas/LicenseGateRules'
+    LicensePortalOperator:
+      type: object
+      required: [tenantId, principalId, displayName, authenticated]
+      properties:
+        tenantId:
+          type: string
+        principalId:
+          type: string
+        displayName:
+          type: string
+        email:
+          type: string
+          format: email
+        authenticated:
+          type: boolean
+    LicensePortalSnapshot:
+      type: object
+      required: [mode, partners, customers, softwareServices, deployments, profiles, templates, requests, licenses, audit]
+      properties:
+        mode:
+          type: string
+        tenants:
+          type: array
+          items:
+            $ref: '#/components/schemas/LicenseTenant'
+          default: []
+        partners:
+          type: array
+          items:
+            $ref: '#/components/schemas/LicensePartner'
+        customers:
+          type: array
+          items:
+            $ref: '#/components/schemas/LicenseCustomer'
+        contacts:
+          type: array
+          items:
+            $ref: '#/components/schemas/LicenseContact'
+          default: []
+        softwareServices:
+          type: array
+          items:
+            $ref: '#/components/schemas/LicenseSoftwareService'
+        deployments:
+          type: array
+          items:
+            $ref: '#/components/schemas/LicenseDeployment'
+        profiles:
+          type: array
+          items:
+            $ref: '#/components/schemas/LicenseProfile'
+        templates:
+          type: array
+          items:
+            $ref: '#/components/schemas/LicenseTemplate'
+        requests:
+          type: array
+          items:
+            $ref: '#/components/schemas/LicenseIssueRequest'
+        licenses:
+          type: array
+          items:
+            $ref: '#/components/schemas/IssuedLicenseSummary'
+        audit:
+          type: array
+          items:
+            $ref: '#/components/schemas/LicensePortalAuditEvent'
+        signingAssignments:
+          type: array
+          items:
+            $ref: '#/components/schemas/LicenseSigningAssignment'
+          default: []
+        tenantId:
+          type: string
+    LicenseTenantPolicy:
+      type: object
+      properties:
+        permittedProducts:
+          type: array
+          items:
+            type: string
+          default: [EDK, VDX]
+        permittedDomains:
+          type: array
+          items:
+            type: string
+          default: ['*']
+        maxValidityDays:
+          type: integer
+          format: int32
+          default: 365
+        maxTenants:
+          type: integer
+          format: int64
+        caDelegationAllowed:
+          type: boolean
+          default: false
+        canHostPortal:
+          type: boolean
+          default: false
+    LicenseTenant:
+      type: object
+      required: [tenantId, kind, operatingMode, loginEnabled, status, policy, createdAt, updatedAt]
+      properties:
+        tenantId:
+          type: string
+        parentTenantId:
+          type: string
+        representedPartyId:
+          type: string
+        kind:
+          type: string
+        operatingMode:
+          type: string
+        loginEnabled:
+          type: boolean
+        status:
+          type: string
+        policy:
+          $ref: '#/components/schemas/LicenseTenantPolicy'
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+    ListTenantsResult:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/LicenseTenant'
+    LicensePartner:
+      type: object
+      required: [partyId, displayName, legalName, partnerType, loginEnabled, status, createdAt, updatedAt]
+      properties:
+        partyId:
+          type: string
+        displayName:
+          type: string
+        legalName:
+          type: string
+        parentPartnerPartyId:
+          type: string
+        partnerType:
+          type: string
+          enum: [managed-by-parent, login-enabled]
+        loginEnabled:
+          type: boolean
+        representedTenantId:
+          type: string
+        status:
+          type: string
+        contactEmail:
+          type: string
+          format: email
+        websiteUrl:
+          type: string
+        profileId:
+          type: string
+        profileVersion:
+          type: string
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+        tenantId:
+          type: string
+    LicenseCustomer:
+      type: object
+      required: [partyId, displayName, legalName, status, createdAt, updatedAt]
+      properties:
+        partyId:
+          type: string
+        displayName:
+          type: string
+        legalName:
+          type: string
+        partnerPartyId:
+          type: string
+        representedTenantId:
+          type: string
+        status:
+          type: string
+        contactEmail:
+          type: string
+          format: email
+        websiteUrl:
+          type: string
+        profileId:
+          type: string
+        profileVersion:
+          type: string
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+        tenantId:
+          type: string
+    CreatePartnerArgs:
+      type: object
+      required: [displayName]
+      properties:
+        displayName:
+          type: string
+        legalName:
+          type: string
+        parentPartnerPartyId:
+          type: string
+        partnerType:
+          type: string
+          enum: [managed-by-parent, login-enabled]
+          default: managed-by-parent
+        contactEmail:
+          type: string
+          format: email
+        websiteUrl:
+          type: string
+        profileId:
+          type: string
+        profileVersion:
+          type: string
+        attributes:
+          $ref: '#/components/schemas/JsonObject'
+    CreateCustomerArgs:
+      type: object
+      required: [displayName]
+      properties:
+        displayName:
+          type: string
+        legalName:
+          type: string
+        partnerPartyId:
+          type: string
+        contactEmail:
+          type: string
+          format: email
+        websiteUrl:
+          type: string
+        profileId:
+          type: string
+        profileVersion:
+          type: string
+        attributes:
+          $ref: '#/components/schemas/JsonObject'
+    UpdatePartnerArgs:
+      type: object
+      required: [displayName]
+      properties:
+        partyId:
+          type: string
+        displayName:
+          type: string
+        legalName:
+          type: string
+        contactEmail:
+          type: string
+          format: email
+        websiteUrl:
+          type: string
+    UpdateCustomerArgs:
+      type: object
+      required: [displayName]
+      properties:
+        partyId:
+          type: string
+        displayName:
+          type: string
+        legalName:
+          type: string
+        partnerPartyId:
+          type: string
+        contactEmail:
+          type: string
+          format: email
+        websiteUrl:
+          type: string
+    ListPartnersResult:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/LicensePartner'
+    ListCustomersResult:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/LicenseCustomer'
+    LicenseContactSpecialization:
+      type: object
+      required: [contactType, semanticProfileId, semanticProfileVersion, semanticDerivationType]
+      properties:
+        contactType:
+          type: string
+        semanticProfileId:
+          type: string
+        semanticProfileVersion:
+          type: string
+        semanticDerivationType:
+          type: string
+        attributes:
+          $ref: '#/components/schemas/JsonObject'
+    ContactSpecializationInput:
+      type: object
+      required: [contactType]
+      properties:
+        contactType:
+          type: string
+        semanticProfileId:
+          type: string
+        semanticProfileVersion:
+          type: string
+        semanticDerivationType:
+          type: string
+        attributes:
+          $ref: '#/components/schemas/JsonObject'
+    LicenseContact:
+      type: object
+      required: [contactId, tenantId, naturalPersonPartyId, organizationPartyId, displayName, email, specializations, loginEnabled, status, createdAt, updatedAt]
+      properties:
+        contactId:
+          type: string
+        tenantId:
+          type: string
+        naturalPersonPartyId:
+          type: string
+        organizationPartyId:
+          type: string
+        displayName:
+          type: string
+        email:
+          type: string
+          format: email
+        specializations:
+          type: array
+          items:
+            $ref: '#/components/schemas/LicenseContactSpecialization'
+        loginEnabled:
+          type: boolean
+        status:
+          type: string
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+    CreateContactArgs:
+      type: object
+      required: [organizationPartyId, displayName, email]
+      properties:
+        naturalPersonPartyId:
+          type: string
+        organizationPartyId:
+          type: string
+        displayName:
+          type: string
+        email:
+          type: string
+          format: email
+        specializations:
+          type: array
+          items:
+            $ref: '#/components/schemas/ContactSpecializationInput'
+          default: []
+    UpdateContactArgs:
+      type: object
+      required: [displayName, email]
+      properties:
+        contactId:
+          type: string
+        displayName:
+          type: string
+        email:
+          type: string
+          format: email
+        specializations:
+          type: array
+          items:
+            $ref: '#/components/schemas/ContactSpecializationInput'
+          default: []
+        status:
+          type: string
+          default: active
+    ListContactsResult:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/LicenseContact'
+    LicenseDeployment:
+      type: object
+      required: [installationId, customerPartyId, softwarePartyId, displayName, deploymentType, environment, status, createdAt, updatedAt]
+      properties:
+        installationId:
+          type: string
+        customerPartyId:
+          type: string
+        softwarePartyId:
+          type: string
+        displayName:
+          type: string
+        softwareDisplayName:
+          type: string
+        deploymentType:
+          type: string
+        environment:
+          type: string
+        region:
+          type: string
+        status:
+          type: string
+        recipientKeyId:
+          type: string
+        recipientPublicKeyPem:
+          type: string
+        recipientPublicKeyFingerprint:
+          type: string
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+        tenantId:
+          type: string
+    LicenseSoftwareService:
+      type: object
+      required: [partyId, displayName, softwareKind, capabilityCount, createdAt, updatedAt]
+      properties:
+        partyId:
+          type: string
+        displayName:
+          type: string
+        softwareKind:
+          type: string
+        managementMode:
+          type: string
+        capabilityCount:
+          type: integer
+          format: int32
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+    RegisterDeploymentArgs:
+      type: object
+      required: [customerPartyId, softwarePartyId, displayName, deploymentType]
+      properties:
+        customerPartyId:
+          type: string
+        softwarePartyId:
+          type: string
+        displayName:
+          type: string
+        deploymentType:
+          type: string
+        environment:
+          type: string
+          default: production
+        region:
+          type: string
+        recipientKeyId:
+          type: string
+        recipientPublicKeyPem:
+          type: string
+    UpdateDeploymentArgs:
+      type: object
+      required: [customerPartyId, softwarePartyId, displayName]
+      properties:
+        customerPartyId:
+          type: string
+        softwarePartyId:
+          type: string
+        displayName:
+          type: string
+        deploymentType:
+          type: string
+        environment:
+          type: string
+        region:
+          type: string
+        recipientKeyId:
+          type: string
+        recipientPublicKeyPem:
+          type: string
+    ListDeploymentsResult:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/LicenseDeployment'
+    DisableCustomerArgs:
+      type: object
+      properties:
+        partyId:
+          type: string
+        reason:
+          type: string
+    DisableDeploymentArgs:
+      type: object
+      properties:
+        reason:
+          type: string
+    LicenseProfile:
+      type: object
+      required: [profileId, name, description, validityDays, allEntitlements, allDeploymentShapes]
+      properties:
+        profileId:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        validityDays:
+          type: integer
+          format: int32
+        allEntitlements:
+          type: boolean
+        allDeploymentShapes:
+          type: boolean
+    LicenseTemplate:
+      type: object
+      required: [templateId, name, product, edition, defaultFeatures, defaultQuotas, validityDays, createdAt]
+      properties:
+        templateId:
+          type: string
+        name:
+          type: string
+        product:
+          type: string
+        edition:
+          type: string
+        profileId:
+          type: string
+        defaultFeatures:
+          type: array
+          items:
+            type: string
+          default: []
+        defaultQuotas:
+          $ref: '#/components/schemas/LongMap'
+        validityDays:
+          type: integer
+          format: int32
+        createdAt:
+          type: string
+        tenantId:
+          type: string
+    CreateTemplateArgs:
+      type: object
+      required: [name, product, edition]
+      properties:
+        templateId:
+          type: string
+        name:
+          type: string
+        product:
+          type: string
+        edition:
+          type: string
+        profileId:
+          type: string
+        defaultFeatures:
+          type: array
+          items:
+            type: string
+          default: []
+        defaultQuotas:
+          $ref: '#/components/schemas/LongMap'
+        validityDays:
+          type: integer
+          format: int32
+          default: 365
+    ListTemplatesResult:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/LicenseTemplate'
+    LicenseRequestContact:
+      type: object
+      required: [email, displayName, role]
+      properties:
+        email:
+          type: string
+          format: email
+        displayName:
+          type: string
+        role:
+          type: string
+    ImportedPlatformLicenseRequestSignature:
+      type: object
+      properties:
+        algorithm:
+          type: string
+        keyId:
+          type: string
+        signatureBase64:
+          type: string
+    ImportedPlatformLicenseRequestCertificate:
+      type: object
+      properties:
+        pem:
+          type: string
+        derBase64:
+          type: string
+        chainBase64:
+          type: array
+          items:
+            type: string
+          default: []
+        fingerprint:
+          type: string
+    ImportedPlatformLicenseRequestCertificateSigningRequest:
+      type: object
+      properties:
+        pem:
+          type: string
+        derBase64:
+          type: string
+        fingerprint:
+          type: string
+    ImportedPlatformLicenseRequestArtifact:
+      type: object
+      required: [requestJson]
+      properties:
+        requestJson:
+          type: string
+          description: Signed license request JSON generated by the target platform.
+        signature:
+          $ref: '#/components/schemas/ImportedPlatformLicenseRequestSignature'
+        certificateSigningRequest:
+          $ref: '#/components/schemas/ImportedPlatformLicenseRequestCertificateSigningRequest'
+        artifactDigest:
+          type: string
+        schemaVersion:
+          type: string
+        requestSigningKeyId:
+          type: string
+        requestSigningPublicKeyThumbprint:
+          type: string
+        installationBaseDomain:
+          type: string
+        platformIssuer:
+          type: string
+        platformDomainRoots:
+          type: array
+          items:
+            type: string
+          default: []
+        validationStatus:
+          type: string
+          enum: [unvalidated, valid, invalid]
+          default: unvalidated
+        validationMessages:
+          type: array
+          items:
+            type: string
+          default: []
+    CreateLicenseRequestArgs:
+      type: object
+      required: [customerPartyId, softwarePartyId, product, edition]
+      properties:
+        requestId:
+          type: string
+        customerPartyId:
+          type: string
+        softwarePartyId:
+          type: string
+        templateId:
+          type: string
+        profileId:
+          type: string
+        product:
+          type: string
+        edition:
+          type: string
+        features:
+          type: array
+          items:
+            type: string
+          default: []
+        quotas:
+          $ref: '#/components/schemas/LongMap'
+        gatePolicy:
+          $ref: '#/components/schemas/LicenseGatePolicy'
+        validFrom:
+          type: string
+        expiresAt:
+          type: string
+        installationBaseDomain:
+          type: string
+          description: Optional deployment base domain for direct issuer-created setup bundles. Omit to issue a domain-agnostic license.
+        platformDomainRoots:
+          type: array
+          items:
+            type: string
+          default: []
+          description: Optional allowed platform domain roots for direct issuer-created setup bundles. Empty means any base domain.
+        notes:
+          type: string
+        technicalContact:
+          $ref: '#/components/schemas/LicenseRequestContact'
+        administratorContact:
+          $ref: '#/components/schemas/LicenseRequestContact'
+        importedRequestArtifact:
+          $ref: '#/components/schemas/ImportedPlatformLicenseRequestArtifact'
+    LicenseIssueRequest:
+      type: object
+      required: [requestId, customerPartyId, softwarePartyId, installationId, product, edition, features, quotas, validFrom, expiresAt, contactIds, status, createdAt]
+      properties:
+        requestId:
+          type: string
+        customerPartyId:
+          type: string
+        softwarePartyId:
+          type: string
+        installationId:
+          type: string
+        templateId:
+          type: string
+        profileId:
+          type: string
+        product:
+          type: string
+        edition:
+          type: string
+        features:
+          type: array
+          items:
+            type: string
+        quotas:
+          $ref: '#/components/schemas/LongMap'
+        gatePolicy:
+          $ref: '#/components/schemas/LicenseGatePolicy'
+        validFrom:
+          type: string
+        expiresAt:
+          type: string
+        installationBaseDomain:
+          type: string
+          description: Optional deployment base domain for direct issuer-created setup bundles. Omit to issue a domain-agnostic license.
+        platformDomainRoots:
+          type: array
+          items:
+            type: string
+          default: []
+          description: Optional allowed platform domain roots for direct issuer-created setup bundles. Empty means any base domain.
+        notes:
+          type: string
+        technicalContact:
+          $ref: '#/components/schemas/LicenseRequestContact'
+        administratorContact:
+          $ref: '#/components/schemas/LicenseRequestContact'
+        contactIds:
+          $ref: '#/components/schemas/StringMap'
+        importedRequestArtifact:
+          $ref: '#/components/schemas/ImportedPlatformLicenseRequestArtifact'
+        status:
+          type: string
+        createdAt:
+          type: string
+        tenantId:
+          type: string
+    PreviewLicenseRequestArgs:
+      type: object
+      required: [requestId]
+      properties:
+        requestId:
+          type: string
+    LicensePreviewResult:
+      type: object
+      required: [request, claims, valid, warnings, errors]
+      properties:
+        request:
+          $ref: '#/components/schemas/LicenseIssueRequest'
+        claims:
+          $ref: '#/components/schemas/LicenseIssuanceRequest'
+        valid:
+          type: boolean
+        warnings:
+          type: array
+          items:
+            type: string
+        errors:
+          type: array
+          items:
+            type: string
+    IssueLicenseArgs:
+      type: object
+      required: [product, edition]
+      properties:
+        requestId:
+          type: string
+          description: Existing imported request to issue against. Omit for issuer-created direct bundle issuance.
+        customerPartyId:
+          type: string
+        softwarePartyId:
+          type: string
+        installationId:
+          type: string
+          description: Existing installation id when issuing against a pre-registered deployment. Direct setup-bundle issuance without `requestId` generates a new installation id.
+        templateId:
+          type: string
+        profileId:
+          type: string
+        product:
+          type: string
+        edition:
+          type: string
+        features:
+          type: array
+          items:
+            type: string
+          default: []
+        quotas:
+          $ref: '#/components/schemas/LongMap'
+        gatePolicy:
+          $ref: '#/components/schemas/LicenseGatePolicy'
+        validFrom:
+          type: string
+        expiresAt:
+          type: string
+        installationBaseDomain:
+          type: string
+          description: Optional deployment base domain for direct issuer-created setup bundles. Omit to issue a domain-agnostic license.
+        platformDomainRoots:
+          type: array
+          items:
+            type: string
+          default: []
+          description: Optional allowed platform domain roots for direct issuer-created setup bundles. Empty means any base domain.
+        notes:
+          type: string
+    LicenseIssuanceRequest:
+      type: object
+      required: [schema, licenseId, product, edition, customerPartyId, customerName, softwarePartyId, installationId, installationName, features, quotas, validFrom, expiresAt, issuedAt, issuer, keyId, metadata]
+      properties:
+        schema:
+          type: string
+        licenseId:
+          type: string
+        product:
+          type: string
+        edition:
+          type: string
+        customerPartyId:
+          type: string
+        customerName:
+          type: string
+        softwarePartyId:
+          type: string
+        installationId:
+          type: string
+        installationName:
+          type: string
+        features:
+          type: array
+          items:
+            type: string
+        quotas:
+          $ref: '#/components/schemas/LongMap'
+        gatePolicy:
+          $ref: '#/components/schemas/LicenseGatePolicy'
+        validFrom:
+          type: string
+        expiresAt:
+          type: string
+        issuedAt:
+          type: string
+        issuer:
+          type: string
+        keyId:
+          type: string
+        profileId:
+          type: string
+        recipientKeyId:
+          type: string
+        recipientPublicKeyFingerprint:
+          type: string
+        licenseRequestId:
+          type: string
+        requestArtifactDigest:
+          type: string
+        recipientKeyThumbprint:
+          type: string
+        installationBaseDomain:
+          type: string
+        platformDomainRoots:
+          type: array
+          items:
+            type: string
+          default: []
+        statusList:
+          $ref: '#/components/schemas/LicenseStatusListReference'
+        checkInterval:
+          type: string
+        checkGrace:
+          type: string
+        stapledStatusListToken:
+          type: string
+        metadata:
+          $ref: '#/components/schemas/StringMap'
+    LicenseStatusListReference:
+      type: object
+      required: [uri, index, purpose, tokenFormat]
+      properties:
+        uri:
+          type: string
+        index:
+          type: integer
+          format: int32
+        purpose:
+          type: string
+        tokenFormat:
+          type: string
+        listId:
+          type: string
+    IssuedLicenseArtifactResponse:
+      type: object
+      required: [format, keyId, digest, issuedAt]
+      properties:
+        format:
+          type: string
+        keyId:
+          type: string
+        digest:
+          type: string
+        issuedAt:
+          type: string
+        platformCertificate:
+          $ref: '#/components/schemas/ImportedPlatformLicenseRequestCertificate'
+    IssuedLicenseResponse:
+      type: object
+      required: [licenseId, status, claims, artifact]
+      properties:
+        licenseId:
+          type: string
+        requestId:
+          type: string
+        status:
+          type: string
+        claims:
+          $ref: '#/components/schemas/LicenseIssuanceRequest'
+        artifact:
+          $ref: '#/components/schemas/IssuedLicenseArtifactResponse'
+        revokedAt:
+          type: string
+        revokedBy:
+          type: string
+        revocationReason:
+          type: string
+        tenantId:
+          type: string
+    IssuedLicenseSummary:
+      type: object
+      required: [licenseId, status, product, edition, customerPartyId, customerName, softwarePartyId, installationId, installationName, validFrom, expiresAt, issuedAt, keyId, digest]
+      properties:
+        licenseId:
+          type: string
+        requestId:
+          type: string
+        status:
+          type: string
+        product:
+          type: string
+        edition:
+          type: string
+        customerPartyId:
+          type: string
+        customerName:
+          type: string
+        softwarePartyId:
+          type: string
+        installationId:
+          type: string
+        installationName:
+          type: string
+        validFrom:
+          type: string
+        expiresAt:
+          type: string
+        issuedAt:
+          type: string
+        keyId:
+          type: string
+        digest:
+          type: string
+        revokedAt:
+          type: string
+        revokedBy:
+          type: string
+        revocationReason:
+          type: string
+        tenantId:
+          type: string
+    ListLicensesResult:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/IssuedLicenseSummary'
+    RevokeLicenseArgs:
+      type: object
+      properties:
+        licenseId:
+          type: string
+        reason:
+          type: string
+    VerifyLicenseArgs:
+      type: object
+      required: [licenseEnvelope]
+      properties:
+        licenseEnvelope:
+          type: string
+    VerifyLicenseResult:
+      type: object
+      required: [valid]
+      properties:
+        valid:
+          type: boolean
+        claims:
+          $ref: '#/components/schemas/LicenseIssuanceRequest'
+        error:
+          type: string
+    LicenseCertificateSummary:
+      type: object
+      required: [type, subject, issuer, serialNumber, fingerprint, notBefore, notAfter, policyOids, keyUsage, extendedKeyUsage]
+      properties:
+        type:
+          type: string
+        subject:
+          type: string
+        issuer:
+          type: string
+        serialNumber:
+          type: string
+        fingerprint:
+          type: string
+        notBefore:
+          type: string
+        notAfter:
+          type: string
+        policyOids:
+          type: array
+          items:
+            type: string
+        keyUsage:
+          type: array
+          items:
+            type: string
+        extendedKeyUsage:
+          type: array
+          items:
+            type: string
+    LicenseSigningKeySummary:
+      type: object
+      required: [keyId, providerType, certificateFingerprint, status, activeFrom, activeUntil]
+      properties:
+        keyId:
+          type: string
+        providerType:
+          type: string
+        certificateFingerprint:
+          type: string
+        status:
+          type: string
+        activeFrom:
+          type: string
+        activeUntil:
+          type: string
+    LicenseSigningAssignment:
+      type: object
+      required: [tenantId, signingCertificateFingerprint, signingKeyId, issuerCertificateFingerprint, rootFingerprint, intermediateFingerprint, trustPathValid, status, activeFrom, activeUntil, createdAt, updatedAt]
+      properties:
+        tenantId:
+          type: string
+        partnerPartyId:
+          type: string
+        signingCertificateFingerprint:
+          type: string
+        signingKeyId:
+          type: string
+        issuerCertificateFingerprint:
+          type: string
+        rootFingerprint:
+          type: string
+        intermediateFingerprint:
+          type: string
+        partnerCaFingerprint:
+          type: string
+        trustPathValid:
+          type: boolean
+        status:
+          type: string
+        activeFrom:
+          type: string
+        activeUntil:
+          type: string
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+    AssignSigningCertificateArgs:
+      type: object
+      required: [tenantId, signingCertificateFingerprint, signingKeyId, issuerCertificateFingerprint, rootFingerprint, intermediateFingerprint, activeUntil]
+      properties:
+        tenantId:
+          type: string
+        partnerPartyId:
+          type: string
+        signingCertificateFingerprint:
+          type: string
+        signingKeyId:
+          type: string
+        issuerCertificateFingerprint:
+          type: string
+        rootFingerprint:
+          type: string
+        intermediateFingerprint:
+          type: string
+        signingCertificatePem:
+          type: string
+        issuerCertificatePem:
+          type: string
+        intermediateCertificatePem:
+          type: string
+        rootCertificatePem:
+          type: string
+        partnerCaFingerprint:
+          type: string
+        activeFrom:
+          type: string
+        activeUntil:
+          type: string
+    AssignPartnerCaArgs:
+      type: object
+      required: [tenantId, partnerPartyId, partnerCaFingerprint, rootFingerprint, intermediateFingerprint, activeUntil]
+      properties:
+        tenantId:
+          type: string
+        partnerPartyId:
+          type: string
+        partnerCaFingerprint:
+          type: string
+        rootFingerprint:
+          type: string
+        intermediateFingerprint:
+          type: string
+        partnerCaCertificatePem:
+          type: string
+        intermediateCertificatePem:
+          type: string
+        rootCertificatePem:
+          type: string
+        pathLength:
+          type: integer
+          format: int32
+          default: 0
+        activeFrom:
+          type: string
+        activeUntil:
+          type: string
+    ListSigningAssignmentsResult:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/LicenseSigningAssignment'
+    LicenseIssuerStatus:
+      type: object
+      required: [providerType, keyId, trustChain, signingKey, warnings]
+      properties:
+        providerType:
+          type: string
+        keyId:
+          type: string
+        trustChain:
+          type: array
+          items:
+            $ref: '#/components/schemas/LicenseCertificateSummary'
+        signingKey:
+          $ref: '#/components/schemas/LicenseSigningKeySummary'
+        warnings:
+          type: array
+          items:
+            type: string
+    LicensePortalAuditEvent:
+      type: object
+      required: [eventId, type, subjectId, principal, message, at, metadata]
+      properties:
+        eventId:
+          type: string
+        type:
+          type: string
+        subjectId:
+          type: string
+        principal:
+          type: string
+        message:
+          type: string
+        at:
+          type: string
+        metadata:
+          $ref: '#/components/schemas/StringMap'
+        tenantId:
+          type: string

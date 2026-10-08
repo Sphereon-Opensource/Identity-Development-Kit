@@ -1,0 +1,1924 @@
+openapi: 3.0.4
+info:
+  title: Party Manager Components
+  version: 0.1.0
+  description: |
+    Entity, request, and enum schemas for the Party Manager API.
+
+    Every party is one coherent, typed JSON object discriminated by `partyType`. The five concrete
+    types (`natural_person`, `organization`, `organization_unit`, `service`, `group`) each carry the
+    shared party fields together with the attributes specific to that type. A party bears zero or
+    more specializations (roles) that bind it to a semantic profile. Identifiers are UUIDs and all
+    timestamps are RFC 3339 / ISO 8601 in UTC.
+paths: {}
+components:
+  parameters:
+    PartyId:
+      name: id
+      in: path
+      required: true
+      description: Unique identifier of a party.
+      schema:
+        type: string
+        format: uuid
+        example: "3fa85f64-5717-4562-b3fc-2c963f66afa6"
+
+    RelationshipId:
+      name: id
+      in: path
+      required: true
+      description: Unique identifier of a party relationship.
+      schema:
+        type: string
+        format: uuid
+        example: "d4e5f6a7-b8c9-4d0e-1f2a-3b4c5d6e7f80"
+
+    MemberId:
+      name: memberId
+      in: path
+      required: true
+      description: Identifier of the party that is a member of the group.
+      schema:
+        type: string
+        format: uuid
+        example: "1b9d6bcd-bbfd-4b2d-9b5d-ab8dfbbd4bed"
+
+    IdentityId:
+      name: identityId
+      in: path
+      required: true
+      description: Identifier of the identity the application binding applies to.
+      schema:
+        type: string
+        format: uuid
+        example: "9a8b7c6d-5e4f-4a3b-2c1d-0e9f8a7b6c5d"
+
+    ApplicationId:
+      name: applicationId
+      in: path
+      required: true
+      description: Identifier of the application (a `service` party with the `authenticable` capability).
+      schema:
+        type: string
+        format: uuid
+        example: "3fa85f64-5717-4562-b3fc-2c963f66afa6"
+
+  schemas:
+
+    # --- Enums --------------------------------------------------
+
+    PartyType:
+      type: string
+      description: |
+        The discriminator that identifies which concrete party a [PartyEntity] is. This is an open,
+        string-valued type: tenants and extensions may introduce additional values. Values are
+        lower_snake_case.
+
+        Core values:
+          - `natural_person`: a human individual.
+          - `organization`: a company, institution, or other legal entity.
+          - `organization_unit`: a unit within an organization (department, division, sub-tenant scope).
+          - `service`: a software-backed service participant (endpoint, integration, automated actor).
+          - `group`: a collection of parties grouped for addressing or authorization.
+          - `software`: executable software registered as a party (a server, connector, or app), for
+            example a registered attribute source. The deep software model lives in the software
+            manager and is keyed by the same party id.
+          - `asset`: a non-executing data asset (a dataset, registry, document corpus) that has no
+            runtime of its own but can still carry capabilities and governance data.
+      example: organization
+
+    PartyOrigin:
+      type: string
+      description: |
+        Where a party record comes from and who owns its lifecycle.
+          - `managed`: created and maintained natively in this tenant. The tenant is free to edit and
+            delete it.
+          - `external`: synced in from an outside source (an external IdP, a bulk import,
+            auto-discovery, and similar). The source of record stays elsewhere, so edits may be
+            overwritten on the next sync.
+          - `connector_discovery`: materialized from connector entity discovery.
+          - `connector_governed_ingress`: materialized from governed connector ingress.
+          - `connector_external_write`: materialized from externally initiated connector write.
+          - `ceremony_discovery`: a party the holder met during a wallet interaction, not synced from
+            elsewhere. Edits are not overwritten by a later sync.
+      enum:
+        - external
+        - managed
+        - connector_discovery
+        - connector_governed_ingress
+        - connector_external_write
+        - ceremony_discovery
+      default: managed
+      example: managed
+
+    AuthMethod:
+      type: string
+      description: |
+        An authentication method an application's login surface accepts for an identity. Open,
+        string-valued: extensions may add values. Pick the methods an application should permit:
+          - `password`: identifier plus password. The familiar default for first-party applications.
+          - `email_otp`: a one-time passcode delivered by email. Use for low-friction or passwordless
+            sign-in.
+          - `magic_link`: a single-use link delivered out of band. Use for passwordless sign-in where
+            a clickable link suits the channel.
+          - `totp`: a time-based one-time password from an authenticator app. Use as a second factor.
+          - `federated_oidc`: login delegated to an external OIDC identity provider. Use when the
+            identity is owned by another IdP.
+          - `wallet`: authentication by verifiable presentation from a wallet. Use for high-assurance,
+            credential-backed login.
+      example: password
+
+    ApplicationCapability:
+      type: string
+      description: |
+        A capability a `service` party supports. Open, string-valued: extensions may add values. The
+        core value `authenticable` marks a service that acts as an application login surface, so
+        identities can be bound to it and authenticate against it. A service without this capability
+        is a plain endpoint or integration, not a login surface.
+      example: authenticable
+
+    IdentifierType:
+      type: string
+      description: |
+        The type of a login identifier. Open, string-valued: extensions may add values (for example
+        `vat`, `lei`, `email`, `phone`). Core values are `did` (a W3C Decentralized Identifier) and
+        `x509` (an X.509 certificate).
+      example: did
+
+    BindingStatus:
+      type: string
+      description: |
+        The lifecycle status of a binding between an identity and an application's login surface.
+          - `active`: the identity may authenticate against the application.
+          - `suspended`: authentication is blocked for now but the binding is kept and can be made
+            active again.
+          - `revoked`: the binding is permanently withdrawn and the identity can no longer use it.
+      enum:
+        - active
+        - suspended
+        - revoked
+      default: active
+      example: active
+
+    RelationshipStatus:
+      type: string
+      description: Lifecycle status of a party relationship.
+      enum:
+        - ACTIVE
+        - PENDING
+        - SUSPENDED
+        - TERMINATED
+        - EXPIRED
+      default: ACTIVE
+      example: ACTIVE
+
+    # --- Specialization -----------------------------------------
+
+    PartySpecialization:
+      type: object
+      description: |
+        A role a party plays, scoped to the organization unit that role lives in. A party may bear
+        several specializations at once (multi-typing): one organization can be both a `supplier` to a
+        procurement unit and a `customer` of a sales unit, and one person can be an `employee` of a
+        department and a `student` of a faculty. Because an organization-unit affiliation belongs to the
+        role rather than to the person, each specialization carries its own `organizationUnitId`; the
+        party itself needs no synthetic home unit. When typed, the role is bound to a semantic profile
+        (`profileId`) pinned to a version (`profileVersion`), and its `attributes` are validated against
+        that profile (licensed feature). A party holds at most one specialization per `subtype`. An
+        untyped declaration (null `profileId`) is just a `subtype` label with no profile binding.
+      required:
+        - subtype
+      properties:
+        subtype:
+          type: string
+          description: The role this party plays. For an organization, values like `supplier`, `customer`, or `partner`; for a person, values like `employee`, `student`, or `contractor`.
+          example: supplier
+        profileId:
+          type: string
+          nullable: true
+          description: The semantic profile this role is bound to; null for an untyped declaration.
+          example: profile.supplier
+        profileVersion:
+          type: string
+          nullable: true
+          description: The profile version the attributes were validated and captured against.
+          example: "2"
+        organizationUnitId:
+          type: string
+          format: uuid
+          nullable: true
+          description: The organization unit this role is scoped to; null means the role is not unit-scoped (tenant-global) and falls back to the party's home unit.
+          example: "5c1a9d80-7e3b-4f21-9c44-0b2e6f8a1d3c"
+        attributes:
+          type: object
+          nullable: true
+          additionalProperties: true
+          description: The captured values for this role, validated against the bound profile. Populated only with the semantic license.
+      example:
+        subtype: supplier
+        profileId: profile.supplier
+        profileVersion: "2"
+        organizationUnitId: "5c1a9d80-7e3b-4f21-9c44-0b2e6f8a1d3c"
+
+    # --- Party base and concrete types --------------------------
+
+    PartyBase:
+      type: object
+      description: |
+        The shared contract every party carries: identity, origin, the single home organization unit,
+        and the standard audit fields. The concrete subtypes add their type-specific attributes. This
+        schema is not returned on its own; see [PartyEntity] for the polymorphic envelope.
+      required:
+        - id
+        - tenantId
+        - partyType
+        - origin
+        - displayName
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Unique identifier for the party.
+          example: "3fa85f64-5717-4562-b3fc-2c963f66afa6"
+        tenantId:
+          type: string
+          description: Identifier of the owning tenant.
+          example: "8a1f0c44-2b6e-4d39-9f72-1c5a3e8b0d24"
+        partyType:
+          $ref: '#/components/schemas/PartyType'
+        origin:
+          $ref: '#/components/schemas/PartyOrigin'
+        displayName:
+          type: string
+          description: Human-readable display name. Always present.
+          example: "Sofia Almeida"
+        uri:
+          type: string
+          format: uri
+          nullable: true
+          description: Optional canonical URI for the party (DID, URL, and similar).
+          example: "did:web:voltaic-robotics.example"
+        jurisdiction:
+          type: string
+          nullable: true
+          description: Primary jurisdiction (ISO 3166-1 code or region such as `EU`, `US`, `SE`).
+          example: "SE"
+        ownerId:
+          type: string
+          format: uuid
+          nullable: true
+          description: The owning party, if this party is owned by another.
+          example: "2c4e6a80-3b5d-4f70-9a12-8c0d1e2f3a4b"
+        organizationUnitId:
+          type: string
+          format: uuid
+          nullable: true
+          description: The single home organization unit; null means the tenant root.
+        specializations:
+          type: array
+          description: The specializations (roles) this party bears; multi-typing allows several.
+          items:
+            $ref: '#/components/schemas/PartySpecialization'
+        createdAt:
+          type: string
+          format: date-time
+          example: "2026-01-15T09:30:00Z"
+        createdById:
+          type: string
+          format: uuid
+          nullable: true
+          description: Party that created this record.
+        updatedAt:
+          type: string
+          format: date-time
+          example: "2026-01-15T09:30:00Z"
+        updatedById:
+          type: string
+          format: uuid
+          nullable: true
+          description: Party that last updated this record.
+        deletedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: Soft-delete marker. Null when the party is active.
+        deletedById:
+          type: string
+          format: uuid
+          nullable: true
+          description: Party that soft-deleted this record.
+        electronicAddresses:
+          type: array
+          nullable: true
+          description: The electronic addresses anchored at this party. Populated only when `include=electronicAddresses` is requested.
+          items:
+            $ref: '#/components/schemas/ElectronicAddress'
+        physicalAddresses:
+          type: array
+          nullable: true
+          description: The physical addresses anchored at this party. Populated only when `include=physicalAddresses` is requested.
+          items:
+            $ref: '#/components/schemas/PhysicalAddress'
+
+    Person:
+      description: A human individual. A coherent party object with `partyType` `natural_person`.
+      allOf:
+        - $ref: '#/components/schemas/PartyBase'
+        - type: object
+          properties:
+            firstName:
+              type: string
+              nullable: true
+              description: Given name.
+              example: "Sofia"
+            middleName:
+              type: string
+              nullable: true
+              description: Middle name(s).
+            lastName:
+              type: string
+              nullable: true
+              description: Family name.
+              example: "Almeida"
+            birthDate:
+              type: string
+              format: date
+              nullable: true
+              description: Date of birth.
+              example: "1990-05-17"
+      example:
+        id: "3fa85f64-5717-4562-b3fc-2c963f66afa6"
+        tenantId: "8a1f0c44-2b6e-4d39-9f72-1c5a3e8b0d24"
+        partyType: natural_person
+        origin: managed
+        displayName: "Sofia Almeida"
+        firstName: "Sofia"
+        lastName: "Almeida"
+        birthDate: "1990-05-17"
+        organizationUnitId: null
+        specializations:
+          - subtype: employee
+            profileId: profile.employee
+            profileVersion: "3"
+            organizationUnitId: "5c1a9d80-7e3b-4f21-9c44-0b2e6f8a1d3c"
+          - subtype: instructor
+            profileId: profile.instructor
+            profileVersion: "1"
+            organizationUnitId: "1f4d6a30-6b2c-4e74-8d51-2a3b4c5d6e66"
+        createdAt: "2026-01-15T09:30:00Z"
+        updatedAt: "2026-01-15T09:30:00Z"
+
+    Organization:
+      description: A company, institution, or other legal entity. A party object with `partyType` `organization`.
+      allOf:
+        - $ref: '#/components/schemas/PartyBase'
+        - type: object
+          required:
+            - legalName
+          properties:
+            legalName:
+              type: string
+              description: Registered legal name.
+              example: "Lindqvist Precision AB"
+            organizationType:
+              type: string
+              nullable: true
+              description: 'Organization type. Common values: `company`, `government`, `non_profit`, `educational`, `healthcare`, `financial`, `other`.'
+              example: "company"
+            industry:
+              type: string
+              nullable: true
+              description: Industry classification.
+              example: "Precision machining"
+            contactEmail:
+              type: string
+              format: email
+              nullable: true
+              description: Primary contact email.
+              example: "sales@lindqvist-precision.example"
+            websiteUrl:
+              type: string
+              format: uri
+              nullable: true
+              description: Public website URL.
+              example: "https://lindqvist-precision.example"
+            privacyPolicyUri:
+              type: string
+              format: uri
+              nullable: true
+              description: Privacy policy URI.
+              example: "https://lindqvist-precision.example/privacy"
+            tosUri:
+              type: string
+              format: uri
+              nullable: true
+              description: Terms of service URI.
+              example: "https://lindqvist-precision.example/terms"
+      example:
+        id: "4b1d7c20-8e3f-4a51-9c62-3d4e5f6a7b88"
+        tenantId: "8a1f0c44-2b6e-4d39-9f72-1c5a3e8b0d24"
+        partyType: organization
+        origin: managed
+        displayName: "Lindqvist Precision AB"
+        legalName: "Lindqvist Precision AB"
+        organizationType: "company"
+        industry: "Precision machining"
+        contactEmail: "sales@lindqvist-precision.example"
+        websiteUrl: "https://lindqvist-precision.example"
+        jurisdiction: "SE"
+        organizationUnitId: null
+        specializations:
+          - subtype: supplier
+            profileId: profile.supplier
+            profileVersion: "2"
+            organizationUnitId: "7d2b8e10-4f6a-4c52-8b31-9e0a1d2c3f44"
+          - subtype: customer
+            profileId: profile.customer
+            profileVersion: "1"
+            organizationUnitId: "9e3c7f20-5a1b-4d63-7c40-0f1b2e3d4a55"
+        createdAt: "2026-01-15T09:30:00Z"
+        updatedAt: "2026-01-15T09:30:00Z"
+
+    OrganizationUnit:
+      description: |
+        A unit within an organization (department, division, sub-tenant scope). A party object with
+        `partyType` `organization_unit`.
+      allOf:
+        - $ref: '#/components/schemas/PartyBase'
+        - type: object
+          required:
+            - name
+          properties:
+            parentOuId:
+              type: string
+              format: uuid
+              nullable: true
+              description: The organization unit this unit sits under. Null marks the tenant root unit, which has no parent.
+              example: "2c4e6a80-3b5d-4f70-9a12-8c0d1e2f3a4b"
+            name:
+              type: string
+              description: The unit name shown in administration views and used when scoping roles to a unit.
+              example: "Controls Engineering"
+            tosUri:
+              type: string
+              format: uri
+              nullable: true
+              description: Terms of service document that applies to parties acting within this unit. Null when the unit relies on the terms set higher in the tree.
+              example: "https://voltaic-robotics.example/legal/academy-terms"
+            branding:
+              type: object
+              nullable: true
+              additionalProperties: true
+              description: Logo, colours, and display strings applied to flows scoped to this unit. Null when the unit inherits branding from an ancestor.
+            ouInheritancePolicy:
+              type: string
+              description: How a child unit treats configuration coming from its ancestors. READ_ONLY_ANCESTOR lets the unit read inherited values but not change them, which keeps tenant-wide settings under central control. Pick this unless the unit must override ancestor configuration on its own.
+              default: READ_ONLY_ANCESTOR
+              example: READ_ONLY_ANCESTOR
+            childUnits:
+              type: array
+              nullable: true
+              description: The child organization units. Populated only when `include=children` is requested.
+              items:
+                $ref: '#/components/schemas/OrganizationUnit'
+            members:
+              type: array
+              nullable: true
+              description: The parties whose home organization unit is this unit. Populated only when `include=members` is requested.
+              items:
+                $ref: '#/components/schemas/PartyEntity'
+      example:
+        id: "5c1a9d80-7e3b-4f21-9c44-0b2e6f8a1d3c"
+        tenantId: "8a1f0c44-2b6e-4d39-9f72-1c5a3e8b0d24"
+        partyType: organization_unit
+        origin: managed
+        displayName: "Controls Engineering"
+        name: "Controls Engineering"
+        parentOuId: "2c4e6a80-3b5d-4f70-9a12-8c0d1e2f3a4b"
+        ouInheritancePolicy: READ_ONLY_ANCESTOR
+        specializations: []
+        createdAt: "2026-01-15T09:30:00Z"
+        updatedAt: "2026-01-15T09:30:00Z"
+
+    Service:
+      description: |
+        A software-backed service participant (endpoint, integration, automated actor). A party object
+        with `partyType` `service`. A service that carries the `authenticable` capability is an
+        application's login surface.
+      allOf:
+        - $ref: '#/components/schemas/PartyBase'
+        - type: object
+          properties:
+            serviceType:
+              type: string
+              nullable: true
+              description: What kind of service this party represents, used to route it to the right integration. For example oid4vci_issuer for a credential issuer endpoint or oid4vp_verifier for a presentation verifier. Null when the service has no fixed protocol role.
+              example: "oid4vci_issuer"
+            endpointUri:
+              type: string
+              format: uri
+              nullable: true
+              description: The base URL the service is reached at. For an OID4VCI issuer this is the credential issuer identifier used by wallets. Null when the service has no externally reachable endpoint.
+              example: "https://issuer.voltaic-robotics.example"
+            oauthClientId:
+              type: string
+              nullable: true
+              description: The OAuth client identifier the service presents when it authenticates to the platform or to upstream providers.
+              example: "voltaic-issuer"
+      example:
+        id: "2d4f6a80-1c3e-4b5d-8a7f-9e0c1b2d3f4a"
+        tenantId: "8a1f0c44-2b6e-4d39-9f72-1c5a3e8b0d24"
+        partyType: service
+        origin: managed
+        displayName: "Voltaic Issuer"
+        serviceType: "oid4vci_issuer"
+        endpointUri: "https://issuer.voltaic-robotics.example"
+        oauthClientId: "voltaic-issuer"
+        specializations: []
+        createdAt: "2026-01-15T09:30:00Z"
+        updatedAt: "2026-01-15T09:30:00Z"
+
+    Group:
+      description: |
+        A collection of parties grouped for addressing or authorization. A party object with
+        `partyType` `group`. A group never bears specializations.
+      allOf:
+        - $ref: '#/components/schemas/PartyBase'
+        - type: object
+          required:
+            - name
+          properties:
+            name:
+              type: string
+              description: The group name used when addressing the group or referencing it in authorization rules.
+              example: "EU Compliance Reviewers"
+            members:
+              type: array
+              nullable: true
+              description: The parties that belong to the group. Populated only when `include=members` is requested.
+              items:
+                $ref: '#/components/schemas/PartyEntity'
+      example:
+        id: "6e2c8a40-9f1b-4d52-8c73-4a5b6c7d8e90"
+        tenantId: "8a1f0c44-2b6e-4d39-9f72-1c5a3e8b0d24"
+        partyType: group
+        origin: managed
+        displayName: "EU Compliance Reviewers"
+        name: "EU Compliance Reviewers"
+        specializations: []
+        createdAt: "2026-01-15T09:30:00Z"
+        updatedAt: "2026-01-15T09:30:00Z"
+
+    Software:
+      description: |
+        Executable software registered as a party (a server, connector, or app), for example a
+        registered attribute source. A party object with `partyType` `software`. This is the lite
+        party view: the deep software model (capabilities, endpoints, deployments, credentials)
+        lives in the software manager and is keyed by the same party id.
+      allOf:
+        - $ref: '#/components/schemas/PartyBase'
+        - type: object
+          properties:
+            softwareKind:
+              type: string
+              nullable: true
+              description: What kind of software this party is, for example SERVER or APP. Null when the software store carries no detail row for the party.
+              example: "SERVER"
+            displayVersion:
+              type: string
+              nullable: true
+              description: Human-readable version string.
+              example: "11.2"
+            vendorId:
+              type: string
+              format: uuid
+              nullable: true
+              description: The vendor of this software.
+              example: "7f3b9c10-2d4e-4a61-8b52-1c0d9e8f7a66"
+      example:
+        id: "8a4d2c60-3e1f-4b72-9d83-5b6c7d8e9f01"
+        tenantId: "8a1f0c44-2b6e-4d39-9f72-1c5a3e8b0d24"
+        partyType: software
+        origin: external
+        displayName: "HR System"
+        softwareKind: "SERVER"
+        displayVersion: "11.2"
+        vendorId: "7f3b9c10-2d4e-4a61-8b52-1c0d9e8f7a66"
+        specializations: []
+        createdAt: "2026-01-15T09:30:00Z"
+        updatedAt: "2026-01-15T09:30:00Z"
+
+    Asset:
+      description: |
+        A non-executing data asset registered as a party (a dataset, registry, or document corpus).
+        A party object with `partyType` `asset`. It has no runtime of its own but can still carry
+        capabilities (such as serving as an attribute source) and governance data; it carries only
+        the shared party contract.
+      allOf:
+        - $ref: '#/components/schemas/PartyBase'
+        - type: object
+      example:
+        id: "9b5e3d70-4f2a-4c83-8e94-6c7d8e9f0a12"
+        tenantId: "8a1f0c44-2b6e-4d39-9f72-1c5a3e8b0d24"
+        partyType: asset
+        origin: external
+        displayName: "Employee Registry"
+        specializations: []
+        createdAt: "2026-01-15T09:30:00Z"
+        updatedAt: "2026-01-15T09:30:00Z"
+
+    PartyEntity:
+      description: |
+        The merged, typed view of a party: one coherent JSON object that is itself a party, identified
+        by its `partyType` discriminator. Endpoints that operate across party types return and accept
+        this polymorphic shape.
+      oneOf:
+        - $ref: '#/components/schemas/Person'
+        - $ref: '#/components/schemas/Organization'
+        - $ref: '#/components/schemas/OrganizationUnit'
+        - $ref: '#/components/schemas/Service'
+        - $ref: '#/components/schemas/Group'
+        - $ref: '#/components/schemas/Software'
+        - $ref: '#/components/schemas/Asset'
+      discriminator:
+        propertyName: partyType
+        mapping:
+          natural_person: '#/components/schemas/Person'
+          organization: '#/components/schemas/Organization'
+          organization_unit: '#/components/schemas/OrganizationUnit'
+          service: '#/components/schemas/Service'
+          group: '#/components/schemas/Group'
+          software: '#/components/schemas/Software'
+          asset: '#/components/schemas/Asset'
+
+    # --- Create / update request bodies (writable subset) -------
+
+    PartyWritableBase:
+      type: object
+      description: |
+        The writable party fields common to every create and update body. Server-set fields (`id`,
+        `tenantId`, `partyType`, audit timestamps) are never accepted on the wire.
+      properties:
+        displayName:
+          type: string
+          example: "Sofia Almeida"
+        origin:
+          $ref: '#/components/schemas/PartyOrigin'
+        uri:
+          type: string
+          format: uri
+          nullable: true
+          example: "did:web:voltaic-robotics.example"
+        jurisdiction:
+          type: string
+          nullable: true
+          example: "SE"
+        ownerId:
+          type: string
+          format: uuid
+          nullable: true
+        organizationUnitId:
+          type: string
+          format: uuid
+          nullable: true
+          description: The single home organization unit; null means the tenant root. Leave null when the party's units are carried by its specializations instead.
+        specializations:
+          type: array
+          items:
+            $ref: '#/components/schemas/PartySpecialization'
+
+    PersonCreateRequest:
+      type: object
+      description: Create a `natural_person` party.
+      required:
+        - displayName
+      allOf:
+        - $ref: '#/components/schemas/PartyWritableBase'
+        - type: object
+          properties:
+            firstName:
+              type: string
+              nullable: true
+              example: "Sofia"
+            middleName:
+              type: string
+              nullable: true
+            lastName:
+              type: string
+              nullable: true
+              example: "Almeida"
+            birthDate:
+              type: string
+              format: date
+              nullable: true
+              example: "1990-05-17"
+
+    PersonUpdateRequest:
+      type: object
+      description: Update a `natural_person` party. Omitted fields are left unchanged.
+      allOf:
+        - $ref: '#/components/schemas/PersonCreateRequest'
+
+    OrganizationCreateRequest:
+      type: object
+      description: Create an `organization` party.
+      required:
+        - displayName
+        - legalName
+      allOf:
+        - $ref: '#/components/schemas/PartyWritableBase'
+        - type: object
+          properties:
+            legalName:
+              type: string
+              example: "Lindqvist Precision AB"
+            organizationType:
+              type: string
+              nullable: true
+              example: "company"
+            industry:
+              type: string
+              nullable: true
+              example: "Precision machining"
+            contactEmail:
+              type: string
+              format: email
+              nullable: true
+              example: "sales@lindqvist-precision.example"
+            websiteUrl:
+              type: string
+              format: uri
+              nullable: true
+              example: "https://lindqvist-precision.example"
+            privacyPolicyUri:
+              type: string
+              format: uri
+              nullable: true
+            tosUri:
+              type: string
+              format: uri
+              nullable: true
+
+    OrganizationUpdateRequest:
+      type: object
+      description: Update an `organization` party. Omitted fields are left unchanged.
+      allOf:
+        - $ref: '#/components/schemas/OrganizationCreateRequest'
+
+    OrganizationUnitCreateRequest:
+      type: object
+      description: Create an `organization_unit` party.
+      required:
+        - displayName
+        - name
+      allOf:
+        - $ref: '#/components/schemas/PartyWritableBase'
+        - type: object
+          properties:
+            parentOuId:
+              type: string
+              format: uuid
+              nullable: true
+              description: The organization unit this new unit sits under. Null places it at the tenant root.
+              example: "2c4e6a80-3b5d-4f70-9a12-8c0d1e2f3a4b"
+            name:
+              type: string
+              description: The unit name shown in administration views and used when scoping roles to a unit.
+              example: "Controls Engineering"
+            tosUri:
+              type: string
+              format: uri
+              nullable: true
+              description: Terms of service document that applies to parties acting within this unit. Null to inherit the terms set higher in the tree.
+              example: "https://voltaic-robotics.example/legal/academy-terms"
+            branding:
+              type: object
+              nullable: true
+              additionalProperties: true
+              description: Logo, colours, and display strings applied to flows scoped to this unit. Null to inherit branding from an ancestor.
+            ouInheritancePolicy:
+              type: string
+              description: How the unit treats configuration coming from its ancestors. READ_ONLY_ANCESTOR lets the unit read inherited values without changing them. Send this unless the unit must override ancestor configuration.
+              default: READ_ONLY_ANCESTOR
+              example: READ_ONLY_ANCESTOR
+
+    OrganizationUnitUpdateRequest:
+      type: object
+      description: Update an `organization_unit` party. Omitted fields are left unchanged.
+      allOf:
+        - $ref: '#/components/schemas/OrganizationUnitCreateRequest'
+
+    ServiceCreateRequest:
+      type: object
+      description: Create a `service` party.
+      required:
+        - displayName
+      allOf:
+        - $ref: '#/components/schemas/PartyWritableBase'
+        - type: object
+          properties:
+            serviceType:
+              type: string
+              nullable: true
+              description: What kind of service this party represents, such as oid4vci_issuer for a credential issuer or oid4vp_verifier for a presentation verifier. Null when the service has no fixed protocol role.
+              example: "oid4vci_issuer"
+            endpointUri:
+              type: string
+              format: uri
+              nullable: true
+              description: The base URL the service is reached at. For an OID4VCI issuer this is the credential issuer identifier used by wallets. Null when the service has no externally reachable endpoint.
+              example: "https://issuer.voltaic-robotics.example"
+            oauthClientId:
+              type: string
+              nullable: true
+              description: The OAuth client identifier the service presents when it authenticates to the platform or to upstream providers.
+              example: "voltaic-issuer"
+
+    ServiceUpdateRequest:
+      type: object
+      description: Update a `service` party. Omitted fields are left unchanged.
+      allOf:
+        - $ref: '#/components/schemas/ServiceCreateRequest'
+
+    GroupCreateRequest:
+      type: object
+      description: Create a `group` party. A group never bears specializations.
+      required:
+        - displayName
+        - name
+      properties:
+        displayName:
+          type: string
+          example: "EU Compliance Reviewers"
+        origin:
+          $ref: '#/components/schemas/PartyOrigin'
+        uri:
+          type: string
+          format: uri
+          nullable: true
+        jurisdiction:
+          type: string
+          nullable: true
+        ownerId:
+          type: string
+          format: uuid
+          nullable: true
+        organizationUnitId:
+          type: string
+          format: uuid
+          nullable: true
+        name:
+          type: string
+          example: "EU Compliance Reviewers"
+
+    GroupUpdateRequest:
+      type: object
+      description: Update a `group` party. Omitted fields are left unchanged.
+      allOf:
+        - $ref: '#/components/schemas/GroupCreateRequest'
+
+    GroupMembersUpdateRequest:
+      type: object
+      description: |
+        Replace the full membership of a group with the supplied set of party ids. The call is a
+        full replacement: ids absent from the set are removed and ids present are added, so the
+        group ends up with exactly the listed members. Members may be of any party type.
+      required:
+        - memberIds
+      properties:
+        memberIds:
+          type: array
+          description: The complete set of party ids that should be members of the group after the call. An empty array clears the membership.
+          items:
+            type: string
+            format: uuid
+      example:
+        memberIds:
+          - "3fa85f64-5717-4562-b3fc-2c963f66afa6"
+          - "4b1d7c20-8e3f-4a51-9c62-3d4e5f6a7b88"
+
+    # --- Addresses and registrations ----------------------------
+
+    OrganizationRegistration:
+      type: object
+      description: |
+        A business registration for an organization (VAT, LEI, DUNS, Chamber of Commerce, and
+        similar). An organization may hold several registrations across authorities and jurisdictions.
+      required:
+        - id
+        - tenantId
+        - organizationId
+        - registrationType
+        - value
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: "9a8b7c6d-5e4f-4a3b-2c1d-0e9f8a7b6c5d"
+        tenantId:
+          type: string
+          example: "7e9f1c20-1b2a-4c3d-8e5f-0a1b2c3d4e5f"
+        organizationId:
+          type: string
+          format: uuid
+          description: The `organization` party this registration belongs to.
+          example: "3fa85f64-5717-4562-b3fc-2c963f66afa6"
+        registrationType:
+          type: string
+          description: |
+            Open classification of the registration. Common values: `VAT`, `LEI`, `DUNS`,
+            `CHAMBER_OF_COMMERCE`, `TAX_ID`, `EUID`, `OTHER`.
+          example: "VAT"
+        value:
+          type: string
+          description: The registration identifier value.
+          example: "NL123456789B01"
+        issuingAuthority:
+          type: string
+          example: "Belastingdienst"
+        jurisdictionCountry:
+          type: string
+          minLength: 2
+          maxLength: 2
+          description: ISO 3166-1 alpha-2 country code.
+          example: "NL"
+        validFrom:
+          type: string
+          format: date-time
+          example: "2024-01-01T00:00:00Z"
+        validUntil:
+          type: string
+          format: date-time
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+          example: "2026-01-15T09:30:00Z"
+        createdById:
+          type: string
+          format: uuid
+          nullable: true
+        updatedAt:
+          type: string
+          format: date-time
+          example: "2026-01-15T09:30:00Z"
+        updatedById:
+          type: string
+          format: uuid
+          nullable: true
+      example:
+        id: "9a8b7c6d-5e4f-4a3b-2c1d-0e9f8a7b6c5d"
+        tenantId: "7e9f1c20-1b2a-4c3d-8e5f-0a1b2c3d4e5f"
+        organizationId: "3fa85f64-5717-4562-b3fc-2c963f66afa6"
+        registrationType: "VAT"
+        value: "NL123456789B01"
+        issuingAuthority: "Belastingdienst"
+        jurisdictionCountry: "NL"
+        createdAt: "2026-01-15T09:30:00Z"
+        updatedAt: "2026-01-15T09:30:00Z"
+
+    OrganizationRegistrationCreateRequest:
+      type: object
+      description: A business registration to attach to an `organization` party.
+      required:
+        - registrationType
+        - value
+      properties:
+        registrationType:
+          type: string
+          description: 'Open classification. Common values: `VAT`, `LEI`, `DUNS`, `CHAMBER_OF_COMMERCE`, `TAX_ID`, `EUID`, `OTHER`.'
+          example: "VAT"
+        value:
+          type: string
+          example: "NL123456789B01"
+        issuingAuthority:
+          type: string
+          example: "Belastingdienst"
+        jurisdictionCountry:
+          type: string
+          minLength: 2
+          maxLength: 2
+          description: ISO 3166-1 alpha-2 country code.
+          example: "NL"
+        validFrom:
+          type: string
+          format: date-time
+          example: "2024-01-01T00:00:00Z"
+        validUntil:
+          type: string
+          format: date-time
+          nullable: true
+
+    ElectronicAddress:
+      type: object
+      description: |
+        An electronic contact point for a party (email, phone, URL, social handle, and similar). A
+        party may have several, distinguished by `addressType` and `label`.
+      required:
+        - id
+        - tenantId
+        - partyId
+        - addressType
+        - value
+        - isPrimary
+        - validFrom
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: "0d9f8a7b-6c5d-4e3f-2a1b-0c9d8e7f6a5b"
+        tenantId:
+          type: string
+          example: "8a1f0c44-2b6e-4d39-9f72-1c5a3e8b0d24"
+        partyId:
+          type: string
+          format: uuid
+          description: The party this electronic address belongs to.
+          example: "3fa85f64-5717-4562-b3fc-2c963f66afa6"
+        addressType:
+          type: string
+          description: |
+            What kind of electronic contact point this is, used to group and select addresses.
+            Pick `EMAIL` for an email address, `PHONE` for a landline, `MOBILE` for a cell number,
+            `FAX` for a fax line, `URL` for a website, `SOCIAL_MEDIA` for a profile or handle,
+            `INSTANT_MESSAGE` for a chat identifier, and `OTHER` when none of these fit.
+          example: "EMAIL"
+        value:
+          type: string
+          description: The address value (the email address, phone number, URL, and similar).
+          example: "sofia.almeida@voltaic-robotics.example"
+        label:
+          type: string
+          description: Optional human label that distinguishes addresses of the same type, such as `Work`, `Personal`, or `Mobile`.
+          example: "Work"
+        isPrimary:
+          type: boolean
+          description: Marks the address used by default when a party has more than one of the same `addressType`. At most one per type should carry this.
+          default: false
+          example: true
+        isVerified:
+          type: boolean
+          description: True once ownership of the address has been confirmed, for example through a verification email or SMS. See `verifiedAt` for when that happened.
+          default: false
+          example: true
+        verifiedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: When the address was verified. Null while `isVerified` is false.
+        validFrom:
+          type: string
+          format: date-time
+          description: When the address becomes effective for the party.
+          example: "2026-01-15T09:30:00Z"
+        validUntil:
+          type: string
+          format: date-time
+          nullable: true
+          description: When the address stops being effective. Null means it has no end date.
+      example:
+        id: "0d9f8a7b-6c5d-4e3f-2a1b-0c9d8e7f6a5b"
+        tenantId: "8a1f0c44-2b6e-4d39-9f72-1c5a3e8b0d24"
+        partyId: "3fa85f64-5717-4562-b3fc-2c963f66afa6"
+        addressType: "EMAIL"
+        value: "sofia.almeida@voltaic-robotics.example"
+        label: "Work"
+        isPrimary: true
+        isVerified: true
+        validFrom: "2026-01-15T09:30:00Z"
+
+    ElectronicAddressCreateRequest:
+      type: object
+      description: An electronic contact point to attach to a party. The `partyId` is taken from the path.
+      required:
+        - addressType
+        - value
+        - isPrimary
+        - validFrom
+      properties:
+        addressType:
+          type: string
+          description: |
+            What kind of electronic contact point this is. Pick `EMAIL`, `PHONE`, `MOBILE`, `FAX`,
+            `URL`, `SOCIAL_MEDIA`, `INSTANT_MESSAGE`, or `OTHER`.
+          example: "EMAIL"
+        value:
+          type: string
+          description: The address value (the email address, phone number, URL, and similar).
+          example: "sofia.almeida@voltaic-robotics.example"
+        label:
+          type: string
+          description: Optional human label that distinguishes addresses of the same type, such as `Work` or `Personal`.
+          example: "Work"
+        isPrimary:
+          type: boolean
+          description: Set true to make this the default address for its `addressType`.
+          example: true
+        isVerified:
+          type: boolean
+          description: Whether ownership of the address has already been confirmed at creation time.
+          default: false
+        validFrom:
+          type: string
+          format: date-time
+          description: When the address becomes effective for the party.
+          example: "2026-01-15T09:30:00Z"
+        validUntil:
+          type: string
+          format: date-time
+          nullable: true
+          description: When the address stops being effective. Null means no end date.
+      example:
+        addressType: "EMAIL"
+        value: "sofia.almeida@voltaic-robotics.example"
+        label: "Work"
+        isPrimary: true
+        validFrom: "2026-01-15T09:30:00Z"
+
+    ElectronicAddressUpdateRequest:
+      type: object
+      description: Fields to update on an electronic address. The owning party and identifier binding are immutable.
+      required:
+        - addressType
+        - value
+      properties:
+        addressType:
+          type: string
+          description: |
+            What kind of electronic contact point this is. Pick `EMAIL`, `PHONE`, `MOBILE`, `FAX`,
+            `URL`, `SOCIAL_MEDIA`, `INSTANT_MESSAGE`, or `OTHER`.
+          example: "EMAIL"
+        value:
+          type: string
+          description: The address value (the email address, phone number, URL, and similar).
+          example: "sofia.almeida@voltaic-robotics.example"
+        label:
+          type: string
+          nullable: true
+          description: Optional human label that distinguishes addresses of the same type, such as `Work` or `Personal`.
+          example: "Work"
+        isPrimary:
+          type: boolean
+          description: Set true to make this the default address for its `addressType`.
+          default: false
+        isVerified:
+          type: boolean
+          description: Whether ownership of the address has been confirmed. See `verifiedAt` for when.
+          default: false
+        verifiedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: When the address was verified. Null while `isVerified` is false.
+        validUntil:
+          type: string
+          format: date-time
+          nullable: true
+          description: When the address stops being effective. Null means no end date.
+
+    PhysicalAddressUpdateRequest:
+      type: object
+      description: Fields to update on a physical address. Null fields keep their current value.
+      properties:
+        addressType:
+          $ref: '#/components/schemas/AddressType'
+        label:
+          type: string
+          nullable: true
+        isPrimary:
+          type: boolean
+          nullable: true
+        streetAddress:
+          type: string
+          nullable: true
+        city:
+          type: string
+          nullable: true
+        province:
+          type: string
+          nullable: true
+        postalCode:
+          type: string
+          nullable: true
+        countryCode:
+          type: string
+          nullable: true
+        latitude:
+          type: number
+          format: double
+          nullable: true
+        longitude:
+          type: number
+          format: double
+          nullable: true
+        validFrom:
+          type: string
+          format: date-time
+          nullable: true
+        validUntil:
+          type: string
+          format: date-time
+          nullable: true
+
+    AddressType:
+      type: string
+      description: |
+        The type or purpose of a physical address. A party may hold several addresses of different
+        types.
+          - `home`: a person's residential address.
+          - `work`: an office or place of business, such as a head office.
+          - `billing`: where invoices and statements are sent.
+          - `shipping`: where physical goods are delivered.
+          - `registered`: the official registered seat of a legal entity.
+          - `other`: anything that does not fit the above.
+      enum:
+        - home
+        - work
+        - billing
+        - shipping
+        - registered
+        - other
+      example: work
+
+    PhysicalAddress:
+      type: object
+      description: |
+        A physical or postal address attached to a party. A party may have several, distinguished by
+        `addressType` and `label`, which enables address-level relationships.
+      required:
+        - id
+        - partyId
+        - tenantId
+        - addressType
+        - isPrimary
+        - validFrom
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d"
+        partyId:
+          type: string
+          format: uuid
+          description: The party this physical address belongs to.
+          example: "4b1d7c20-8e3f-4a51-9c62-3d4e5f6a7b88"
+        tenantId:
+          type: string
+          example: "8a1f0c44-2b6e-4d39-9f72-1c5a3e8b0d24"
+        addressType:
+          $ref: '#/components/schemas/AddressType'
+        label:
+          type: string
+          description: Optional human label that distinguishes addresses of the same type, such as `Head office` or `Warehouse`.
+          example: "Head office"
+        isPrimary:
+          type: boolean
+          description: Marks the address used by default when a party has more than one of the same `addressType`. At most one per type should carry this.
+          default: false
+          example: true
+        streetAddress:
+          type: string
+          description: Street address (house number, street name, unit).
+          example: "Lindholmspiren 7"
+        city:
+          type: string
+          example: "Gothenburg"
+        province:
+          type: string
+          description: State, province, or region.
+          example: "Vastra Gotaland"
+        postalCode:
+          type: string
+          example: "417 56"
+        countryCode:
+          type: string
+          minLength: 2
+          maxLength: 2
+          description: ISO 3166-1 alpha-2 country code.
+          example: "SE"
+        latitude:
+          type: number
+          format: double
+          example: 57.7065
+        longitude:
+          type: number
+          format: double
+          example: 11.9389
+        validFrom:
+          type: string
+          format: date-time
+          description: When the address becomes effective for the party.
+          example: "2026-01-15T09:30:00Z"
+        validUntil:
+          type: string
+          format: date-time
+          nullable: true
+          description: When the address stops being effective. Null means no end date.
+        createdAt:
+          type: string
+          format: date-time
+          example: "2026-01-15T09:30:00Z"
+        createdById:
+          type: string
+          format: uuid
+          nullable: true
+        updatedAt:
+          type: string
+          format: date-time
+          example: "2026-01-15T09:30:00Z"
+        updatedById:
+          type: string
+          format: uuid
+          nullable: true
+        deletedAt:
+          type: string
+          format: date-time
+          nullable: true
+        deletedById:
+          type: string
+          format: uuid
+          nullable: true
+      example:
+        id: "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d"
+        partyId: "4b1d7c20-8e3f-4a51-9c62-3d4e5f6a7b88"
+        tenantId: "8a1f0c44-2b6e-4d39-9f72-1c5a3e8b0d24"
+        addressType: work
+        label: "Head office"
+        streetAddress: "Lindholmspiren 7"
+        city: "Gothenburg"
+        province: "Vastra Gotaland"
+        postalCode: "417 56"
+        countryCode: "SE"
+        isPrimary: true
+        validFrom: "2026-01-15T09:30:00Z"
+        createdAt: "2026-01-15T09:30:00Z"
+        updatedAt: "2026-01-15T09:30:00Z"
+
+    PhysicalAddressCreateRequest:
+      type: object
+      description: A physical or postal address to attach to a party. The `partyId` is taken from the path.
+      required:
+        - addressType
+        - isPrimary
+        - validFrom
+      properties:
+        addressType:
+          $ref: '#/components/schemas/AddressType'
+        label:
+          type: string
+          description: Optional human label that distinguishes addresses of the same type, such as `Head office` or `Warehouse`.
+          example: "Head office"
+        isPrimary:
+          type: boolean
+          description: Set true to make this the default address for its `addressType`.
+          example: true
+        streetAddress:
+          type: string
+          example: "Lindholmspiren 7"
+        city:
+          type: string
+          example: "Gothenburg"
+        province:
+          type: string
+          example: "Vastra Gotaland"
+        postalCode:
+          type: string
+          example: "417 56"
+        countryCode:
+          type: string
+          minLength: 2
+          maxLength: 2
+          description: ISO 3166-1 alpha-2 country code.
+          example: "SE"
+        latitude:
+          type: number
+          format: double
+          example: 57.7065
+        longitude:
+          type: number
+          format: double
+          example: 11.9389
+        validFrom:
+          type: string
+          format: date-time
+          description: When the address becomes effective for the party.
+          example: "2026-01-15T09:30:00Z"
+        validUntil:
+          type: string
+          format: date-time
+          nullable: true
+          description: When the address stops being effective. Null means no end date.
+      example:
+        addressType: work
+        label: "Head office"
+        streetAddress: "Lindholmspiren 7"
+        city: "Gothenburg"
+        province: "Vastra Gotaland"
+        postalCode: "417 56"
+        countryCode: "SE"
+        isPrimary: true
+        validFrom: "2026-01-15T09:30:00Z"
+
+    # --- Relationships ------------------------------------------
+
+    PartyRelationship:
+      type: object
+      description: |
+        A directional, typed relationship between two parties. `leftId` is the source and `rightId`
+        the target, so an employment relationship runs from the employee (left) to the employer
+        (right). The `relationshipType` is an open, tenant-defined value such as `employment`,
+        `membership`, or `same_entity` (which links two party records that represent the same real
+        entity). Either counter-party is resolvable to its full [PartyEntity] through the party
+        endpoints. The optional time bounds (`validFrom`, `validUntil`) and verification fields
+        record when the relationship applies and whether it has been confirmed.
+      required:
+        - id
+        - tenantId
+        - leftId
+        - rightId
+        - relationshipType
+        - status
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: "d4e5f6a7-b8c9-4d0e-1f2a-3b4c5d6e7f80"
+        tenantId:
+          type: string
+          example: "7e9f1c20-1b2a-4c3d-8e5f-0a1b2c3d4e5f"
+        leftId:
+          type: string
+          format: uuid
+          description: The source party. For an employment relationship this is the employee.
+          example: "3fa85f64-5717-4562-b3fc-2c963f66afa6"
+        rightId:
+          type: string
+          format: uuid
+          description: The target party. For an employment relationship this is the employer.
+          example: "2c4e6a80-3b5d-4f70-9a12-8c0d1e2f3a4b"
+        relationshipType:
+          type: string
+          description: 'Open relationship-type value. Common values: `employment`, `membership`, `guardianship`, `delegation`, `ownership`, `partnership`, `subsidiary`, `same_entity` (links two records for the same real entity).'
+          example: "employment"
+        status:
+          $ref: '#/components/schemas/RelationshipStatus'
+        validFrom:
+          type: string
+          format: date-time
+          nullable: true
+        validUntil:
+          type: string
+          format: date-time
+          nullable: true
+        verifiedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: When the relationship was verified, if it has been.
+        verifiedById:
+          type: string
+          format: uuid
+          nullable: true
+          description: The party that verified the relationship.
+        createdAt:
+          type: string
+          format: date-time
+          example: "2026-01-15T09:30:00Z"
+        createdById:
+          type: string
+          format: uuid
+          nullable: true
+        updatedAt:
+          type: string
+          format: date-time
+          example: "2026-01-15T09:30:00Z"
+        updatedById:
+          type: string
+          format: uuid
+          nullable: true
+      example:
+        id: "d4e5f6a7-b8c9-4d0e-1f2a-3b4c5d6e7f80"
+        tenantId: "8a1f0c44-2b6e-4d39-9f72-1c5a3e8b0d24"
+        leftId: "3fa85f64-5717-4562-b3fc-2c963f66afa6"
+        rightId: "2c4e6a80-3b5d-4f70-9a12-8c0d1e2f3a4b"
+        relationshipType: "employment"
+        status: ACTIVE
+        validFrom: "2026-01-15T09:30:00Z"
+        createdAt: "2026-01-15T09:30:00Z"
+        updatedAt: "2026-01-15T09:30:00Z"
+
+    PartyRelationshipCreateRequest:
+      type: object
+      description: |
+        Create a directional relationship that runs from the source party (`leftId`) to the target
+        party (`rightId`). For an employment relationship the source is the employee and the target
+        is the employer. Use `same_entity` as the `relationshipType` to link two party records that
+        stand for the same real entity.
+      required:
+        - leftId
+        - rightId
+        - relationshipType
+      properties:
+        leftId:
+          type: string
+          format: uuid
+          description: The source party. For an employment relationship this is the employee.
+          example: "3fa85f64-5717-4562-b3fc-2c963f66afa6"
+        rightId:
+          type: string
+          format: uuid
+          description: The target party. For an employment relationship this is the employer.
+          example: "2c4e6a80-3b5d-4f70-9a12-8c0d1e2f3a4b"
+        relationshipType:
+          type: string
+          description: 'Open relationship-type value. Common values: `employment`, `membership`, `guardianship`, `delegation`, `ownership`, `partnership`, `subsidiary`, `same_entity` (links two records for the same real entity).'
+          example: "employment"
+        status:
+          $ref: '#/components/schemas/RelationshipStatus'
+        validFrom:
+          type: string
+          format: date-time
+          nullable: true
+        validUntil:
+          type: string
+          format: date-time
+          nullable: true
+      example:
+        leftId: "3fa85f64-5717-4562-b3fc-2c963f66afa6"
+        rightId: "2c4e6a80-3b5d-4f70-9a12-8c0d1e2f3a4b"
+        relationshipType: "employment"
+        status: ACTIVE
+        validFrom: "2026-01-15T09:30:00Z"
+
+    PartyRelationshipUpdateRequest:
+      type: object
+      description: Update a relationship's status, validity end, and verification. Omitted fields are left unchanged.
+      properties:
+        status:
+          $ref: '#/components/schemas/RelationshipStatus'
+        validUntil:
+          type: string
+          format: date-time
+          nullable: true
+        verifiedAt:
+          type: string
+          format: date-time
+          nullable: true
+        verifiedById:
+          type: string
+          format: uuid
+          nullable: true
+      example:
+        status: SUSPENDED
+        validUntil: "2026-12-31T23:59:59Z"
+
+    # --- Application bindings and login configuration -----------
+
+    IdentityApplicationBinding:
+      type: object
+      description: |
+        Binds an identity to an application's login surface (a `service` party that carries the
+        `authenticable` capability), making that identity authenticable against the application using
+        the permitted authentication methods. The (`identityId`, `applicationId`) pair is the natural
+        binding key.
+      required:
+        - id
+        - tenantId
+        - identityId
+        - applicationId
+        - status
+        - validFrom
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Unique identifier for this binding row.
+          example: "9a8b7c6d-5e4f-4a3b-2c1d-0e9f8a7b6c5d"
+        tenantId:
+          type: string
+          example: "8a1f0c44-2b6e-4d39-9f72-1c5a3e8b0d24"
+        identityId:
+          type: string
+          format: uuid
+          description: The identity that is bound to the application.
+        applicationId:
+          type: string
+          format: uuid
+          description: The application (a `service` party carrying the `authenticable` capability) the identity is bound to.
+        capabilities:
+          type: array
+          description: |
+            The capabilities the bound identity is granted on this application, drawn from the
+            application's own supported capabilities. Leave empty to grant only plain authentication.
+          items:
+            $ref: '#/components/schemas/ApplicationCapability'
+        allowedMethods:
+          type: array
+          description: |
+            The authentication methods this identity may use to log in to the application, restricted
+            to methods the application's login configuration accepts. For example `password` and
+            `totp` for an operator, or `wallet` for a holder. An empty array falls back to every
+            method the application accepts.
+          items:
+            $ref: '#/components/schemas/AuthMethod'
+        specializationSubtype:
+          type: string
+          nullable: true
+          description: |
+            The specialization (role) this login establishes, given as the `subtype` of one of the
+            owning party's specializations (for example `employee` or `instructor`). Resolving it lets
+            the session inherit that role's organization unit, profile, and attributes. Null when the
+            login is not tied to a specific role.
+          example: employee
+        status:
+          $ref: '#/components/schemas/BindingStatus'
+        validFrom:
+          type: string
+          format: date-time
+        validUntil:
+          type: string
+          format: date-time
+          nullable: true
+          description: When this binding stops being valid; null means open-ended.
+        createdAt:
+          type: string
+          format: date-time
+        createdById:
+          type: string
+          format: uuid
+          nullable: true
+        updatedAt:
+          type: string
+          format: date-time
+        updatedById:
+          type: string
+          format: uuid
+          nullable: true
+        deletedAt:
+          type: string
+          format: date-time
+          nullable: true
+        deletedById:
+          type: string
+          format: uuid
+          nullable: true
+
+    IdentityApplicationBindingRequest:
+      type: object
+      description: |
+        Create or replace the binding between an identity and an application. The `identityId` and
+        `applicationId` are taken from the path.
+      properties:
+        capabilities:
+          type: array
+          items:
+            $ref: '#/components/schemas/ApplicationCapability'
+        allowedMethods:
+          type: array
+          items:
+            $ref: '#/components/schemas/AuthMethod'
+        specializationSubtype:
+          type: string
+          nullable: true
+          description: The `subtype` of the owning party's specialization this login establishes (for example `employee`).
+          example: employee
+        status:
+          $ref: '#/components/schemas/BindingStatus'
+        validFrom:
+          type: string
+          format: date-time
+          nullable: true
+          description: When the binding becomes valid. Defaults to now when omitted.
+        validUntil:
+          type: string
+          format: date-time
+          nullable: true
+
+    ApplicationLoginConfig:
+      type: object
+      description: |
+        The login-surface configuration for an application, keyed by the application party id. It
+        sets the boundaries every per-identity binding then operates within: which authentication
+        methods are accepted, which identifier types may be presented to log in, which external IdPs
+        are permitted, and whether identities may self-register.
+      required:
+        - applicationId
+        - tenantId
+        - selfRegistration
+        - createdAt
+        - updatedAt
+      properties:
+        applicationId:
+          type: string
+          format: uuid
+          description: The application party id (the `service` login surface). Primary key.
+          example: "2d4f6a80-1c3e-4b5d-8a7f-9e0c1b2d3f4a"
+        tenantId:
+          type: string
+          example: "8a1f0c44-2b6e-4d39-9f72-1c5a3e8b0d24"
+        allowedMethods:
+          type: array
+          description: |
+            The authentication methods this application accepts across all identities. A per-identity
+            binding may narrow this set but cannot add methods that are absent here. For example
+            `password` and `totp` for an operator console, or `wallet` for a holder-facing surface.
+          items:
+            $ref: '#/components/schemas/AuthMethod'
+        loginIdentifierTypes:
+          type: array
+          description: |
+            The identifier types an identity may present at login, such as `email` or `phone` for
+            human operators, or `did` and `x509` for machine and wallet identities. Empty means the
+            application places no restriction on identifier type.
+          items:
+            $ref: '#/components/schemas/IdentifierType'
+        allowedIdpIds:
+          type: array
+          description: |
+            The ids of external identity providers allowed for federated login to this application,
+            matched against the `federated_oidc` method. Empty means federated login is closed even
+            when `federated_oidc` is listed in `allowedMethods`.
+          items:
+            type: string
+        selfRegistration:
+          type: boolean
+          description: Whether new identities may register themselves against this application without an operator creating the binding first.
+          default: false
+        createdAt:
+          type: string
+          format: date-time
+        createdById:
+          type: string
+          format: uuid
+          nullable: true
+        updatedAt:
+          type: string
+          format: date-time
+        updatedById:
+          type: string
+          format: uuid
+          nullable: true
+        deletedAt:
+          type: string
+          format: date-time
+          nullable: true
+        deletedById:
+          type: string
+          format: uuid
+          nullable: true
+
+    ApplicationLoginConfigRequest:
+      type: object
+      description: Set the login-surface configuration for an application. The `applicationId` is taken from the path.
+      properties:
+        allowedMethods:
+          type: array
+          items:
+            $ref: '#/components/schemas/AuthMethod'
+        loginIdentifierTypes:
+          type: array
+          items:
+            $ref: '#/components/schemas/IdentifierType'
+        allowedIdpIds:
+          type: array
+          items:
+            type: string
+        selfRegistration:
+          type: boolean
+          default: false
+
+    # --- Page envelopes -----------------------------------------
+
+    PartyEntityPage:
+      type: object
+      description: A page of parties of any type. Each item is a polymorphic [PartyEntity].
+      required: [data, pagination]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/PartyEntity'
+        pagination:
+          $ref: './common-components.yml#/components/schemas/PageMeta'
+
+    PersonPage:
+      type: object
+      description: A page of `natural_person` parties.
+      required: [data, pagination]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Person'
+        pagination:
+          $ref: './common-components.yml#/components/schemas/PageMeta'
+
+    OrganizationPage:
+      type: object
+      description: A page of `organization` parties.
+      required: [data, pagination]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Organization'
+        pagination:
+          $ref: './common-components.yml#/components/schemas/PageMeta'
+
+    OrganizationUnitPage:
+      type: object
+      description: A page of `organization_unit` parties.
+      required: [data, pagination]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/OrganizationUnit'
+        pagination:
+          $ref: './common-components.yml#/components/schemas/PageMeta'
+
+    ServicePage:
+      type: object
+      description: A page of `service` parties.
+      required: [data, pagination]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Service'
+        pagination:
+          $ref: './common-components.yml#/components/schemas/PageMeta'
+
+    GroupPage:
+      type: object
+      description: A page of `group` parties.
+      required: [data, pagination]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Group'
+        pagination:
+          $ref: './common-components.yml#/components/schemas/PageMeta'
+
+    PartyRelationshipPage:
+      type: object
+      description: A page of party relationships.
+      required: [data, pagination]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/PartyRelationship'
+        pagination:
+          $ref: './common-components.yml#/components/schemas/PageMeta'
+
+    PartyRelationshipList:
+      type: object
+      description: The relationships a single party participates in. The underlying service returns the full list, unpaginated.
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/PartyRelationship'
+
+    ElectronicAddressList:
+      type: object
+      description: A party's electronic addresses. The underlying service returns the full list, unpaginated.
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/ElectronicAddress'
+
+    PhysicalAddressList:
+      type: object
+      description: A party's physical addresses. The underlying service returns the full list, unpaginated.
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/PhysicalAddress'
+
+    OrganizationRegistrationList:
+      type: object
+      description: An organization's business registrations. The underlying service returns the full list, unpaginated.
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/OrganizationRegistration'

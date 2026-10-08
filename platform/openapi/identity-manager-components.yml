@@ -1,0 +1,717 @@
+openapi: 3.0.4
+info:
+  title: Identity Manager API Components
+  version: 0.1.0
+  description: Request and response schemas for the VDX Identity Manager API.
+paths: {}
+
+components:
+  schemas:
+    IdentityRole:
+      type: string
+      description: |
+        Role the identity plays in credential workflows. Common values are
+        `holder`, `issuer`, and `verifier`. The value is extensible so tenants
+        can introduce domain-specific roles.
+      example: holder
+
+    IdentityPrivacyMode:
+      type: string
+      description: |
+        Privacy mode for the identity profile. This controls whether profile
+        details may be represented in Party data or whether contact and matching
+        material should remain identifier-only.
+      enum:
+        - partyProfiled
+        - partyPublicOnly
+        - identifierOnly
+        - pseudonymous
+      example: identifierOnly
+
+    IdentifierType:
+      type: string
+      description: |
+        Identifier family. Built-in examples include `email`, `phone`, `did`, `x509`, `jwk`, `vat`,
+        `lei`, `tin`, `passport`, `url`, and `jwks_url`. A `jwk` identifier stores a canonical
+        public JWK JSON value. Tenants may allow additional values.
+      example: email
+
+    IdentifierProtectionMode:
+      type: string
+      description: |
+        Protection mode applied to the identifier value. Protected identifiers
+        can still be matched without exposing the original value in ordinary API
+        responses.
+      enum:
+        - plaintext
+        - searchableEncrypted
+        - searchableBlindIndex
+        - saltedBlinded
+      example: searchableEncrypted
+
+    IdentityIdentifierValueMode:
+      type: string
+      description: |
+        Value representation to return for identifier reads. `lookup` returns
+        the matching key representation, `masked` returns a display-safe value,
+        and `revealed` returns the readable value only when the caller is
+        authorized and policy permits reveal.
+      enum:
+        - lookup
+        - masked
+        - revealed
+      default: revealed
+      example: masked
+
+    Identity:
+      type: object
+      description: |
+        Identity record used as the stable subject for credential, login, and
+        identifier matching flows. An identity may exist without public profile
+        data and may optionally include identifiers when requested.
+      required:
+        - partyId
+        - tenantId
+        - identityRole
+        - isDefault
+        - privacyMode
+        - createdAt
+        - updatedAt
+      properties:
+        partyId:
+          type: string
+          format: uuid
+          description: Stable identity ID.
+          example: "4c7e79f0-9f6d-4a38-8455-6e0b3f4f5a10"
+        tenantId:
+          type: string
+          description: Tenant that owns the identity.
+          example: "tenant-acme"
+        identityRole:
+          $ref: '#/components/schemas/IdentityRole'
+        isDefault:
+          type: boolean
+          description: Whether this is the tenant's default identity for its role or owner.
+          example: false
+        specializationSubtype:
+          type: string
+          nullable: true
+          description: Optional business-role specialization, such as `employee` or `customer`.
+          example: employee
+        privacyMode:
+          $ref: '#/components/schemas/IdentityPrivacyMode'
+        createdAt:
+          type: string
+          format: date-time
+          example: "2026-06-18T09:15:00Z"
+        createdById:
+          type: string
+          format: uuid
+          nullable: true
+          example: "8f4ac7fb-9862-4a15-a164-053bf4a3cf12"
+        updatedAt:
+          type: string
+          format: date-time
+          example: "2026-06-18T09:15:00Z"
+        updatedById:
+          type: string
+          format: uuid
+          nullable: true
+          example: "8f4ac7fb-9862-4a15-a164-053bf4a3cf12"
+        deletedAt:
+          type: string
+          format: date-time
+          nullable: true
+          example: null
+        deletedById:
+          type: string
+          format: uuid
+          nullable: true
+          example: null
+        identityIdentifiers:
+          type: array
+          nullable: true
+          description: Identifiers attached to the identity when `includeIdentityIdentifiers=true`.
+          items:
+            $ref: '#/components/schemas/IdentityIdentifier'
+        partyBindings:
+          type: array
+          nullable: true
+          description: Party bindings when requested by APIs that expose binding expansion.
+          items:
+            $ref: '#/components/schemas/IdentityPartyBinding'
+      example:
+        partyId: "4c7e79f0-9f6d-4a38-8455-6e0b3f4f5a10"
+        tenantId: "tenant-acme"
+        identityRole: "holder"
+        isDefault: false
+        specializationSubtype: "employee"
+        privacyMode: "identifierOnly"
+        createdAt: "2026-06-18T09:15:00Z"
+        createdById: "8f4ac7fb-9862-4a15-a164-053bf4a3cf12"
+        updatedAt: "2026-06-18T09:15:00Z"
+        updatedById: "8f4ac7fb-9862-4a15-a164-053bf4a3cf12"
+        deletedAt: null
+        deletedById: null
+        identityIdentifiers: null
+        partyBindings: null
+
+    IdentityCreateRequest:
+      type: object
+      description: Create a new identity.
+      required:
+        - identityRole
+      properties:
+        partyId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Optional caller-provided identity ID. Omit to let the service assign one.
+          example: "4c7e79f0-9f6d-4a38-8455-6e0b3f4f5a10"
+        identityRole:
+          $ref: '#/components/schemas/IdentityRole'
+        isDefault:
+          type: boolean
+          description: Mark this identity as the default for its role or owner.
+          default: false
+          example: false
+        ownerId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Optional owner Party ID when this identity belongs to a person or organization.
+          example: "0c868ec0-0715-48a9-9908-851d78b742c8"
+        privacyMode:
+          $ref: '#/components/schemas/IdentityPrivacyMode'
+        specializationSubtype:
+          type: string
+          nullable: true
+          description: Optional role specialization for the identity.
+          example: employee
+      example:
+        identityRole: "holder"
+        isDefault: false
+        ownerId: "0c868ec0-0715-48a9-9908-851d78b742c8"
+        privacyMode: "identifierOnly"
+        specializationSubtype: "employee"
+
+    IdentityUpdateRequest:
+      type: object
+      description: |
+        Update mutable identity settings. Fields set to `null` are ignored by
+        the current API; send only values that should change.
+      required:
+        - partyId
+      properties:
+        partyId:
+          type: string
+          format: uuid
+          description: Identity ID being updated.
+          example: "4c7e79f0-9f6d-4a38-8455-6e0b3f4f5a10"
+        identityRole:
+          allOf:
+            - $ref: '#/components/schemas/IdentityRole'
+          type: string
+          nullable: true
+        isDefault:
+          type: boolean
+          nullable: true
+          example: true
+        privacyMode:
+          allOf:
+            - $ref: '#/components/schemas/IdentityPrivacyMode'
+          type: string
+          nullable: true
+      example:
+        partyId: "4c7e79f0-9f6d-4a38-8455-6e0b3f4f5a10"
+        isDefault: true
+        privacyMode: "partyPublicOnly"
+
+    IdentityPageResponse:
+      type: object
+      description: Paginated identity list response.
+      required:
+        - data
+        - pagination
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Identity'
+        pagination:
+          $ref: './common-components.yml#/components/schemas/PageMeta'
+      example:
+        data:
+          - partyId: "4c7e79f0-9f6d-4a38-8455-6e0b3f4f5a10"
+            tenantId: "tenant-acme"
+            identityRole: "holder"
+            isDefault: false
+            specializationSubtype: "employee"
+            privacyMode: "identifierOnly"
+            createdAt: "2026-06-18T09:15:00Z"
+            createdById: "8f4ac7fb-9862-4a15-a164-053bf4a3cf12"
+            updatedAt: "2026-06-18T09:15:00Z"
+            updatedById: "8f4ac7fb-9862-4a15-a164-053bf4a3cf12"
+            deletedAt: null
+            deletedById: null
+            identityIdentifiers: null
+            partyBindings: null
+        pagination:
+          limit: 20
+          offset: 0
+          page: 0
+          size: 20
+          total: 1
+          totalPages: 1
+          hasMore: false
+
+    IdentityIdentifier:
+      type: object
+      description: |
+        Identifier attached to an identity. The `value` field follows the
+        requested `valueMode`; ordinary list/read calls should use `masked`
+        unless the caller explicitly needs lookup or revealed material.
+      required:
+        - id
+        - identityId
+        - tenantId
+        - identifierType
+        - value
+        - isPrimary
+        - isVerified
+        - validFrom
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Identifier ID.
+          example: "6c36e57d-2c46-4a53-a8ff-b60e47f97f11"
+        identityId:
+          type: string
+          format: uuid
+          description: Identity this identifier belongs to.
+          example: "4c7e79f0-9f6d-4a38-8455-6e0b3f4f5a10"
+        tenantId:
+          type: string
+          description: Tenant that owns the identifier.
+          example: "tenant-acme"
+        identifierType:
+          $ref: '#/components/schemas/IdentifierType'
+        value:
+          type: string
+          description: Identifier value representation selected by `valueMode`.
+          example: "a***@example.com"
+        protectionMode:
+          allOf:
+            - $ref: '#/components/schemas/IdentifierProtectionMode'
+          type: string
+          nullable: true
+        isPrimary:
+          type: boolean
+          description: Whether this is the primary identifier of its type for the identity.
+          example: true
+        isVerified:
+          type: boolean
+          description: Whether the identifier has been verified.
+          example: true
+        verifiedAt:
+          type: string
+          format: date-time
+          nullable: true
+          example: "2026-06-18T09:16:00Z"
+        validFrom:
+          type: string
+          format: date-time
+          example: "2026-06-18T09:15:00Z"
+        validUntil:
+          type: string
+          format: date-time
+          nullable: true
+          example: null
+        createdAt:
+          type: string
+          format: date-time
+          example: "2026-06-18T09:15:00Z"
+        createdById:
+          type: string
+          format: uuid
+          nullable: true
+          example: "8f4ac7fb-9862-4a15-a164-053bf4a3cf12"
+        updatedAt:
+          type: string
+          format: date-time
+          example: "2026-06-18T09:16:00Z"
+        updatedById:
+          type: string
+          format: uuid
+          nullable: true
+          example: "8f4ac7fb-9862-4a15-a164-053bf4a3cf12"
+        deletedAt:
+          type: string
+          format: date-time
+          nullable: true
+          example: null
+        deletedById:
+          type: string
+          format: uuid
+          nullable: true
+          example: null
+        x509Extension:
+          allOf:
+            - $ref: '#/components/schemas/X509ExtensionData'
+          type: object
+          nullable: true
+        registrationExtension:
+          allOf:
+            - $ref: '#/components/schemas/RegistrationExtensionData'
+          type: object
+          nullable: true
+        electronicExtension:
+          allOf:
+            - $ref: '#/components/schemas/ElectronicExtensionData'
+          type: object
+          nullable: true
+      example:
+        id: "6c36e57d-2c46-4a53-a8ff-b60e47f97f11"
+        identityId: "4c7e79f0-9f6d-4a38-8455-6e0b3f4f5a10"
+        tenantId: "tenant-acme"
+        identifierType: "email"
+        value: "a***@example.com"
+        protectionMode: "searchableEncrypted"
+        isPrimary: true
+        isVerified: true
+        verifiedAt: "2026-06-18T09:16:00Z"
+        validFrom: "2026-06-18T09:15:00Z"
+        validUntil: null
+        createdAt: "2026-06-18T09:15:00Z"
+        createdById: "8f4ac7fb-9862-4a15-a164-053bf4a3cf12"
+        updatedAt: "2026-06-18T09:16:00Z"
+        updatedById: "8f4ac7fb-9862-4a15-a164-053bf4a3cf12"
+        deletedAt: null
+        deletedById: null
+        x509Extension: null
+        registrationExtension: null
+        electronicExtension:
+          scheme: "email"
+          endpointUrl: "mailto:alice@example.com"
+          transportProfile: null
+          documentTypes: null
+          serviceMetadataUrl: null
+
+    IdentityIdentifierCreateRequest:
+      type: object
+      description: |
+        Create an identifier from a raw value. The API accepts the value the
+        user or upstream system knows, such as an email address, phone number,
+        DID, VAT number, LEI, or certificate subject identifier.
+      required:
+        - identifierType
+        - rawValue
+        - validFrom
+      properties:
+        id:
+          type: string
+          format: uuid
+          nullable: true
+          description: Optional identifier ID. Omit to let the service assign one.
+          example: "6c36e57d-2c46-4a53-a8ff-b60e47f97f11"
+        identifierType:
+          $ref: '#/components/schemas/IdentifierType'
+        rawValue:
+          type: string
+          description: Raw identifier value supplied by the caller.
+          example: "alice@example.com"
+        isPrimary:
+          type: boolean
+          description: Mark this as the primary identifier of this type for the identity.
+          default: false
+          example: true
+        isVerified:
+          type: boolean
+          description: Mark the identifier as already verified.
+          default: false
+          example: false
+        verifiedAt:
+          type: string
+          format: date-time
+          nullable: true
+          example: null
+        validFrom:
+          type: string
+          format: date-time
+          example: "2026-06-18T09:15:00Z"
+        validUntil:
+          type: string
+          format: date-time
+          nullable: true
+          example: null
+        x509Extension:
+          allOf:
+            - $ref: '#/components/schemas/IdentifierX509CreateInput'
+          type: object
+          nullable: true
+        registrationExtension:
+          allOf:
+            - $ref: '#/components/schemas/IdentifierRegistrationCreateInput'
+          type: object
+          nullable: true
+        electronicExtension:
+          allOf:
+            - $ref: '#/components/schemas/IdentifierElectronicCreateInput'
+          type: object
+          nullable: true
+      example:
+        identifierType: "email"
+        rawValue: "alice@example.com"
+        isPrimary: true
+        isVerified: false
+        verifiedAt: null
+        validFrom: "2026-06-18T09:15:00Z"
+        validUntil: null
+        electronicExtension:
+          electronicType: "work"
+          label: "Work email"
+
+    IdentityIdentifierUpdateRequest:
+      type: object
+      description: |
+        Update mutable identifier metadata. The identifier value itself is not
+        changed through this endpoint; create a new identifier when the actual
+        value changes.
+      required:
+        - id
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Identifier ID being updated.
+          example: "6c36e57d-2c46-4a53-a8ff-b60e47f97f11"
+        isPrimary:
+          type: boolean
+          nullable: true
+          example: true
+        isVerified:
+          type: boolean
+          nullable: true
+          example: true
+        verifiedAt:
+          type: string
+          format: date-time
+          nullable: true
+          example: "2026-06-18T09:16:00Z"
+        validUntil:
+          type: string
+          format: date-time
+          nullable: true
+          example: null
+      example:
+        id: "6c36e57d-2c46-4a53-a8ff-b60e47f97f11"
+        isPrimary: true
+        isVerified: true
+        verifiedAt: "2026-06-18T09:16:00Z"
+        validUntil: null
+
+    IdentityIdentifierListResponse:
+      type: object
+      description: List response for identity identifiers.
+      required:
+        - data
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/IdentityIdentifier'
+      example:
+        data:
+          - id: "6c36e57d-2c46-4a53-a8ff-b60e47f97f11"
+            identityId: "4c7e79f0-9f6d-4a38-8455-6e0b3f4f5a10"
+            tenantId: "tenant-acme"
+            identifierType: "email"
+            value: "a***@example.com"
+            protectionMode: "searchableEncrypted"
+            isPrimary: true
+            isVerified: true
+            verifiedAt: "2026-06-18T09:16:00Z"
+            validFrom: "2026-06-18T09:15:00Z"
+            validUntil: null
+            createdAt: "2026-06-18T09:15:00Z"
+            createdById: "8f4ac7fb-9862-4a15-a164-053bf4a3cf12"
+            updatedAt: "2026-06-18T09:16:00Z"
+            updatedById: "8f4ac7fb-9862-4a15-a164-053bf4a3cf12"
+            deletedAt: null
+            deletedById: null
+            x509Extension: null
+            registrationExtension: null
+            electronicExtension:
+              scheme: "email"
+              endpointUrl: "mailto:alice@example.com"
+              transportProfile: null
+              documentTypes: null
+              serviceMetadataUrl: null
+
+    IdentifierX509CreateInput:
+      type: object
+      description: Additional certificate data for `x509` identifiers.
+      properties:
+        issuerDn:
+          type: string
+          nullable: true
+          example: "CN=Example Issuing CA,O=Example Trust Services,C=NL"
+        subjectDn:
+          type: string
+          nullable: true
+          example: "CN=Acme Signing Certificate,O=Acme B.V.,C=NL"
+        serialNumber:
+          type: string
+          nullable: true
+          example: "4F2A9B"
+        certificatePem:
+          type: string
+          nullable: true
+          example: "-----BEGIN CERTIFICATE-----\nMIIB...\n-----END CERTIFICATE-----"
+        notBefore:
+          type: string
+          format: date-time
+          nullable: true
+          example: "2026-01-01T00:00:00Z"
+        notAfter:
+          type: string
+          format: date-time
+          nullable: true
+          example: "2027-01-01T00:00:00Z"
+
+    IdentifierRegistrationCreateInput:
+      type: object
+      description: Additional registration data for business identifiers such as VAT, LEI, or local company numbers.
+      required:
+        - registrationType
+      properties:
+        registrationType:
+          type: string
+          example: "VAT"
+        issuingAuthority:
+          type: string
+          nullable: true
+          example: "EU VAT Information Exchange System"
+        jurisdictionCountry:
+          type: string
+          nullable: true
+          description: ISO 3166-1 alpha-2 country code.
+          example: "NL"
+
+    IdentifierElectronicCreateInput:
+      type: object
+      description: Additional address metadata for electronic identifiers such as email, phone, or URL.
+      required:
+        - electronicType
+      properties:
+        electronicType:
+          type: string
+          example: "work"
+        label:
+          type: string
+          nullable: true
+          example: "Work email"
+
+    X509ExtensionData:
+      type: object
+      description: Certificate data returned when X.509 extension expansion is requested.
+      properties:
+        issuerDn:
+          type: string
+          nullable: true
+          example: "CN=Example Issuing CA,O=Example Trust Services,C=NL"
+        subjectDn:
+          type: string
+          nullable: true
+          example: "CN=Acme Signing Certificate,O=Acme B.V.,C=NL"
+        serialNumber:
+          type: string
+          nullable: true
+          example: "4F2A9B"
+        certificatePem:
+          type: string
+          nullable: true
+          example: "-----BEGIN CERTIFICATE-----\nMIIB...\n-----END CERTIFICATE-----"
+        notBefore:
+          type: string
+          format: date-time
+          nullable: true
+          example: "2026-01-01T00:00:00Z"
+        notAfter:
+          type: string
+          format: date-time
+          nullable: true
+          example: "2027-01-01T00:00:00Z"
+
+    RegistrationExtensionData:
+      type: object
+      description: Registration metadata returned when registration extension expansion is requested.
+      properties:
+        authority:
+          type: string
+          nullable: true
+          example: "GLEIF"
+        countryCode:
+          type: string
+          nullable: true
+          example: "NL"
+        registrationDate:
+          type: string
+          format: date-time
+          nullable: true
+          example: "2024-01-01T00:00:00Z"
+        expirationDate:
+          type: string
+          format: date-time
+          nullable: true
+          example: null
+        status:
+          type: string
+          nullable: true
+          example: "ACTIVE"
+
+    ElectronicExtensionData:
+      type: object
+      description: Electronic address metadata returned when electronic extension expansion is requested.
+      properties:
+        scheme:
+          type: string
+          nullable: true
+          example: "email"
+        endpointUrl:
+          type: string
+          format: uri
+          nullable: true
+          example: "mailto:alice@example.com"
+        transportProfile:
+          type: string
+          nullable: true
+          example: null
+        documentTypes:
+          type: array
+          nullable: true
+          items:
+            type: string
+          example: null
+        serviceMetadataUrl:
+          type: string
+          format: uri
+          nullable: true
+          example: null
+
+    IdentityPartyBinding:
+      type: object
+      description: |
+        Optional binding between an identity and a Party record. Returned only
+        by APIs that explicitly include Party binding expansion.
+      additionalProperties: true
+      example:
+        identityId: "4c7e79f0-9f6d-4a38-8455-6e0b3f4f5a10"
+        partyId: "0c868ec0-0715-48a9-9908-851d78b742c8"
+        partyType: "natural_person"
+        bindingType: "owner"
+        validFrom: "2026-06-18T09:15:00Z"
+        validUntil: null

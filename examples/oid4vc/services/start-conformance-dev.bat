@@ -67,7 +67,11 @@ if defined COMPOSE_PROFILE_ARGS if not "!COMPOSE_PROFILE_ARGS!"=="" echo PROFILE
 
 REM Resolve IDK_VERSION from IDK gradle.properties.
 for %%d in ("%~dp0..\..\..") do set "IDK_ROOT=%%~fd"
-for /f "tokens=2 delims==" %%v in ('findstr /b /c:"version=" "%IDK_ROOT%\gradle.properties"') do set IDK_VERSION=%%v
+if exist "%IDK_ROOT%\platform-version.properties" (
+    for /f "tokens=2 delims==" %%v in ('findstr /b /c:"platformVersion=" "%IDK_ROOT%\platform-version.properties"') do set IDK_VERSION=%%v
+) else (
+    for /f "tokens=2 delims==" %%v in ('findstr /b /c:"version=" "%IDK_ROOT%\gradle.properties"') do set IDK_VERSION=%%v
+)
 echo IDK_VERSION=%IDK_VERSION%
 echo Conformance dev mode: building from local IDK source at %IDK_ROOT%
 

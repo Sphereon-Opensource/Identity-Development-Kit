@@ -1,0 +1,660 @@
+openapi: 3.0.4
+info:
+  title: Credential Status List Management API
+  version: 0.1.0
+  description: |
+    Manage credential status lists for the IETF Token Status List and W3C Bitstring Status List
+    formats. The API creates, lists, fetches, and deletes lists, reads individual entries, and
+    updates a credential's status to revoke, suspend, or reactivate it.
+
+    The public, cacheable status-list token that verifiers resolve is served by the separate
+    Credential Status List Hosting API, so a deployment can host public status tokens without
+    exposing this management surface.
+servers:
+  - url: http://localhost:8080/api/statuslist/v1
+    description: Local development.
+security:
+  - bearer: []
+tags:
+  - name: Status List Management
+    description: Create, list, fetch, and update credential status lists and their entries.
+paths:
+  /statuslists:
+    post:
+      tags: [Status List Management]
+      summary: Create a credential status list
+      operationId: createStatusList
+      description: |
+        Creates a status-list definition and signs the initial empty token.
+        `correlationId` is the stable business key used by issuance bindings
+        and hosted URLs. The response includes the signed token; list endpoints
+        return summaries without the token.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateStatusListArgs'
+            examples:
+              createHostedStatusList:
+                $ref: '#/components/examples/CreateHostedStatusListRequest'
+              createMdocCwtStatusList:
+                $ref: '#/components/examples/CreateMdocCwtStatusListRequest'
+              createBitstringStatusListVcdm11:
+                $ref: '#/components/examples/CreateBitstringStatusListVcdm11Request'
+              createBitstringStatusListVcdm20:
+                $ref: '#/components/examples/CreateBitstringStatusListVcdm20Request'
+      responses:
+        '201':
+          description: Status list created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusListResult'
+              examples:
+                hostedStatusList:
+                  $ref: '#/components/examples/HostedStatusListResult'
+                hostedBitstringStatusList:
+                  $ref: '#/components/examples/HostedBitstringStatusListResult'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '409':
+          $ref: './common-components.yml#/components/responses/Conflict'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+    get:
+      tags: [Status List Management]
+      summary: List credential status lists
+      operationId: listStatusLists
+      description: |
+        Returns status-list summaries matching the optional filters. Pagination
+        uses `limit` and `offset`; `limit` is clamped to `[1, 100]` and defaults
+        to `20`. The default sort is `createdAt DESC`.
+      parameters:
+        - name: spec
+          in: query
+          description: Restrict to status lists of this specification.
+          schema:
+            $ref: '#/components/schemas/StatusListSpec'
+          example: token_status_list
+        - name: purpose
+          in: query
+          description: Restrict to status lists carrying this status purpose.
+          schema:
+            $ref: '#/components/schemas/StatusPurpose'
+          example: revocation
+        - name: correlationId
+          in: query
+          description: Restrict to the status list with this business correlation id.
+          schema:
+            type: string
+          example: "employee-revocation-2026"
+        - $ref: './common-components.yml#/components/parameters/Limit'
+        - $ref: './common-components.yml#/components/parameters/Offset'
+        - name: sort
+          in: query
+          description: Sort field. Values are parsed case-insensitively by field name.
+          schema:
+            type: string
+            enum:
+              - createdAt
+              - updatedAt
+              - correlationId
+            default: createdAt
+        - name: sortDirection
+          in: query
+          description: Sort direction.
+          schema:
+            type: string
+            enum:
+              - ASC
+              - DESC
+            default: DESC
+      responses:
+        '200':
+          description: Page of status list summaries.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusListSummaryPageResponse'
+              examples:
+                statusListSummaryPage:
+                  $ref: '#/components/examples/StatusListSummaryPage'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /statuslists/{id}:
+    parameters:
+      - $ref: '#/components/parameters/StatusListId'
+    get:
+      tags: [Status List Management]
+      summary: Get a credential status list by id
+      operationId: getStatusList
+      description: |
+        Fetches the full status-list record, including the signed token that
+        can be served by the hosting API.
+      responses:
+        '200':
+          description: The status list, including its signed, hostable token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusListResult'
+              example:
+                id: "sl-1"
+                correlationId: "employee-revocation-2026"
+                spec: "token_status_list"
+                purposes:
+                  - "revocation"
+                proofFormat: "jwt"
+                hostingMode: "hosted"
+                bitsPerStatus: 1
+                length: 131072
+                issuer: "did:web:issuer.example.com"
+                statusListUri: "https://issuer.example.com/public/statuslists/employee-revocation-2026"
+                signedToken: "eyJhbGciOiJFUzI1NiIsImtpZCI6ImV4YW1wbGUta2V5In0.eyJpc3MiOiJkaWQ6ZXhhbXBsZTppc3N1ZXIiLCJzdWIiOiJodHRwczovL2lzc3Vlci5leGFtcGxlLmNvbS9wdWJsaWMvc3RhdHVzbGlzdHMvZW1wbG95ZWUtcmV2b2NhdGlvbi0yMDI2IiwiaWF0IjoxNzAwMDAwMDAwLCJleHAiOjE3MDAwMDM2MDAsInN0YXR1c19saXN0Ijp7ImJpdHMiOjEsImxzdCI6ImVOcGpZQmdGb3dDakFBQSJ9fQ.example-signature"
+                contentType: "application/statuslist+jwt"
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+    delete:
+      tags: [Status List Management]
+      summary: Delete a credential status list
+      operationId: deleteStatusList
+      description: Soft-deletes the status list owned by the calling tenant and releases its hosted URL.
+      responses:
+        '204':
+          description: Status list deleted.
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /statuslists/{id}/status:
+    parameters:
+      - $ref: '#/components/parameters/StatusListId'
+    post:
+      tags: [Status List Management]
+      summary: Update a credential's status (revoke / suspend / reactivate)
+      operationId: updateCredentialStatus
+      description: |
+        Sets the status value of a single entry within the status list identified by `{id}`. Select
+        the entry by exactly one of `statusListIndex`, `entryCorrelationId`, or `credentialId`, and
+        set `value` to the new status (e.g. `1` = INVALID to revoke, `2` = SUSPENDED to suspend,
+        `0` = VALID to reactivate).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateCredentialStatusBody'
+            example:
+              credentialId: "urn:uuid:3b14b1a8-f9d2-4c38-8a0a-e2f2bdbf4c2d"
+              value: 1
+      responses:
+        '200':
+          description: The updated status-list entry.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusListEntry'
+              example:
+                statusListId: "sl-1"
+                statusListIndex: 42
+                entryCorrelationId: "employee-credential-42"
+                credentialId: "urn:uuid:3b14b1a8-f9d2-4c38-8a0a-e2f2bdbf4c2d"
+                credentialHash: null
+                value: 1
+                purpose: "revocation"
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /statuslists/{id}/entries/{index}:
+    parameters:
+      - $ref: '#/components/parameters/StatusListId'
+      - name: index
+        in: path
+        required: true
+        description: Zero-based status-list index of the entry.
+        schema:
+          type: integer
+          minimum: 0
+    get:
+      tags: [Status List Management]
+      summary: Get a single status-list entry by index
+      operationId: getStatusListEntry
+      description: |
+        Looks up one allocated entry by its status-list index. The optional `entryCorrelationId` and
+        `credentialId` query parameters narrow the lookup when the same index could be disambiguated
+        by business key.
+      parameters:
+        - name: entryCorrelationId
+          in: query
+          description: Optional business correlation id of the entry.
+          schema:
+            type: string
+        - name: credentialId
+          in: query
+          description: Optional credential id bound to the entry.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The status-list entry.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusListEntry'
+              example:
+                statusListId: "sl-1"
+                statusListIndex: 42
+                entryCorrelationId: "employee-credential-42"
+                credentialId: "urn:uuid:3b14b1a8-f9d2-4c38-8a0a-e2f2bdbf4c2d"
+                credentialHash: null
+                value: 0
+                purpose: "revocation"
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+components:
+  securitySchemes:
+    bearer:
+      $ref: './common-components.yml#/components/securitySchemes/bearer'
+
+  parameters:
+    # -- Re-exported path parameters from statuslist-management-components.yml --
+    StatusListId:
+      $ref: './statuslist-management-components.yml#/components/parameters/StatusListId'
+
+  examples:
+    CreateHostedStatusListRequest:
+      summary: Create a hosted revocation status list
+      value:
+        correlationId: "employee-revocation-2026"
+        spec: "token_status_list"
+        purposes:
+          - "revocation"
+        proofFormat: "jwt"
+        hostingMode: "hosted"
+        issuer: "did:web:issuer.example.com"
+        signingKeyMode: "did:web"
+        signingVerificationMethodId: "did:web:issuer.example.com#status-list-signing"
+        kmsResourceHandle: "krh_01234567890123456789"
+        kmsKeyAlias: "issuer-signing-example"
+        statusListUri: "https://issuer.example.com/public/statuslists/employee-revocation-2026"
+        length: 131072
+        bitsPerStatus: 1
+        ttlSeconds: 300
+    CreateMdocCwtStatusListRequest:
+      summary: Create an mdoc one-bit CWT status list
+      description: >-
+        The request selects the ISO/IEC 18013 mdoc `status_list` profile. The CWT itself is
+        generated with the tenant-owned key and is therefore not embedded as a static OpenAPI
+        example. For an mdoc CWT list, `validUntil` is required so the generated CWT has an
+        explicit expiry; choose a value that covers the intended publication window.
+      value:
+        correlationId: "mdoc-revocation"
+        spec: "token_status_list"
+        purposes:
+          - "revocation"
+        proofFormat: "cwt"
+        mdocProfile: "status_list"
+        hostingMode: "hosted"
+        issuer: "https://issuer.example.com"
+        signingKeyMode: "x5c"
+        kmsResourceHandle: "krh_example_mdoc_status"
+        kmsKeyAlias: "mdoc-status-signing"
+        statusListUri: "https://issuer.example.com/public/statuslists/mdoc-revocation"
+        length: 256
+        bitsPerStatus: 1
+        ttlSeconds: 300
+        validUntil: "2026-09-08T12:00:00Z"
+        aggregationUri: "https://issuer.example.com/public/statuslists/aggregate"
+    CreateBitstringStatusListVcdm11Request:
+      summary: Create a VCDM 1.1 W3C Bitstring Status List revocation list
+      description: >-
+        The VCDM version applies to the credential that references the list; the hosted list wire
+        representation remains vc+jwt.
+      value:
+        correlationId: "employee-vcdm-11-revocation"
+        spec: "bitstring_status_list"
+        purposes:
+          - "revocation"
+        proofFormat: "vc+jwt"
+        hostingMode: "hosted"
+        issuer: "did:web:issuer.example.com"
+        signingKeyMode: "did:web"
+        signingVerificationMethodId: "did:web:issuer.example.com#status-list-signing"
+        kmsResourceHandle: "krh_01234567890123456789"
+        kmsKeyAlias: "status-list-signing"
+        statusListUri: "https://issuer.example.com/public/statuslists/employee-vcdm-11-revocation"
+        length: 131072
+        bitsPerStatus: 1
+        ttlSeconds: 300
+    CreateBitstringStatusListVcdm20Request:
+      summary: Create a VCDM 2.0 W3C Bitstring Status List revocation list
+      description: >-
+        Use a separate list when the VCDM 2.0 credential population or verifier policy is
+        separate from VCDM 1.1.
+      value:
+        correlationId: "employee-vcdm-20-revocation"
+        spec: "bitstring_status_list"
+        purposes:
+          - "revocation"
+        proofFormat: "vc+jwt"
+        hostingMode: "hosted"
+        issuer: "did:web:issuer.example.com"
+        signingKeyMode: "did:web"
+        signingVerificationMethodId: "did:web:issuer.example.com#status-list-signing"
+        kmsResourceHandle: "krh_01234567890123456789"
+        kmsKeyAlias: "status-list-signing"
+        statusListUri: "https://issuer.example.com/public/statuslists/employee-vcdm-20-revocation"
+        length: 131072
+        bitsPerStatus: 1
+        ttlSeconds: 300
+    HostedStatusListResult:
+      summary: Hosted revocation status list
+      value:
+        id: "sl-1"
+        correlationId: "employee-revocation-2026"
+        spec: "token_status_list"
+        purposes:
+          - "revocation"
+        proofFormat: "jwt"
+        hostingMode: "hosted"
+        bitsPerStatus: 1
+        length: 131072
+        issuer: "did:web:issuer.example.com"
+        statusListUri: "https://issuer.example.com/public/statuslists/employee-revocation-2026"
+        signedToken: "eyJhbGciOiJFUzI1NiIsImtpZCI6ImV4YW1wbGUta2V5In0.eyJpc3MiOiJkaWQ6ZXhhbXBsZTppc3N1ZXIiLCJzdWIiOiJodHRwczovL2lzc3Vlci5leGFtcGxlLmNvbS9wdWJsaWMvc3RhdHVzbGlzdHMvZW1wbG95ZWUtcmV2b2NhdGlvbi0yMDI2IiwiaWF0IjoxNzAwMDAwMDAwLCJleHAiOjE3MDAwMDM2MDAsInN0YXR1c19saXN0Ijp7ImJpdHMiOjEsImxzdCI6ImVOcGpZQmdGb3dDakFBQSJ9fQ.example-signature"
+        contentType: "application/statuslist+jwt"
+    HostedBitstringStatusListResult:
+      summary: Hosted W3C Bitstring Status List VC-JWT
+      description: >-
+        The signedToken is a compact VC-JWT generated with the tenant-owned signing key. The
+        decoded credential contains a modern BitstringStatusListCredential with a
+        BitstringStatusList subject; credentials that reference it use BitstringStatusListEntry.
+      value:
+        id: "sl-vcdm-11"
+        correlationId: "employee-vcdm-11-revocation"
+        spec: "bitstring_status_list"
+        purposes:
+          - "revocation"
+        proofFormat: "vc+jwt"
+        hostingMode: "hosted"
+        bitsPerStatus: 1
+        length: 131072
+        issuer: "did:web:issuer.example.com"
+        statusListUri: "https://issuer.example.com/public/statuslists/employee-vcdm-11-revocation"
+        signedToken: "<compact-bitstring-status-list-vc-jwt>"
+        contentType: "application/vc+jwt"
+    StatusListSummaryPage:
+      summary: Page of status-list summaries
+      value:
+        data:
+          - id: "sl-1"
+            correlationId: "employee-revocation-2026"
+            spec: "token_status_list"
+            purposes:
+              - "revocation"
+            proofFormat: "jwt"
+            hostingMode: "hosted"
+            bitsPerStatus: 1
+            length: 131072
+            issuedCount: 3
+            remainingCapacity: 131069
+            createdAt: "2026-06-06T09:00:00Z"
+            updatedAt: "2026-06-06T09:00:00Z"
+        pagination:
+          limit: 20
+          offset: 0
+          page: 0
+          size: 20
+          total: 1
+          totalPages: 1
+          hasMore: false
+
+  schemas:
+    # -- Re-exported entity schemas and enums from statuslist-management-components.yml --
+    StatusListSpec:
+      $ref: './statuslist-management-components.yml#/components/schemas/StatusListSpec'
+
+    StatusProofFormat:
+      $ref: './statuslist-management-components.yml#/components/schemas/StatusProofFormat'
+
+    StatusPurpose:
+      $ref: './statuslist-management-components.yml#/components/schemas/StatusPurpose'
+
+    StatusListHostingMode:
+      $ref: './statuslist-management-components.yml#/components/schemas/StatusListHostingMode'
+
+    CreateStatusListArgs:
+      type: object
+      description: >-
+        Request to create a credential status list with an exact tenant-owned signing key. DID
+        signing also selects the exact assertionMethod verification method. X.509 signing uses the
+        certificate chain attached to the selected KMS key. Provider identifiers, key material,
+        and server file paths are not accepted.
+      required: [correlationId, spec, proofFormat, issuer, statusListUri, kmsKeyAlias]
+      example:
+        correlationId: "mdoc-revocation"
+        spec: "token_status_list"
+        purposes:
+          - "revocation"
+        proofFormat: "cwt"
+        mdocProfile: "status_list"
+        hostingMode: "hosted"
+        issuer: "https://issuer.example.com"
+        signingKeyMode: "x5c"
+        kmsResourceHandle: "krh_example_mdoc_status"
+        kmsKeyAlias: "mdoc-status-signing"
+        statusListUri: "https://issuer.example.com/public/statuslists/mdoc-revocation"
+        length: 256
+        bitsPerStatus: 1
+        ttlSeconds: 300
+        validUntil: "2026-09-08T12:00:00Z"
+        aggregationUri: "https://issuer.example.com/public/statuslists/aggregate"
+      properties:
+        correlationId:
+          type: string
+          description: Required, unique business key for the whole list.
+        spec:
+          $ref: '#/components/schemas/StatusListSpec'
+        purposes:
+          type: array
+          description: Status purposes the list serves (defaults to `[revocation]`).
+          items:
+            $ref: '#/components/schemas/StatusPurpose'
+        proofFormat:
+          $ref: '#/components/schemas/StatusProofFormat'
+        hostingMode:
+          allOf:
+            - $ref: '#/components/schemas/StatusListHostingMode'
+          description: Defaults to `hosted` when omitted.
+        issuer:
+          type: string
+          description: Issuer identifier embedded in the signed token.
+        signingKeyMode:
+          type: string
+          default: did:web
+          description: >-
+            Signing identity type. A did:<method> value requires signingVerificationMethodId. x5c
+            embeds the selected KMS key's certificate chain and emits no kid.
+        signingVerificationMethodId:
+          type: string
+          nullable: true
+          description: Exact assertionMethod DID URL. Required for DID signing and omitted for x5c.
+        kmsKeyAlias:
+          type: string
+          description: >-
+            Exact tenant-visible key alias holding the status list's signing key. This is the
+            ordinary way to name status-list signing material.
+        kmsResourceHandle:
+          type: string
+          nullable: true
+          description: >-
+            Opaque tenant-owned KMS resource handle holding the alias. Optional, and mutually
+            exclusive with kmsProviderId. With neither, the tenant's status-list KMS role binding
+            selects the resource.
+          pattern: '^krh_[A-Za-z0-9_-]+$'
+        kmsProviderId:
+          type: string
+          nullable: true
+          description: >-
+            KMS provider whose single usable resource holds the alias. Refused when that provider
+            has no usable resource, or more than one, in which case name the resource handle.
+        statusListUri:
+          type: string
+          format: uri
+          description: |
+            Public URI embedded into issued credential status claims. In `hosted` mode this is
+            the platform public URI. In `export` mode this is the external URI where the exported
+            signed token will be hosted.
+        length:
+          type: integer
+          description: Bit length of the list (defaults to 131072).
+        bitsPerStatus:
+          type: integer
+          description: Bits per status entry (defaults to 1).
+        ttlSeconds:
+          type: integer
+          format: int64
+          nullable: true
+          description: Cache TTL hint for the hosted token.
+        validFrom:
+          type: string
+          format: date-time
+          nullable: true
+        validUntil:
+          type: string
+          format: date-time
+          nullable: true
+          description: Required for an mdoc CWT status list; becomes the CWT expiry (`exp`).
+        mdocProfile:
+          $ref: './statuslist-management-components.yml#/components/schemas/MdocStatusListProfile'
+        aggregationUri:
+          type: string
+          format: uri
+          nullable: true
+          description: Optional ISO mdoc aggregation URI carried in the status reference.
+
+    StatusListResult:
+      type: object
+      description: Full result of creating or fetching a status list, including the signed, hostable token.
+      required:
+        - id
+        - correlationId
+        - spec
+        - purposes
+        - proofFormat
+        - hostingMode
+        - bitsPerStatus
+        - length
+        - issuer
+        - statusListUri
+        - signedToken
+        - contentType
+      properties:
+        id:
+          type: string
+        correlationId:
+          type: string
+        spec:
+          $ref: '#/components/schemas/StatusListSpec'
+        purposes:
+          type: array
+          items:
+            $ref: '#/components/schemas/StatusPurpose'
+        proofFormat:
+          $ref: '#/components/schemas/StatusProofFormat'
+        hostingMode:
+          $ref: '#/components/schemas/StatusListHostingMode'
+        bitsPerStatus:
+          type: integer
+        length:
+          type: integer
+        issuer:
+          type: string
+        statusListUri:
+          type: string
+          format: uri
+        signedToken:
+          type: string
+          description: The signed status-list token (compact JWS / CWT / VC-JWT).
+        contentType:
+          type: string
+          description: Media type of the signed token.
+        validUntil:
+          type: string
+          format: date-time
+          nullable: true
+          description: Persisted expiry used as the mdoc CWT `exp` claim when an mdoc profile is configured.
+        mdocProfile:
+          $ref: './statuslist-management-components.yml#/components/schemas/MdocStatusListProfile'
+        aggregationUri:
+          type: string
+          format: uri
+          nullable: true
+
+    StatusListSummary:
+      $ref: './statuslist-management-components.yml#/components/schemas/StatusListSummary'
+
+    StatusListEntry:
+      $ref: './statuslist-management-components.yml#/components/schemas/StatusListEntry'
+
+    UpdateCredentialStatusBody:
+      type: object
+      description: |
+        Selects one entry (by exactly one of `statusListIndex`, `entryCorrelationId`, or
+        `credentialId`) and sets its new status `value`. The status-list id is carried by the URL.
+      required: [value]
+      properties:
+        statusListIndex:
+          type: integer
+          nullable: true
+        entryCorrelationId:
+          type: string
+          nullable: true
+        credentialId:
+          type: string
+          nullable: true
+        value:
+          type: integer
+          description: New status value (e.g. 1 = INVALID to revoke, 2 = SUSPENDED to suspend, 0 = VALID to reactivate).
+
+    StatusListSummaryPageResponse:
+      type: object
+      description: Paginated envelope around a page of status list summaries.
+      required: [data, pagination]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/StatusListSummary'
+        pagination:
+          $ref: './common-components.yml#/components/schemas/PageMeta'

@@ -15,8 +15,8 @@ import com.sphereon.crypto.core.jose.Jwk
 import com.sphereon.crypto.core.jose.JwkUse
 import com.sphereon.crypto.core.kms.asKeyManagerServiceGraph
 import com.sphereon.crypto.resolution.extern.ExternalIdentifierDidOpts
-import com.sphereon.did.methods.jwk.JwkDidProviderImpl
 import com.sphereon.did.capabilities.DidMethodCapabilities
+import com.sphereon.did.methods.jwk.JwkDidProviderImpl
 import com.sphereon.did.models.DidDocument
 import com.sphereon.did.models.VerificationMethod
 import com.sphereon.did.models.VerificationMethodOrReference
@@ -30,22 +30,21 @@ import com.sphereon.did.resolver.DidResolutionResult
 import com.sphereon.did.resolver.DidResolver
 import com.sphereon.did.resolver.DidResolverRegistry
 import com.sphereon.did.resolver.impl.DidExternalIdentifierResolutionService
+import com.sphereon.oauth2.common.model.AuthorizationResponse
 import com.sphereon.openid.oid4vc.common.CredentialFormat
 import com.sphereon.openid.oid4vci.common.model.CredentialConfigurationSupported
 import com.sphereon.openid.oid4vci.common.model.CredentialDefinition
 import com.sphereon.openid.oid4vci.common.model.CredentialRequest
+import com.sphereon.openid.oid4vci.issuer.format.CredentialFormatHandler
 import com.sphereon.openid.oid4vci.issuer.format.IssuanceContext
 import com.sphereon.openid.oid4vci.issuer.format.SigningKeyMode
-import com.sphereon.openid.oid4vci.issuer.format.CredentialFormatHandler
-import com.sphereon.openid.oid4vci.issuer.impl.format.JwtVcJsonFormatHandler
-import com.sphereon.openid.oid4vci.issuer.impl.format.VcLdJsonJwtFormatHandler
 import com.sphereon.openid.oid4vci.issuer.impl.signing.IssuerKeyIdResolver
 import com.sphereon.openid.oid4vp.common.ClientIdScheme
 import com.sphereon.openid.oid4vp.common.ClientMetadata
 import com.sphereon.openid.oid4vp.common.ResponseMode
 import com.sphereon.openid.oid4vp.common.VpToken
-import com.sphereon.openid.oid4vp.common.vpToken
 import com.sphereon.openid.oid4vp.common.jwtVcFormatInfo
+import com.sphereon.openid.oid4vp.common.vpToken
 import com.sphereon.openid.oid4vp.dcql.DcqlCredentialQuery
 import com.sphereon.openid.oid4vp.dcql.DcqlQuery
 import com.sphereon.openid.oid4vp.dcql.w3cVcMeta
@@ -58,13 +57,13 @@ import com.sphereon.openid.oid4vp.holder.VerifierInfo
 import com.sphereon.openid.oid4vp.verifier.CreateAuthorizationRequestArgs
 import com.sphereon.openid.oid4vp.verifier.Oid4vpVerifierService
 import com.sphereon.openid.oid4vp.verifier.ParseAuthorizationResponseArgs
-import com.sphereon.openid.oid4vp.verifier.TrustedAuthenticationResolution
 import com.sphereon.openid.oid4vp.verifier.TrustedAuthenticationPurpose
+import com.sphereon.openid.oid4vp.verifier.TrustedAuthenticationResolution
 import com.sphereon.openid.oid4vp.verifier.ValidateAuthorizationResponseArgs
-import com.sphereon.oauth2.common.model.AuthorizationResponse
 import com.sphereon.wallet.unit.SecureComponentUsage
-import dev.zacsweers.metro.ContributesTo
+import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.ContributesIntoSet
+import dev.zacsweers.metro.ContributesTo
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
@@ -80,19 +79,23 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
+import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 /** Production format handler, DID resolver, holder, and verifier services used by this E2E. */
 @ContributesTo(com.sphereon.di.session.SessionScope::class)
 interface VcdmJwtDidTestGraph {
-    val jwtVcJsonFormatHandler: JwtVcJsonFormatHandler
-    val vcLdJsonJwtFormatHandler: VcLdJsonJwtFormatHandler
+    val credentialFormatHandlers: Set<CredentialFormatHandler>
+    val jwtVcJsonFormatHandler: CredentialFormatHandler
+        get() = credentialFormatHandlers.single { it.supportedFormat == CredentialFormat.JWT_VC_JSON.value }
+    val vcLdJsonJwtFormatHandler: CredentialFormatHandler
+        get() = credentialFormatHandlers.single { it.supportedFormat == CredentialFormat.JWT_VC_JSON_LD.value }
     val oid4vpHolder: Oid4vpHolder
     val oid4vpVerifierService: Oid4vpVerifierService
     val issuerKeyIdResolver: IssuerKeyIdResolver
     val didResolverRegistry: DidResolverRegistry
     val didExternalIdentifierResolutionService: DidExternalIdentifierResolutionService
-    val deactivatedDidResolver: DeactivatedDidResolver
+    val deactivatedDidResolver: DeactivatedDidResolverRegistration
 }
 
 /**
@@ -101,19 +104,35 @@ interface VcdmJwtDidTestGraph {
  * deactivated. This keeps the negative vector on the production DID resolver and OID4VP
  * verifier paths instead of substituting a different key or bypassing resolution.
  */
+interface DeactivatedDidResolverRegistration {
+    fun register(
+        did: String,
+        publicJwk: Jwk
+    )
+}
+
 @Inject
 @SingleIn(com.sphereon.di.session.SessionScope::class)
+@ContributesBinding(
+    com.sphereon.di.session.SessionScope::class,
+    binding = binding<DeactivatedDidResolverRegistration>(),
+)
 @ContributesIntoSet(
     com.sphereon.di.session.SessionScope::class,
     binding = binding<DidResolver>(),
 )
-class DeactivatedDidResolver : DidResolver {
+class DeactivatedDidResolver :
+    DidResolver,
+    DeactivatedDidResolverRegistration {
     private val keys = mutableMapOf<String, Jwk>()
 
     override val supportedMethods: List<String> = listOf(METHOD)
     override val capabilities: DidMethodCapabilities = DidMethodCapabilities.WEB.copy(method = METHOD)
 
-    fun register(did: String, publicJwk: Jwk) {
+    override fun register(
+        did: String,
+        publicJwk: Jwk
+    ) {
         check(did.startsWith("did:$METHOD:")) { "unexpected deactivated DID: $did" }
         keys[did] = publicJwk
     }
@@ -122,25 +141,29 @@ class DeactivatedDidResolver : DidResolver {
         did: String,
         options: DidResolutionOptions,
     ): com.sphereon.core.api.IdkResult<DidResolutionResult, com.sphereon.core.api.error.IdkError> {
-        val jwk = keys[did]
-            ?: return com.sphereon.core.api.Err(
-                com.sphereon.core.api.error.IdkError.NOT_FOUND_ERROR(message = "No fixture key registered for $did"),
-            )
+        val jwk =
+            keys[did]
+                ?: return com.sphereon.core.api.Err(
+                    com.sphereon.core.api.error.IdkError
+                        .NOT_FOUND_ERROR(message = "No fixture key registered for $did"),
+                )
         val vmId = "$did#0"
-        val vm = VerificationMethod(
-            id = vmId,
-            type = VerificationMethodType.JSON_WEB_KEY_2020.value,
-            controller = did,
-            publicKeyJwk = jwk,
-        )
-        val document = DidDocument(
-            id = did,
-            verificationMethod = listOf(vm),
-            authentication = listOf(VerificationMethodOrReference.fromReference(vmId)),
-            assertionMethod = listOf(VerificationMethodOrReference.fromReference(vmId)),
-            capabilityInvocation = listOf(VerificationMethodOrReference.fromReference(vmId)),
-            capabilityDelegation = listOf(VerificationMethodOrReference.fromReference(vmId)),
-        )
+        val vm =
+            VerificationMethod(
+                id = vmId,
+                type = VerificationMethodType.JSON_WEB_KEY_2020.value,
+                controller = did,
+                publicKeyJwk = jwk,
+            )
+        val document =
+            DidDocument(
+                id = did,
+                verificationMethod = listOf(vm),
+                authentication = listOf(VerificationMethodOrReference.fromReference(vmId)),
+                assertionMethod = listOf(VerificationMethodOrReference.fromReference(vmId)),
+                capabilityInvocation = listOf(VerificationMethodOrReference.fromReference(vmId)),
+                capabilityDelegation = listOf(VerificationMethodOrReference.fromReference(vmId)),
+            )
         return com.sphereon.core.api.Ok(
             DidResolutionResult(
                 didDocument = document,
@@ -156,7 +179,8 @@ class DeactivatedDidResolver : DidResolver {
         options: DidDereferenceOptions,
     ): com.sphereon.core.api.IdkResult<DidDereferenceResult, com.sphereon.core.api.error.IdkError> =
         com.sphereon.core.api.Err(
-            com.sphereon.core.api.error.IdkError.NOT_FOUND_ERROR(message = "Fixture does not dereference $didUrl"),
+            com.sphereon.core.api.error.IdkError
+                .NOT_FOUND_ERROR(message = "Fixture does not dereference $didUrl"),
         )
 
     private companion object {
@@ -213,44 +237,49 @@ class VcdmJwtDidIssuePresentVerifyE2ETest {
     @Test
     fun wrongOrUnresolvedDidKeysAndWrongVpBindingAreRejected() =
         runTest {
-            val flow = createFlow("did-vcdm-negative")
+            var flow = createFlow("did-vcdm-negative-wrong-issuer")
             val unrelatedKey = generateKey("did-vcdm-negative-unrelated")
             val unrelatedVm = didVerificationMethod(unrelatedKey.alias)
 
-            val wrongIssuer = validate(
-                flow,
-                listOf(
-                    TrustedAuthenticationResolution(
-                        controller = flow.issuerDid,
-                        identifier = ExternalIdentifierDidOpts(unrelatedVm),
-                        purpose = TrustedAuthenticationPurpose.CREDENTIAL_ISSUER,
+            val wrongIssuer =
+                validate(
+                    flow,
+                    listOf(
+                        TrustedAuthenticationResolution(
+                            controller = flow.issuerDid,
+                            identifier = ExternalIdentifierDidOpts(unrelatedVm),
+                            purpose = TrustedAuthenticationPurpose.CREDENTIAL_ISSUER,
+                        ),
+                        holderTrust(flow),
                     ),
-                    holderTrust(flow),
-                ),
-            )
+                )
             assertTrue(wrongIssuer.isOk, "wrong issuer DID validation should return a result: ${if (wrongIssuer.isErr) wrongIssuer.error else ""}")
             assertFalse(wrongIssuer.value.valid, "an issuer DID resolving to an unrelated key must fail")
 
-            val unresolvedHolder = validate(
-                flow,
-                listOf(
-                    issuerTrust(flow),
-                    TrustedAuthenticationResolution(
-                        controller = flow.holderDid,
-                        identifier = ExternalIdentifierDidOpts("did:unknown:unresolved-holder"),
-                        purpose = TrustedAuthenticationPurpose.HOLDER,
+            flow = createFlow("did-vcdm-negative-unresolved-holder")
+            val unresolvedHolder =
+                validate(
+                    flow,
+                    listOf(
+                        issuerTrust(flow),
+                        TrustedAuthenticationResolution(
+                            controller = flow.holderDid,
+                            identifier = ExternalIdentifierDidOpts("did:unknown:unresolved-holder"),
+                            purpose = TrustedAuthenticationPurpose.HOLDER,
+                        ),
                     ),
-                ),
-            )
+                )
             assertTrue(unresolvedHolder.isOk, "unresolved holder DID validation should return a result: ${if (unresolvedHolder.isErr) unresolvedHolder.error else ""}")
             assertFalse(unresolvedHolder.value.valid, "an unresolved holder DID must fail closed")
 
+            flow = createFlow("did-vcdm-negative-wrong-nonce")
             val wrongNonceRequest = flow.resolvedRequest.copy(request = flow.resolvedRequest.request.copy(nonce = "wrong-nonce"))
             val wrongNonceResponse = createResponse(wrongNonceRequest, flow.credential, flow.holderKey, flow.holderDid, flow.holderVerificationMethod)
             val wrongNonce = validate(flow, trusted(flow), wrongNonceResponse)
             assertTrue(wrongNonce.isOk, "wrong nonce validation should return a result: ${if (wrongNonce.isErr) wrongNonce.error else ""}")
             assertFalse(wrongNonce.value.valid, "a VP nonce not bound to the verifier request must fail")
 
+            flow = createFlow("did-vcdm-negative-wrong-audience")
             val wrongAudienceRequest = flow.resolvedRequest.copy(verifierInfo = flow.resolvedRequest.verifierInfo.copy(clientId = "https://wrong-audience.example"))
             val wrongAudienceResponse = createResponse(wrongAudienceRequest, flow.credential, flow.holderKey, flow.holderDid, flow.holderVerificationMethod)
             val wrongAudience = validate(flow, trusted(flow), wrongAudienceResponse)
@@ -274,17 +303,18 @@ class VcdmJwtDidIssuePresentVerifyE2ETest {
                 nullDocumentResolution.isErr || nullDocumentResolution.value.didDocument == null,
                 "a DID resolution without a document must not be promoted to a resolved identity: $nullDocumentResolution",
             )
-            val nullDocumentHolder = validate(
-                flow,
-                listOf(
-                    issuerTrust(flow),
-                    TrustedAuthenticationResolution(
-                        controller = flow.holderDid,
-                        identifier = nullDocumentIdentifier,
-                        purpose = TrustedAuthenticationPurpose.HOLDER,
+            val nullDocumentHolder =
+                validate(
+                    flow,
+                    listOf(
+                        issuerTrust(flow),
+                        TrustedAuthenticationResolution(
+                            controller = flow.holderDid,
+                            identifier = nullDocumentIdentifier,
+                            purpose = TrustedAuthenticationPurpose.HOLDER,
+                        ),
                     ),
-                ),
-            )
+                )
             assertTrue(nullDocumentHolder.isOk, "null-document DID validation should return a result: ${if (nullDocumentHolder.isErr) nullDocumentHolder.error else ""}")
             assertFalse(nullDocumentHolder.value.valid, "a DID with no resolved document must not authenticate the holder VP")
         }
@@ -297,15 +327,17 @@ class VcdmJwtDidIssuePresentVerifyE2ETest {
             // The source is admitted under the holder controller, but its DID verification
             // method belongs to the issuer. The composed verifier must bind the resolved key to
             // the authenticated controller and reject this cross-controller substitution.
-            val mismatchedHolderSource = TrustedAuthenticationResolution(
-                controller = flow.holderDid,
-                identifier = ExternalIdentifierDidOpts(flow.issuerVerificationMethod),
-                purpose = TrustedAuthenticationPurpose.HOLDER,
-            )
-            val validation = validate(
-                flow,
-                listOf(issuerTrust(flow), mismatchedHolderSource),
-            )
+            val mismatchedHolderSource =
+                TrustedAuthenticationResolution(
+                    controller = flow.holderDid,
+                    identifier = ExternalIdentifierDidOpts(flow.issuerVerificationMethod),
+                    purpose = TrustedAuthenticationPurpose.HOLDER,
+                )
+            val validation =
+                validate(
+                    flow,
+                    listOf(issuerTrust(flow), mismatchedHolderSource),
+                )
             assertTrue(
                 validation.isOk,
                 "controller-mismatched DID validation must return a structured result: ${if (validation.isErr) validation.error else ""}",
@@ -325,16 +357,18 @@ class VcdmJwtDidIssuePresentVerifyE2ETest {
 
             // The resolver returns the exact holder JWK used to sign this VP, while preserving
             // the DID Resolution document metadata that marks the DID as deactivated.
-            val resolved = graph.didExternalIdentifierResolutionService.resolve(
-                ExternalIdentifierDidOpts(flow.holderVerificationMethod),
-            )
+            val resolved =
+                graph.didExternalIdentifierResolutionService.resolve(
+                    ExternalIdentifierDidOpts(flow.holderVerificationMethod),
+                )
             assertTrue(
                 resolved.isOk,
                 "deactivated DID must still resolve its presented key before policy rejection: ${if (resolved.isErr) resolved.error else ""}",
             )
             assertEquals(
                 "true",
-                resolved.value.didResolutionResult.didDocumentMetadata?.get("deactivated"),
+                resolved.value.didResolutionResult.didDocumentMetadata
+                    ?.get("deactivated"),
                 "the composed test must exercise deactivated DID document metadata",
             )
 
@@ -356,66 +390,79 @@ class VcdmJwtDidIssuePresentVerifyE2ETest {
     ): Flow {
         val issuerKey = generateKey("$prefix-issuer")
         val provisionedHolder = provisionHolder("$prefix-holder")
-        val holderKey = holderDidOverride?.let {
-            val graph = ctx.session.graph as VcdmJwtDidTestGraph
-            (graph.didResolverRegistry.getResolver("deactivated") as DeactivatedDidResolver).register(it, provisionedHolder.publicJwk)
-            provisionedHolder.copy(did = it, verificationMethod = "$it#0")
-        } ?: provisionedHolder
+        val holderKey =
+            holderDidOverride?.let {
+                val graph = ctx.session.graph as VcdmJwtDidTestGraph
+                assertSame<Any>(graph.deactivatedDidResolver, assertNotNull(graph.didResolverRegistry.getResolver("deactivated")))
+                graph.deactivatedDidResolver.register(it, provisionedHolder.publicJwk)
+                provisionedHolder.copy(did = it, verificationMethod = "$it#0")
+            } ?: provisionedHolder
         val issuerVm = didVerificationMethod(issuerKey.alias)
         val holderVm = holderKey.verificationMethod
         val issuerDid = issuerVm.substringBefore('#')
         val holderDid = holderKey.did
         val credential = issue(issuerKey.alias, issuerDid, issuerVm, holderDid, version)
         val query = DcqlQuery(credentials = listOf(query(version)))
-        val request = verifierService().createAuthorizationRequest(
-            CreateAuthorizationRequestArgs(
-                instanceId = "did-vcdm-verifier",
+        val request =
+            verifierService()
+                .createAuthorizationRequest(
+                    CreateAuthorizationRequestArgs(
+                        instanceId = "did-vcdm-verifier",
+                        dcqlQuery = query,
+                        clientId = verifier,
+                        responseUri = "$verifier/response",
+                        responseMode = ResponseMode.DIRECT_POST,
+                        nonce = "did-vcdm-nonce",
+                        state = "did-vcdm-state-$prefix-${version.name.lowercase()}",
+                        clientMetadata = ClientMetadata(vpFormatsSupported = mapOf(version.format.value to jwtVcFormatInfo(listOf("ES256")))),
+                    ),
+                ).also {
+                    assertTrue(it.isOk, "production verifier request command should succeed: ${if (it.isErr) it.error else ""}")
+                }.value
+        val resolved =
+            ResolvedOid4vpRequest(
+                request = request.request,
                 dcqlQuery = query,
-                clientId = verifier,
-                responseUri = "$verifier/response",
-                responseMode = ResponseMode.DIRECT_POST,
-                nonce = "did-vcdm-nonce",
-                state = "did-vcdm-state",
                 clientMetadata = ClientMetadata(vpFormatsSupported = mapOf(version.format.value to jwtVcFormatInfo(listOf("ES256")))),
-            ),
-        ).also {
-            assertTrue(it.isOk, "production verifier request command should succeed: ${if (it.isErr) it.error else ""}")
-        }.value
-        val resolved = ResolvedOid4vpRequest(
-            request = request.request,
-            dcqlQuery = query,
-            clientMetadata = ClientMetadata(vpFormatsSupported = mapOf(version.format.value to jwtVcFormatInfo(listOf("ES256")))),
-            verifierInfo = VerifierInfo(clientId = verifier, clientIdScheme = ClientIdScheme.REDIRECT_URI),
-        )
+                verifierInfo = VerifierInfo(clientId = verifier, clientIdScheme = ClientIdScheme.REDIRECT_URI),
+            )
         val response = createResponse(resolved, credential, holderKey, holderDid, holderVm, version)
         return Flow(version, issuerDid, issuerVm, holderDid, holderVm, holderKey, credential, query, resolved, response)
     }
 
-    private suspend fun issue(alias: String, issuerDid: String, issuerVm: String, holderDid: String, version: JwtVersion = JwtVersion.V20): String {
+    private suspend fun issue(
+        alias: String,
+        issuerDid: String,
+        issuerVm: String,
+        holderDid: String,
+        version: JwtVersion = JwtVersion.V20
+    ): String {
         ctx.registerIssuerSigningKey(alias)
-        val configuration = CredentialConfigurationSupported(
-            format = version.format.value,
-            credentialDefinition = CredentialDefinition(type = listOf("VerifiableCredential", version.credentialType)),
-        )
+        val configuration =
+            CredentialConfigurationSupported(
+                format = version.format.value,
+                credentialDefinition = CredentialDefinition(type = listOf("VerifiableCredential", version.credentialType)),
+            )
         val graph = ctx.session.graph as VcdmJwtDidTestGraph
         val handler: CredentialFormatHandler = if (version == JwtVersion.V11) graph.jwtVcJsonFormatHandler else graph.vcLdJsonJwtFormatHandler
-        val result = handler.issueCredential(
-            CredentialRequest(format = version.format.value),
-            IssuanceContext(
-                subject = holderDid,
-                clientId = "did-vcdm-client",
-                issuerIdentifier = issuerDid,
-                credentialConfigurationId = "did-vcdm-credential",
-                credentialConfiguration = configuration,
-                holderBindingKey = null,
-                attributes = mapOf("level" to JsonPrimitive("gold")),
-                signingKeyAlias = alias,
-                signingKeyMode = SigningKeyMode.Did("jwk"),
-                signingVerificationMethodId = issuerVm,
-                issuanceClockSkewInSeconds = 0,
-                expirationInDays = 30,
-            ),
-        )
+        val result =
+            handler.issueCredential(
+                CredentialRequest(format = version.format.value),
+                IssuanceContext(
+                    subject = holderDid,
+                    clientId = "did-vcdm-client",
+                    issuerIdentifier = issuerDid,
+                    credentialConfigurationId = "did-vcdm-credential",
+                    credentialConfiguration = configuration,
+                    holderBindingKey = null,
+                    attributes = mapOf("level" to JsonPrimitive("gold")),
+                    signingKeyAlias = alias,
+                    signingKeyMode = SigningKeyMode.Did("jwk"),
+                    signingVerificationMethodId = issuerVm,
+                    issuanceClockSkewInSeconds = 0,
+                    expirationInDays = 30,
+                ),
+            )
         assertTrue(result.isOk, "production ${version.label} DID issuer must issue: ${if (result.isErr) result.error else ""}")
         return result.value.credential.jsonPrimitive.content
     }
@@ -428,26 +475,28 @@ class VcdmJwtDidIssuePresentVerifyE2ETest {
         holderVm: String,
         version: JwtVersion = JwtVersion.V20,
     ): AuthorizationResponse {
-        val result = (ctx.session.graph as VcdmJwtDidTestGraph).oid4vpHolder.commands.createAuthorizationResponse.execute(
-            CreateAuthorizationResponseArgs(
-                request = request,
-                selectedCredentials = listOf(
-                    SelectedCredential(
-                        credentialQueryId = QUERY_ID,
-                        credentialId = "did-vcdm-credential",
-                        presentation = JsonPrimitive(credential),
+        val result =
+            (ctx.session.graph as VcdmJwtDidTestGraph).oid4vpHolder.commands.createAuthorizationResponse.execute(
+                CreateAuthorizationResponseArgs(
+                    request = request,
+                    selectedCredentials =
+                        listOf(
+                            SelectedCredential(
+                                credentialQueryId = QUERY_ID,
+                                credentialId = "did-vcdm-credential",
+                                presentation = JsonPrimitive(credential),
                                 credentialFormat = version.format,
-                        holderKeyRef = holderKey.keyRef,
-                        holderId = holderDid,
-                        holderVerificationMethod = holderVm,
-                        holderJwtVpSigningIdentifier = HolderJwtVpSigningIdentifier.DidVerificationMethod(holderVm),
-                        holderSigningAlgorithm = SignatureAlgorithm.ECDSA_SHA256,
-                        holderJwtVpOperationBinding = HOLDER_OPERATION_BINDING,
-                        holderJwtVpWalletUnitId = HOLDER_WALLET_UNIT_ID,
-                    ),
+                                holderKeyRef = holderKey.keyRef,
+                                holderId = holderDid,
+                                holderVerificationMethod = holderVm,
+                                holderJwtVpSigningIdentifier = HolderJwtVpSigningIdentifier.DidVerificationMethod(holderVm),
+                                holderSigningAlgorithm = SignatureAlgorithm.ECDSA_SHA256,
+                                holderJwtVpOperationBinding = HOLDER_OPERATION_BINDING,
+                                holderJwtVpWalletUnitId = HOLDER_WALLET_UNIT_ID,
+                            ),
+                        ),
                 ),
-            ),
-        )
+            )
         assertTrue(
             result.isOk,
             "production holder command must create a DID-bound VCDM VP: ${if (result.isErr) result.error else ""}",
@@ -460,17 +509,20 @@ class VcdmJwtDidIssuePresentVerifyE2ETest {
         trusted: List<TrustedAuthenticationResolution>,
         response: AuthorizationResponse = flow.response,
     ) = verifierService().let { service ->
-        val parsed = service.parseAuthorizationResponse(
-            ParseAuthorizationResponseArgs(
-                responseParams = mapOf(
-                    "vp_token" to json.encodeToString(JsonElement.serializer(), VpToken.run { response.vpToken!!.toJson() }),
-                    "state" to assertNotNull(response.state),
-                ),
-                originalRequest = flow.resolvedRequest.request,
-            ),
-        ).also {
-            assertTrue(it.isOk, "production response parser should accept command output: ${if (it.isErr) it.error else ""}")
-        }
+        val parsed =
+            service
+                .parseAuthorizationResponse(
+                    ParseAuthorizationResponseArgs(
+                        responseParams =
+                            mapOf(
+                                "vp_token" to json.encodeToString(JsonElement.serializer(), VpToken.run { response.vpToken!!.toJson() }),
+                                "state" to assertNotNull(response.state),
+                            ),
+                        originalRequest = flow.resolvedRequest.request,
+                    ),
+                ).also {
+                    assertTrue(it.isOk, "production response parser should accept command output: ${if (it.isErr) it.error else ""}")
+                }
         service.validateAuthorizationResponse(
             ValidateAuthorizationResponseArgs(
                 parsedResponse = parsed.value,
@@ -484,18 +536,23 @@ class VcdmJwtDidIssuePresentVerifyE2ETest {
 
     private fun trusted(flow: Flow) = listOf(issuerTrust(flow), holderTrust(flow))
 
-    private fun issuerTrust(flow: Flow) = TrustedAuthenticationResolution(
-        controller = flow.issuerDid,
-        identifier = ExternalIdentifierDidOpts(flow.issuerVerificationMethod),
-    )
+    private fun issuerTrust(flow: Flow) =
+        TrustedAuthenticationResolution(
+            controller = flow.issuerDid,
+            identifier = ExternalIdentifierDidOpts(flow.issuerVerificationMethod),
+        )
 
-    private fun holderTrust(flow: Flow) = TrustedAuthenticationResolution(
-        controller = flow.holderDid,
-        identifier = ExternalIdentifierDidOpts(flow.holderVerificationMethod),
-        purpose = TrustedAuthenticationPurpose.HOLDER,
-    )
+    private fun holderTrust(flow: Flow) =
+        TrustedAuthenticationResolution(
+            controller = flow.holderDid,
+            identifier = ExternalIdentifierDidOpts(flow.holderVerificationMethod),
+            purpose = TrustedAuthenticationPurpose.HOLDER,
+        )
 
-    private suspend fun assertDidResolution(graph: VcdmJwtDidTestGraph, verificationMethod: String) {
+    private suspend fun assertDidResolution(
+        graph: VcdmJwtDidTestGraph,
+        verificationMethod: String
+    ) {
         val resolved = graph.didExternalIdentifierResolutionService.resolve(ExternalIdentifierDidOpts(verificationMethod))
         assertTrue(
             resolved.isOk,
@@ -505,16 +562,18 @@ class VcdmJwtDidIssuePresentVerifyE2ETest {
     }
 
     private suspend fun didVerificationMethod(alias: String): String =
-        (ctx.session.graph as VcdmJwtDidTestGraph).issuerKeyIdResolver
+        (ctx.session.graph as VcdmJwtDidTestGraph)
+            .issuerKeyIdResolver
             .resolveDidVerificationMethodId(alias, "jwk")
             .getOrThrow()
 
     private suspend fun generateKey(alias: String): ManagedKeyInfoType<*> {
-        val result = ctx.session.graph.asKeyManagerServiceGraph().keyManagerService.generateKeyResult(
-            alias = alias,
-            use = JwkUse.sig,
-            alg = SignatureAlgorithm.ECDSA_SHA256,
-        )
+        val result =
+            ctx.session.graph.asKeyManagerServiceGraph().keyManagerService.generateKeyResult(
+                alias = alias,
+                use = JwkUse.sig,
+                alg = SignatureAlgorithm.ECDSA_SHA256,
+            )
         assertTrue(result.isOk, "software KMS key generation must succeed")
         return assertNotNull(result.value.keyPair?.joseToManagedKeyInfo(KeyVisibility.PRIVATE))
     }
@@ -541,20 +600,27 @@ class VcdmJwtDidIssuePresentVerifyE2ETest {
 
     private fun verifierService(): Oid4vpVerifierService = (ctx.session.graph as VcdmJwtDidTestGraph).oid4vpVerifierService
 
-    private fun query(version: JwtVersion = JwtVersion.V20) = DcqlCredentialQuery(
-        id = QUERY_ID,
-        format = version.format.value,
-        meta = w3cVcMeta(listOf("VerifiableCredential", version.credentialType)),
-    )
+    private fun query(version: JwtVersion = JwtVersion.V20) =
+        DcqlCredentialQuery(
+            id = QUERY_ID,
+            format = version.format.value,
+            meta = w3cVcMeta(listOf("VerifiableCredential", version.credentialType)),
+        )
 
-    private fun jwtObject(jwt: String, part: Int): JsonObject =
-        json.parseToJsonElement(jwt.split('.')[part].decodeFromBase64Url().decodeToString()).jsonObject
+    private fun jwtObject(
+        jwt: String,
+        part: Int
+    ): JsonObject = json.parseToJsonElement(jwt.split('.')[part].decodeFromBase64Url().decodeToString()).jsonObject
 
     private fun contextValue(payload: JsonObject): String =
         ((payload["@context"] as? JsonArray)?.firstOrNull() as? JsonPrimitive)?.content
             ?: error("VCDM 2.0 JWT payload must contain the VCDM 2.0 context as its first context")
 
-    private fun assertCredentialShape(jwt: String, issuerVerificationMethod: String, version: JwtVersion) {
+    private fun assertCredentialShape(
+        jwt: String,
+        issuerVerificationMethod: String,
+        version: JwtVersion
+    ) {
         val header = jwtObject(jwt, 0)
         val payload = jwtObject(jwt, 1)
         assertEquals(version.credentialTyp, header["typ"]?.jsonPrimitive?.content)
@@ -582,7 +648,11 @@ class VcdmJwtDidIssuePresentVerifyE2ETest {
         assertFalse(anonymousSubject.containsKey("id"), "credential subject must remain anonymous")
     }
 
-    private fun assertVpShape(payload: JsonObject, version: JwtVersion, nonce: String) {
+    private fun assertVpShape(
+        payload: JsonObject,
+        version: JwtVersion,
+        nonce: String
+    ) {
         if (version == JwtVersion.V11) {
             val vp = assertNotNull(payload["vp"] as? JsonObject)
             assertEquals(version.context, (vp["@context"] as JsonArray).first().jsonPrimitive.content)

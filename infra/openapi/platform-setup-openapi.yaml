@@ -1,0 +1,777 @@
+openapi: 3.0.4
+info:
+  title: Platform Setup API
+  version: 1.0.0
+  description: |
+    Anonymous first-run setup API exposed only while the durable bootstrap gate is open.
+    The API creates a signed local license request through persistent KMS storage,
+    installs the issued deployment license, and enables the platform tenant with
+    a natural-person operator login on the platform-integrated authorization server.
+servers:
+  - url: https://api.example.com/api/platform/setup/v1
+    description: Production
+  - url: http://localhost:8080/api/platform/setup/v1
+    description: Local development
+tags:
+  - name: Setup
+security: []
+paths:
+  /status:
+    get:
+      tags: [Setup]
+      operationId: getSetupStatus
+      summary: Get first-run setup readiness
+      responses:
+        '200':
+          description: Setup gate is open.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SetupStatus'
+        '404':
+          description: Setup gate is closed.
+  /onboarding/state:
+    get:
+      tags: [Setup]
+      operationId: getSetupOnboardingState
+      summary: Get persisted first-run onboarding state
+      description: Returns the persisted deployment draft and generated license request artifact, if present, so the setup UI can resume after a browser restart.
+      responses:
+        '200':
+          description: Current setup onboarding state.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OnboardingState'
+        '404':
+          description: Setup gate is closed.
+  /administrator-activation:
+    get:
+      tags: [Setup]
+      operationId: continueSetupAdministratorActivation
+      summary: Continue the pending administrator password setup
+      description: |
+        Validates the browser-bound, HttpOnly setup continuation capability and
+        redirects to the one-time account activation page. The endpoint is
+        available only while the durable setup gate remains open, the license
+        allows the admin console, and exactly one setup-authorized administrator
+        still has no credential.
+      responses:
+        '302':
+          description: Redirect to the one-time administrator account action.
+          headers:
+            Location:
+              schema:
+                type: string
+                format: uri-reference
+        '404':
+          description: Setup is closed or no valid browser-bound continuation is available.
+  /license-request:
+    get:
+      tags: [Setup]
+      operationId: getSetupLicenseRequestStatus
+      summary: Get configured license request defaults
+      responses:
+        '200':
+          description: KMS license request defaults.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LicenseRequestStatus'
+        '404':
+          description: Setup gate is closed.
+  /license-request/generate:
+    post:
+      tags: [Setup]
+      operationId: generateSetupLicenseRequest
+      summary: Generate a signed local license request
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenerateLicenseRequestRequest'
+      responses:
+        '200':
+          description: Signed license request to deliver manually to the license issuer.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LicenseRequestResponse'
+        '404':
+          description: Setup gate is closed.
+  /license/import/preview:
+    post:
+      tags: [Setup]
+      operationId: previewSetupLicenseBundleImport
+      summary: Preview a protected setup license bundle import
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ProtectedLicenseBundleRequest'
+      responses:
+        '200':
+          description: Bundle contents and overwrite impact without changing setup state.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SetupLicenseBundlePreviewResult'
+        '404':
+          description: Setup gate is closed.
+  /license/import:
+    post:
+      tags: [Setup]
+      operationId: importSetupLicenseBundle
+      summary: Import a protected setup license bundle
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ProtectedLicenseBundleRequest'
+      responses:
+        '200':
+          description: Installed license and imported bundle material.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SetupLicenseBundleImportResult'
+        '404':
+          description: Setup gate is closed.
+  /license-management/request:
+    get:
+      tags: [License management]
+      operationId: getManagedLicenseRequestState
+      summary: Get persisted contacts and the latest generated license request
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Current license-request draft and latest generated artifact.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LicenseManagementRequestState'
+    put:
+      tags: [License management]
+      operationId: saveManagedLicenseRequestState
+      summary: Validate and persist license contacts without generating a request
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LicenseRequestDeployment'
+      responses:
+        '200':
+          description: Persisted contact/deployment draft and latest generated artifact.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LicenseManagementRequestState'
+  /license-management/request/generate:
+    post:
+      tags: [License management]
+      operationId: generateManagedLicenseRequest
+      summary: Generate and persist a signed replacement license request
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenerateLicenseRequestRequest'
+      responses:
+        '200':
+          description: Signed replacement license request to deliver to the license issuer.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LicenseRequestResponse'
+  /license-management/import/preview:
+    post:
+      tags: [Setup]
+      operationId: previewSetupLicenseManagementBundleImport
+      summary: Preview a protected license renewal bundle import
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ProtectedLicenseBundleRequest'
+      responses:
+        '200':
+          description: Bundle contents and overwrite impact without changing license state.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SetupLicenseBundlePreviewResult'
+  /license-management/import:
+    post:
+      tags: [Setup]
+      operationId: importSetupLicenseManagementBundle
+      summary: Import a protected license renewal bundle
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ProtectedLicenseBundleRequest'
+      responses:
+        '200':
+          description: Updated license and imported renewal bundle material.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SetupLicenseBundleImportResult'
+  /bootstrap:
+    post:
+      tags: [Setup]
+      operationId: bootstrapPlatform
+      summary: Enable the platform tenant and operator login
+      description: |
+        Creates or reconciles the platform tenant, seeds the platform-integrated
+        authorization server, creates the initial natural-person operator identity, and
+        issues its one-time password activation. The first-run gate remains open until
+        that account action writes a usable credential. Production tenants are created
+        afterwards through the authenticated platform admin API.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BootstrapTenantRequest'
+      responses:
+        '201':
+          description: Platform bootstrap result.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BootstrapTenantResponse'
+        '404':
+          description: Setup gate is closed.
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    SetupStatus:
+      type: object
+      required: [gateOpen, firstTenantConfigMissingKeys, emailConfigured, licenseConfigured, administratorActivationRequired]
+      properties:
+        gateOpen:
+          type: boolean
+        firstTenantConfigMissingKeys:
+          type: array
+          items:
+            type: string
+        emailConfigured:
+          type: boolean
+        licenseConfigured:
+          type: boolean
+        administratorActivationRequired:
+          type: boolean
+          description: True when exactly one setup-authorized administrator still needs to set a password.
+        licenseRequestKmsConfigured:
+          type: boolean
+        licenseRequestDefaultAlias:
+          type: string
+    LicenseDeliveryMethod:
+      type: string
+      enum: [MANUAL]
+    LicenseRequestStatus:
+      type: object
+      required: [kmsConfigured, defaultAlias, defaultAlgorithm, defaultUse, licenseDeliveryMethod]
+      properties:
+        kmsConfigured:
+          type: boolean
+        defaultAlias:
+          type: string
+        defaultAlgorithm:
+          type: string
+          example: ECDSA_SHA256
+        defaultUse:
+          type: string
+          example: sig
+        licenseDeliveryMethod:
+          $ref: '#/components/schemas/LicenseDeliveryMethod'
+        installationId:
+          type: string
+          format: uuid
+          nullable: true
+    LicenseRequestDeployment:
+      type: object
+      required: [deployment, organizationName, contacts]
+      properties:
+        deployment:
+          $ref: '#/components/schemas/LicenseRequestDeploymentScope'
+        organizationName:
+          type: string
+        organizationUnit:
+          type: string
+          nullable: true
+        locality:
+          type: string
+          nullable: true
+        state:
+          type: string
+          nullable: true
+        country:
+          type: string
+          minLength: 2
+          maxLength: 2
+          nullable: true
+        licenseDeliveryMethod:
+          $ref: '#/components/schemas/LicenseDeliveryMethod'
+          default: MANUAL
+        contacts:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/LicenseRequestContact'
+    LicenseRequestDeploymentScope:
+      type: object
+      required: [baseDomains]
+      properties:
+        id:
+          type: string
+          nullable: true
+        baseDomains:
+          type: array
+          minItems: 1
+          items:
+            type: string
+          example: [edk.example.com]
+    GenerateLicenseRequestRequest:
+      type: object
+      required: [deployment]
+      properties:
+        algorithm:
+          type: string
+          nullable: true
+          default: ECDSA_SHA256
+        use:
+          type: string
+          nullable: true
+          default: sig
+        deployment:
+          $ref: '#/components/schemas/LicenseRequestDeployment'
+        serialNumber:
+          type: integer
+          nullable: true
+          default: 1
+    LicenseRequestContactRole:
+      type: string
+      enum: [TECHNICAL, ADMINISTRATOR]
+    LicenseRequestContact:
+      type: object
+      required: [email, givenName, familyName, roles]
+      properties:
+        email:
+          type: string
+          format: email
+        givenName:
+          type: string
+        familyName:
+          type: string
+        roles:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/LicenseRequestContactRole'
+        displayName:
+          type: string
+          nullable: true
+    LocalInstanceCertificate:
+      type: object
+      required: [commonName, serialNumber]
+      properties:
+        commonName:
+          type: string
+        organizationName:
+          type: string
+          nullable: true
+        organizationUnit:
+          type: string
+          nullable: true
+        locality:
+          type: string
+          nullable: true
+        state:
+          type: string
+          nullable: true
+        country:
+          type: string
+          nullable: true
+        email:
+          type: string
+          nullable: true
+        serialNumber:
+          type: integer
+    LocalInstancePublicKey:
+      type: object
+      required: [alias, providerId, publicJwk]
+      properties:
+        alias:
+          type: string
+        providerId:
+          type: string
+          example: license
+        kid:
+          type: string
+          nullable: true
+        publicJwk:
+          type: object
+          additionalProperties: true
+    LicenseRequestCertificateSigningRequest:
+      type: object
+      required: [derBase64, pem, fingerprint]
+      properties:
+        derBase64:
+          type: string
+          format: byte
+        pem:
+          type: string
+        fingerprint:
+          type: string
+    LicenseRecipientPublicKey:
+      type: object
+      required: [kid, publicJwk, thumbprint]
+      properties:
+        kid:
+          type: string
+        publicJwk:
+          type: object
+          additionalProperties: true
+        thumbprint:
+          type: string
+        certificate:
+          type: object
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/LicenseRecipientCertificate'
+    LicenseRecipientCertificate:
+      type: object
+      required: [derBase64, pem, chainBase64, fingerprint]
+      properties:
+        derBase64:
+          type: string
+          format: byte
+        pem:
+          type: string
+        chainBase64:
+          type: array
+          items:
+            type: string
+            format: byte
+        fingerprint:
+          type: string
+    LicenseRequestTenant:
+      type: object
+      required: [name, slug]
+      properties:
+        name:
+          type: string
+        slug:
+          type: string
+    LicenseRequestOwner:
+      type: object
+      required: [email, displayName]
+      properties:
+        email:
+          type: string
+          format: email
+        displayName:
+          type: string
+    LicenseRequestPayload:
+      type: object
+      required: [version, requestId, generatedAt, deployment, platformIssuer, tenant, owner, contacts, licenseDeliveryMethod, localCertificate, localPublicKey, certificateSigningRequest, licenseRecipient]
+      properties:
+        version:
+          type: string
+        requestId:
+          type: string
+        generatedAt:
+          type: string
+          format: date-time
+        deployment:
+          $ref: '#/components/schemas/LicenseRequestDeploymentScope'
+        platformIssuer:
+          type: string
+          format: uri
+        tenant:
+          $ref: '#/components/schemas/LicenseRequestTenant'
+        owner:
+          $ref: '#/components/schemas/LicenseRequestOwner'
+        contacts:
+          type: array
+          items:
+            $ref: '#/components/schemas/LicenseRequestContact'
+        organizationName:
+          type: string
+          nullable: true
+        organizationUnit:
+          type: string
+          nullable: true
+        licenseDeliveryMethod:
+          $ref: '#/components/schemas/LicenseDeliveryMethod'
+        localCertificate:
+          $ref: '#/components/schemas/LocalInstanceCertificate'
+        localPublicKey:
+          $ref: '#/components/schemas/LocalInstancePublicKey'
+        certificateSigningRequest:
+          type: object
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/LicenseRequestCertificateSigningRequest'
+        licenseRecipient:
+          type: object
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/LicenseRecipientPublicKey'
+    LicenseRequestSignature:
+      type: object
+      required: [algorithm, signatureBase64]
+      properties:
+        algorithm:
+          type: string
+        keyId:
+          type: string
+          nullable: true
+        signatureBase64:
+          type: string
+          format: byte
+    LicenseRequestResponse:
+      type: object
+      required: [request, requestJson, signature]
+      properties:
+        request:
+          $ref: '#/components/schemas/LicenseRequestPayload'
+        requestJson:
+          type: string
+        signature:
+          $ref: '#/components/schemas/LicenseRequestSignature'
+        artifactDigest:
+          type: string
+          nullable: true
+    EffectiveLicenseStatus:
+      type: string
+      enum: [ACTIVE, GRACE, RECOVERY, MISSING, EXPIRED, REVOKED, SUSPENDED, INVALID, BLOCKED]
+    ProductLicenseSummary:
+      type: object
+      required: [product, edition]
+      properties:
+        product:
+          type: string
+        edition:
+          type: string
+        modules:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+        quotaKeys:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+    LicenseStatusProjection:
+      type: object
+      required: [status]
+      properties:
+        status:
+          $ref: '#/components/schemas/EffectiveLicenseStatus'
+        productSummaries:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProductLicenseSummary'
+        customerId:
+          type: string
+          nullable: true
+        installationId:
+          type: string
+          nullable: true
+        issuer:
+          type: string
+          nullable: true
+        signingCertificateFingerprint:
+          type: string
+          nullable: true
+        expiresAt:
+          type: string
+          format: date-time
+          nullable: true
+        daysToExpiry:
+          type: integer
+          format: int64
+          nullable: true
+        recoveryMode:
+          type: boolean
+          default: false
+        graceMode:
+          type: boolean
+          default: false
+        warnings:
+          type: array
+          items:
+            type: string
+    ProtectedLicenseBundleRequest:
+      type: object
+      required: [bundle]
+      properties:
+        bundle:
+          type: string
+          format: binary
+          description: Protected license bundle supplied by the license issuer.
+    SetupLicenseBundlePreviewResult:
+      type: object
+      required: [importedFiles, recipientPrivateKeyPresent, platformCertificatePresent, licenseRootCaPresent, customerPartyInfoPresent, overwriteImpact]
+      properties:
+        importedFiles:
+          type: array
+          items:
+            type: string
+        recipientPrivateKeyPresent:
+          type: boolean
+        platformCertificatePresent:
+          type: boolean
+        licenseRootCaPresent:
+          type: boolean
+        customerPartyInfoPresent:
+          type: boolean
+        license:
+          type: object
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/LicenseStatusProjection'
+          description: Sanitized status projection decoded from the bundle, when available at preview time.
+        overwriteImpact:
+          type: array
+          items:
+            type: string
+    SetupLicenseBundleImportResult:
+      type: object
+      required: [license, importedFiles, recipientPrivateKeyInstalled, platformCertificateInstalled, licenseRootCaInstalled, customerPartyInfoImported]
+      properties:
+        license:
+          $ref: '#/components/schemas/LicenseStatusProjection'
+        importedFiles:
+          type: array
+          items:
+            type: string
+        recipientPrivateKeyInstalled:
+          type: boolean
+        platformCertificateInstalled:
+          type: boolean
+        licenseRootCaInstalled:
+          type: boolean
+        customerPartyInfoImported:
+          type: boolean
+    LicenseManagementRequestState:
+      type: object
+      properties:
+        deployment:
+          type: object
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/LicenseRequestDeployment'
+        generatedRequest:
+          type: object
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/LicenseRequestResponse'
+    OnboardingState:
+      type: object
+      required: [gateOpen, resumeStep]
+      properties:
+        gateOpen:
+          type: boolean
+        resumeStep:
+          type: integer
+        deployment:
+          type: object
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/LicenseRequestDeployment'
+        generatedRequest:
+          type: object
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/LicenseRequestResponse'
+    BootstrapTenantRequest:
+      type: object
+      required: [adminEmail, adminDisplayName]
+      properties:
+        adminEmail:
+          type: string
+          format: email
+        adminDisplayName:
+          type: string
+        naturalPerson:
+          $ref: '#/components/schemas/BootstrapNaturalPerson'
+    BootstrapNaturalPerson:
+      type: object
+      properties:
+        source:
+          $ref: '#/components/schemas/BootstrapNaturalPersonSource'
+          default: NEW
+        firstName:
+          type: string
+          nullable: true
+        lastName:
+          type: string
+          nullable: true
+    BootstrapNaturalPersonSource:
+      type: string
+      enum: [TECHNICAL_CONTACT, ADMINISTRATIVE_CONTACT, NEW]
+    BootstrapTenantResponse:
+      type: object
+      required: [tenantId, status, adminEmail, canCreateProductionTenants, activation]
+      properties:
+        tenantId:
+          type: string
+        status:
+          type: string
+          enum: [ACTIVE, SUSPENDED, PENDING_VERIFICATION]
+        hostedAsIssuerUrl:
+          type: string
+          format: uri
+          nullable: true
+        adminEmail:
+          type: string
+          format: email
+        canCreateProductionTenants:
+          type: boolean
+        activation:
+          $ref: '#/components/schemas/BootstrapActivationResult'
+    BootstrapActivationResult:
+      type: object
+      required: [invitationId, expiresAt, deliveryState]
+      properties:
+        invitationId:
+          type: string
+        expiresAt:
+          type: string
+          format: date-time
+        deliveryState:
+          type: string
+          enum: [DELIVERED, DELIVERY_FAILED, MANUAL, UNAVAILABLE]
+        manualActivationLink:
+          type: string
+          format: uri
+          nullable: true
+          description: One-time setup activation URL, returned only for explicit manual delivery.
+        reason:
+          type: string
+          nullable: true

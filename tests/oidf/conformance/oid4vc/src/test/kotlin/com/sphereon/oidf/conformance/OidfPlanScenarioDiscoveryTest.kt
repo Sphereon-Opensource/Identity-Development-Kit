@@ -108,7 +108,11 @@ class OidfPlanScenarioDiscoveryTest {
             }
         Files.writeString(
             evidenceDirectory.resolve("scenario-discovery.json"),
-            Json { prettyPrint = true }.encodeToString(kotlinx.serialization.json.JsonElement.serializer(), evidence),
+            Json { prettyPrint = true }.encodeToString(
+                kotlinx.serialization.json.JsonElement
+                    .serializer(),
+                evidence
+            ),
         )
     }
 }

@@ -10,5 +10,4 @@ import com.sphereon.wallet.interaction.WalletInteractionSensitiveInputAuthority
 import com.sphereon.wallet.interaction.impl.InMemoryWalletInteractionPrivateSessionStore
 import com.sphereon.wallet.interaction.impl.StoreBackedWalletInteractionSensitiveInputAuthority
 
-internal fun integrationSensitiveInputAuthority(): WalletInteractionSensitiveInputAuthority =
-    StoreBackedWalletInteractionSensitiveInputAuthority(InMemoryWalletInteractionPrivateSessionStore())
+internal fun integrationSensitiveInputAuthority(): WalletInteractionSensitiveInputAuthority = StoreBackedWalletInteractionSensitiveInputAuthority(InMemoryWalletInteractionPrivateSessionStore())

@@ -1,0 +1,286 @@
+openapi: 3.0.4
+info:
+  title: Enterprise Lifecycle API
+  version: 0.3.0
+  description: Generic typed commands for protected form correlation and governed lifecycle execution.
+servers:
+  - url: https://api.example.com/api/lifecycle/v1
+  - url: http://localhost:8080/api/lifecycle/v1
+security:
+  - bearer: []
+tags:
+  - name: EnterpriseLifecycle
+paths:
+  /execution-attestations:read:
+    post:
+      tags: [EnterpriseLifecycle]
+      operationId: attestLifecycleExecution
+      x-command-id: lifecycle.execution.attest
+      summary: Read authenticated engine evidence for a canonically authorized case execution
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AttestLifecycleExecutionArgs' }
+      responses:
+        '200':
+          description: Engine-owned execution identity, state and timestamps
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LifecycleExecutionAttestation' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '404': { $ref: './common-components.yml#/components/responses/NotFound' }
+  /form-completions:translate:
+    post:
+      tags: [EnterpriseLifecycle]
+      operationId: translateFormCompletion
+      x-command-id: lifecycle.form.translate
+      summary: Translate a reference-only form notice into a server-owned lifecycle input
+      parameters:
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/IfMatch' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TranslateFormCompletionRequest' }
+      responses:
+        '200':
+          description: Server-resolved lifecycle input
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LifecycleInputReceipt' }
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+  /executions:
+    post:
+      tags: [EnterpriseLifecycle]
+      operationId: startLifecycleExecution
+      x-command-id: lifecycle.execution.start
+      summary: Start a governed workflow definition revision
+      parameters:
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/IfMatch' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StartLifecycleExecutionRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/LifecycleCommandResponse' }
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+  /executions/{executionId}/signals:
+    post:
+      tags: [EnterpriseLifecycle]
+      operationId: signalLifecycleExecution
+      x-command-id: lifecycle.execution.signal
+      summary: Deliver a governed signal carrying protected object references
+      parameters:
+        - { $ref: '#/components/parameters/ExecutionId' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/IfMatch' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SignalLifecycleExecutionRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/LifecycleCommandResponse' }
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+  /executions/{executionId}:
+    get:
+      tags: [EnterpriseLifecycle]
+      operationId: inspectLifecycleExecution
+      x-command-id: lifecycle.execution.inspect
+      summary: Inspect lifecycle execution status
+      parameters:
+        - { $ref: '#/components/parameters/ExecutionId' }
+        - { $ref: '#/components/parameters/ModelIdQuery' }
+      responses:
+        '200':
+          description: Lifecycle execution status
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LifecycleExecutionStatus' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '404': { $ref: './common-components.yml#/components/responses/NotFound' }
+  /executions/{executionId}:retry:
+    post:
+      tags: [EnterpriseLifecycle]
+      operationId: retryLifecycleExecution
+      x-command-id: lifecycle.execution.retry
+      summary: Retry one failed governed operation
+      parameters:
+        - { $ref: '#/components/parameters/ExecutionId' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/IfMatch' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RetryLifecycleExecutionRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/LifecycleCommandResponse' }
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+components:
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    ModelIdQuery:
+      name: modelId
+      in: query
+      required: true
+      schema: { type: string, minLength: 1 }
+    ExecutionId:
+      name: executionId
+      in: path
+      required: true
+      schema: { type: string, minLength: 1 }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema: { type: string, minLength: 1 }
+    IfMatch:
+      name: If-Match
+      in: header
+      required: true
+      description: Expected lifecycle stream version.
+      schema: { type: integer, format: int64, minimum: 0 }
+  responses:
+    LifecycleCommandResponse:
+      description: Lifecycle command result
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/LifecycleCommandResult' }
+  schemas:
+    AttestLifecycleExecutionArgs:
+      type: object
+      required: [executionRef]
+      properties:
+        executionRef: { $ref: '#/components/schemas/LifecycleExecutionRef' }
+    LifecycleLaunchReservation:
+      type: object
+      description: Organization-owned execution reservation tied to its immutable canonical launch event.
+      required: [executionRef, launchEventId]
+      properties:
+        executionRef: { $ref: '#/components/schemas/LifecycleExecutionRef' }
+        launchEventId: { type: string, minLength: 1, readOnly: true }
+    LifecycleExecutionAttestation:
+      type: object
+      required: [tenantId, executionRef, state]
+      properties:
+        tenantId: { type: string }
+        executionRef: { $ref: '#/components/schemas/LifecycleExecutionRef' }
+        state: { type: string, enum: [PENDING, RUNNING, WAITING, COMPLETED, FAILED, CANCELLED] }
+        startedAt: { type: string, format: date-time, nullable: true }
+        completedAt: { type: string, format: date-time, nullable: true }
+        launchEventId:
+          type: string
+          nullable: true
+          minLength: 1
+          readOnly: true
+          description: Canonical launch event identity read from engine-owned execution metadata. Missing legacy evidence cannot authorize a new completion receipt.
+    BusinessObjectRef: { $ref: './enterprise-contract-components.yml#/components/schemas/BusinessObjectRef' }
+    CaseRef: { $ref: './enterprise-contract-components.yml#/components/schemas/CaseRef' }
+    ProtectedPayloadRef: { $ref: './enterprise-contract-components.yml#/components/schemas/ProtectedPayloadRef' }
+    FormSubmissionCompletionNotice: { $ref: './enterprise-contract-components.yml#/components/schemas/FormSubmissionCompletionNotice' }
+    CorrelationContext: { $ref: './enterprise-contract-components.yml#/components/schemas/CorrelationContext' }
+    TranslateFormCompletionRequest:
+      type: object
+      required: [modelId, notice]
+      properties:
+        modelId: { type: string, minLength: 1 }
+        notice: { $ref: '#/components/schemas/FormSubmissionCompletionNotice' }
+    WorkflowDefinitionRef:
+      type: object
+      required: [id, revision]
+      properties:
+        id: { type: string, minLength: 1 }
+        revision: { $ref: '#/components/schemas/WorkflowRevision' }
+    WorkflowRevision:
+      type: object
+      required: [value]
+      properties:
+        value: { type: integer, format: int64, minimum: 1 }
+    LifecycleExecutionRef:
+      type: object
+      required: [executionId, definitionRef, caseRef]
+      properties:
+        executionId: { type: string, minLength: 1 }
+        definitionRef: { $ref: '#/components/schemas/WorkflowDefinitionRef' }
+        caseRef: { $ref: '#/components/schemas/CaseRef' }
+    StartLifecycleExecutionRequest:
+      type: object
+      required: [modelId, definitionRef, caseRef]
+      properties:
+        modelId: { type: string, minLength: 1 }
+        definitionRef: { $ref: '#/components/schemas/WorkflowDefinitionRef' }
+        caseRef: { $ref: '#/components/schemas/CaseRef' }
+        inputRefs:
+          type: object
+          additionalProperties: { $ref: '#/components/schemas/BusinessObjectRef' }
+    GovernedTypeId:
+      $ref: './enterprise-contract-components.yml#/components/schemas/GovernedTypeId'
+    SignalLifecycleExecutionRequest:
+      type: object
+      required: [modelId, executionRef, signalType]
+      properties:
+        modelId: { type: string, minLength: 1 }
+        executionRef: { $ref: '#/components/schemas/LifecycleExecutionRef' }
+        signalType: { $ref: '#/components/schemas/GovernedTypeId' }
+        payloadRefs:
+          type: object
+          additionalProperties: { $ref: '#/components/schemas/BusinessObjectRef' }
+    RetryLifecycleExecutionRequest:
+      type: object
+      required: [modelId, executionRef, failedOperationRef]
+      properties:
+        modelId: { type: string, minLength: 1 }
+        executionRef: { $ref: '#/components/schemas/LifecycleExecutionRef' }
+        failedOperationRef: { $ref: '#/components/schemas/BusinessObjectRef' }
+    LifecycleInputReceipt:
+      type: object
+      required: [tenantId, modelId, caseRef, workflowExecutionId, submissionRef, correlationKey, correlation, acceptedAt]
+      properties:
+        tenantId: { type: string }
+        modelId: { type: string }
+        caseRef: { $ref: '#/components/schemas/CaseRef' }
+        workflowExecutionId: { type: string }
+        submissionRef: { $ref: '#/components/schemas/BusinessObjectRef' }
+        correlationKey: { type: string }
+        correlation: { $ref: '#/components/schemas/CorrelationContext' }
+        acceptedAt: { type: string, format: date-time }
+    LifecycleCommandResult:
+      type: object
+      required: [executionRef, accepted, duplicate]
+      properties:
+        executionRef: { $ref: '#/components/schemas/LifecycleExecutionRef' }
+        accepted: { type: boolean }
+        duplicate: { type: boolean, default: false }
+    LifecycleExecutionStatus:
+      type: object
+      required: [executionRef, state, currentStageType, updatedAt]
+      properties:
+        executionRef: { $ref: '#/components/schemas/LifecycleExecutionRef' }
+        state: { type: string, enum: [PENDING, RUNNING, WAITING, COMPLETED, FAILED, CANCELLED] }
+        currentStageType: { $ref: '#/components/schemas/GovernedTypeId' }
+        lastOperationRef: { $ref: '#/components/schemas/BusinessObjectRef' }
+        updatedAt: { type: string, format: date-time }
+        safeFailure: { type: string }

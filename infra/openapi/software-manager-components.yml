@@ -1,0 +1,914 @@
+openapi: 3.0.4
+info:
+  title: Software / Instance Manager Components
+  version: 0.1.0
+  description: |
+    Reusable schemas for software/service instance management. Includes the
+    generic instance entities plus the typed entity schemas for OAuth2
+    Authorization Servers, OID4VCI Issuers, and OID4VP Verifiers (absorbed
+    from the former oauth2-server / oid4vci / oid4vp component files).
+paths: {}
+components:
+  parameters:
+    SoftwarePartyId:
+      name: softwareId
+      in: path
+      required: true
+      description: Unique identifier of a software party.
+      schema:
+        type: string
+        format: uuid
+    CapabilityId:
+      name: capabilityId
+      in: path
+      required: true
+      description: Unique identifier of a software capability.
+      schema:
+        type: string
+        format: uuid
+    DeploymentId:
+      name: deploymentId
+      in: path
+      required: true
+      description: Unique identifier of a deployment.
+      schema:
+        type: string
+        format: uuid
+    EndpointId:
+      name: endpointId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    CredentialId:
+      name: credentialId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+
+  schemas:
+    # --- Enums / extensible strings ---
+
+    SoftwareKind:
+      type: string
+      description: Form factor of the software.
+      enum: [SERVER, APP]
+
+    CapabilityType:
+      type: string
+      description: |
+        Protocol or behavioral role. Known values: OAUTH2_AUTHORIZATION_SERVER,
+        OAUTH2_RESOURCE_SERVER, OID4VP_VERIFIER, OID4VCI_ISSUER.
+        Extensible for future types (WALLET, SPIFFE_WORKLOAD, SOFTWARE_AGENT).
+
+    LifecycleStatus:
+      type: string
+      description: |
+        Capability lifecycle state. Known values: PROVISIONING, ACTIVE,
+        SUSPENDED, DECOMMISSIONED, ERROR. Extensible.
+
+    ManagementMode:
+      type: string
+      description: Who manages the service.
+      enum: [MANAGED, EXTERNAL, HYBRID]
+
+    RuntimeMode:
+      type: string
+      description: Where/how the service runs.
+      enum: [VDX_MANAGED, REMOTE_EDK, THIRD_PARTY]
+
+    ServiceTier:
+      type: string
+      enum: [STANDARD, PREMIUM, ENTERPRISE]
+
+    DeploymentType:
+      type: string
+      enum: [VDX_MANAGED, REMOTE_EDK, EXTERNAL_REFERENCE]
+
+    DeploymentStatus:
+      type: string
+      enum: [PENDING, DEPLOYING, RUNNING, STOPPED, FAILED]
+
+    HealthStatus:
+      type: string
+      enum: [HEALTHY, UNHEALTHY, UNREACHABLE]
+
+    EndpointType:
+      type: string
+      description: |
+        Known values: TOKEN, AUTHORIZE, INTROSPECT, REVOKE, JWKS, PAR,
+        USERINFO, DIRECT_POST, REQUEST_URI, CREDENTIAL, HEALTH, BASE,
+        DISCOVERY, CUSTOM.
+
+    EndpointSource:
+      type: string
+      enum: [DECLARED, DISCOVERED]
+
+    CredentialType:
+      type: string
+      description: CLIENT_SECRET is unavailable until a typed resource binding writer exists.
+      enum: [PRIVATE_KEY_JWT, MTLS, API_KEY]
+
+    # --- Core schemas ---
+
+    SoftwareParty:
+      type: object
+      required: [partyId, tenantId, softwareKind, createdAt, updatedAt]
+      properties:
+        partyId:
+          type: string
+          format: uuid
+        tenantId:
+          type: string
+          format: uuid
+        softwareKind:
+          $ref: '#/components/schemas/SoftwareKind'
+        displayVersion:
+          type: string
+        vendorPartyId:
+          type: string
+          format: uuid
+          nullable: true
+        softwareFamily:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        deletedAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    ServerParty:
+      type: object
+      required: [partyId, managementMode]
+      properties:
+        partyId:
+          type: string
+          format: uuid
+        managementMode:
+          $ref: '#/components/schemas/ManagementMode'
+        runtimeMode:
+          $ref: '#/components/schemas/RuntimeMode'
+        operatorPartyId:
+          type: string
+          format: uuid
+          nullable: true
+        serviceTier:
+          $ref: '#/components/schemas/ServiceTier'
+
+    SoftwareCapability:
+      type: object
+      required: [id, tenantId, softwarePartyId, capabilityType, isEnabled, system, lifecycleStatus, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenantId:
+          type: string
+          format: uuid
+        softwarePartyId:
+          type: string
+          format: uuid
+        capabilityType:
+          $ref: '#/components/schemas/CapabilityType'
+        isEnabled:
+          type: boolean
+        system:
+          type: boolean
+          description: True for bootstrap/internal service capabilities required for tenant operation. System capabilities are protected from deletion and excluded from tenant service-instance quotas.
+        lifecycleStatus:
+          $ref: '#/components/schemas/LifecycleStatus'
+        lifecycleStatusReason:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        deletedAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    SoftwareEndpoint:
+      type: object
+      required: [id, softwarePartyId, endpointType, url, source, status]
+      properties:
+        id:
+          type: string
+          format: uuid
+        softwarePartyId:
+          type: string
+          format: uuid
+        capabilityId:
+          type: string
+          format: uuid
+          nullable: true
+        deploymentId:
+          type: string
+          format: uuid
+          nullable: true
+        endpointType:
+          $ref: '#/components/schemas/EndpointType'
+        url:
+          type: string
+          format: uri
+        isPrimary:
+          type: boolean
+        source:
+          $ref: '#/components/schemas/EndpointSource'
+        lastVerifiedAt:
+          type: string
+          format: date-time
+          nullable: true
+        status:
+          type: string
+
+    SoftwareDeployment:
+      type: object
+      required: [id, softwarePartyId, deploymentType, deploymentStatus]
+      properties:
+        id:
+          type: string
+          format: uuid
+        softwarePartyId:
+          type: string
+          format: uuid
+        capabilityId:
+          type: string
+          format: uuid
+          nullable: true
+        deploymentType:
+          $ref: '#/components/schemas/DeploymentType'
+        environment:
+          type: string
+        region:
+          type: string
+        runtimeRef:
+          type: string
+        orchestratorRef:
+          type: string
+        deploymentStatus:
+          $ref: '#/components/schemas/DeploymentStatus'
+        lastSyncAt:
+          type: string
+          format: date-time
+          nullable: true
+        lastHealthCheckAt:
+          type: string
+          format: date-time
+          nullable: true
+        lastHealthStatus:
+          $ref: '#/components/schemas/HealthStatus'
+        lastError:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    SoftwareCredential:
+      type: object
+      required: [id, softwarePartyId, credentialType, isActive, validFrom]
+      properties:
+        id:
+          type: string
+          format: uuid
+        softwarePartyId:
+          type: string
+          format: uuid
+        capabilityId:
+          type: string
+          format: uuid
+          nullable: true
+        credentialType:
+          $ref: '#/components/schemas/CredentialType'
+        label:
+          type: string
+        clientId:
+          type: string
+        hasSecret:
+          type: boolean
+          description: Whether an opaque tenant secret ID is assigned (never exposes the identifier or value).
+        isActive:
+          type: boolean
+        validFrom:
+          type: string
+          format: date-time
+        validUntil:
+          type: string
+          format: date-time
+          nullable: true
+
+    MetadataSnapshot:
+      type: object
+      required: [id, softwarePartyId, snapshotType, document, discoveredAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        softwarePartyId:
+          type: string
+          format: uuid
+        capabilityId:
+          type: string
+          format: uuid
+          nullable: true
+        snapshotType:
+          type: string
+        document:
+          type: object
+          description: Raw discovery document (JSONB).
+        discoveredFrom:
+          type: string
+          format: uri
+        discoveredAt:
+          type: string
+          format: date-time
+
+    # --- Summary / detail views ---
+
+    InstanceRoutingEndpoint:
+      type: object
+      description: |
+        A routing endpoint exposed by a software instance (per the unified
+        SoftwareInstance read model). Describes where a given capability is
+        reachable for request routing / discovery.
+      required: [serviceType]
+      properties:
+        serviceType:
+          type: string
+          description: Capability/service type this endpoint serves.
+        primary:
+          type: boolean
+          description: Whether this is the primary endpoint for its serviceType.
+        enabled:
+          type: boolean
+          description: Whether the endpoint is currently active.
+        host:
+          type: string
+        pathPrefix:
+          type: string
+        wellKnownPath:
+          type: string
+
+    ServiceInstanceSummary:
+      type: object
+      description: Lightweight listing view for the generic /services/instances API.
+      required: [partyId, tenantId, displayName, softwareKind]
+      properties:
+        partyId:
+          type: string
+          format: uuid
+        instanceId:
+          type: string
+          nullable: true
+          description: Stable route/config identifier for this service instance, for example `default`. `partyId` remains the software-party UUID.
+        tenantId:
+          type: string
+          format: uuid
+        displayName:
+          type: string
+        softwareKind:
+          $ref: '#/components/schemas/SoftwareKind'
+        managementMode:
+          $ref: '#/components/schemas/ManagementMode'
+        runtimeMode:
+          $ref: '#/components/schemas/RuntimeMode'
+        capabilities:
+          type: array
+          items:
+            $ref: '#/components/schemas/SoftwareCapability'
+        routingEndpoints:
+          type: array
+          items:
+            $ref: '#/components/schemas/InstanceRoutingEndpoint'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    # --- Lifecycle action ---
+
+    LifecycleActionRequest:
+      type: object
+      properties:
+        reason:
+          type: string
+          description: Optional reason for the lifecycle transition.
+        capabilityId:
+          type: string
+          format: uuid
+          description: Target specific capability. If omitted, applies to all capabilities.
+
+    # --- Sub-resource create requests ---
+
+    DeploymentCreateRequest:
+      type: object
+      required:
+        - deploymentType
+      properties:
+        deploymentType:
+          type: string
+          description: Type of deployment (e.g., DOCKER, KUBERNETES, CLOUD_RUN).
+        environment:
+          type: string
+          description: Target environment (e.g., production, staging).
+        region:
+          type: string
+          description: Deployment region (e.g., eu-west-1).
+
+    EndpointCreateRequest:
+      type: object
+      required:
+        - endpointType
+        - url
+      properties:
+        endpointType:
+          type: string
+          description: Endpoint type (e.g., BASE, HEALTH, DISCOVERY, TOKEN, AUTHORIZE).
+        url:
+          type: string
+          format: uri
+          description: Endpoint URL.
+        isPrimary:
+          type: boolean
+          default: false
+        source:
+          $ref: '#/components/schemas/EndpointSource'
+
+    # --- OAuth2 Authorization Server entity schemas (absorbed from oauth2-server-components.yml) ---
+
+    OAuth2ServerConfig:
+      type: object
+      description: |
+        Runtime configuration for an OAuth2 Authorization Server.
+        Closely mirrors OAuth2ServerInstanceConfig from the IDK layer.
+        Written to config_setting as flat key-value properties.
+      properties:
+        # Identity
+        mode:
+          type: string
+          enum: [HOSTED, EXTERNAL]
+          description: HOSTED = VDX serves as AS. EXTERNAL = VDX connects to external AS.
+        issuer:
+          type: string
+          format: uri
+          description: Issuer identifier URL.
+        issuerTemplate:
+          type: string
+          description: Template with {tenant-id} placeholder for multi-tenant issuer URLs.
+        baseUrl:
+          type: string
+          format: uri
+
+        # Token lifetimes
+        accessTokenLifetimeSeconds:
+          type: integer
+          default: 3600
+        refreshTokenLifetimeSeconds:
+          type: integer
+          default: 86400
+        authorizationCodeLifetimeSeconds:
+          type: integer
+          default: 600
+        tokenFormat:
+          type: string
+          enum: [JWT, OPAQUE]
+        refreshTokenRotation:
+          type: boolean
+          default: true
+        refreshTokenRetryGracePeriodSeconds:
+          type: integer
+          default: 60
+          minimum: 1
+
+        # Grant types & response types
+        grantTypesEnabled:
+          type: array
+          items:
+            type: string
+          description: "e.g. authorization_code, client_credentials, refresh_token"
+        responseTypesSupported:
+          type: array
+          items:
+            type: string
+        scopesSupported:
+          type: array
+          items:
+            type: string
+
+        # OpenID Connect
+        oidc:
+          type: string
+          enum: [DISABLED, SUPPORTED, REQUIRED]
+        idTokenLifetimeSeconds:
+          type: integer
+          default: 3600
+        subjectTypesSupported:
+          type: array
+          items:
+            type: string
+        claimsSupported:
+          type: array
+          items:
+            type: string
+
+        # Feature policies
+        introspection:
+          type: string
+          enum: [DISABLED, SUPPORTED, REQUIRED]
+        revocation:
+          type: string
+          enum: [DISABLED, SUPPORTED, REQUIRED]
+        par:
+          type: string
+          enum: [DISABLED, SUPPORTED, REQUIRED]
+        tokenExchange:
+          type: string
+          enum: [DISABLED, SUPPORTED, REQUIRED]
+        pkce:
+          type: string
+          enum: [DISABLED, SUPPORTED, REQUIRED]
+        dpop:
+          type: string
+          enum: [DISABLED, SUPPORTED, REQUIRED]
+
+        # Auth methods
+        pkceMethodsSupported:
+          type: array
+          items:
+            type: string
+        tokenEndpointAuthMethodsSupported:
+          type: array
+          items:
+            type: string
+        introspectionEndpointAuthMethodsSupported:
+          type: array
+          items:
+            type: string
+        revocationEndpointAuthMethodsSupported:
+          type: array
+          items:
+            type: string
+
+        # Attestation
+        attestation:
+          type: string
+          enum: [DISABLED, SUPPORTED, REQUIRED]
+        attestationChallengeRequired:
+          type: boolean
+        attestationMaxLifetimeSeconds:
+          type: integer
+        attestationPopMaxAgeSeconds:
+          type: integer
+
+        # Signing. The signing key itself is server-selected from the authorization server's
+        # typed KMS resource binding and its fixed product role; it is not part of this contract.
+        signingAlgorithmsSupported:
+          type: array
+          items:
+            type: string
+        idTokenSigningAlgValuesSupported:
+          type: array
+          items:
+            type: string
+
+        # EXTERNAL mode endpoint overrides
+        tokenEndpoint:
+          type: string
+          format: uri
+        introspectionEndpoint:
+          type: string
+          format: uri
+        revocationEndpoint:
+          type: string
+          format: uri
+        jwksUri:
+          type: string
+          format: uri
+
+    AuthorizationServerDetail:
+      type: object
+      description: Full detail projection for an Authorization Server.
+      required: [partyId, tenantId, displayName, managementMode, capability]
+      properties:
+        partyId:
+          type: string
+          format: uuid
+        instanceId:
+          type: string
+          nullable: true
+          description: Stable route/config identifier for this authorization-server instance, for example `default`. `partyId` remains the software-party UUID.
+        tenantId:
+          type: string
+          format: uuid
+        displayName:
+          type: string
+        managementMode:
+          $ref: '#/components/schemas/ManagementMode'
+        runtimeMode:
+          $ref: '#/components/schemas/RuntimeMode'
+        serviceTier:
+          $ref: '#/components/schemas/ServiceTier'
+        operatorPartyId:
+          type: string
+          format: uuid
+          nullable: true
+        capability:
+          $ref: '#/components/schemas/SoftwareCapability'
+        config:
+          $ref: '#/components/schemas/OAuth2ServerConfig'
+        endpoints:
+          type: array
+          items:
+            $ref: '#/components/schemas/SoftwareEndpoint'
+        credentials:
+          type: array
+          items:
+            $ref: '#/components/schemas/SoftwareCredential'
+        deployments:
+          type: array
+          items:
+            $ref: '#/components/schemas/SoftwareDeployment'
+        metadataSnapshots:
+          type: array
+          items:
+            $ref: '#/components/schemas/MetadataSnapshot'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        deletedAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    # --- OID4VCI Issuer entity schemas (absorbed from oid4vci-components.yml) ---
+
+    Oid4vciIssuerConfig:
+      type: object
+      description: |
+        Runtime configuration for an OID4VCI Issuer.
+        No IDK config class exists yet; this defines the initial shape.
+        Will become the basis for the IDK OID4VCI config when that's built.
+      properties:
+        supportedFormats:
+          type: array
+          items:
+            type: string
+            example: dc+sd-jwt
+          description: "e.g. jwt_vc_json, dc+sd-jwt, mso_mdoc"
+          example: [dc+sd-jwt, jwt_vc_json]
+        credentialEndpointPath:
+          type: string
+          default: /credential
+          example: /credential
+        deferredCredentialEndpointPath:
+          type: string
+          example: /credential_deferred
+        notificationEndpointEnabled:
+          type: boolean
+          default: false
+        preAuthorizedCodeEnabled:
+          type: boolean
+          default: false
+        batchCredentialEnabled:
+          type: boolean
+          default: false
+      example:
+        supportedFormats: [dc+sd-jwt, jwt_vc_json]
+        credentialEndpointPath: /credential
+        deferredCredentialEndpointPath: /credential_deferred
+        notificationEndpointEnabled: true
+        preAuthorizedCodeEnabled: true
+        batchCredentialEnabled: false
+
+    Oid4vciIssuerDetail:
+      type: object
+      required: [partyId, tenantId, displayName, managementMode, capability]
+      properties:
+        partyId:
+          type: string
+          format: uuid
+          example: 4ca2a7cc-f5ef-4e13-8c0d-6a8bd7f6d211
+        instanceId:
+          type: string
+          nullable: true
+          description: Stable route/config identifier for this issuer instance, for example `default`. `partyId` remains the software-party UUID.
+          example: default
+        tenantId:
+          type: string
+          format: uuid
+          example: 7b3c2d9e-1f4a-4c8b-9e2d-5a6f7c8b9d01
+        displayName:
+          type: string
+          example: Acme Workforce Issuer
+        managementMode:
+          $ref: '#/components/schemas/ManagementMode'
+        runtimeMode:
+          $ref: '#/components/schemas/RuntimeMode'
+        authorizationServerId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Party ID of the AS this issuer uses.
+          example: 996d5f68-8836-4af1-b6da-1330b42a2805
+        capability:
+          $ref: '#/components/schemas/SoftwareCapability'
+        config:
+          $ref: '#/components/schemas/Oid4vciIssuerConfig'
+        endpoints:
+          type: array
+          items:
+            $ref: '#/components/schemas/SoftwareEndpoint'
+        credentials:
+          type: array
+          items:
+            $ref: '#/components/schemas/SoftwareCredential'
+        createdAt:
+          type: string
+          format: date-time
+          example: '2026-06-12T09:15:00Z'
+        updatedAt:
+          type: string
+          format: date-time
+          example: '2026-06-12T09:15:00Z'
+      example:
+        partyId: 4ca2a7cc-f5ef-4e13-8c0d-6a8bd7f6d211
+        instanceId: default
+        tenantId: 7b3c2d9e-1f4a-4c8b-9e2d-5a6f7c8b9d01
+        displayName: Acme Workforce Issuer
+        managementMode: MANAGED
+        runtimeMode: VDX_MANAGED
+        authorizationServerId: 996d5f68-8836-4af1-b6da-1330b42a2805
+        capability:
+          id: 70984e6c-bc67-456e-b22d-809d0cfb8456
+          tenantId: 7b3c2d9e-1f4a-4c8b-9e2d-5a6f7c8b9d01
+          softwarePartyId: 4ca2a7cc-f5ef-4e13-8c0d-6a8bd7f6d211
+          capabilityType: OID4VCI_ISSUER
+          isEnabled: true
+          lifecycleStatus: ACTIVE
+          createdAt: '2026-06-12T09:15:00Z'
+          updatedAt: '2026-06-12T09:15:00Z'
+        config:
+          supportedFormats: [dc+sd-jwt, jwt_vc_json]
+          credentialEndpointPath: /credential
+          deferredCredentialEndpointPath: /credential_deferred
+          notificationEndpointEnabled: true
+          preAuthorizedCodeEnabled: true
+          batchCredentialEnabled: false
+        endpoints: []
+        credentials: []
+        createdAt: '2026-06-12T09:15:00Z'
+        updatedAt: '2026-06-12T09:15:00Z'
+
+    # --- OID4VP Verifier entity schemas (absorbed from oid4vp-components.yml) ---
+
+    Oid4vpVerifierConfig:
+      type: object
+      description: |
+        Runtime configuration for an OID4VP Verifier.
+        Mirrors key fields from UniversalOid4vpConfig, Oid4vpAuthBridgeConfig,
+        and ClientMetadataConfiguration.
+      properties:
+        # From UniversalOid4vpConfig
+        externalBaseUrl:
+          type: string
+          format: uri
+          description: Externally reachable base URL for this verifier.
+          example: https://verify.acme.example
+        responseUri:
+          type: string
+          format: uri
+          description: Direct post response URI.
+          example: https://verify.acme.example/direct_post
+        # Verifier identity
+        clientId:
+          type: string
+          description: Verifier client_id for wallet interactions.
+          example: https://verify.acme.example
+        responseMode:
+          type: string
+          enum: [direct_post, direct_post.jwt]
+          example: direct_post.jwt
+        # Session
+        sessionTtlSeconds:
+          type: integer
+          default: 300
+        # Auth bridge
+        autoCreateUser:
+          type: boolean
+          default: true
+        requireReconciliation:
+          type: boolean
+          default: false
+        userIdentifierClaimPath:
+          type: string
+          default: sub
+          example: sub
+      example:
+        externalBaseUrl: https://verify.acme.example
+        responseUri: https://verify.acme.example/direct_post
+        clientId: https://verify.acme.example
+        responseMode: direct_post.jwt
+        sessionTtlSeconds: 300
+        autoCreateUser: false
+        requireReconciliation: true
+        userIdentifierClaimPath: sub
+
+    Oid4vpVerifierDetail:
+      type: object
+      required: [partyId, tenantId, displayName, managementMode, capability]
+      properties:
+        partyId:
+          type: string
+          format: uuid
+          example: b12f86b9-fab4-48c7-9e14-e0a930a64182
+        instanceId:
+          type: string
+          nullable: true
+          description: Stable route/config identifier for this verifier instance, for example `default`. `partyId` remains the software-party UUID.
+          example: default
+        tenantId:
+          type: string
+          format: uuid
+          example: 7b3c2d9e-1f4a-4c8b-9e2d-5a6f7c8b9d01
+        displayName:
+          type: string
+          example: Acme Workforce Verifier
+        managementMode:
+          $ref: '#/components/schemas/ManagementMode'
+        runtimeMode:
+          $ref: '#/components/schemas/RuntimeMode'
+        authorizationServerId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Party ID of the AS this verifier uses.
+          example: 996d5f68-8836-4af1-b6da-1330b42a2805
+        capability:
+          $ref: '#/components/schemas/SoftwareCapability'
+        config:
+          $ref: '#/components/schemas/Oid4vpVerifierConfig'
+        endpoints:
+          type: array
+          items:
+            $ref: '#/components/schemas/SoftwareEndpoint'
+        credentials:
+          type: array
+          items:
+            $ref: '#/components/schemas/SoftwareCredential'
+        createdAt:
+          type: string
+          format: date-time
+          example: '2026-06-12T09:30:00Z'
+        updatedAt:
+          type: string
+          format: date-time
+          example: '2026-06-12T09:30:00Z'
+      example:
+        partyId: b12f86b9-fab4-48c7-9e14-e0a930a64182
+        instanceId: default
+        tenantId: 7b3c2d9e-1f4a-4c8b-9e2d-5a6f7c8b9d01
+        displayName: Acme Workforce Verifier
+        managementMode: MANAGED
+        runtimeMode: VDX_MANAGED
+        authorizationServerId: 996d5f68-8836-4af1-b6da-1330b42a2805
+        capability:
+          id: 0ce8916e-8d0e-4d11-8ec1-a17d69a8a715
+          tenantId: 7b3c2d9e-1f4a-4c8b-9e2d-5a6f7c8b9d01
+          softwarePartyId: b12f86b9-fab4-48c7-9e14-e0a930a64182
+          capabilityType: OID4VP_VERIFIER
+          isEnabled: true
+          lifecycleStatus: ACTIVE
+          createdAt: '2026-06-12T09:30:00Z'
+          updatedAt: '2026-06-12T09:30:00Z'
+        config:
+          externalBaseUrl: https://verify.acme.example
+          responseUri: https://verify.acme.example/direct_post
+          clientId: https://verify.acme.example
+          responseMode: direct_post.jwt
+          sessionTtlSeconds: 300
+          autoCreateUser: false
+          requireReconciliation: true
+          userIdentifierClaimPath: sub
+        endpoints: []
+        credentials: []
+        createdAt: '2026-06-12T09:30:00Z'
+        updatedAt: '2026-06-12T09:30:00Z'

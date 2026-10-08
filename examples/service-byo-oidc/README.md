@@ -7,7 +7,8 @@ path on pure IDK. The service:
 2. Installs two Ktor plugins in order:
    - `KotlinInjectPlugin` attaches the Metro AppGraph to the call pipeline and
      builds a per-request session graph.
-   - `JwtAuthentication` validates the bearer token, resolves identity, and
+   - `JwtRouteAuthentication`, installed inside `routing` after the injection
+     plugin, validates the bearer token, resolves identity, and
      stashes a `SessionContext`. With `KotlinInjectPlugin` installed, its
      default resolvers pull the following IDK services straight out of the
      call-attached graphs; no bridge code is needed.
@@ -21,7 +22,7 @@ path on pure IDK. The service:
 
 What is "bring your own" is the **IdP** (Keycloak, Okta, Entra ID, ...), not
 the validator. The validator is IDK's stock session-scoped
-`JwtValidationService`, resolved per-request by `JwtAuthentication`'s default
+`JwtValidationService`, resolved per-request by `JwtRouteAuthentication`'s default
 lambda (`call.getSessionService<JwtValidationService>()`) out of the session
 graph that `KotlinInjectPlugin` attached to the call. Extension graphs
 published by `ktor-server-jwt-auth` (`JwtAuthSessionExtensionGraph` and
@@ -39,10 +40,12 @@ wiring.
 
 ## Run
 
+From the standalone IDK checkout:
+
 ```bash
-./gradlew :Identity-Development-Kit:examples-service-byo-oidc:run \
-  -DAUTH_IDP_ISSUER=https://keycloak.example.com/realms/demo \
-  -DAUTH_AUDIENCE=byo-demo
+AUTH_IDP_ISSUER=https://keycloak.example.com/realms/demo \
+AUTH_AUDIENCE=byo-demo \
+./gradlew :examples-service-byo-oidc:run
 ```
 
 Then:
@@ -54,7 +57,7 @@ curl -H "Authorization: Bearer <access-token>" http://localhost:8080/api/v1/me
 ## Purity check
 
 ```bash
-./gradlew :Identity-Development-Kit:examples-service-byo-oidc:checkIdkPurity
+./gradlew :examples-service-byo-oidc:checkIdkPurity
 ```
 
 ## E2E test
@@ -64,3 +67,8 @@ realm, mints a user token via ROPC, and asserts the full round trip through
 IDK's validator (JWKS fetched from the Keycloak container, signature
 verified end-to-end, claims resolved). The test skips gracefully when
 Docker is not available.
+
+The imported `demo` realm sets `access.token.header.type.rfc9068=true` on
+`demo-client`. The test asserts the resulting `at+jwt` protected header before
+sending the access token to the service. Keep the configured `byo-demo` audience
+and the issuer, signature and claim checks when using another IdP.

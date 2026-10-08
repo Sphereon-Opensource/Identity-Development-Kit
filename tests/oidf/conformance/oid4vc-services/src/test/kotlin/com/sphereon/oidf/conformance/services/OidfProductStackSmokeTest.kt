@@ -296,8 +296,6 @@ class OidfProductStackSmokeTest {
                 }
             }
     }
-
 }
 
-private fun Map<String, String>.toJsonObject() =
-    kotlinx.serialization.json.JsonObject(mapValues { (_, value) -> JsonPrimitive(value) })
+private fun Map<String, String>.toJsonObject() = kotlinx.serialization.json.JsonObject(mapValues { (_, value) -> JsonPrimitive(value) })

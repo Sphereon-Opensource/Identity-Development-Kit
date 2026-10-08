@@ -10,6 +10,28 @@ name: Private CI
 on:
   pull_request:
   workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish verified Maven prerequisites without npm or source mirroring
+        type: boolean
+        required: true
+        default: false
+      remote_only:
+        description: Verify actual remote dependencies without Maven local or job-private artifacts
+        type: boolean
+        required: true
+        default: false
+
+      snapshot_prerequisites_only:
+        description: Publish checked SNAPSHOT packs; full remote consumer acceptance follows after owning wallet prerequisites
+        type: boolean
+        required: true
+        default: false
+      publish_modules:
+        description: Optional comma-separated owning Maven modules; requires checked SNAPSHOT publication mode
+        type: string
+        required: false
+        default: ''
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -24,11 +46,10 @@ jobs:
     if: github.repository == 'Sphereon-Opensource/Identity-Development-Kit-private'
 #    runs-on: ubuntu-latest
     runs-on: linux-x64
-    timeout-minutes: 30
+    # Initial checked SNAPSHOT uploads exceed the ordinary verification budget.
+    timeout-minutes: ${{ inputs.snapshot_prerequisites_only && 60 || 30 }}
     steps:
       - uses: actions/checkout@v4
-        with:
-          submodules: recursive
       - run: chmod +x ./gradlew
 
       - uses: actions/setup-java@v4
@@ -44,25 +65,38 @@ jobs:
             notifications
             build-cache-1
 
-      # Generate TOML version catalogs from gradle-build-support source so the
-      # main settings.gradle.kts can resolve sphereonlib.* / sphereonplug.*
-      # accessors against current entries (e.g. com.doist.x:normalize) instead
-      # of falling back to the stale published library-bom artifact.
-      - name: Generate Sphereon TOML catalogs
-        working-directory: gradle-build-support
-        run: ./gradlew generateTomlCatalog --build-cache
+      # GBS plugins and catalogs resolve from published Maven artifacts.
+      # This workflow runs from the standalone product checkout.
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+
+      - name: Verify pack CI plan
+        run: python3 -B -m unittest discover -s .github/scripts -p test_pack_ci.py -v
 
       - name: Build & test (JVM only)
         run: >-
-          ./gradlew build --build-cache
-          -Dkmp.targets=jvm
-          -x koverVerify
-          -x :lib-crypto-kms-provider-aws:jvmTest
-          -x :lib-crypto-kms-provider-azure:jvmTest
-          -x :lib-data-link-http-client:jvmTest
+          python3 -B .github/scripts/pack_ci.py --mode private
+          ${{ inputs.publish && '--publish' || '' }}
+          ${{ inputs.remote_only && '--remote-only' || '' }}
+          ${{ inputs.snapshot_prerequisites_only && '--snapshot-prerequisites-only' || '' }}
+          --publish-modules "$IDK_PUBLISH_MODULES"
+        env:
+          IDK_PUBLISH_MODULES: ${{ inputs.publish_modules }}
+          NEXUS_USERNAME: ${{ secrets.NEXUS_USERNAME }}
+          NEXUS_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}
 
       - name: Print test failures
         if: failure()
         run: |
           find . -path "*/build/reports/tests/jvmTest/*.html" -name "index.html" \
             -exec echo "=== {} ===" \; -exec sed -n '1,100p' {} \;
+
+      - name: Archive JUnit evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: idk-junit-results
+          path: '**/build/test-results/**/*.xml'
+          if-no-files-found: warn

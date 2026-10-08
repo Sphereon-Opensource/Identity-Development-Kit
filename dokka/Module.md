@@ -117,6 +117,7 @@ IDK uses a consistent three-way split per domain area:
 - `lib-identity-matching-public` / `lib-identity-matching-impl`: hashed / encrypted identifier matching.
 - `lib-identity-resolution-public` / `lib-identity-resolution-impl`: identity resolution.
 - `lib-identity-reconciliation-public` / `lib-identity-reconciliation-impl`: cross-source attribute reconciliation.
+- `lib-identity-reconciliation-oidc`: OAuth2 adapter for the reconciliation OIDC SPI (protocols pack).
 - `lib-idv-public`, `lib-idv-oidc`, `lib-idv-wallet`: identity verification API and drivers (OIDC IDP, wallet-based).
 
 ### Credential

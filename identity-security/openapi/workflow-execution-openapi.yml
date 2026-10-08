@@ -1,0 +1,510 @@
+openapi: 3.0.4
+info:
+  title: Workflow Execution API
+  version: 0.1.0
+  x-products: [vdx]
+  description: |
+    Run-time API for form-backed workflow executions: start an execution bound to a form
+    session, read its live lifecycle state, list the HUMAN tasks it currently has parked, and
+    complete one of those tasks from a submitted form session.
+
+    Design-time authoring of the definitions these executions run lives in the Workflow
+    Authoring API, which shares the `/api/workflow/v1` mount.
+
+    Tenant and principal come from the authenticated session. This API declares no tenant or
+    model header and reads none.
+servers:
+  - url: https://{host}/api/workflow/v1
+    variables:
+      host:
+        default: localhost:8080
+security:
+  - bearer: []
+tags:
+  - name: Workflow Executions
+    description: Starting and reading form-backed workflow executions.
+  - name: Human Tasks
+    description: The HUMAN tasks a running execution has parked, and completing them.
+paths:
+
+  # ---------------------------------------------------------------------------
+  # Executions
+  # ---------------------------------------------------------------------------
+
+  /executions:
+    post:
+      tags: [Workflow Executions]
+      operationId: startWorkflowExecution
+      x-command-id: workflow.execution.start
+      summary: Start a form-backed workflow execution
+      description: |
+        Starts an execution of the named workflow definition and binds the supplied form session
+        to the definition's `humanTaskId` HUMAN node.
+
+        Whether submitting the form is enough to COMPLETE that node is the published definition's
+        decision, read from `WorkflowHumanNode.completeOnSubmit` at start time and recorded with the
+        binding. When it is `true`, a form submission completes the task. When it is `false`, the
+        submission parks the values and `completeHumanTask` is the only operation that completes the
+        node — which is the shape a definition uses when completion has to carry case-side
+        references or preconditions the form itself does not collect.
+
+        The response carries the `correlationKey` addressing the parked task; the `Location`
+        header points at the execution's read operation.
+
+        The request carries references and idempotency keys only. Which form field paths may be
+        published from the submission into the workflow variable scope is declared on the published
+        definition's HUMAN node (`WorkflowHumanNode.submissionFields`), read from it at start time
+        and recorded with the binding. A client supplies neither the allow-list nor a raw
+        submission, and cannot widen either.
+
+        That guarantee covers the completion submission only. The `input` object on this request is
+        a separate channel: its properties are merged into the execution's initial variable scope
+        without going through `submissionFields` at all, so see the `input` property description
+        for what a caller can and cannot rely on there.
+
+        Replaying the same `Idempotency-Key` with the same body replays the original result;
+        reusing it with a different body answers 409.
+      x-products: [vdx]
+      x-license-protection:
+        entitlementKey: vdx.workflow.execution.start
+        featureKeys: [workflow.execution.v1]
+        deploymentShapePredicates: [packaging=container, environment=production]
+        protectionMode: licensed
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StartWorkflowExecutionRequest'
+            example:
+              definitionKey: urn:vdx:model-pack:company-authority:workflow
+              humanTaskId: review
+              formSessionId: 9a7c1f22-0b2b-4c8b-9c1a-1f0d3d3a7b21
+              input:
+                caseReference: CASE-2026-0142
+      responses:
+        '201':
+          description: Execution started and bound to the form session.
+          headers:
+            Location:
+              schema: { type: string }
+              description: URI of the started execution.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkflowExecutionStarted'
+              example:
+                workflowExecutionId: form-acme-9a7c1f22-0b2b-4c8b-9c1a-1f0d3d3a7b21
+                formSessionId: 9a7c1f22-0b2b-4c8b-9c1a-1f0d3d3a7b21
+                humanTaskId: review
+                correlationKey: form-acme-9a7c1f22-0b2b-4c8b-9c1a-1f0d3d3a7b21::review
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: >-
+            A conflicting state on this operation. `ALREADY_EXISTS_ERROR` — the form session is
+            already bound to a DIFFERENT start request, so the retry is not the one that claimed it;
+            `INVALID_STATE` — the form session cannot be submitted in its current state, so it cannot
+            back an execution; `IDEMPOTENCY_KEY_CONFLICT` — the `Idempotency-Key` was reused with a
+            different body.
+          content:
+            application/json:
+              schema:
+                $ref: './common-components.yml#/components/schemas/ErrorResponse'
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+        '500': { $ref: '#/components/responses/Error' }
+
+  /executions/{workflowExecutionId}:
+    get:
+      tags: [Workflow Executions]
+      operationId: getWorkflowExecution
+      x-command-id: workflow.execution.read
+      summary: Read a workflow execution's live state
+      description: |
+        Returns the engine's live lifecycle projection of one execution (its status and its
+        lifecycle timestamps) and, for one that has completed, the boundary port its walk ended
+        on.
+
+        **The terminal port is the one field not taken from the lifecycle projection.** The
+        engine's execution view has no such field, so `exitPort` is read out of the completed
+        workflow's own result. Only the port name is published; the result payload stays behind
+        this door like every other payload byte. It is omitted for an execution that is still
+        running, for one that closed without completing, and for one whose walk ran out of
+        out-edges instead of reaching an explicit exit node. The wire does not distinguish those
+        three situations, so absence means "no terminal port to report" rather than "not yet known".
+
+        Two things this operation deliberately does not do:
+
+        * **It does not carry workflow variables, input/output payloads, or failure detail.**
+          Payload bytes are excluded to limit exposure, and the engine's execution view has no
+          populated failure cause today, so no `errorCode`/`errorMessage` is published rather than
+          one that would be null even on a failed execution. Recorded as a follow-up.
+        * **It does not distinguish the reasons for a 404.** An id no execution matches, an
+          execution belonging to another tenant, and an execution whose tenant cannot be proven all
+          answer the same 404 with the same message. That is deliberate: a distinguishable refusal
+          would confirm that an execution exists to a caller not entitled to know it.
+
+        Optional fields that have no value are OMITTED rather than sent as `null`
+        (`parentExecutionId`, `startedAt`, `completedAt`, `exitPort`); a client must treat absent
+        and null alike.
+      x-products: [vdx]
+      x-license-protection:
+        entitlementKey: vdx.workflow.execution.read
+        featureKeys: [workflow.execution.v1]
+        deploymentShapePredicates: [packaging=container, environment=production]
+        protectionMode: licensed
+      parameters:
+        - $ref: '#/components/parameters/WorkflowExecutionId'
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: The execution's live state.
+          headers:
+            Cache-Control:
+              schema: { type: string }
+              description: >-
+                Always `no-store`: tenant-scoped live engine state behind a bearer token, with no
+                `ETag` a cached copy could be revalidated against.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkflowExecution'
+              # A top-level, still-running execution: `parentExecutionId` and `completedAt` are
+              # absent rather than null, which is what the server actually emits, and `startedAt`
+              # equals `submittedAt` because this engine does not queue. The previous example
+              # published both nulls and a one-second gap, neither of which any response carries.
+              example:
+                workflowExecutionId: form-acme-9a7c1f22-0b2b-4c8b-9c1a-1f0d3d3a7b21
+                status: RUNNING
+                submittedAt: '2026-09-08T09:12:44Z'
+                startedAt: '2026-09-08T09:12:44Z'
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        # No 409. This operation reaches no CONFLICT-category error: it produces
+        # ILLEGAL_ARGUMENT_ERROR, NOT_FOUND_ERROR, TIMEOUT_ERROR and UNKNOWN_ERROR only, and it does
+        # not pass through the idempotency gate. Declaring one would give a generated client a
+        # branch it can never take.
+        '503': { $ref: '#/components/responses/Unavailable' }
+        '500': { $ref: '#/components/responses/Error' }
+
+  # ---------------------------------------------------------------------------
+  # Human tasks
+  # ---------------------------------------------------------------------------
+
+  /executions/{workflowExecutionId}/human/tasks:
+    get:
+      tags: [Human Tasks]
+      operationId: listPendingHumanTasks
+      x-command-id: workflow.human-task.list
+      summary: List the execution's parked human tasks
+      description: |
+        Returns the HUMAN tasks this execution currently has parked, as the engine's pending-task
+        query reports them.
+
+        Not paginated: the list is a bounded sub-resource of a single execution, so the envelope
+        carries `items` and no `page` object. An execution that has nothing parked — because it
+        has not reached a HUMAN node yet, or has already moved past every one — answers 200 with
+        an empty `items` array, not 404.
+
+        Timestamps are RFC 3339, matching the read operation: the engine's own human-task message
+        carries epoch milliseconds and this door converts them.
+      x-products: [vdx]
+      x-license-protection:
+        entitlementKey: vdx.workflow.human-task.list
+        featureKeys: [workflow.execution.v1]
+        deploymentShapePredicates: [packaging=container, environment=production]
+        protectionMode: licensed
+      parameters:
+        - $ref: '#/components/parameters/WorkflowExecutionId'
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: The execution's parked human tasks, possibly empty.
+          headers:
+            Cache-Control:
+              schema: { type: string }
+              description: Always `no-store`, for the reason the read operation states.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PendingHumanTaskList'
+              example:
+                items:
+                  - taskId: review
+                    correlationKey: form-acme-9a7c1f22-0b2b-4c8b-9c1a-1f0d3d3a7b21::review
+                    tenantId: acme
+                    parkedAt: '2026-09-08T09:12:44Z'
+                    expiresAt: '2026-09-09T09:12:44Z'
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        # No 409, for the same reason as the read operation above.
+        '503': { $ref: '#/components/responses/Unavailable' }
+        '500': { $ref: '#/components/responses/Error' }
+
+  /executions/{workflowExecutionId}/human/tasks/{correlationKey}/actions/complete:
+    post:
+      tags: [Human Tasks]
+      operationId: completeHumanTask
+      x-command-id: workflow.human-task.complete
+      summary: Complete a parked human task from a submitted form session
+      description: |
+        Applies a submitted form session to the HUMAN task parked under `correlationKey`, and
+        returns the engine's acknowledgement.
+
+        The body carries a form-session reference, never a raw submission: the server rebuilds
+        the submission from that session under the allow-list the published definition declares,
+        so the allow-list is neither supplied nor widenable by the client.
+
+        **Calling this before the form session is submitted answers 409 with code
+        `INVALID_STATE`** — a conflict-category state, and this API declares no 422. The task stays
+        parked and remains completable by a correct call, with a fresh `Idempotency-Key`.
+
+        **Which of the two shapes the addressed HUMAN node is in decides what this operation does.**
+
+        For a node the definition declares `completeOnSubmit: false`, this operation is the task's
+        ONLY completer: the platform's after-submit hook stands down and leaves the task parked. That
+        is the shape to author when the submission carries case-side references the form session does
+        not hold, and `bridge` is how those references reach the workflow — merged into the
+        submission under the definition's own `submissionFields` allow-list, so a name the allow-list
+        does not carry is dropped rather than published. Because nothing has claimed the engine-side
+        update id first, `preconditions` IS evaluated here; the usual assertion is
+        `{"varPath": "$.caseStreamVersion", "expected": <n>}`, and a case that has moved on answers
+        409 `INVALID_STATE` with the task still parked and still completable.
+
+        For a node that completes on submit — the default — the normal client sequence is to submit
+        the form first, letting the after-submit hook complete the task, and then call this
+        operation, which replays the first acknowledgement rather than refusing as a duplicate,
+        because both paths address the submission by the same deterministic engine-side update id.
+        That shared id is also the caveat on this path: the engine replays the hook's acknowledgement
+        without running the handler, so `preconditions` sent here are never evaluated. See
+        `CompleteHumanTaskRequest`.
+
+        `Idempotency-Key` is honoured at the HTTP layer: replaying the same key and body replays
+        the rendered response, while reusing that key with a different body answers 409. A
+        *retryable* failure — a `TIMEOUT` while the update was in flight, whose submission may
+        still have been applied — is not cached: the key is released so the same key reaches the
+        engine again, which dedups it server-side.
+      x-products: [vdx]
+      x-license-protection:
+        entitlementKey: vdx.workflow.human-task.complete
+        featureKeys: [workflow.execution.v1]
+        deploymentShapePredicates: [packaging=container, environment=production]
+        protectionMode: licensed
+      parameters:
+        - $ref: '#/components/parameters/WorkflowExecutionId'
+        - $ref: '#/components/parameters/CorrelationKey'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CompleteHumanTaskRequest'
+            example:
+              formSessionId: 9a7c1f22-0b2b-4c8b-9c1a-1f0d3d3a7b21
+              bridge:
+                submissionRef:
+                  type: { namespace: vdx, value: case-action-submission }
+                  id: submission-7b1f0c5a
+                evidenceRefs:
+                  - type: { namespace: vdx, value: evidence-submission }
+                    id: evidence-2d3e4f10
+                caseStreamVersion: 7
+              preconditions:
+                - varPath: $.caseStreamVersion
+                  expected: 7
+      responses:
+        '200':
+          description: The submission was applied to the parked task.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HumanTaskCompletionAck'
+              example:
+                taskId: review
+                correlationKey: form-acme-9a7c1f22-0b2b-4c8b-9c1a-1f0d3d3a7b21::review
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: >-
+            A conflicting state on this operation. `ALREADY_EXISTS_ERROR` — the task already carries
+            a DIFFERENT completion, which is not the replay of this submission;
+            `INVALID_STATE` — the form session has not been submitted, or a `preconditions` assertion
+            no longer holds and the task is left parked; `IDEMPOTENCY_KEY_CONFLICT` — the
+            `Idempotency-Key` was reused with a different body.
+          content:
+            application/json:
+              schema:
+                $ref: './common-components.yml#/components/schemas/ErrorResponse'
+        '503': { $ref: '#/components/responses/Unavailable' }
+        '500': { $ref: '#/components/responses/Error' }
+
+components:
+
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      description: >-
+        Caller-supplied Sphereon-standard idempotency key. Replaying the same key and body replays
+        the original result; reusing it with a different body returns 409
+        IDEMPOTENCY_KEY_CONFLICT.
+
+
+        **Retention is 24 hours** by default (`workflow.rest.idempotencyTtl`); after that the key is
+        forgotten and the same key starts a fresh call. A retryable failure is not retained at all —
+        the claim is released so an honest retry re-runs the operation.
+
+
+        This header is a HTTP-layer control and is unrelated to the workflow engine's own
+        deduplication of a completion, which is keyed on
+        `"<correlationKey>#<formSessionId>"` and lives inside the execution's current RUN. A
+        long-running execution that has continued as new has no memory of an update id settled in an
+        earlier run, so a completion replayed across that boundary is answered by the running
+        workflow rather than by a dedup cache.
+      schema:
+        type: string
+      example: 5c8c0a3e-9ae2-4b60-9d3f-6b4a2e5c1d70
+    CorrelationId:
+      name: X-Correlation-ID
+      in: header
+      required: false
+      description: >-
+        Caller-supplied identifier grouping related requests. When present it becomes the session's
+        correlation id and every server log line for the call carries it; when absent the session
+        mints its own. Matched case-insensitively, so the platform's `X-Correlation-Id` spelling is
+        the same header.
+
+
+        **Not echoed in the response**, and never written into `ApiError.correlationId`, so a
+        caller who wants one to quote has to send it.
+
+
+        Declared here rather than `$ref`-ed from `common-components.yml#/components/parameters/CorrelationId`
+        BECAUSE of that sentence: the shared parameter promises the server echoes the value back and
+        that it is always present in `ApiError.correlationId`, and neither holds on this API.
+        `DefaultRestErrorRenderer` — the renderer these doors run through — emits `Content-Type` and,
+        for a retryable error, `Retry-After`, and nothing else, and leaves the optional
+        `correlationId` unset. The shared declaration describes the API this one is migrating
+        toward; making the renderer write the field is the recorded follow-up.
+      schema:
+        type: string
+      example: 7f1a5c2e-3d40-4a9b-8e21-0c6d5b4a3f92
+    WorkflowExecutionId:
+      $ref: './workflow-execution-components.yml#/components/parameters/WorkflowExecutionId'
+    CorrelationKey:
+      $ref: './workflow-execution-components.yml#/components/parameters/CorrelationKey'
+
+  responses:
+    # Every error response on this API is the shared `ErrorResponse` from common-components.yml:
+    # `{error: ApiError}`, which is exactly what the platform's DefaultRestErrorRenderer emits
+    # (`RestErrorBody`: code, message, category, details under an `error` key; `correlationId` is
+    # optional in `ApiError` and this renderer never sets it). The responses themselves stay local
+    # because their descriptions are per operation; the shared `responses/*` in common-components.yml
+    # reference the flat `ApiError` without the envelope and do not match the renderer.
+    #
+    # 422 appears on `startWorkflowExecution` and nowhere else. The doors' OWN refusals never produce
+    # one: a stale precondition and an unsubmitted form session are `IdkError.INVALID_STATE`, whose
+    # category is CONFLICT, which renders as 409 (settled decision 11, unchanged). The one 422 is not
+    # a door's refusal at all — `engine.start` registers the definition, and a register that collides
+    # with a different body under the same (id, version) is `WorkflowDefinitionStoreError.InvalidState`,
+    # whose category is UNPROCESSABLE_ENTITY (VDX-207). It reaches the caller unchanged, so it is
+    # declared rather than hidden.
+    ValidationError:
+      description: The request failed validation. Codes include ILLEGAL_ARGUMENT_ERROR.
+      content:
+        application/json:
+          schema:
+            $ref: './common-components.yml#/components/schemas/ErrorResponse'
+    Unauthorized:
+      description: Authentication required, or the session carries no usable principal.
+      content:
+        application/json:
+          schema:
+            $ref: './common-components.yml#/components/schemas/ErrorResponse'
+    Forbidden:
+      description: Authenticated but not permitted to run this command.
+      content:
+        application/json:
+          schema:
+            $ref: './common-components.yml#/components/schemas/ErrorResponse'
+    NotFound:
+      description: >-
+        The addressed execution, task or form session does not exist for this tenant. Code
+        NOT_FOUND_ERROR.
+      content:
+        application/json:
+          schema:
+            $ref: './common-components.yml#/components/schemas/ErrorResponse'
+    UnprocessableEntity:
+      description: >-
+        The request is well-formed but cannot be processed as it stands. Code `INVALID_STATE`,
+        category UNPROCESSABLE_ENTITY: the definition the start would register collides with a
+        different body already published under the same key and version. Nothing was started, and
+        nothing is left to compensate — the registration happens before any engine call. Publish the
+        definition under a new version and start again.
+      content:
+        application/json:
+          schema:
+            $ref: './common-components.yml#/components/schemas/ErrorResponse'
+    Unavailable:
+      description: >-
+        A transient server condition; the request can be retried unchanged. Code TIMEOUT. Returned
+        by the read operation when the engine confirmed the execution COMPLETED but fetching its
+        result did not finish within the engine's transport budget. It is deliberately NOT reported
+        as an execution with no `exitPort`: that field's absence is documented as terminal
+        information, and "ask again" is not terminal.
+
+
+        No `Retry-After` accompanies it — the platform's default error renderer emits none — so a
+        client should back off on its own.
+      content:
+        application/json:
+          schema:
+            $ref: './common-components.yml#/components/schemas/ErrorResponse'
+    Error:
+      description: >-
+        An unexpected error occurred. Code UNKNOWN_ERROR. An execution id that resolves to nothing
+        is NOT one of these: it answers 404.
+      content:
+        application/json:
+          schema:
+            $ref: './common-components.yml#/components/schemas/ErrorResponse'
+
+  securitySchemes:
+    bearer:
+      $ref: './common-components.yml#/components/securitySchemes/bearer'
+
+  schemas:
+    # Start
+    StartWorkflowExecutionRequest:
+      $ref: './workflow-execution-components.yml#/components/schemas/StartWorkflowExecutionRequest'
+    WorkflowExecutionStarted:
+      $ref: './workflow-execution-components.yml#/components/schemas/WorkflowExecutionStarted'
+    # Read
+    WorkflowExecutionStatus:
+      $ref: './workflow-execution-components.yml#/components/schemas/WorkflowExecutionStatus'
+    WorkflowExecution:
+      $ref: './workflow-execution-components.yml#/components/schemas/WorkflowExecution'
+    # Human tasks
+    PendingHumanTask:
+      $ref: './workflow-execution-components.yml#/components/schemas/PendingHumanTask'
+    PendingHumanTaskList:
+      $ref: './workflow-execution-components.yml#/components/schemas/PendingHumanTaskList'
+    CompleteHumanTaskRequest:
+      $ref: './workflow-execution-components.yml#/components/schemas/CompleteHumanTaskRequest'
+    HumanTaskCompletionAck:
+      $ref: './workflow-execution-components.yml#/components/schemas/HumanTaskCompletionAck'

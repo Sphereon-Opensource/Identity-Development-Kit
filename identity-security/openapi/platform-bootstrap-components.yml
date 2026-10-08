@@ -1,0 +1,1091 @@
+openapi: 3.0.4
+info:
+  title: Platform Bootstrap API Components
+  version: 0.1.0
+  description: >
+    Shared schemas for the platform-bootstrap API. These schemas model
+    runtime wiring only. They intentionally exclude service settings bodies,
+    credential designs, issuer/verifier designs, DCQL queries, operational
+    records, and secrets, which remain owned by their dedicated APIs. Protocol
+    `.well-known` metadata remains governed by canonical public endpoint
+    bindings, not by this browser runtime projection.
+paths: {}
+components:
+  parameters:
+    BusinessWalletSlug:
+      name: slug
+      in: path
+      required: true
+      description: Business-wallet instance slug. This is the `<slug>` segment in `wallets.<slug>.*` config keys and in the `/wallets/<slug>` public base path.
+      schema:
+        type: string
+        pattern: '^[a-z][a-z0-9-]{0,62}$'
+      example: sales
+
+  schemas:
+    ApplicationRuntimeConfigResponse:
+      type: object
+      description: Browser-safe runtime configuration response for a platform-hosted application.
+      required: [metadata, data]
+      properties:
+        metadata:
+          $ref: '#/components/schemas/ApplicationRuntimeConfigMetadata'
+        data:
+          $ref: '#/components/schemas/ApplicationRuntimeConfigData'
+      example:
+        metadata:
+          applicationId: admin-console
+          tenantId: 7b3c2d9e-1f4a-4c8b-9e2d-5a6f7c8b9d01
+          tenantSlug: acme
+          revision: v1:admin-console:7b3c2d9e:acme:8f4c
+          generatedAtEpochMs: 1782478560000
+          ttlSeconds: 300
+          unchanged: false
+          sourceId: platform-runtime-config
+          warnings: []
+        data:
+          platform:
+            publicBaseUrl: https://platform.nk.example.com
+            issuer: https://platform.nk.example.com
+            authorizationUrl: https://platform.nk.example.com/oauth2/authorize
+            tokenUrl: https://platform.nk.example.com/oauth2/token
+            jwksUri: https://platform.nk.example.com/.well-known/jwks.json
+            endSessionUrl: https://platform.nk.example.com/oauth2/logout
+          oauth:
+            clientId: admin-console
+            scope: openid profile email platform.operator
+            redirectPath: /admin-console/operator/callback
+            postLogoutRedirectPath: /admin-console
+          services:
+            platform:
+              serviceId: platform
+              baseUrl: https://platform.nk.example.com
+              audience: enterprise-platform
+              endpoints:
+                bootstrapApi:
+                  path: /api/platform/bootstrap/v1
+                  description: Browser and service bootstrap API root
+                authorization:
+                  path: /authorize
+                  description: Platform authorization endpoint
+                token:
+                  path: /token
+                  description: Platform token endpoint
+                jwks:
+                  path: /.well-known/jwks.json
+                  description: Platform JSON Web Key Set
+            platformAdmin:
+              serviceId: platform
+              baseUrl: https://platform.nk.example.com
+              audience: enterprise-platform
+              endpoints:
+                api:
+                  path: /api/platform/admin/v1
+                  description: Platform administration API root
+                tenants:
+                  path: /api/platform/admin/v1/tenants
+                  description: Tenant administration collection
+                features:
+                  path: /api/platform/admin/v1/features
+                  description: Platform feature catalog
+            platformConfig:
+              serviceId: platform
+              baseUrl: https://platform.nk.example.com
+              audience: enterprise-platform
+              endpoints:
+                api:
+                  path: /api/platform/config/v1
+                  description: Platform service configuration API root
+            tenantDid:
+              serviceId: service-data
+              baseUrl: https://acme.nk.example.com
+              audience: enterprise-tenant-did
+              endpoints:
+                api:
+                  path: /api/did/v1
+                  description: Tenant DID API root
+                identifiers:
+                  path: /api/did/v1/identifiers
+                  description: Tenant DID identifiers
+                didWeb:
+                  path: /.well-known/did.json
+                  description: Tenant DID Web document
+            issuer:
+              serviceId: issuer
+              baseUrl: https://acme.nk.example.com
+              audience: enterprise-issuer
+              endpoints:
+                metadata:
+                  path: /.well-known/openid-credential-issuer
+                  description: OID4VCI issuer metadata
+                api:
+                  path: /api/oid4vci/v1
+                  description: OID4VCI management API root
+                credentialDesigns:
+                  path: /api/credential-design/v1
+                  description: Credential design API root
+            verifier:
+              serviceId: verifier
+              baseUrl: https://acme.nk.example.com
+              audience: enterprise-verifier
+              endpoints:
+                protocol:
+                  path: /oid4vp
+                  description: OID4VP protocol root
+                dcqlApi:
+                  path: /api/dcql/v1
+                  description: DCQL query API root
+            licensePortal:
+              serviceId: license-portal
+              baseUrl: https://platform.nk.example.com
+              audience: enterprise-platform
+              endpoints:
+                app:
+                  path: /license-portal
+                  description: License portal application root
+                api:
+                  path: /license-portal/api/license-portal/v1
+                  description: License portal API root
+          capabilities:
+            licensePortalEnabled: 'true'
+
+    ApplicationRuntimeConfigMetadata:
+      type: object
+      description: Cache, revision, and diagnostic metadata for a runtime-config response.
+      required: [applicationId, revision, generatedAtEpochMs, ttlSeconds, sourceId]
+      properties:
+        applicationId:
+          type: string
+          description: Platform-hosted application id the response was generated for.
+          example: admin-console
+        tenantId:
+          type: string
+          nullable: true
+          description: Optional tenant selector used when resolving tenant-specific runtime wiring.
+          example: 7b3c2d9e-1f4a-4c8b-9e2d-5a6f7c8b9d01
+        tenantSlug:
+          type: string
+          nullable: true
+          description: Optional tenant slug used when deriving tenant subdomain API roots.
+          example: acme
+        revision:
+          type: string
+          description: Stable revision for the effective runtime configuration data.
+          example: v1:admin-console:7b3c2d9e:acme:8f4c
+        generatedAtEpochMs:
+          type: integer
+          format: int64
+          description: Unix epoch milliseconds when the response was generated.
+          example: 1782478560000
+        ttlSeconds:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Client cache TTL in seconds.
+          example: 300
+        unchanged:
+          type: boolean
+          default: false
+          description: True when the supplied knownRevision still matches the effective data revision.
+        sourceId:
+          type: string
+          description: Stable source identifier for diagnostics and audit trails.
+          example: platform-runtime-config
+        warnings:
+          type: array
+          description: Non-fatal diagnostics. Warnings never contain secrets.
+          items:
+            type: string
+          default: []
+
+    ApplicationRuntimeConfigData:
+      type: object
+      description: Browser-safe runtime wiring consumed by a platform-hosted application.
+      required: [platform, oauth, services]
+      properties:
+        platform:
+          $ref: '#/components/schemas/ApplicationRuntimePlatformConfig'
+        oauth:
+          $ref: '#/components/schemas/ApplicationRuntimeOAuthConfig'
+        services:
+          type: object
+          description: >
+            Application-visible services keyed by stable service names. Each service owns its
+            concrete browser-facing base URL, optional token audience, and named endpoints.
+            Tenant KMS is deliberately absent from this browser-safe projection.
+            Typed KMS administration is available only through platform-config;
+            generic KMS provider, key, and credential routes are never advertised.
+          additionalProperties:
+            $ref: '#/components/schemas/ApplicationRuntimeServiceConfig'
+        capabilities:
+          allOf:
+            - $ref: '#/components/schemas/StringMap'
+          description: Browser-safe capability flags represented as strings for forward compatibility.
+          default: {}
+        theming:
+          $ref: '#/components/schemas/ApplicationRuntimeThemingConfig'
+
+    ApplicationRuntimeThemingConfig:
+      type: object
+      description: Resolved theming for the application (token overrides; branding TBD).
+      properties:
+        tokens:
+          type: object
+          additionalProperties:
+            type: string
+          description: Flattened, fully-resolved design tokens (key -> value).
+
+    ApplicationRuntimeServiceConfig:
+      type: object
+      description: Browser-facing service projection with endpoints grouped under the owning service.
+      required: [serviceId, baseUrl, endpoints]
+      properties:
+        serviceId:
+          type: string
+          description: Stable platform service identifier.
+          example: service-crypto
+        baseUrl:
+          type: string
+          format: uri-reference
+          description: Concrete browser-facing service origin. Platform services use the platform origin; tenant services use the tenant origin when a tenant selector is supplied.
+          example: https://acme.nk.example.com
+        audience:
+          type: string
+          nullable: true
+          description: OAuth audience used when the browser exchanges or requests service tokens for this service.
+          example: enterprise-tenant-kms
+        scopes:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+          description: Exact workload scopes required for this service. Empty for browser-token services without a dedicated workload scope.
+          default: []
+        endpoints:
+          type: object
+          description: Named endpoint objects owned by this service and resolved relative to baseUrl unless absolute.
+          additionalProperties:
+            $ref: '#/components/schemas/ApplicationRuntimeEndpointConfig'
+
+    ApplicationRuntimeEndpointConfig:
+      type: object
+      description: Named browser-facing endpoint below a service base URL.
+      required: [path]
+      properties:
+        path:
+          type: string
+          format: uri-reference
+          description: Endpoint path relative to the service baseUrl, or an absolute URL.
+          example: /api/license-portal/v1
+        description:
+          type: string
+          description: Optional human-readable endpoint purpose.
+
+    ApplicationRuntimePlatformConfig:
+      type: object
+      description: Public platform endpoints needed by browser applications.
+      required: [publicBaseUrl, issuer, authorizationUrl, tokenUrl, jwksUri]
+      properties:
+        publicBaseUrl:
+          type: string
+          format: uri-reference
+          description: Public base URL for the platform as seen by the browser.
+        issuer:
+          type: string
+          format: uri-reference
+          description: Platform authorization-server issuer.
+        authorizationUrl:
+          type: string
+          format: uri-reference
+          description: OAuth2/OIDC authorization endpoint.
+        tokenUrl:
+          type: string
+          format: uri-reference
+          description: OAuth2 token endpoint.
+        jwksUri:
+          type: string
+          format: uri-reference
+          description: Public JWKS URI for token validation metadata.
+        endSessionUrl:
+          type: string
+          format: uri-reference
+          nullable: true
+          description: Optional end-session/logout endpoint.
+
+    ApplicationRuntimeOAuthConfig:
+      type: object
+      description: Browser OAuth client metadata for the requesting application.
+      required: [clientId, scope, redirectPath]
+      properties:
+        clientId:
+          type: string
+          description: Public OAuth client id used by the browser application.
+        scope:
+          type: string
+          description: Space-delimited OAuth scopes requested by the browser application.
+        redirectPath:
+          type: string
+          description: Browser callback path relative to the application origin/base path.
+        postLogoutRedirectPath:
+          type: string
+          nullable: true
+          description: Optional post-logout redirect path.
+
+    AdminConsoleContextResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/AdminConsoleContext'
+
+    AdminConsoleContext:
+      type: object
+      description: Browser-safe tenant administration context bound to one verified public host.
+      required: [persona, publicOrigin, tenantId, tenantSlug, authorizationServer, oauthClient, capabilities]
+      properties:
+        persona:
+          type: string
+          enum: [TENANT_ADMIN]
+        publicOrigin:
+          type: string
+          format: uri
+        tenantId:
+          type: string
+        tenantSlug:
+          type: string
+        authorizationServer:
+          $ref: '#/components/schemas/AdminConsoleAuthorizationServer'
+        oauthClient:
+          $ref: '#/components/schemas/AdminConsoleOAuthClient'
+        capabilities:
+          $ref: '#/components/schemas/AdminConsoleCapabilities'
+
+    AdminConsoleAuthorizationServer:
+      type: object
+      required: [instanceId, issuer, authorizationUrl, tokenUrl, endSessionUrl]
+      properties:
+        instanceId:
+          type: string
+        issuer:
+          type: string
+          format: uri
+        authorizationUrl:
+          type: string
+          format: uri
+        tokenUrl:
+          type: string
+          format: uri
+        endSessionUrl:
+          type: string
+          format: uri
+
+    AdminConsoleOAuthClient:
+      type: object
+      required: [clientId, scope, redirectPath, postLogoutRedirectPath]
+      properties:
+        clientId:
+          type: string
+          example: tenant-admin-console
+        scope:
+          type: string
+          example: openid profile email
+        redirectPath:
+          type: string
+          example: /admin-console/callback
+        postLogoutRedirectPath:
+          type: string
+          example: /admin-console
+
+    AdminConsoleCapabilities:
+      type: object
+      required: [enabledServices, multiInstance, instanceCaps]
+      properties:
+        enabledServices:
+          $ref: '#/components/schemas/AdminConsoleServiceBooleans'
+        multiInstance:
+          $ref: '#/components/schemas/AdminConsoleServiceBooleans'
+        instanceCaps:
+          $ref: '#/components/schemas/AdminConsoleServiceCounts'
+
+    AdminConsoleServiceBooleans:
+      type: object
+      required: [as, issuer, verifier, wallet]
+      properties:
+        as:
+          type: boolean
+        issuer:
+          type: boolean
+        verifier:
+          type: boolean
+        wallet:
+          type: boolean
+
+    AdminConsoleServiceCounts:
+      type: object
+      required: [as, issuer, verifier, wallet]
+      properties:
+        as:
+          type: integer
+          minimum: 0
+        issuer:
+          type: integer
+          minimum: 0
+        verifier:
+          type: integer
+          minimum: 0
+        wallet:
+          type: integer
+          minimum: 0
+
+    BusinessWalletContextResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/BusinessWalletContext'
+
+    BusinessWalletContext:
+      type: object
+      description: >
+        Browser-safe business-wallet context bound to one verified public host
+        and one wallet slug. It carries deployment wiring only; it never carries
+        a client secret, an internal network address, a credential, or a token.
+      required: [persona, publicOrigin, basePath, tenantId, tenantSlug, wallet, authorizationServers, session, branding, capabilities]
+      properties:
+        persona:
+          type: string
+          enum: [WALLET_USER]
+        publicOrigin:
+          type: string
+          format: uri
+          description: Scheme and host the wallet is served from, derived from the forwarded headers.
+        basePath:
+          type: string
+          description: Base path the wallet application is mounted on, below the public origin.
+          example: /wallets/sales
+        tenantId:
+          type: string
+        tenantSlug:
+          type: string
+        wallet:
+          $ref: '#/components/schemas/BusinessWalletDescriptor'
+        authorizationServers:
+          type: array
+          description: >
+            Authorization servers bound to this wallet, ordered by `default`
+            descending, then by the configured display order, then by last
+            update time. At least one enabled binding is always present; the
+            context does not resolve without one.
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/BusinessWalletAuthorizationServer'
+        session:
+          $ref: '#/components/schemas/BusinessWalletSession'
+        branding:
+          $ref: '#/components/schemas/BusinessWalletBranding'
+        capabilities:
+          $ref: '#/components/schemas/BusinessWalletCapabilities'
+        issuers:
+          type: array
+          description: >
+            Issuers bound to this wallet, ordered by `default` descending, then
+            by the configured display order, then by last update time.
+          items:
+            $ref: '#/components/schemas/BusinessWalletIssuer'
+          default: []
+        verifiers:
+          type: array
+          description: >
+            Verifiers bound to this wallet, ordered by `default` descending,
+            then by the configured display order, then by last update time.
+          items:
+            $ref: '#/components/schemas/BusinessWalletVerifier'
+          default: []
+
+    BusinessWalletDescriptor:
+      type: object
+      description: Identity and tier of the resolved wallet instance.
+      required: [slug, displayName, edition]
+      properties:
+        slug:
+          type: string
+          pattern: '^[a-z][a-z0-9-]{0,62}$'
+          description: Wallet instance slug. This is the `<slug>` segment in `wallets.<slug>.*` config keys.
+          example: sales
+        displayName:
+          type: string
+          example: Sales wallet
+        edition:
+          type: string
+          description: >
+            Wallet tier granted by the effective license. `standard` is granted
+            by `business-wallet.standard.v1`; `enterprise` additionally requires
+            `business-wallet.enterprise.v1`.
+          enum: [standard, enterprise]
+          example: standard
+
+    BusinessWalletAuthorizationServer:
+      type: object
+      description: >
+        Authorization server the wallet may authenticate against. `clientId` is
+        a public PKCE client. No client secret is ever returned: the wallet
+        back-end for frontend uses the authorization code flow with PKCE and a
+        server-held session, so no client credential reaches the browser.
+      required: [instanceId, issuer, authorizationUrl, tokenUrl, endSessionUrl, clientId, scope, default]
+      properties:
+        instanceId:
+          type: string
+        displayName:
+          type: string
+          nullable: true
+          description: >
+            Label rendered on the identity-provider picker when several
+            authorization servers are bound to the same wallet. Null falls back
+            to the issuer host.
+        issuer:
+          type: string
+          format: uri
+        authorizationUrl:
+          type: string
+          format: uri
+        tokenUrl:
+          type: string
+          format: uri
+        endSessionUrl:
+          type: string
+          format: uri
+        clientId:
+          type: string
+          description: Public PKCE client id used for this wallet. Never a confidential client.
+          example: business-wallet-sales
+        scope:
+          type: string
+          description: Space-delimited OAuth scopes requested for this wallet.
+          example: openid profile email
+        default:
+          type: boolean
+          description: True for the binding preselected when the wallet opens.
+
+    BusinessWalletSession:
+      type: object
+      description: Browser session routing for the wallet back-end for frontend, relative to the public origin.
+      required: [redirectPath, postLogoutRedirectPath]
+      properties:
+        redirectPath:
+          type: string
+          example: /wallets/sales/callback
+        postLogoutRedirectPath:
+          type: string
+          example: /wallets/sales
+
+    BusinessWalletBranding:
+      type: object
+      description: Browser-safe white-label wiring for the wallet surface.
+      required: [themeApplicationId, locales, defaultLocale]
+      properties:
+        themeApplicationId:
+          type: string
+          description: Application id the theming pipeline resolves tenant token overrides for.
+          example: business-wallet
+        logoUrl:
+          type: string
+          format: uri-reference
+          nullable: true
+          description: Optional tenant logo rendered in the wallet header.
+        supportUrl:
+          type: string
+          format: uri-reference
+          nullable: true
+          description: Optional tenant support link rendered in the wallet footer.
+        locales:
+          type: array
+          description: BCP 47 language tags the wallet surface is offered in.
+          items:
+            type: string
+          default: []
+          example: [en, nl, de]
+        defaultLocale:
+          type: string
+          description: BCP 47 language tag used when the browser expresses no supported preference.
+          example: en
+
+    BusinessWalletCapabilities:
+      type: object
+      description: >
+        Effective, license-clamped feature gates plus bound-instance counts that the wallet surface
+        renders against. These mirror the `wallets.<slug>.features.*` section after clamping, so the
+        application never has to re-derive entitlement client side.
+
+
+        Most gates here are OPERATOR capabilities: a business wallet issues and requests
+        credentials on behalf of the organisation running it. The `holder` gate reports whether
+        the holder role is enabled and licensed for this wallet, so the surface can decide whether
+        to render holder functionality. Custody identifiers such as wallet unit ids are never part
+        of this context; they remain excluded from the public bootstrap and are available only to
+        authenticated configuration consumers.
+      required:
+        - issuance
+        - emailIssuance
+        - verification
+        - emailVerification
+        - holder
+        - contacts
+        - semanticIntegration
+        - issuerCount
+        - verifierCount
+      properties:
+        issuance:
+          type: boolean
+          description: True when the wallet may issue credentials through a bound issuer, by QR code or link.
+        emailIssuance:
+          type: boolean
+          description: True when the wallet may issue by email, minting `credential.issuance` invitations.
+        verification:
+          type: boolean
+          description: True when the wallet may request presentations through a bound verifier, by QR code or link.
+        emailVerification:
+          type: boolean
+          description: True when the wallet may request presentations by email, minting `credential.verification` invitations.
+        holder:
+          type: boolean
+          description: True when the holder role is enabled and licensed for this wallet.
+        contacts:
+          type: boolean
+          description: True when the wallet exposes the organisation directory.
+        semanticIntegration:
+          type: boolean
+          description: >
+            True when the wallet exposes enterprise information-system and semantic-modeling
+            integration. Clamped off unless the tenant is granted `business-wallet.enterprise.v1`.
+        issuerCount:
+          type: integer
+          minimum: 0
+          description: Number of enabled issuer bindings on this wallet.
+        verifierCount:
+          type: integer
+          minimum: 0
+          description: Number of enabled verifier bindings on this wallet.
+
+    BusinessWalletIssuer:
+      type: object
+      description: Issuer binding this wallet may issue credentials through.
+      required: [instanceId, displayName, default, credentialIssuerUrl]
+      properties:
+        instanceId:
+          type: string
+        displayName:
+          type: string
+        default:
+          type: boolean
+          description: True for the binding preselected in issuance flows.
+        credentialIssuerUrl:
+          type: string
+          format: uri
+          description: Public credential issuer identifier the wallet fetches OID4VCI issuer metadata from.
+        credentialConfigurationIds:
+          type: array
+          description: Credential configuration ids of this issuer the wallet is allowed to request.
+          items:
+            type: string
+          default: []
+
+    BusinessWalletVerifier:
+      type: object
+      description: Verifier binding this wallet may request presentations through.
+      required: [instanceId, displayName, default, baseUrl]
+      properties:
+        instanceId:
+          type: string
+        displayName:
+          type: string
+        default:
+          type: boolean
+          description: True for the binding preselected in presentation flows.
+        baseUrl:
+          type: string
+          format: uri
+          description: Public OID4VP base URL of the verifier.
+        queryIds:
+          type: array
+          description: DCQL query ids of this verifier the wallet is allowed to run.
+          items:
+            type: string
+          default: []
+
+    PlatformBootstrapConfigResponse:
+      type: object
+      description: Internal runtime bootstrap response for satellites, workload services, and platform-side operators.
+      required: [metadata, requestContext, platform, services, diagnostics]
+      properties:
+        metadata:
+          $ref: '#/components/schemas/PlatformBootstrapConfigMetadata'
+        requestContext:
+          $ref: '#/components/schemas/PlatformBootstrapRequestContext'
+        platform:
+          $ref: '#/components/schemas/PlatformRuntimeMetadata'
+        identity:
+          $ref: '#/components/schemas/ConsumerIdentityMetadata'
+        services:
+          type: object
+          description: Internal service-discovery projection keyed by stable service names.
+          additionalProperties:
+            $ref: '#/components/schemas/ServiceBootstrapMetadata'
+        configDomains:
+          type: array
+          description: >
+            Configuration domain names the consumer is allowed to request from
+            platform-config. These are selectors only; bootstrap does not inline
+            domain bodies such as KMS provider definitions.
+          items:
+            type: string
+          default: []
+        tenantResolution:
+          $ref: '#/components/schemas/TenantResolutionMetadata'
+        license:
+          $ref: '#/components/schemas/LicenseCapabilityProjection'
+        telemetry:
+          $ref: '#/components/schemas/TelemetryBootstrapMetadata'
+        diagnostics:
+          $ref: '#/components/schemas/BootstrapDiagnostics'
+      example:
+        metadata:
+          consumerId: tenant-kms
+          revision: v1:tenant-kms:7b3c2d9e:93ab
+          generatedAtEpochMs: 1782478560000
+          ttlSeconds: 300
+          unchanged: false
+          sourceId: platform-bootstrap-config
+          warnings: []
+        requestContext:
+          consumerType: SATELLITE
+          consumerId: tenant-kms
+          tenantId: 7b3c2d9e-1f4a-4c8b-9e2d-5a6f7c8b9d01
+          workloadInstanceId: workload-eu-1
+          deploymentSiteId: eu-west
+          requestedDomains: [kms.default-resource-handle, crypto.kms.roles]
+          requestBaseUrl: https://platform.nk.example.com
+        platform:
+          publicBaseUrl: https://platform.nk.example.com
+          issuer: https://platform.nk.example.com
+          jwksUri: https://platform.nk.example.com/.well-known/jwks.json
+          tokenUrl: https://platform.nk.example.com/token
+          authorizationUrl: https://platform.nk.example.com/authorize
+          endSessionUrl: https://platform.nk.example.com/logout
+        identity:
+          serviceId: service-crypto
+          clientId: kms-service
+          audience: enterprise-tenant-kms
+        services:
+          platform:
+            serviceId: platform
+            audience: enterprise-platform
+            trustDomain: https://platform.nk.example.com
+            endpoints:
+              grpc:
+                protocol: GRPC
+                url: grpc://enterprise-platform:9090
+                visibility: INTERNAL
+                network:
+                  runtime: KUBERNETES
+                  scheme: grpc
+                  host: enterprise-platform
+                  port: 9090
+                  namespace: vdx-control
+                  serviceName: enterprise-platform
+              rest:
+                protocol: HTTP
+                url: http://enterprise-platform:18080
+                visibility: INTERNAL
+                network:
+                  runtime: KUBERNETES
+                  scheme: http
+                  host: enterprise-platform
+                  port: 18080
+                  namespace: vdx-control
+                  serviceName: enterprise-platform
+          tenantKms:
+            serviceId: service-crypto
+            audience: enterprise-tenant-kms
+            trustDomain: https://platform.nk.example.com
+            endpoints:
+              grpc:
+                protocol: GRPC
+                url: grpc://tenant-kms.workload-eu-1.svc:9090
+                visibility: INTERNAL
+                network:
+                  runtime: KUBERNETES
+                  scheme: grpc
+                  host: tenant-kms.workload-eu-1.svc
+                  port: 9090
+                  namespace: workload-eu-1
+                  serviceName: tenant-kms
+              health:
+                protocol: HTTP
+                url: http://tenant-kms.workload-eu-1.svc:8080/health
+                visibility: INTERNAL
+                network:
+                  runtime: KUBERNETES
+                  scheme: http
+                  host: tenant-kms.workload-eu-1.svc
+                  port: 8080
+                  basePath: /health
+                  namespace: workload-eu-1
+                  serviceName: tenant-kms
+        configDomains: [kms.default-resource-handle, crypto.kms.roles]
+        tenantResolution:
+          remote: true
+          baseDomain: tenants.example.com
+        license:
+          deploymentRole: enterprise
+          installationId: install-123
+          capabilities: {}
+        telemetry:
+          enabled: true
+          endpoint: http://otel-collector:4317
+          protocol: grpc
+        diagnostics:
+          sourceId: platform-bootstrap-config
+          localOverridesInEffect: false
+          warnings: []
+
+    PlatformBootstrapConfigMetadata:
+      type: object
+      description: Cache, revision, and diagnostic metadata for an internal bootstrap response.
+      required: [consumerId, revision, generatedAtEpochMs, ttlSeconds, sourceId]
+      properties:
+        consumerId:
+          type: string
+          description: Consumer id the response was generated for.
+        revision:
+          type: string
+          description: Stable revision for the effective bootstrap projection.
+        generatedAtEpochMs:
+          type: integer
+          format: int64
+        ttlSeconds:
+          type: integer
+          format: int64
+          minimum: 0
+        unchanged:
+          type: boolean
+          default: false
+        sourceId:
+          type: string
+          example: platform-bootstrap-config
+        warnings:
+          type: array
+          items:
+            type: string
+          default: []
+
+    PlatformBootstrapConsumerType:
+      type: string
+      enum: [SATELLITE, FRONTEND_SERVER, OPERATOR_TOOL]
+
+    PlatformBootstrapRequestContext:
+      type: object
+      description: Normalized bootstrap selector used to resolve tenant, workload, and site scoped wiring.
+      required: [consumerType, consumerId]
+      properties:
+        consumerType:
+          $ref: '#/components/schemas/PlatformBootstrapConsumerType'
+        consumerId:
+          type: string
+        tenantId:
+          type: string
+          nullable: true
+        workloadInstanceId:
+          type: string
+          nullable: true
+        deploymentSiteId:
+          type: string
+          nullable: true
+        requestedDomains:
+          type: array
+          items:
+            type: string
+          default: []
+        requestBaseUrl:
+          type: string
+          format: uri-reference
+          nullable: true
+          description: Public request base URL observed by the bootstrap API.
+
+    PlatformRuntimeMetadata:
+      type: object
+      description: Public platform metadata shared with internal consumers.
+      required: [publicBaseUrl, issuer, jwksUri, tokenUrl, authorizationUrl]
+      properties:
+        publicBaseUrl:
+          type: string
+          format: uri-reference
+        issuer:
+          type: string
+          format: uri-reference
+        jwksUri:
+          type: string
+          format: uri-reference
+        tokenUrl:
+          type: string
+          format: uri-reference
+        authorizationUrl:
+          type: string
+          format: uri-reference
+        endSessionUrl:
+          type: string
+          format: uri-reference
+          nullable: true
+
+    ConsumerIdentityMetadata:
+      type: object
+      description: Internal service identity allocated to the requesting consumer.
+      properties:
+        serviceId:
+          type: string
+          nullable: true
+        clientId:
+          type: string
+          nullable: true
+        audience:
+          type: string
+          nullable: true
+
+    ServiceBootstrapMetadata:
+      type: object
+      description: Internal service definition and endpoint set.
+      required: [serviceId, endpoints]
+      properties:
+        serviceId:
+          type: string
+        audience:
+          type: string
+          nullable: true
+        scopes:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+          description: Exact workload scopes required for this service endpoint.
+          default: []
+        trustDomain:
+          type: string
+          format: uri-reference
+          nullable: true
+        endpoints:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/ServiceEndpointMetadata'
+          default: {}
+
+    ServiceEndpointMetadata:
+      type: object
+      description: Concrete internal endpoint for a protocol exposed by a service.
+      required: [protocol, url, visibility]
+      properties:
+        protocol:
+          type: string
+          enum: [HTTP, GRPC]
+        url:
+          type: string
+          format: uri-reference
+          description: Concrete callable internal URL for this endpoint.
+        visibility:
+          type: string
+          enum: [INTERNAL, PUBLIC]
+        network:
+          $ref: '#/components/schemas/ServiceNetworkAddress'
+
+    ServiceNetworkAddress:
+      type: object
+      description: Optional structured network address for Kubernetes, Docker, or external runtimes.
+      required: [runtime, host]
+      properties:
+        runtime:
+          type: string
+          enum: [KUBERNETES, DOCKER, EXTERNAL]
+        scheme:
+          type: string
+          nullable: true
+          example: grpc
+        host:
+          type: string
+          description: Kubernetes service DNS name, Docker service alias, or external hostname.
+        port:
+          type: integer
+          minimum: 1
+          maximum: 65535
+          nullable: true
+        basePath:
+          type: string
+          nullable: true
+        namespace:
+          type: string
+          nullable: true
+          description: Kubernetes namespace when runtime is KUBERNETES.
+        serviceName:
+          type: string
+          nullable: true
+          description: Kubernetes Service name or Docker Compose service name.
+        containerName:
+          type: string
+          nullable: true
+          description: Docker container name when runtime is DOCKER.
+
+    TenantResolutionMetadata:
+      type: object
+      required: [remote]
+      properties:
+        remote:
+          type: boolean
+          default: true
+        baseDomain:
+          type: string
+          nullable: true
+
+    LicenseCapabilityProjection:
+      type: object
+      properties:
+        deploymentRole:
+          type: string
+          nullable: true
+        installationId:
+          type: string
+          nullable: true
+        capabilities:
+          allOf:
+            - $ref: '#/components/schemas/StringMap'
+          default: {}
+
+    TelemetryBootstrapMetadata:
+      type: object
+      required: [enabled]
+      properties:
+        enabled:
+          type: boolean
+        endpoint:
+          type: string
+          nullable: true
+        protocol:
+          type: string
+          nullable: true
+
+    BootstrapDiagnostics:
+      type: object
+      required: [sourceId]
+      properties:
+        sourceId:
+          type: string
+        localOverridesInEffect:
+          type: boolean
+          default: false
+        warnings:
+          type: array
+          items:
+            type: string
+          default: []
+
+    StringMap:
+      type: object
+      description: String key/value map.
+      additionalProperties:
+        type: string

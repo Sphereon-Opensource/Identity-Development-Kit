@@ -39,6 +39,7 @@ class OidfVerifierPlanConformanceTest {
     private val executions = Collections.synchronizedList(mutableListOf<OidfVerifierModuleExecution>())
     private val scenarioErrors = Collections.synchronizedList(mutableListOf<String>())
     private val plans = linkedMapOf<OidfPlanScenario, OidfPlan>()
+
     // The pinned suite's mock mDL wallet uses one process-global ephemeral document store.
     // CreateMdocCredential clears and reprovisions that store for every module, so concurrent mDL
     // scenario chains can erase each other's document between initialise() and response creation.
@@ -205,7 +206,11 @@ class OidfVerifierPlanConformanceTest {
         val workspace = checkNotNull(System.getProperty("oidf.sut.workspace"))
         return runCatching {
             val process = ProcessBuilder(listOf("git", "-C", workspace) + args).redirectErrorStream(true).start()
-            val output = process.inputStream.bufferedReader().use { it.readText() }.trim()
+            val output =
+                process.inputStream
+                    .bufferedReader()
+                    .use { it.readText() }
+                    .trim()
             if (process.waitFor() == 0) output else ""
         }.getOrDefault("")
     }

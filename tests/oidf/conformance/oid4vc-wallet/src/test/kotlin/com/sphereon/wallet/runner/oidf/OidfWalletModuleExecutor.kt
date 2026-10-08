@@ -90,7 +90,10 @@ internal class OidfWalletModuleExecutor(
             walletTerminal = harnessResult.walletOutcome.terminal
             walletSucceeded = harnessResult.walletOutcome.succeeded
             walletErrorCode = harnessResult.walletOutcome.error?.code
-            walletErrorArguments = harnessResult.walletOutcome.error?.arguments.orEmpty()
+            walletErrorArguments =
+                harnessResult.walletOutcome.error
+                    ?.arguments
+                    .orEmpty()
         } catch (error: Throwable) {
             executionError = error.stackTraceToString()
             testId?.let { id ->

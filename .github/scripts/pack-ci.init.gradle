@@ -1,0 +1,90 @@
+// CI builds each pack from this checkout and consumes completed lower packs as
+// Maven inputs. This repository is private to one CI job and removed afterwards.
+def prerequisitePath = System.getProperty('idk.ci.prerequisites')
+if (!prerequisitePath) throw new GradleException('Missing idk.ci.prerequisites')
+def remoteOnly = System.getProperty('idk.ci.remote-only') == 'true'
+
+def prerequisiteUri = new File(prerequisitePath).toURI()
+def publishRemotely = System.getProperty('idk.ci.publish') == 'true'
+
+def addPrerequisites = { repositories ->
+    repositories.exclusiveContent {
+        forRepository {
+            repositories.maven {
+                name = 'ciPrerequisites'
+                url = prerequisiteUri
+            }
+        }
+        filter { includeGroup('com.sphereon.idk') }
+    }
+}
+
+if (remoteOnly) {
+    gradle.beforeSettings { settings ->
+        // Install before settings/catalog/plugin resolution can consult Maven local.
+        [settings.pluginManagement.repositories,
+         settings.dependencyResolutionManagement.repositories].each { repositories ->
+            repositories.whenObjectAdded { repository ->
+                if (repository instanceof org.gradle.api.artifacts.repositories.MavenArtifactRepository &&
+                    repository.url.scheme == 'file') repositories.remove(repository)
+            }
+        }
+    }
+}
+
+gradle.settingsEvaluated { settings ->
+    // A project-only prerequisite repository would hide the normal settings
+    // repositories under Gradle's default PREFER_PROJECT policy.
+    settings.dependencyResolutionManagement.repositoriesMode.set(
+        org.gradle.api.initialization.resolve.RepositoriesMode.PREFER_SETTINGS)
+    if (!remoteOnly) addPrerequisites(settings.dependencyResolutionManagement.repositories)
+}
+
+gradle.beforeProject { project ->
+    if (System.getProperty('idk.ci.exclude-kover') == 'true') {
+        // Preserve the owning CI coverage exclusion only where this task exists.
+        project.tasks.configureEach { task ->
+            if (task.name == 'koverVerify') task.enabled = false
+        }
+    }
+    if (remoteOnly) {
+        project.repositories.whenObjectAdded { repository ->
+            if (repository instanceof org.gradle.api.artifacts.repositories.MavenArtifactRepository &&
+                repository.url.scheme == 'file') project.repositories.remove(repository)
+        }
+    }
+    if (project == project.rootProject) {
+        project.tasks.register('publishCiMavenRemote') {
+            group = 'publishing'
+            description = 'Publish only Maven artifacts to the owning IDK repository'
+            dependsOn(project.provider {
+                project.allprojects.collectMany { owner ->
+                    owner.tasks.withType(org.gradle.api.publish.maven.tasks.PublishToMavenRepository)
+                        .findAll { task -> task.repository.name == 'sphereon-opensource' }
+                }
+            })
+        }
+    }
+    project.plugins.withId('maven-publish') {
+        if (!remoteOnly) {
+            project.publishing.repositories.maven {
+                name = 'ciPrerequisites'
+                url = prerequisiteUri
+            }
+        }
+        // These are the existing repository name, version policy and credentials
+        // from the IDK root build. Pack builds have their own Gradle roots.
+        if (publishRemotely && project.rootProject.name.startsWith('idk-')) {
+            project.publishing.repositories.maven {
+                name = 'sphereon-opensource'
+                url = project.version.toString().contains('SNAPSHOT')
+                    ? 'https://nexus.sphereon.com/repository/sphereon-opensource-snapshots/'
+                    : 'https://nexus.sphereon.com/repository/sphereon-opensource-releases/'
+                credentials {
+                    username = System.getenv('NEXUS_USERNAME')
+                    password = System.getenv('NEXUS_PASSWORD')
+                }
+            }
+        }
+    }
+}

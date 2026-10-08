@@ -34,11 +34,15 @@ tasks.withType<Test>().configureEach {
         "junit.jupiter.execution.parallel.config.fixed.parallelism",
         providers.gradleProperty("oidf.parallelism").orElse("12").get(),
     )
-    systemProperty("oidf.sut.workspace", rootProject.layout.projectDirectory.asFile.absolutePath)
+    systemProperty("oidf.sut.workspace", projectDir.resolve("../../../..").canonicalPath)
+    systemProperty("platformVersion", rootProject.version.toString())
     val evidenceDirectory =
         System.getProperty("oidf.evidence.dir")
             ?: providers.gradleProperty("oidf.evidence.dir").orNull
-            ?: layout.buildDirectory.dir("oidf-evidence").get().asFile.absolutePath
+            ?: layout.buildDirectory
+                .dir("oidf-evidence")
+                .get()
+                .asFile.absolutePath
     systemProperty("oidf.evidence.dir", evidenceDirectory)
     listOf(
         "oidf.suite.mode",

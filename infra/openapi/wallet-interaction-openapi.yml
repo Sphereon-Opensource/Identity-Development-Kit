@@ -1,0 +1,739 @@
+openapi: 3.0.4
+info:
+  title: Wallet Interaction API
+  version: 0.1.0
+  x-products: [idk, edk, vdx]
+  description: |
+    Wallet Interaction is the session-oriented REST projection of the neutral
+    wallet interaction commands. A wallet application captures an entry point
+    (QR code, deep link, NFC/BLE handover, or an already parsed object),
+    starts an interaction session for a wallet unit, and then drives an
+    explicit state machine through user actions: reviewing the counterparty
+    and its trust evidence, reviewing credential offers, selecting
+    credentials, consenting to disclosure, satisfying security challenges,
+    and completing or cancelling the flow.
+
+    Sensitive protocol material never travels through interaction state.
+    Transaction codes, authorization callbacks, and security grants are
+    registered as sensitive inputs and referenced by opaque handles; the
+    registered values are never echoed back and never logged.
+
+    Reads are available as a point-in-time state snapshot, a bounded
+    server-sent-events replay of recorded state events, and a request/response
+    frame transport for clients that multiplex resume, action, cancel, and
+    ping frames over one endpoint. A per-wallet activity log projection lists
+    completed and in-flight interactions for history views.
+
+    Every state snapshot carries a monotonic revision. A client that dispatches
+    an action may state the revision it decided against, in the request body,
+    and the server then refuses the dispatch with 409 unless the session is
+    still at that revision, so an approval is never applied against a state the
+    user was not looking at. There are no concurrency-control HTTP headers in
+    this contract; the precondition is always a body member.
+
+    This surface adapts the neutral wallet interaction commands to HTTP
+    resources. It is not the internal backend command transport; live event
+    streaming remains available through the neutral server-streaming command
+    behind the same contract.
+servers:
+  - url: https://api.example.com/api/wallet/interaction/v1
+    description: Production server.
+  - url: http://localhost:8080/api/wallet/interaction/v1
+    description: Local development server.
+security:
+  - bearer: []
+tags:
+  - name: WalletInteractionSession
+    description: Start, resume, act on, cancel, and read wallet interaction sessions and their state machine.
+  - name: WalletInteractionEvents
+    description: Bounded server-sent-events replay of recorded interaction state events and the request/response frame transport.
+  - name: WalletInteractionSensitiveInput
+    description: Register client-supplied sensitive protocol input by reference. Registered values are never echoed back and never logged.
+  - name: WalletInteractionActivity
+    description: Read the per-wallet interaction activity log projection.
+  - name: HandoffSession
+    description: |
+      Multi-screen credential hand-off sessions. One session wraps one offer or request run and
+      is observed by operator, display, and conduit screens through role projections. Phases
+      advance only server side; snapshots and the server-sent-events stream are served from the
+      session store read model. Screens authenticate with access tokens their owning OAuth2
+      authorization server mints for the hand-off audience.
+  - name: HandoffScreen
+    description: Screen binding, presence heartbeats, and role-scoped session reads. Screen
+      credentials are enrolled as OAuth2 device clients of the tenant authorization server;
+      this service validates bearers and never issues screen credentials itself.
+paths:
+  /wallets/{walletUnitId}/interactions:
+    parameters:
+      - $ref: './wallet-interaction-components.yml#/components/parameters/WalletUnitId'
+    post:
+      tags: [WalletInteractionSession]
+      summary: Start a wallet interaction
+      operationId: startWalletInteraction
+      x-command-id: wallet.interaction.start
+      description: |
+        Starts a wallet interaction session from a captured entry point and
+        returns the session with its initial state. The walletUnitId inside
+        the request input must equal the walletUnitId path parameter; a
+        mismatch is rejected. The execution owner recorded at start is locked
+        before semantic interpretation and stays immutable for the lifetime
+        of the interaction.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './wallet-interaction-components.yml#/components/schemas/StartWalletInteractionBody'
+      responses:
+        '201':
+          description: Wallet interaction session started.
+          content:
+            application/json:
+              schema:
+                $ref: './wallet-interaction-components.yml#/components/schemas/WalletInteractionSessionEnvelope'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /wallets/{walletUnitId}/interactions/{sessionId}:
+    parameters:
+      - $ref: './wallet-interaction-components.yml#/components/parameters/WalletUnitId'
+      - $ref: './wallet-interaction-components.yml#/components/parameters/InteractionSessionId'
+    delete:
+      tags: [WalletInteractionSession]
+      summary: Cancel a wallet interaction
+      operationId: cancelWalletInteraction
+      x-command-id: wallet.interaction.cancel
+      description: |
+        Cancels the interaction session and returns the terminal state. All
+        outstanding sensitive inputs registered for the session are removed
+        when the interaction terminates.
+      responses:
+        '200':
+          description: Wallet interaction cancelled.
+          content:
+            application/json:
+              schema:
+                $ref: './wallet-interaction-components.yml#/components/schemas/CancelWalletInteractionResult'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /wallets/{walletUnitId}/interactions/{sessionId}/resume:
+    parameters:
+      - $ref: './wallet-interaction-components.yml#/components/parameters/WalletUnitId'
+      - $ref: './wallet-interaction-components.yml#/components/parameters/InteractionSessionId'
+    post:
+      tags: [WalletInteractionSession]
+      summary: Resume a wallet interaction
+      operationId: resumeWalletInteraction
+      x-command-id: wallet.interaction.resume
+      description: |
+        Picks a Failed interaction up where it stopped when error.disposition
+        is RESUMABLE: starts a new phase of the same session and returns the
+        restored waiting state. Failed sessions with any other disposition
+        are rejected. Live sessions are rehydrated without starting a new
+        phase. Re-attaching after restart without changing a Failed session
+        is GET /state, not this endpoint. This endpoint takes no request body.
+      responses:
+        '200':
+          description: Wallet interaction session resumed.
+          content:
+            application/json:
+              schema:
+                $ref: './wallet-interaction-components.yml#/components/schemas/WalletInteractionSessionEnvelope'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /wallets/{walletUnitId}/interactions/{sessionId}/actions:
+    parameters:
+      - $ref: './wallet-interaction-components.yml#/components/parameters/WalletUnitId'
+      - $ref: './wallet-interaction-components.yml#/components/parameters/InteractionSessionId'
+    post:
+      tags: [WalletInteractionSession]
+      summary: Dispatch a wallet interaction action
+      operationId: dispatchWalletInteractionAction
+      x-command-id: wallet.interaction.submit-action
+      description: |
+        Dispatches one user or client action into the interaction state
+        machine and returns the resulting state. Sensitive values such as
+        transaction codes and security grants are passed by sensitive-input
+        reference, never inline.
+
+        OPTIMISTIC CONCURRENCY. A client that sends expectedRevision in the
+        request body makes the dispatch a conditional write: the server reads
+        the session state first and answers 409 with a
+        WalletInteractionRevisionConflict, applying nothing, unless the session
+        is still at exactly that revision. This is what keeps an approval the
+        user gave against a screen that has since moved on -- a consent decided
+        on a stale render, or a retry of an action that already applied -- from
+        being applied against a state nobody looked at. The conflict body
+        carries the current state so the client can re-render immediately.
+        Omitting expectedRevision applies the action unconditionally.
+
+        There are no concurrency-control HTTP headers on this operation. The
+        precondition travels in the body, the way the frame transport already
+        carries lastRevision, so no gateway can strip it.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './wallet-interaction-components.yml#/components/schemas/DispatchWalletInteractionActionBody'
+      responses:
+        '200':
+          description: Wallet interaction state after the action.
+          content:
+            application/json:
+              schema:
+                $ref: './wallet-interaction-components.yml#/components/schemas/WalletInteractionStateEnvelope'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '409':
+          description: |
+            The request stated an expectedRevision and the session is at a
+            different revision. Nothing was applied.
+          content:
+            application/json:
+              schema:
+                $ref: './wallet-interaction-components.yml#/components/schemas/WalletInteractionRevisionConflict'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /wallets/{walletUnitId}/interactions/{sessionId}/state:
+    parameters:
+      - $ref: './wallet-interaction-components.yml#/components/parameters/WalletUnitId'
+      - $ref: './wallet-interaction-components.yml#/components/parameters/InteractionSessionId'
+    get:
+      tags: [WalletInteractionSession]
+      summary: Get wallet interaction state
+      operationId: getWalletInteractionState
+      x-command-id: wallet.interaction.get-state
+      description: |
+        Returns the current point-in-time state snapshot of the interaction
+        session, including the revision used for event replay and frame
+        reconciliation. This is the re-attach path after restart: it
+        rehydrates the session without starting a new phase, so a Failed
+        session stays Failed.
+      responses:
+        '200':
+          description: Wallet interaction state.
+          content:
+            application/json:
+              schema:
+                $ref: './wallet-interaction-components.yml#/components/schemas/WalletInteractionStateEnvelope'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /wallets/{walletUnitId}/interactions/{sessionId}/events:
+    parameters:
+      - $ref: './wallet-interaction-components.yml#/components/parameters/WalletUnitId'
+      - $ref: './wallet-interaction-components.yml#/components/parameters/InteractionSessionId'
+    get:
+      tags: [WalletInteractionEvents]
+      summary: Replay wallet interaction state events
+      operationId: getWalletInteractionEvents
+      x-command-id: wallet.interaction.get-events
+      x-codegen-excluded: true
+      description: |
+        Returns recorded interaction state events in the server-sent-events
+        wire format. Each event uses the event name wallet-interaction-state,
+        the id field carries the state revision, and the data field carries
+        the WalletInteractionStateEvent JSON document. When the Last-Event-ID
+        request header is present, only events with a revision greater than
+        that value are replayed.
+
+        The current implementation returns a bounded replay of the events
+        recorded so far and then closes the response; it does not hold the
+        connection open for live updates. Live streaming is a later server
+        enhancement behind this same contract, and remains available today
+        through the neutral server-streaming command transport.
+      parameters:
+        - $ref: './wallet-interaction-components.yml#/components/parameters/LastEventId'
+      responses:
+        '200':
+          description: Bounded server-sent-events replay of recorded state events.
+          headers:
+            Cache-Control:
+              description: Always no-cache for the event stream response.
+              schema:
+                type: string
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                description: Server-sent-events stream. Each event carries a WalletInteractionStateEvent JSON document in its data field.
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /wallets/{walletUnitId}/interactions/{sessionId}/frames:
+    parameters:
+      - $ref: './wallet-interaction-components.yml#/components/parameters/WalletUnitId'
+      - $ref: './wallet-interaction-components.yml#/components/parameters/InteractionSessionId'
+    post:
+      tags: [WalletInteractionEvents]
+      summary: Handle a wallet interaction frame
+      operationId: handleWalletInteractionFrame
+      # The authorization identity of the multiplexed transport. There is no dedicated
+      # neutral service command behind it: the frame handler dispatches resume, submit-action,
+      # and cancel under their own command ids. Declared as
+      # WalletInteractionApiConstants.Commands.FRAME on the Kotlin side.
+      x-command-id: wallet.interaction.frame
+      description: |
+        Multiplexed request/response frame transport over one endpoint. A
+        RESUME, DISPATCH_ACTION, or CANCEL client frame is executed against
+        the session and answered with a STATE server frame carrying the
+        resulting state and revision; a PING frame is answered with PONG. The
+        sessionId inside the frame must equal the sessionId path parameter; a
+        mismatch is rejected.
+
+        A DISPATCH_ACTION frame that carries lastRevision is a conditional
+        write on exactly the terms the actions endpoint uses for
+        expectedRevision: it is answered with 409 and an ERROR server frame
+        carrying the current state, applying nothing, unless the session is
+        still at that revision. lastRevision is ignored on RESUME, CANCEL, and
+        PING. A RESUME frame of a Failed session with disposition RESUMABLE
+        starts a new phase and advances revision; GET /state is the re-attach
+        path that does not. This operation declares no header parameters; the
+        precondition travels in the frame body.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './wallet-interaction-components.yml#/components/schemas/WalletInteractionClientFrame'
+      responses:
+        '200':
+          description: Server frame answering the client frame.
+          content:
+            application/json:
+              schema:
+                $ref: './wallet-interaction-components.yml#/components/schemas/WalletInteractionServerFrame'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '409':
+          description: |
+            A DISPATCH_ACTION frame stated a lastRevision and the session is at a
+            different revision. Nothing was applied. The ERROR server frame carries
+            the current state and revision.
+          content:
+            application/json:
+              schema:
+                $ref: './wallet-interaction-components.yml#/components/schemas/WalletInteractionServerFrame'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /wallets/{walletUnitId}/interactions/{sessionId}/sensitive-inputs:
+    parameters:
+      - $ref: './wallet-interaction-components.yml#/components/parameters/WalletUnitId'
+      - $ref: './wallet-interaction-components.yml#/components/parameters/InteractionSessionId'
+    post:
+      tags: [WalletInteractionSensitiveInput]
+      summary: Register sensitive interaction input
+      operationId: registerWalletInteractionSensitiveInput
+      x-command-id: wallet.interaction.register-sensitive-input
+      description: |
+        Registers client-supplied sensitive protocol input for this
+        interaction session and returns an opaque one-time reference. The
+        caller then passes the reference in a subsequent action such as
+        submit_tx_code, auth_callback, or approve_security_challenge. The
+        registered value is bound to this session and purpose, is consumable
+        at most once, is removed when the interaction terminates, is never
+        echoed back in any response or interaction state, and is never
+        logged. Only purposes whose value originates at the wallet client are
+        accepted: OID4VCI_TRANSACTION_CODE, OID4VCI_AUTHORIZATION_CALLBACK,
+        and INTERACTION_SECURITY_GRANT.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './wallet-interaction-components.yml#/components/schemas/RegisterWalletInteractionSensitiveInputRequest'
+      responses:
+        '201':
+          description: Sensitive input registered. The response carries only the opaque reference, never the value.
+          content:
+            application/json:
+              schema:
+                $ref: './wallet-interaction-components.yml#/components/schemas/RegisterWalletInteractionSensitiveInputResult'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /wallets/{walletUnitId}/interactions/{sessionId}/authorization-handoff:
+    parameters:
+      - $ref: './wallet-interaction-components.yml#/components/parameters/WalletUnitId'
+      - $ref: './wallet-interaction-components.yml#/components/parameters/InteractionSessionId'
+    post:
+      tags: [WalletInteractionSensitiveInput]
+      summary: Consume the issuer authorization handoff
+      operationId: consumeWalletInteractionAuthorizationHandoff
+      x-command-id: wallet.interaction.consume-authorization-handoff
+      description: |
+        Returns the issuer authorization URL held behind authorizationHandoffRef, then spends the
+        reference. Public interaction state never carries the URL: this is the one-shot path a
+        browser host uses to open the issuer sign-in page. A second call with the same reference
+        is not found. After the holder returns, register the callback through the sensitive-input
+        endpoint and dispatch auth_callback.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './wallet-interaction-components.yml#/components/schemas/ConsumeWalletInteractionHandoffRequest'
+      responses:
+        '200':
+          description: Authorization URL. Consumed. Do not log the body.
+          content:
+            application/json:
+              schema:
+                $ref: './wallet-interaction-components.yml#/components/schemas/ConsumeWalletInteractionHandoffResult'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /wallets/{walletUnitId}/activity:
+    parameters:
+      - $ref: './wallet-interaction-components.yml#/components/parameters/WalletUnitId'
+    get:
+      tags: [WalletInteractionActivity]
+      summary: List wallet interaction activity
+      operationId: listWalletInteractionActivity
+      x-command-id: wallet.interaction.list-activity
+      description: |
+        Lists the interaction activity log projection for a wallet unit in
+        ascending sequence order. Use afterSequence with the nextSequence
+        value of the previous page to fetch the next page.
+      parameters:
+        - name: afterSequence
+          in: query
+          required: false
+          description: Return only entries with a sequence greater than this value.
+          schema:
+            type: integer
+            format: int64
+            minimum: 0
+        - name: limit
+          in: query
+          required: false
+          description: Maximum number of entries to return.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 100
+      responses:
+        '200':
+          description: Interaction activity page.
+          content:
+            application/json:
+              schema:
+                $ref: './wallet-interaction-components.yml#/components/schemas/ListWalletInteractionActivityResult'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /handoff/sessions:
+    post:
+      tags: [HandoffSession]
+      summary: Start a credential hand-off session
+      operationId: startHandoffSession
+      x-command-id: handoff.session.start
+      description: |
+        Starts a hand-off session wrapping one offer or request run for a business wallet unit
+        and returns the snapshot for the starting caller's role. Protocol execution stays owned
+        by the backend; this surface captures, initiates and drives interaction only. The single
+        durable expiry timer is scheduled from the resolved session lifetime.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './wallet-interaction-components.yml#/components/schemas/StartHandoffSessionRequest'
+      responses:
+        '201':
+          description: Hand-off session started.
+          content:
+            application/json:
+              schema:
+                $ref: './wallet-interaction-components.yml#/components/schemas/StartHandoffSessionResult'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /handoff/sessions/{sessionId}:
+    parameters:
+      - $ref: './wallet-interaction-components.yml#/components/parameters/HandoffSessionId'
+    get:
+      tags: [HandoffSession]
+      summary: Get the role-scoped hand-off session snapshot
+      operationId: getHandoffSessionSnapshot
+      x-command-id: handoff.session.get-snapshot
+      description: |
+        Returns the current point-in-time snapshot from the session store read model, projected
+        for the caller's role. Enforcement is by omission server side: a display projection
+        carries no link text, no email action channel, and no result claim data, and the raw
+        exchange URI appears in no projection at any role.
+      responses:
+        '200':
+          description: Role-scoped hand-off session snapshot.
+          content:
+            application/json:
+              schema:
+                $ref: './wallet-interaction-components.yml#/components/schemas/HandoffSessionSnapshot'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /handoff/sessions/{sessionId}/events:
+    parameters:
+      - $ref: './wallet-interaction-components.yml#/components/parameters/HandoffSessionId'
+    get:
+      tags: [HandoffSession]
+      summary: Replay hand-off session events
+      operationId: getHandoffSessionEvents
+      x-command-id: handoff.session.get-events
+      x-codegen-excluded: true
+      description: |
+        Returns recorded hand-off session events in the server-sent-events wire format. Each
+        event uses the event name handoff-session-event, the id field carries the per-session
+        sequence used as the replay cursor, and the data field carries the HandoffSessionEvent
+        JSON document. When the Last-Event-ID request header is present, only events with a
+        sequence greater than that value are replayed. Events are served from the session store
+        read model only.
+      parameters:
+        - $ref: './wallet-interaction-components.yml#/components/parameters/LastEventId'
+      responses:
+        '200':
+          description: Bounded server-sent-events replay of recorded session events, followed by live events while the connection stays open.
+          headers:
+            Cache-Control:
+              description: Always no-cache for the event stream response.
+              schema:
+                type: string
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                description: Server-sent-events stream. Each event carries a HandoffSessionEvent JSON document in its data field.
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /handoff/sessions/{sessionId}/regenerate:
+    parameters:
+      - $ref: './wallet-interaction-components.yml#/components/parameters/HandoffSessionId'
+    post:
+      tags: [HandoffSession]
+      summary: Regenerate the hand-off session
+      operationId: regenerateHandoffSession
+      x-command-id: handoff.session.regenerate
+      description: |
+        Start over as a distinct action from retry and resume. Cancels the current run,
+        invalidates its correlation id upstream, and starts a successor workflow. The returned
+        snapshot belongs to the successor session; bound screens learn the successor through the
+        terminal_reached event and the successorSessionId field. Regeneration after expiry is
+        the expected recovery path.
+      responses:
+        '200':
+          description: Successor hand-off session started.
+          content:
+            application/json:
+              schema:
+                $ref: './wallet-interaction-components.yml#/components/schemas/RegenerateHandoffSessionResult'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /handoff/sessions/{sessionId}/exchange-uri:
+    parameters:
+      - $ref: './wallet-interaction-components.yml#/components/parameters/HandoffSessionId'
+    post:
+      tags: [HandoffSession]
+      summary: Consume the guarded hand-off exchange URI
+      operationId: consumeHandoffExchangeUri
+      x-command-id: handoff.session.consume-exchange-uri
+      description: |
+        Returns the guarded exchange URI held server side for this session to an eligible
+        authenticated screen or operator. This is the ONLY path on which the URI leaves the
+        server: it exists so it can be fed straight into the QR encoder or clipboard path.
+        It never appears in any projection, any stream event, or any log line. Display-role
+        screens use it to feed their encoder without ever receiving link text.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: './wallet-interaction-components.yml#/components/schemas/ConsumeHandoffExchangeUriRequest'
+      responses:
+        '200':
+          description: Guarded exchange URI. Do not log the body.
+          content:
+            application/json:
+              schema:
+                $ref: './wallet-interaction-components.yml#/components/schemas/ConsumeHandoffExchangeUriResult'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /handoff/screens/bind:
+    post:
+      tags: [HandoffScreen]
+      summary: Bind a screen to a live session
+      operationId: bindHandoffScreen
+      x-command-id: handoff.screen.bind
+      description: |
+        Binds the authenticated screen (bearer screen credential issued by its owning
+        authorization server for the hand-off audience) to the named live session with the
+        role carried by the token and returns the role projection. Binding records presence so
+        other screens see the join.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './wallet-interaction-components.yml#/components/schemas/BindHandoffScreenRequest'
+      responses:
+        '200':
+          description: Screen bound; role-scoped snapshot returned.
+          content:
+            application/json:
+              schema:
+                $ref: './wallet-interaction-components.yml#/components/schemas/BindHandoffScreenResult'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /handoff/screens/heartbeat:
+    post:
+      tags: [HandoffScreen]
+      summary: Send a screen presence heartbeat
+      operationId: heartbeatHandoffScreen
+      x-command-id: handoff.screen.heartbeat
+      description: |
+        Refreshes last-seen for the authenticated screen within the named session. Screens whose
+        heartbeats stop stay visible in operator projections marked stale rather than silently
+        disappearing.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './wallet-interaction-components.yml#/components/schemas/HeartbeatHandoffScreenRequest'
+      responses:
+        '200':
+          description: Presence acknowledged.
+          content:
+            application/json:
+              schema:
+                $ref: './wallet-interaction-components.yml#/components/schemas/HeartbeatHandoffScreenResult'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+components:
+  securitySchemes:
+    bearer:
+      $ref: './common-components.yml#/components/securitySchemes/bearer'

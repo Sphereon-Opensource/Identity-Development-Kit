@@ -73,13 +73,13 @@ import kotlin.test.assertTrue
  *  - `tokenGrantWithValidAttestationAndPoPSucceeds`: full auth-code flow ending at /token with
  *    valid attestation + PoP headers yields a Bearer access_token.
  *  - `tokenGrantRejectsAttestationFromUntrustedAttester`: attester key not in the trust list →
- *    401 invalid_client.
+ *    400 invalid_client_attestation.
  *  - `tokenGrantRejectsPopWithStaleIat`: PoP `iat` older than `attestationPopMaxAgeSeconds` →
- *    401 invalid_client.
+ *    400 invalid_client_attestation.
  *  - `tokenGrantRejectsPopWithReplayedJti`: same challenge nonce reused on a second /token
- *    request → 401 invalid_client (challenge replay protection).
+ *    request → 400 invalid_client_attestation (challenge replay protection).
  *  - `tokenGrantRejectsAttestationCnfJwkMismatch`: PoP signed by a key OTHER than the one
- *    declared in the attestation's `cnf.jwk` → 401 invalid_client.
+ *    declared in the attestation's `cnf.jwk` → 400 invalid_client_attestation.
  */
 class OidfOpAttestationFlowTest {
     private lateinit var fixture: OidfOpServerFixture
@@ -110,6 +110,7 @@ class OidfOpAttestationFlowTest {
             "attest_jwt_client_auth",
         )
         publishProperty("oauth2.clients.$CLIENT_ID.allowed-scopes", "openid,profile,email")
+        publishProperty("oauth2.clients.$CLIENT_ID.default-access-token-audience", "https://downstream.example.com/api")
         publishProperty(
             "oauth2.clients.$CLIENT_ID.redirect-uris.0",
             "http://localhost:8080/test-callback",
@@ -250,11 +251,11 @@ class OidfOpAttestationFlowTest {
                     header("Cookie", login.loginCookie)
                 }
             assertEquals(
-                HttpStatusCode.Unauthorized,
+                HttpStatusCode.BadRequest,
                 tokenResponse.status,
-                "Untrusted attester key must yield 401; got ${tokenResponse.status}: ${tokenResponse.bodyAsText()}",
+                "Untrusted attester key must yield 400; got ${tokenResponse.status}: ${tokenResponse.bodyAsText()}",
             )
-            assertOauthError(tokenResponse.bodyAsText(), expectedError = "invalid_client")
+            assertOauthError(tokenResponse.bodyAsText(), expectedError = "invalid_client_attestation")
         }
 
     @Test
@@ -296,11 +297,11 @@ class OidfOpAttestationFlowTest {
                     header("Cookie", login.loginCookie)
                 }
             assertEquals(
-                HttpStatusCode.Unauthorized,
+                HttpStatusCode.BadRequest,
                 tokenResponse.status,
-                "Stale PoP iat must yield 401; got ${tokenResponse.status}: ${tokenResponse.bodyAsText()}",
+                "Stale PoP iat must yield 400; got ${tokenResponse.status}: ${tokenResponse.bodyAsText()}",
             )
-            assertOauthError(tokenResponse.bodyAsText(), expectedError = "invalid_client")
+            assertOauthError(tokenResponse.bodyAsText(), expectedError = "invalid_client_attestation")
         }
 
     @Test
@@ -367,11 +368,11 @@ class OidfOpAttestationFlowTest {
                     header("Cookie", second.first.loginCookie)
                 }
             assertEquals(
-                HttpStatusCode.Unauthorized,
+                HttpStatusCode.BadRequest,
                 replayResponse.status,
-                "Replayed challenge nonce must yield 401; got ${replayResponse.status}: ${replayResponse.bodyAsText()}",
+                "Replayed challenge nonce must yield 400; got ${replayResponse.status}: ${replayResponse.bodyAsText()}",
             )
-            assertOauthError(replayResponse.bodyAsText(), expectedError = "invalid_client")
+            assertOauthError(replayResponse.bodyAsText(), expectedError = "invalid_client_attestation")
         }
 
     @Test
@@ -412,11 +413,11 @@ class OidfOpAttestationFlowTest {
                     header("Cookie", login.loginCookie)
                 }
             assertEquals(
-                HttpStatusCode.Unauthorized,
+                HttpStatusCode.BadRequest,
                 tokenResponse.status,
-                "PoP signed by a key other than cnf.jwk must yield 401; got ${tokenResponse.status}: ${tokenResponse.bodyAsText()}",
+                "PoP signed by a key other than cnf.jwk must yield 400; got ${tokenResponse.status}: ${tokenResponse.bodyAsText()}",
             )
-            assertOauthError(tokenResponse.bodyAsText(), expectedError = "invalid_client")
+            assertOauthError(tokenResponse.bodyAsText(), expectedError = "invalid_client_attestation")
         }
 
     private fun publishProperty(
@@ -719,7 +720,7 @@ private fun base64Url(bytes: ByteArray): String =
 
 /** Per-suite duplicate of the shared S256 PKCE fixture (the original is `private` to its file). */
 private class AttestationPkceFixture(
-    suffix: String
+    suffix: String,
 ) {
     val verifier: String = ("oidf-op-attestation-$suffix-2026" + "-padding-padding-padding-padding").take(64)
     val challenge: String =

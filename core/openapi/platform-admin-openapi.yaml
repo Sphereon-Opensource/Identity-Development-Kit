@@ -1,0 +1,2001 @@
+openapi: 3.0.4
+info:
+  title: Platform Admin API
+  version: 0.1.0
+  x-products: [edk, vdx]
+  description: |
+    API for administering a deployment.
+
+    The application tenant uses this API to read the platform license status,
+    set onboarding policy and read the evaluated
+    onboarding availability, register and manage tenants and their domains,
+    public endpoints and hierarchy, run the self-service signup lifecycle,
+    configure each tenant's external identity providers, and complete owner
+    onboarding. The application tenant is reached through the platform's hosted
+    identity provider, so operators can use this surface before any customer
+    tenant exists. Public entry points are limited to tenant signup, signup email
+    confirmation, and owner invitation redemption.
+
+    ## Secret handling
+
+    Secret values are created through the dedicated secret-management API and
+    consumed here only through opaque server-generated IDs. Signup verification
+    tokens, domain verification tokens, and owner invitation tokens and
+    credentials are accepted only on request bodies and are never echoed.
+
+    ## License gating
+
+    Two capability groups are license-gated. The self-service signup operations
+    function only when the tenant signup entitlement is licensed, and the tenant
+    federation operations function only when the tenant federation entitlement is
+    licensed. Each such operation carries an `x-license-protection` descriptor.
+
+    ## Error format
+
+    Errors are returned as the `{ "error": { "code", "message", "details"? } }`
+    envelope. A correlation identifier is available on every response.
+  contact:
+    name: Product Engineering
+    email: support@example.com
+    url: https://example.com
+  license:
+    name: Apache 2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0
+servers:
+  - url: https://api.example.com/api/platform/admin/v1
+    description: Production server.
+  - url: http://localhost:8080/api/platform/admin/v1
+    description: Local development server.
+security:
+  - bearer: []
+tags:
+  - name: PlatformAdmin
+    description: Application-tenant bootstrap and status, license, and onboarding policy and availability.
+  - name: Tenants
+    description: Tenant lifecycle, domains, public endpoints, hierarchy, and onboarding status.
+  - name: TenantSignup
+    description: Public self-service signup and its operator-side approval lifecycle.
+  - name: OwnerBootstrap
+    description: Public owner invitation redemption.
+paths:
+  # =====================================================================
+  # PlatformAdmin
+  # =====================================================================
+  /application/tenant:
+    get:
+      tags: [PlatformAdmin]
+      summary: Get application tenant status
+      description: |
+        Returns the runtime state of the application tenant, including the
+        readiness of the platform-hosted authorization server and whether the
+        first customer tenant can yet be registered.
+      operationId: getApplicationTenant
+      responses:
+        '200':
+          description: Application tenant state.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApplicationTenantStatus'
+              example:
+                tenantId: application
+                status: ACTIVE
+                hostedAs:
+                  required: true
+                  available: true
+                  issuerUrl: https://auth.platform.example
+                canRegisterFirstRealTenant: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /application/tenant/bootstrap:
+    post:
+      tags: [PlatformAdmin]
+      summary: Create or reconcile the application tenant
+      description: |
+        Creates the application tenant and its hosted authorization server, or
+        reconciles them if they already exist, and returns the resulting state.
+        Optional operator contact details seed the initial operator account.
+      operationId: bootstrapApplicationTenant
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApplicationTenantBootstrapRequest'
+            examples:
+              applicationTenantBootstrap:
+                $ref: '#/components/examples/ApplicationTenantBootstrapRequest'
+      responses:
+        '200':
+          description: Application tenant bootstrap or reconcile result.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApplicationTenantStatus'
+              examples:
+                applicationTenantStatus:
+                  $ref: '#/components/examples/ApplicationTenantStatus'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /application/license:
+    get:
+      tags: [PlatformAdmin]
+      summary: Get the license status projection
+      description: >
+        Returns the sanitized status projection of the effective license -
+        lifecycle status, per-product summaries, and expiry signals. Underlying
+        license material, decoded claims, and the entitlement graph are never exposed.
+      operationId: getApplicationLicense
+      responses:
+        '200':
+          description: License status projection.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LicenseStatusProjection'
+              example:
+                status: ACTIVE
+                productSummaries:
+                  - product: vdx
+                    edition: enterprise
+                    modules: [tenant, party, oid4vci]
+                    quotaKeys: [max-root-tenants, max-total-tenants]
+                customerId: cust-acme-001
+                installationId: 11111111-1111-4111-8111-111111111111
+                issuer: Platform Licensing
+                signingCertificateFingerprint: 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08
+                expiresAt: '2027-06-30T23:59:59Z'
+                daysToExpiry: 386
+                recoveryMode: false
+                graceMode: false
+                warnings: []
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /application/onboarding:
+    get:
+      tags: [PlatformAdmin]
+      summary: Get onboarding policy
+      description: Returns the onboarding policy toggles that constrain which onboarding flows are accepted.
+      operationId: getApplicationOnboarding
+      responses:
+        '200':
+          description: Onboarding policy.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OnboardingPolicy'
+              example:
+                rootTenantCreationEnabled: true
+                adminInviteEnabled: true
+                selfSignupEnabled: true
+                subtenantSignupEnabled: false
+                requireApprovalForSelfSignup: true
+                updatedAt: '2026-06-08T09:15:00Z'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    put:
+      tags: [PlatformAdmin]
+      summary: Update onboarding policy
+      description: |
+        Updates the onboarding policy. Every field is optional; a field left
+        unset leaves that toggle unchanged. Returns the full updated policy.
+      operationId: putApplicationOnboarding
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OnboardingPolicyWrite'
+            example:
+              selfSignupEnabled: true
+              requireApprovalForSelfSignup: true
+      responses:
+        '200':
+          description: Updated onboarding policy.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OnboardingPolicy'
+              example:
+                rootTenantCreationEnabled: true
+                adminInviteEnabled: true
+                selfSignupEnabled: true
+                subtenantSignupEnabled: false
+                requireApprovalForSelfSignup: true
+                updatedAt: '2026-06-08T09:20:00Z'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /application/onboarding/availability:
+    get:
+      tags: [PlatformAdmin]
+      summary: Get evaluated onboarding availability
+      description: |
+        Returns the evaluated availability matrix composed from license features,
+        config toggles, and runtime readiness of the application tenant and email
+        transport. Each flow carries a stable reason string
+        when it is unavailable.
+      operationId: getApplicationOnboardingAvailability
+      responses:
+        '200':
+          description: Evaluated onboarding availability.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OnboardingAvailability'
+              example:
+                applicationTenant:
+                  enabled: true
+                  hostedAsAvailable: true
+                rootTenantCreation:
+                  enabled: true
+                  reason: null
+                adminInvite:
+                  enabled: true
+                  reason: null
+                selfSignup:
+                  enabled: false
+                  reason: config_disabled_self_signup
+                subtenants:
+                  enabled: true
+                  reason: null
+                email:
+                  configured: true
+                  healthy: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /features:
+    get:
+      tags: [PlatformAdmin]
+      summary: Get the feature catalog
+      description: >
+        Returns the data-driven feature catalog (the assembled FeatureRegistry).
+        Each entry carries the stable feature key, its typed value kind, a
+        description, and the products that may include it. Read-only; drives the
+        admin console feature/entitlement surfaces.
+      operationId: getFeatureCatalog
+      responses:
+        '200':
+          description: The feature catalog.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FeatureCatalog'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  # =====================================================================
+  # Tenants
+  # =====================================================================
+  /tenants:
+    get:
+      tags: [Tenants]
+      summary: List tenants
+      description: |
+        Lists tenants as a paginated envelope. Supply `parentTenantId` to list the
+        children of a parent; omit it to list root tenants. Sort by `createdAt` or
+        `slug`.
+      operationId: listTenants
+      parameters:
+        - name: parentTenantId
+          in: query
+          required: false
+          description: Parent tenant id. Omit to list root tenants.
+          schema:
+            type: string
+          example: 7b3c2d9e-1f4a-4c8b-9e2d-5a6f7c8b9d01
+        - $ref: './common-components.yml#/components/parameters/Limit'
+        - $ref: './common-components.yml#/components/parameters/Offset'
+        - $ref: './common-components.yml#/components/parameters/Page'
+        - $ref: './common-components.yml#/components/parameters/Size'
+        - name: sort
+          in: query
+          required: false
+          description: Field to sort by.
+          schema:
+            type: string
+            enum: [createdAt, slug]
+            default: createdAt
+        - $ref: './common-components.yml#/components/parameters/SortDirection'
+      responses:
+        '200':
+          description: Paginated tenant list.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TenantPage'
+              example:
+                data:
+                  - id: 7b3c2d9e-1f4a-4c8b-9e2d-5a6f7c8b9d01
+                    tenantType: organization
+                    name: Acme Corporation
+                    description: Acme issuing and verification tenant
+                    slug: acme
+                    parentTenantId: null
+                    status: ACTIVE
+                    system: false
+                    ownerPartyId: 2c4e6a80-3b5d-4f70-9a12-8c0d1e2f3a4b
+                    createdAt: '2026-06-08T09:00:00Z'
+                    createdById: null
+                    updatedAt: '2026-06-08T09:00:00Z'
+                    updatedById: null
+                    deletedAt: null
+                    deletedById: null
+                pagination:
+                  limit: 20
+                  offset: 0
+                  page: 0
+                  size: 20
+                  total: 1
+                  totalPages: 1
+                  hasMore: false
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [Tenants]
+      summary: Register a tenant
+      description: |
+        Registers an organization tenant with required natural-person contacts,
+        a mandatory default authorization server and key store, optional issuer
+        and verifier surfaces, and owner/admin account delivery.
+      operationId: registerTenant
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterTenantRequest'
+            example:
+              tenant:
+                tenantType: organization
+                name: Acme Corporation
+                description: Acme issuing and verification tenant
+                slug: acme
+                parentTenantId: null
+                initialPlatformSubdomain: true
+              contacts:
+                technical:
+                  email: tech@acme.example
+                  displayName: Acme Technical Contact
+                administrativeSameAsTechnical: false
+                administrative:
+                  email: admin-office@acme.example
+                  displayName: Acme Administrative Contact
+                ownerAdmin:
+                  source: new
+                  person:
+                    email: owner@acme.example
+                    displayName: Acme Owner
+              login:
+                enabled: true
+                defaultAuthorizationServerRequired: true
+              provisioning:
+                issuer: true
+                verifier: true
+                keysAndDids: true
+                sampleData: true
+      responses:
+        '201':
+          description: Tenant registered.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegisterTenantResponse'
+              example:
+                tenant:
+                  id: 7b3c2d9e-1f4a-4c8b-9e2d-5a6f7c8b9d01
+                  tenantType: organization
+                  name: Acme Corporation
+                  description: Acme issuing and verification tenant
+                  slug: acme
+                  parentTenantId: null
+                  status: PENDING_VERIFICATION
+                  system: false
+                  ownerPartyId: 2c4e6a80-3b5d-4f70-9a12-8c0d1e2f3a4b
+                  createdAt: '2026-06-08T09:00:00Z'
+                  createdById: null
+                  updatedAt: '2026-06-08T09:00:00Z'
+                  updatedById: null
+                  deletedAt: null
+                  deletedById: null
+                tenantUrl: https://acme.wallet.platform.example
+                serviceUrls:
+                  authorizationServerUrl: https://acme.wallet.platform.example
+                  issuerUrl: https://acme.wallet.platform.example
+                  oid4vciIssuerUrl: https://acme.wallet.platform.example
+                  oid4vpVerifierUrl: https://acme.wallet.platform.example
+                correlationId: reg-acme-7f12a7c4
+                created:
+                  ownerPartyId: 2c4e6a80-3b5d-4f70-9a12-8c0d1e2f3a4b
+                  technicalContactPartyId: 3c4e6a80-3b5d-4f70-9a12-8c0d1e2f3a4c
+                  administrativeContactPartyId: 4c4e6a80-3b5d-4f70-9a12-8c0d1e2f3a4d
+                  ownerAdminPartyId: 5c4e6a80-3b5d-4f70-9a12-8c0d1e2f3a4e
+                  ownerAccountId: 6c4e6a80-3b5d-4f70-9a12-8c0d1e2f3a4f
+                  ownerIdentityId: 7c4e6a80-3b5d-4f70-9a12-8c0d1e2f3a40
+                  relationshipIds: [8c4e6a80-3b5d-4f70-9a12-8c0d1e2f3a41]
+                delivery:
+                  status: DELIVERED
+                  invitationId: inv-7f12a7c4
+                  expiresAt: '2026-06-22T09:00:00Z'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /tenants/{tenantId}:
+    get:
+      tags: [Tenants]
+      summary: Get tenant
+      description: Returns a single tenant by id.
+      operationId: getTenant
+      parameters:
+        - $ref: './platform-admin-components.yml#/components/parameters/TenantId'
+      responses:
+        '200':
+          description: Tenant.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Tenant'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [Tenants]
+      summary: Delete tenant
+      description: Soft-deletes the tenant routing row.
+      operationId: deleteTenant
+      parameters:
+        - $ref: './platform-admin-components.yml#/components/parameters/TenantId'
+      responses:
+        '200':
+          description: Tenant deleted.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeleteResult'
+              example:
+                deleted: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /tenants/{tenantId}/lifecycle/status:
+    patch:
+      tags: [Tenants]
+      summary: Update tenant status
+      description: Updates a tenant's lifecycle status and returns the updated tenant.
+      operationId: updateTenantStatus
+      parameters:
+        - $ref: './platform-admin-components.yml#/components/parameters/TenantId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateTenantStatusRequest'
+            example:
+              status: SUSPENDED
+      responses:
+        '200':
+          description: Updated tenant.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Tenant'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /tenants/{tenantId}/domains:
+    get:
+      tags: [Tenants]
+      summary: List tenant domains
+      description: Lists the domains attached to a tenant.
+      operationId: listTenantDomains
+      parameters:
+        - $ref: './platform-admin-components.yml#/components/parameters/TenantId'
+      responses:
+        '200':
+          description: Tenant domains.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TenantDomainList'
+              example:
+                data:
+                  - id: dom-acme-platform
+                    tenantId: 7b3c2d9e-1f4a-4c8b-9e2d-5a6f7c8b9d01
+                    domain: acme.wallet.platform.example
+                    kind: PLATFORM_SUBDOMAIN
+                    isPrimary: true
+                    verifiedAt: '2026-06-08T09:00:00Z'
+                    createdAt: '2026-06-08T09:00:00Z'
+                    updatedAt: '2026-06-08T09:00:00Z'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [Tenants]
+      summary: Add tenant domain
+      description: Attaches a domain (platform subdomain or custom) to a tenant.
+      operationId: addTenantDomain
+      parameters:
+        - $ref: './platform-admin-components.yml#/components/parameters/TenantId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddTenantDomainRequest'
+            example:
+              domain: wallet.acme.example
+              kind: CUSTOM_DOMAIN
+              isPrimary: false
+      responses:
+        '201':
+          description: Domain added.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TenantDomain'
+              example:
+                id: dom-acme-custom
+                tenantId: 7b3c2d9e-1f4a-4c8b-9e2d-5a6f7c8b9d01
+                domain: wallet.acme.example
+                kind: CUSTOM_DOMAIN
+                isPrimary: false
+                verifiedAt: null
+                createdAt: '2026-06-08T09:25:00Z'
+                updatedAt: '2026-06-08T09:25:00Z'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /tenants/{tenantId}/domains/{domain}:
+    delete:
+      tags: [Tenants]
+      summary: Remove tenant domain
+      description: Detaches a domain from a tenant.
+      operationId: removeTenantDomain
+      parameters:
+        - $ref: './platform-admin-components.yml#/components/parameters/TenantId'
+        - $ref: './platform-admin-components.yml#/components/parameters/Domain'
+      responses:
+        '200':
+          description: Domain removed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeleteResult'
+              example:
+                deleted: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /tenants/{tenantId}/domains/{domain}/verify:
+    post:
+      tags: [Tenants]
+      summary: Verify tenant custom domain
+      description: |
+        Submits a DNS challenge proof to verify a custom domain and returns the
+        updated domain. The verification proof is write-only.
+      operationId: markTenantDomainVerified
+      parameters:
+        - $ref: './platform-admin-components.yml#/components/parameters/TenantId'
+        - $ref: './platform-admin-components.yml#/components/parameters/Domain'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VerifyTenantDomainRequest'
+            example:
+              verificationProof: dns-challenge-0a1b2c3d4e5f
+      responses:
+        '200':
+          description: Domain verified.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TenantDomain'
+              example:
+                id: dom-acme-custom
+                tenantId: 7b3c2d9e-1f4a-4c8b-9e2d-5a6f7c8b9d01
+                domain: wallet.acme.example
+                kind: CUSTOM_DOMAIN
+                isPrimary: false
+                verifiedAt: '2026-06-08T09:30:00Z'
+                createdAt: '2026-06-08T09:25:00Z'
+                updatedAt: '2026-06-08T09:30:00Z'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /tenants/{tenantId}/children:
+    get:
+      tags: [Tenants]
+      summary: List immediate child tenants
+      description: Lists the immediate children of a parent tenant as a paginated envelope. Sort by `createdAt` or `slug`.
+      operationId: listSubtenants
+      parameters:
+        - $ref: './platform-admin-components.yml#/components/parameters/TenantId'
+        - $ref: './common-components.yml#/components/parameters/Limit'
+        - $ref: './common-components.yml#/components/parameters/Offset'
+        - $ref: './common-components.yml#/components/parameters/Page'
+        - $ref: './common-components.yml#/components/parameters/Size'
+        - name: sort
+          in: query
+          required: false
+          description: Field to sort by.
+          schema:
+            type: string
+            enum: [createdAt, slug]
+            default: createdAt
+        - $ref: './common-components.yml#/components/parameters/SortDirection'
+      responses:
+        '200':
+          description: Paginated child tenant list.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TenantPage'
+              example:
+                data:
+                  - id: 9d4e1a2b-3c5f-4e80-a1b2-c3d4e5f60718
+                    tenantType: organization
+                    name: Acme EU
+                    description: Acme European subtenant
+                    slug: acme-eu
+                    parentTenantId: 7b3c2d9e-1f4a-4c8b-9e2d-5a6f7c8b9d01
+                    status: ACTIVE
+                    system: false
+                    ownerPartyId: null
+                    createdAt: '2026-06-08T10:00:00Z'
+                    createdById: null
+                    updatedAt: '2026-06-08T10:00:00Z'
+                    updatedById: null
+                    deletedAt: null
+                    deletedById: null
+                pagination:
+                  limit: 20
+                  offset: 0
+                  page: 0
+                  size: 20
+                  total: 1
+                  totalPages: 1
+                  hasMore: false
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /tenants/{tenantId}/public-endpoints:
+    get:
+      tags: [Tenants]
+      summary: List tenant public endpoint bindings
+      description: Lists the public endpoint bindings for a tenant.
+      operationId: listTenantPublicEndpoints
+      parameters:
+        - $ref: './platform-admin-components.yml#/components/parameters/TenantId'
+      responses:
+        '200':
+          description: Public endpoint bindings.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TenantPublicEndpointList'
+              example:
+                data:
+                  - id: pep-acme-issuer
+                    tenantId: 7b3c2d9e-1f4a-4c8b-9e2d-5a6f7c8b9d01
+                    serviceType: OID4VCI_ISSUER
+                    instanceId: null
+                    host: acme.wallet.platform.example
+                    pathPrefix: /acme/oid4vci
+                    wellKnownPath: /.well-known/openid-credential-issuer/acme
+                    enabled: true
+                    primaryEndpoint: true
+                    createdAt: '2026-06-08T09:00:00Z'
+                    updatedAt: '2026-06-08T09:00:00Z'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /tenants/{tenantId}/public-endpoints/{serviceType}:
+    put:
+      tags: [Tenants]
+      summary: Create or update tenant public endpoint binding
+      description: Creates or updates the public endpoint binding for a tenant and service type.
+      operationId: upsertTenantPublicEndpoint
+      parameters:
+        - $ref: './platform-admin-components.yml#/components/parameters/TenantId'
+        - $ref: './platform-admin-components.yml#/components/parameters/PublicEndpointServiceType'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpsertTenantPublicEndpointRequest'
+            example:
+              host: acme.wallet.platform.example
+              pathPrefix: /acme/oid4vci
+              wellKnownPath: /.well-known/openid-credential-issuer/acme
+              enabled: true
+              primaryEndpoint: true
+      responses:
+        '200':
+          description: Public endpoint binding.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TenantPublicEndpoint'
+              example:
+                id: pep-acme-issuer
+                tenantId: 7b3c2d9e-1f4a-4c8b-9e2d-5a6f7c8b9d01
+                serviceType: OID4VCI_ISSUER
+                instanceId: null
+                host: acme.wallet.platform.example
+                pathPrefix: /acme/oid4vci
+                wellKnownPath: /.well-known/openid-credential-issuer/acme
+                enabled: true
+                primaryEndpoint: true
+                createdAt: '2026-06-08T09:00:00Z'
+                updatedAt: '2026-06-08T09:35:00Z'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    delete:
+      tags: [Tenants]
+      summary: Delete tenant public endpoint binding
+      description: Deletes the public endpoint binding for a tenant and service type.
+      operationId: deleteTenantPublicEndpoint
+      parameters:
+        - $ref: './platform-admin-components.yml#/components/parameters/TenantId'
+        - $ref: './platform-admin-components.yml#/components/parameters/PublicEndpointServiceType'
+      responses:
+        '200':
+          description: Public endpoint binding deleted.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeleteResult'
+              example:
+                deleted: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /tenants/registrations/reconcile:
+    post:
+      tags: [Tenants]
+      summary: Reconcile interrupted and legacy tenant registrations
+      description: |
+        Operator migration hook used after an application rollout. Scans the
+        registration log for `IN_FLIGHT` rows (registrations that never reached a
+        terminal status) and `ORPHANED` rows (registrations whose compensation
+        failed at least once) and re-runs compensation; the janitor is idempotent
+        and can be retried until it succeeds. It also backfills the stable
+        `default` KMS binding for registrations completed by releases that predate
+        the mandatory default-KMS step.
+
+        Supply `logId` to reconcile one registration-log row, or `tenantId` to
+        repair the default-KMS state of one existing tenant even when it predates
+        the registration log. The two are mutually exclusive; an empty body
+        reconciles every eligible row.
+      operationId: reconcileTenantRegistrations
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './platform-admin-components.yml#/components/schemas/ReconcileTenantRegistrationsRequest'
+            example:
+              logId: null
+              tenantId: null
+      responses:
+        '200':
+          description: Registration reconciliation completed.
+          content:
+            application/json:
+              schema:
+                $ref: './platform-admin-components.yml#/components/schemas/ReconcileTenantRegistrationsResponse'
+              example:
+                totalScanned: 4
+                compensated: 2
+                orphaned: 1
+                kmsBackfilled: 1
+                kmsBackfillFailed: 0
+                kmsBackfillFailures: []
+                orphanedFailures:
+                  - tenantId: 7b3c2d9e-1f4a-4c8b-9e2d-5a6f7c8b9d01
+                    logId: reg-acme-7f12a7c4
+                    step: routing-inserted
+                    reason: 'IllegalStateException: routing row still referenced'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /tenant-onboarding/{correlationId}:
+    get:
+      tags: [Tenants]
+      summary: Get tenant onboarding status
+      description: |
+        Returns the public-safe lifecycle status of a tenant registration attempt,
+        including the per-step timeline, keyed by the `correlationId` returned at
+        registration.
+      operationId: getTenantOnboardingStatus
+      parameters:
+        - name: correlationId
+          in: path
+          required: true
+          description: Durable registration-log identifier returned at registration.
+          schema:
+            type: string
+          example: reg-acme-7f12a7c4
+      responses:
+        '200':
+          description: Onboarding status.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TenantOnboardingStatus'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # =====================================================================
+  # TenantSignup
+  # =====================================================================
+  /tenants/signup/request:
+    post:
+      tags: [TenantSignup]
+      summary: Request tenant signup email verification
+      description: |
+        Public entry point. Starts a self-service signup and sends an email
+        verification to the supplied address. Returns the signup request id, its
+        expiry, whether operator approval is required, and the email delivery
+        result.
+      operationId: requestTenantSignup
+      x-license-protection:
+        entitlementKey: vdx.tenant.signup.request
+        deploymentShapePredicates: [packaging=container, environment=production]
+        protectionMode: licensed
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RequestTenantSignupRequest'
+            example:
+              email: admin@acme.example
+              slug: acme
+              parentTenantId: null
+              displayName: Acme Corporation
+      responses:
+        '202':
+          description: Signup request accepted.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TenantSignupRequestAccepted'
+              example:
+                signupRequestId: signup-9f12a7c4
+                expiresAt: '2026-06-09T09:00:00Z'
+                requiresApproval: true
+                emailDelivery:
+                  status: SENT
+                  deliveryId: del-9f12a7c4
+                  providerMessageId: msg-101
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /tenants/signup/{signupRequestId}/resend:
+    post:
+      tags: [TenantSignup]
+      summary: Resend tenant signup email verification
+      description: Public entry point. Re-mints and resends the verification email for a pending signup request.
+      operationId: resendTenantSignupVerification
+      x-license-protection:
+        entitlementKey: vdx.tenant.signup.resend-verification
+        deploymentShapePredicates: [packaging=container, environment=production]
+        protectionMode: licensed
+      security: []
+      parameters:
+        - $ref: './platform-admin-components.yml#/components/parameters/SignupRequestId'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResendTenantSignupVerificationRequest'
+            example:
+              sourceIpHash: 8f434346648f6b96df89dda901c5176b10a6d83961dd3c1ac88b59b2dc327aa4
+      responses:
+        '202':
+          description: Verification resend accepted.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TenantSignupRequestAccepted'
+              example:
+                signupRequestId: signup-9f12a7c4
+                expiresAt: '2026-06-09T10:00:00Z'
+                requiresApproval: true
+                emailDelivery:
+                  status: SENT
+                  deliveryId: del-9f12a7c5
+                  providerMessageId: msg-102
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /tenants/signup/confirm:
+    post:
+      tags: [TenantSignup]
+      summary: Confirm tenant signup email token
+      description: |
+        Public entry point. Confirms a signup using the plaintext verification
+        token from the email. When approval is not required the response carries
+        the resulting registration. The verification token is write-only.
+      operationId: confirmTenantSignup
+      x-license-protection:
+        entitlementKey: vdx.tenant.signup.confirm
+        deploymentShapePredicates: [packaging=container, environment=production]
+        protectionMode: licensed
+        quotaKeys: [tenants.total.max]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConfirmTenantSignupRequest'
+            example:
+              plainVerificationToken: vt-2f9a4c7e1b6d8038
+      responses:
+        '200':
+          description: Signup confirmation handled.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConfirmTenantSignupResponse'
+              example:
+                signupRequestId: signup-9f12a7c4
+                status: PENDING_APPROVAL
+        '400':
+          $ref: '#/components/responses/ValidationError'
+  /tenants/signup/pending:
+    get:
+      tags: [TenantSignup]
+      summary: List pending tenant signups
+      description: |
+        Lists pending signup requests as a paginated envelope. Supply
+        `parentTenantId` to scope to a parent; omit it to list root signups. Sort
+        by `createdAt` or `email`.
+      operationId: listPendingTenantSignups
+      x-license-protection:
+        entitlementKey: vdx.tenant.signup.list-pending
+        deploymentShapePredicates: [packaging=container, environment=production]
+        protectionMode: licensed
+      parameters:
+        - name: parentTenantId
+          in: query
+          required: false
+          description: Parent tenant id. Omit to list root signups.
+          schema:
+            type: string
+          example: 7b3c2d9e-1f4a-4c8b-9e2d-5a6f7c8b9d01
+        - $ref: './common-components.yml#/components/parameters/Limit'
+        - $ref: './common-components.yml#/components/parameters/Offset'
+        - $ref: './common-components.yml#/components/parameters/Page'
+        - $ref: './common-components.yml#/components/parameters/Size'
+        - name: sort
+          in: query
+          required: false
+          description: Field to sort by.
+          schema:
+            type: string
+            enum: [createdAt, email]
+            default: createdAt
+        - $ref: './common-components.yml#/components/parameters/SortDirection'
+      responses:
+        '200':
+          description: Paginated pending signup requests.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TenantSignupRequestViewPage'
+              example:
+                data:
+                  - id: signup-9f12a7c4
+                    email: admin@acme.example
+                    slug: acme
+                    parentTenantId: null
+                    displayName: Acme Corporation
+                    expiresAt: '2026-06-09T09:00:00Z'
+                    status: PENDING_APPROVAL
+                    createdAt: '2026-06-08T09:00:00Z'
+                    emailVerifiedAt: '2026-06-08T09:05:00Z'
+                    approvedAt: null
+                    approvedById: null
+                    confirmedAt: null
+                    rejectedAt: null
+                    rejectedReason: null
+                    registeredTenantId: null
+                    registeredAt: null
+                    failureReason: null
+                    lastResendAt: null
+                    resendCount: 0
+                pagination:
+                  limit: 20
+                  offset: 0
+                  page: 0
+                  size: 20
+                  total: 1
+                  totalPages: 1
+                  hasMore: false
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /tenants/signup/{signupRequestId}/approve:
+    post:
+      tags: [TenantSignup]
+      summary: Approve pending tenant signup
+      description: |
+        Approves an email-verified signup request and drives it to registration.
+        When registration completes the response carries the resulting
+        registration.
+      operationId: approveTenantSignup
+      x-license-protection:
+        entitlementKey: vdx.tenant.signup.approve
+        deploymentShapePredicates: [packaging=container, environment=production]
+        protectionMode: licensed
+        quotaKeys: [tenants.total.max]
+      parameters:
+        - $ref: './platform-admin-components.yml#/components/parameters/SignupRequestId'
+      responses:
+        '200':
+          description: Signup approval handled.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApproveTenantSignupResponse'
+              example:
+                signupRequestId: signup-9f12a7c4
+                status: REGISTERED
+                registration:
+                  tenant:
+                    id: 7b3c2d9e-1f4a-4c8b-9e2d-5a6f7c8b9d01
+                    tenantType: organization
+                    name: Acme Corporation
+                    description: null
+                    slug: acme
+                    parentTenantId: null
+                    status: PENDING_VERIFICATION
+                    system: false
+                    ownerPartyId: 2c4e6a80-3b5d-4f70-9a12-8c0d1e2f3a4b
+                    createdAt: '2026-06-08T09:40:00Z'
+                    createdById: null
+                    updatedAt: '2026-06-08T09:40:00Z'
+                    updatedById: null
+                    deletedAt: null
+                    deletedById: null
+                  tenantUrl: https://acme.wallet.platform.example
+                  serviceUrls:
+                    authorizationServerUrl: https://acme.wallet.platform.example
+                    issuerUrl: https://acme.wallet.platform.example
+                    oid4vciIssuerUrl: https://acme.wallet.platform.example
+                    oid4vpVerifierUrl: https://acme.wallet.platform.example
+                  correlationId: reg-acme-7f12a7c4
+                  created:
+                    ownerPartyId: 2c4e6a80-3b5d-4f70-9a12-8c0d1e2f3a4b
+                    ownerAccountId: 6c4e6a80-3b5d-4f70-9a12-8c0d1e2f3a4f
+                    relationshipIds: []
+                  delivery:
+                    status: NOT_REQUESTED
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /tenants/signup/{signupRequestId}/reject:
+    post:
+      tags: [TenantSignup]
+      summary: Reject pending tenant signup
+      description: Rejects a pending signup request with an optional reason.
+      operationId: rejectTenantSignup
+      x-license-protection:
+        entitlementKey: vdx.tenant.signup.reject
+        deploymentShapePredicates: [packaging=container, environment=production]
+        protectionMode: licensed
+      parameters:
+        - $ref: './platform-admin-components.yml#/components/parameters/SignupRequestId'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RejectTenantSignupRequest'
+            example:
+              reason: Domain ownership could not be confirmed.
+      responses:
+        '200':
+          description: Signup rejected.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RejectResult'
+              example:
+                rejected: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /tenants/signup/reconcile/expired:
+    post:
+      tags: [TenantSignup]
+      summary: Mark expired pending tenant signups
+      description: Marks pending signup requests whose expiry has passed as expired, relative to the supplied `now`.
+      operationId: reconcileExpiredTenantSignups
+      x-license-protection:
+        entitlementKey: vdx.tenant.signup.reconcile-expired
+        deploymentShapePredicates: [packaging=container, environment=production]
+        protectionMode: licensed
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReconcileExpiredTenantSignupsRequest'
+            example:
+              now: '2026-06-09T09:00:00Z'
+      responses:
+        '200':
+          description: Expired signup reconciliation completed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReconcileExpiredTenantSignupsResponse'
+              example:
+                expiredCount: 3
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+components:
+  securitySchemes:
+    bearer:
+      $ref: './common-components.yml#/components/securitySchemes/bearer'
+  responses:
+    # Error responses use the {error} envelope (ErrorResponse) that the runtime emits.
+    ValidationError:
+      description: The request failed validation. Body is the `{error}` envelope.
+      content:
+        application/json:
+          schema:
+            $ref: './common-components.yml#/components/schemas/ErrorResponse'
+          example:
+            error:
+              code: VALIDATION_ERROR
+              message: slug must match ^[a-z][a-z0-9-]{0,62}$
+              category: VALIDATION
+              correlationId: 7f12a7c4-1b6d-4038-9a4c-2f9a4c7e1b6d
+    Unauthorized:
+      description: Authentication is missing or invalid. Body is the `{error}` envelope.
+      content:
+        application/json:
+          schema:
+            $ref: './common-components.yml#/components/schemas/ErrorResponse'
+          example:
+            error:
+              code: UNAUTHORIZED
+              message: Authentication required
+              category: UNAUTHORIZED
+              correlationId: 7f12a7c4-1b6d-4038-9a4c-2f9a4c7e1b6d
+    Forbidden:
+      description: The caller is not authorised for this operation. Body is the `{error}` envelope.
+      content:
+        application/json:
+          schema:
+            $ref: './common-components.yml#/components/schemas/ErrorResponse'
+          example:
+            error:
+              code: FORBIDDEN
+              message: Insufficient permissions
+              category: FORBIDDEN
+              correlationId: 7f12a7c4-1b6d-4038-9a4c-2f9a4c7e1b6d
+    NotFound:
+      description: The requested entity was not found. Body is the `{error}` envelope.
+      content:
+        application/json:
+          schema:
+            $ref: './common-components.yml#/components/schemas/ErrorResponse'
+          example:
+            error:
+              code: NOT_FOUND
+              message: 'tenant not found: 7b3c2d9e-1f4a-4c8b-9e2d-5a6f7c8b9d01'
+              category: NOT_FOUND
+              correlationId: 7f12a7c4-1b6d-4038-9a4c-2f9a4c7e1b6d
+    RateLimited:
+      description: The rate limit was exceeded. Body is the `{error}` envelope.
+      content:
+        application/json:
+          schema:
+            $ref: './common-components.yml#/components/schemas/ErrorResponse'
+          example:
+            error:
+              code: RATE_LIMITED
+              message: Too many signup attempts. Try again later.
+              category: RATE_LIMITED
+              correlationId: 7f12a7c4-1b6d-4038-9a4c-2f9a4c7e1b6d
+  examples:
+    ApplicationTenantBootstrapRequest:
+      summary: Seed the initial platform operator
+      value:
+        operatorEmail: admin@acme.example
+        operatorDisplayName: Acme Administrator
+    ApplicationTenantStatus:
+      summary: Application tenant ready for tenant registration
+      value:
+        tenantId: application
+        status: ACTIVE
+        hostedAs:
+          required: true
+          available: true
+          issuerUrl: https://auth.platform.example
+        canRegisterFirstRealTenant: true
+  schemas:
+    # ---- PlatformAdmin entity schemas (externalized) ----
+    ApplicationTenantStatus:
+      $ref: './platform-admin-components.yml#/components/schemas/ApplicationTenantStatus'
+    LicenseStatusProjection:
+      $ref: './platform-admin-components.yml#/components/schemas/LicenseStatusProjection'
+    ProductLicenseSummary:
+      $ref: './platform-admin-components.yml#/components/schemas/ProductLicenseSummary'
+    QuotaProjection:
+      $ref: './platform-admin-components.yml#/components/schemas/QuotaProjection'
+    CatalogFeature:
+      $ref: './platform-admin-components.yml#/components/schemas/CatalogFeature'
+    FeatureCatalog:
+      $ref: './platform-admin-components.yml#/components/schemas/FeatureCatalog'
+    OnboardingPolicy:
+      $ref: './platform-admin-components.yml#/components/schemas/OnboardingPolicy'
+    OnboardingAvailability:
+      $ref: './platform-admin-components.yml#/components/schemas/OnboardingAvailability'
+
+    # ---- PlatformAdmin request bodies (inline) ----
+    ApplicationTenantBootstrapRequest:
+      type: object
+      description: Optional operator contact details seeded into the bootstrapped application tenant.
+      properties:
+        operatorEmail:
+          type: string
+          format: email
+          nullable: true
+          description: Initial operator email address.
+        operatorDisplayName:
+          type: string
+          nullable: true
+          description: Initial operator display name.
+      example:
+        operatorEmail: admin@acme.example
+        operatorDisplayName: Acme Administrator
+    OnboardingPolicyWrite:
+      type: object
+      description: >
+        Onboarding policy update. Every field is optional; a field left unset
+        leaves that toggle unchanged.
+      properties:
+        rootTenantCreationEnabled:
+          type: boolean
+          nullable: true
+          description: When set, enables or disables operator root-tenant creation.
+        adminInviteEnabled:
+          type: boolean
+          nullable: true
+          description: When set, enables or disables operator-driven tenant invitations.
+        selfSignupEnabled:
+          type: boolean
+          nullable: true
+          description: When set, enables or disables public self-service signup.
+        subtenantSignupEnabled:
+          type: boolean
+          nullable: true
+          description: When set, enables or disables self-service signup under a parent tenant.
+        requireApprovalForSelfSignup:
+          type: boolean
+          nullable: true
+          description: When set, toggles whether operator approval is required after email verification.
+      example:
+        selfSignupEnabled: true
+        requireApprovalForSelfSignup: true
+
+    # ---- Tenants entity schemas (externalized) ----
+    Tenant:
+      $ref: './platform-admin-components.yml#/components/schemas/Tenant'
+    TenantStatus:
+      $ref: './platform-admin-components.yml#/components/schemas/TenantStatus'
+    TenantDomain:
+      $ref: './platform-admin-components.yml#/components/schemas/TenantDomain'
+    TenantDomainKind:
+      $ref: './platform-admin-components.yml#/components/schemas/TenantDomainKind'
+    TenantPublicEndpoint:
+      $ref: './platform-admin-components.yml#/components/schemas/TenantPublicEndpoint'
+    TenantPublicEndpointServiceType:
+      $ref: './platform-admin-components.yml#/components/schemas/TenantPublicEndpointServiceType'
+    TenantOnboardingStatus:
+      $ref: './platform-admin-components.yml#/components/schemas/TenantOnboardingStatus'
+    OwnerDeliveryStatus:
+      $ref: './platform-admin-components.yml#/components/schemas/OwnerDeliveryStatus'
+    SignupEmailDeliveryStatus:
+      $ref: './platform-admin-components.yml#/components/schemas/SignupEmailDeliveryStatus'
+    TenantSignupStatus:
+      $ref: './platform-admin-components.yml#/components/schemas/TenantSignupStatus'
+    TenantSignupRequestView:
+      $ref: './platform-admin-components.yml#/components/schemas/TenantSignupRequestView'
+    LocalOwnerInput:
+      $ref: './platform-admin-components.yml#/components/schemas/LocalOwnerInput'
+
+    # ---- Shared result envelopes ----
+    DeleteResult:
+      $ref: './platform-admin-components.yml#/components/schemas/DeleteResult'
+    RejectResult:
+      $ref: './platform-admin-components.yml#/components/schemas/RejectResult'
+
+    # ---- Tenants list envelopes ----
+    TenantPage:
+      type: object
+      description: Paginated tenant list.
+      required: [data, pagination]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Tenant'
+        pagination:
+          $ref: './common-components.yml#/components/schemas/PageMeta'
+    TenantDomainList:
+      type: object
+      description: Non-paginated tenant domain list.
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/TenantDomain'
+    TenantPublicEndpointList:
+      type: object
+      description: Non-paginated tenant public endpoint list.
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/TenantPublicEndpoint'
+
+    # ---- Tenants request/response bodies (inline) ----
+    RegisterTenantRequest:
+      type: object
+      description: Tenant onboarding request for provisioning an organization tenant and its required natural-person contacts.
+      required: [tenant, contacts]
+      properties:
+        tenant:
+          $ref: '#/components/schemas/RegisterTenantSection'
+        contacts:
+          $ref: '#/components/schemas/TenantOnboardingContacts'
+        login:
+          $ref: '#/components/schemas/TenantOnboardingLogin'
+        provisioning:
+          $ref: '#/components/schemas/TenantOnboardingProvisioning'
+      example:
+        tenant:
+          tenantType: organization
+          name: Acme Corporation
+          description: Acme issuing and verification tenant
+          slug: acme
+          parentTenantId: null
+          initialPlatformSubdomain: true
+        contacts:
+          technical:
+            email: tech@acme.example
+            displayName: Acme Technical Contact
+          administrativeSameAsTechnical: false
+          administrative:
+            email: admin-office@acme.example
+            displayName: Acme Administrative Contact
+          ownerAdmin:
+            source: new
+            person:
+              email: owner@acme.example
+              displayName: Acme Owner
+        login:
+          enabled: true
+          defaultAuthorizationServerRequired: true
+        provisioning:
+          issuer: true
+          verifier: true
+          keysAndDids: true
+          sampleData: true
+    RegisterTenantSection:
+      type: object
+      description: Organization tenant identity and routing input.
+      required: [name, slug]
+      properties:
+        tenantType:
+          type: string
+          default: organization
+          description: Open tenant type label. Defaults to organization onboarding.
+        name:
+          type: string
+          description: Human-readable tenant name.
+        description:
+          type: string
+          nullable: true
+          description: Optional tenant description.
+        slug:
+          type: string
+          pattern: '^[a-z][a-z0-9-]{0,62}$'
+          description: Globally unique URL-safe subdomain slug.
+        parentTenantId:
+          type: string
+          nullable: true
+          description: Parent tenant id for a subtenant, or null for a root tenant.
+        ownerPartyId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Existing party id to use as the tenant owner reference, when provided.
+        initialPlatformSubdomain:
+          type: boolean
+          default: true
+          description: Whether to auto-create the platform subdomain at registration.
+    TenantOnboardingContacts:
+      type: object
+      description: Required natural-person contacts and owner/admin selection for the tenant organization.
+      required: [technical, ownerAdmin]
+      properties:
+        technical:
+          $ref: '#/components/schemas/TenantOnboardingPerson'
+        administrative:
+          allOf:
+            - $ref: '#/components/schemas/TenantOnboardingPerson'
+        administrativeSameAsTechnical:
+          type: boolean
+          default: false
+        ownerAdmin:
+          $ref: '#/components/schemas/TenantOnboardingOwnerAdmin'
+    TenantOnboardingPerson:
+      type: object
+      description: Natural-person contact input.
+      required: [email, displayName]
+      properties:
+        email:
+          type: string
+          format: email
+        displayName:
+          type: string
+        givenName:
+          type: string
+          nullable: true
+        familyName:
+          type: string
+          nullable: true
+        phone:
+          type: string
+          nullable: true
+        existingPartyId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Reuse an existing natural-person party instead of creating one.
+    TenantOnboardingOwnerAdmin:
+      type: object
+      required: [source]
+      properties:
+        source:
+          $ref: '#/components/schemas/TenantOnboardingOwnerAdminSource'
+        person:
+          allOf:
+            - $ref: '#/components/schemas/TenantOnboardingPerson'
+          description: Required when source is new.
+    TenantOnboardingOwnerAdminSource:
+      type: string
+      enum: [technical, administrative, new]
+      default: new
+    TenantOnboardingLogin:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+          default: true
+        defaultAuthorizationServerRequired:
+          type: boolean
+          default: true
+          description: Must stay true; tenant onboarding always provisions the default authorization server.
+    TenantOnboardingProvisioning:
+      type: object
+      properties:
+        issuer:
+          type: boolean
+          default: true
+        verifier:
+          type: boolean
+          default: true
+        keysAndDids:
+          type: boolean
+          default: true
+        sampleData:
+          type: boolean
+          default: true
+    RegisterTenantResponse:
+      type: object
+      description: Result of registering and provisioning a tenant.
+      required: [tenant, tenantUrl, serviceUrls, correlationId, created, delivery]
+      properties:
+        tenant:
+          $ref: '#/components/schemas/Tenant'
+        tenantUrl:
+          type: string
+          format: uri
+          description: Primary reachable URL for the tenant.
+        serviceUrls:
+          $ref: '#/components/schemas/TenantOnboardingServiceUrls'
+        correlationId:
+          type: string
+          description: Durable registration-log id for polling onboarding status.
+        created:
+          $ref: '#/components/schemas/TenantOnboardingCreatedRefs'
+        delivery:
+          $ref: '#/components/schemas/OwnerDeliveryResponse'
+      example:
+        tenant:
+          id: 7b3c2d9e-1f4a-4c8b-9e2d-5a6f7c8b9d01
+          tenantType: organization
+          name: Acme Corporation
+          description: Acme issuing and verification tenant
+          slug: acme
+          parentTenantId: null
+          status: PENDING_VERIFICATION
+          system: false
+          ownerPartyId: 2c4e6a80-3b5d-4f70-9a12-8c0d1e2f3a4b
+          createdAt: '2026-06-08T09:00:00Z'
+          createdById: null
+          updatedAt: '2026-06-08T09:00:00Z'
+          updatedById: null
+          deletedAt: null
+          deletedById: null
+        tenantUrl: https://acme.wallet.platform.example
+        serviceUrls:
+          authorizationServerUrl: https://acme.wallet.platform.example
+          issuerUrl: https://acme.wallet.platform.example
+          oid4vciIssuerUrl: https://acme.wallet.platform.example
+          oid4vpVerifierUrl: https://acme.wallet.platform.example
+        correlationId: reg-acme-7f12a7c4
+        created:
+          ownerPartyId: 2c4e6a80-3b5d-4f70-9a12-8c0d1e2f3a4b
+          technicalContactPartyId: 3c4e6a80-3b5d-4f70-9a12-8c0d1e2f3a4c
+          administrativeContactPartyId: 4c4e6a80-3b5d-4f70-9a12-8c0d1e2f3a4d
+          ownerAdminPartyId: 5c4e6a80-3b5d-4f70-9a12-8c0d1e2f3a4e
+          ownerAccountId: 6c4e6a80-3b5d-4f70-9a12-8c0d1e2f3a4f
+          ownerIdentityId: 7c4e6a80-3b5d-4f70-9a12-8c0d1e2f3a40
+          relationshipIds: [8c4e6a80-3b5d-4f70-9a12-8c0d1e2f3a41]
+        delivery:
+          status: DELIVERED
+          invitationId: inv-7f12a7c4
+          expiresAt: '2026-06-22T09:00:00Z'
+    TenantOnboardingServiceUrls:
+      type: object
+      properties:
+        authorizationServerUrl:
+          type: string
+          format: uri
+          nullable: true
+        issuerUrl:
+          type: string
+          format: uri
+          nullable: true
+        oid4vciIssuerUrl:
+          type: string
+          format: uri
+          nullable: true
+        oid4vpVerifierUrl:
+          type: string
+          format: uri
+          nullable: true
+    TenantOnboardingCreatedRefs:
+      type: object
+      properties:
+        ownerPartyId:
+          type: string
+          format: uuid
+          nullable: true
+        technicalContactPartyId:
+          type: string
+          format: uuid
+          nullable: true
+        administrativeContactPartyId:
+          type: string
+          format: uuid
+          nullable: true
+        ownerAdminPartyId:
+          type: string
+          format: uuid
+          nullable: true
+        ownerAccountId:
+          type: string
+          nullable: true
+        ownerIdentityId:
+          type: string
+          format: uuid
+          nullable: true
+        relationshipIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+    OwnerDeliveryResponse:
+      type: object
+      description: Pending owner account-action and delivery state.
+      required: [status]
+      properties:
+        status:
+          $ref: '#/components/schemas/OwnerDeliveryStatus'
+        invitationId:
+          type: string
+          nullable: true
+        expiresAt:
+          type: string
+          format: date-time
+          nullable: true
+        manualActivationLink:
+          type: string
+          format: uri
+          nullable: true
+          description: Returned exactly once when automatic owner email is unavailable.
+        reason:
+          type: string
+          nullable: true
+      example:
+        status: DELIVERED
+        invitationId: inv-7f12a7c4
+        expiresAt: '2026-06-22T09:00:00Z'
+    UpdateTenantStatusRequest:
+      type: object
+      description: Tenant status update.
+      required: [status]
+      properties:
+        status:
+          $ref: '#/components/schemas/TenantStatus'
+      example:
+        status: SUSPENDED
+    AddTenantDomainRequest:
+      type: object
+      description: Domain to attach to a tenant.
+      required: [domain, kind]
+      properties:
+        domain:
+          type: string
+          description: Lowercased host without scheme or port.
+        kind:
+          $ref: '#/components/schemas/TenantDomainKind'
+        isPrimary:
+          type: boolean
+          default: false
+          description: Whether this domain becomes the canonical issuer host.
+      example:
+        domain: wallet.acme.example
+        kind: CUSTOM_DOMAIN
+        isPrimary: false
+    VerifyTenantDomainRequest:
+      type: object
+      description: DNS challenge proof for a custom domain.
+      required: [verificationProof]
+      properties:
+        verificationProof:
+          type: string
+          writeOnly: true
+          description: Proof value matching the domain's stored verification token. Write-only.
+      example:
+        verificationProof: dns-challenge-0a1b2c3d4e5f
+    UpsertTenantPublicEndpointRequest:
+      type: object
+      description: Public endpoint binding to create or update for a tenant and service type.
+      properties:
+        host:
+          type: string
+          nullable: true
+          description: Lowercased host without scheme or port. Null uses the runtime host or default base.
+        pathPrefix:
+          type: string
+          nullable: true
+          description: Protocol route prefix, for example `/acme/oid4vci`.
+        wellKnownPath:
+          type: string
+          nullable: true
+          description: Well-known route, for example `/.well-known/openid-credential-issuer/acme`.
+        enabled:
+          type: boolean
+          default: true
+          description: Whether the binding is active.
+        primaryEndpoint:
+          type: boolean
+          default: false
+          description: Whether this is the primary binding for the tenant and service type.
+      example:
+        host: acme.wallet.platform.example
+        pathPrefix: /acme/oid4vci
+        wellKnownPath: /.well-known/openid-credential-issuer/acme
+        enabled: true
+        primaryEndpoint: true
+
+    # ---- TenantSignup request/response bodies (inline) ----
+    RequestTenantSignupRequest:
+      type: object
+      description: Self-service signup request.
+      required: [email, slug, displayName]
+      properties:
+        email:
+          type: string
+          format: email
+          description: Requester email address. The verification email is sent here.
+        slug:
+          type: string
+          pattern: '^[a-z][a-z0-9-]{0,62}$'
+          description: Requested tenant slug.
+        parentTenantId:
+          type: string
+          nullable: true
+          description: Parent tenant for a subtenant signup, or null for a root signup.
+        displayName:
+          type: string
+          description: Requested tenant display name.
+        challengeProof:
+          type: string
+          nullable: true
+          description: Bot-defence challenge proof, when the deployment requires one.
+      example:
+        email: admin@acme.example
+        slug: acme
+        parentTenantId: null
+        displayName: Acme Corporation
+    TenantSignupRequestAccepted:
+      type: object
+      description: Acknowledgement of an accepted signup request or resend.
+      required: [signupRequestId, expiresAt, requiresApproval, emailDelivery]
+      properties:
+        signupRequestId:
+          type: string
+          description: Identifier of the signup request.
+        expiresAt:
+          type: string
+          format: date-time
+          description: Expiry of the signup request.
+        requiresApproval:
+          type: boolean
+          description: Whether operator approval is required after email verification.
+        emailDelivery:
+          $ref: '#/components/schemas/SignupEmailDeliveryResponse'
+      example:
+        signupRequestId: signup-9f12a7c4
+        expiresAt: '2026-06-09T09:00:00Z'
+        requiresApproval: true
+        emailDelivery:
+          status: SENT
+          deliveryId: del-9f12a7c4
+          providerMessageId: msg-101
+    SignupEmailDeliveryResponse:
+      type: object
+      description: Outcome of the signup verification email delivery.
+      required: [status]
+      properties:
+        status:
+          $ref: '#/components/schemas/SignupEmailDeliveryStatus'
+        deliveryId:
+          type: string
+          nullable: true
+          description: Delivery correlation id, when available.
+        providerMessageId:
+          type: string
+          nullable: true
+          description: Email provider message id, when available.
+      example:
+        status: SENT
+        deliveryId: del-9f12a7c4
+        providerMessageId: msg-101
+    ResendTenantSignupVerificationRequest:
+      type: object
+      description: Optional body for a verification resend.
+      properties:
+        sourceIpHash:
+          type: string
+          nullable: true
+          description: Hashed source IP for rate limiting and audit.
+      example:
+        sourceIpHash: 8f434346648f6b96df89dda901c5176b10a6d83961dd3c1ac88b59b2dc327aa4
+    ConfirmTenantSignupRequest:
+      type: object
+      description: Email confirmation for a signup request.
+      required: [plainVerificationToken]
+      properties:
+        plainVerificationToken:
+          type: string
+          writeOnly: true
+          description: Plaintext verification token from the email. Write-only.
+      example:
+        plainVerificationToken: vt-2f9a4c7e1b6d8038
+    ConfirmTenantSignupResponse:
+      type: object
+      description: Result of confirming a signup. Registration is present when approval is not required.
+      required: [signupRequestId, status]
+      properties:
+        signupRequestId:
+          type: string
+          description: Identifier of the signup request.
+        status:
+          $ref: '#/components/schemas/TenantSignupStatus'
+        registration:
+          type: object
+          allOf:
+            - $ref: '#/components/schemas/RegisterTenantResponse'
+          nullable: true
+          description: Resulting registration when the signup registered.
+      example:
+        signupRequestId: signup-9f12a7c4
+        status: PENDING_APPROVAL
+    ApproveTenantSignupResponse:
+      type: object
+      description: Result of approving a signup. Registration is present when registration completed.
+      required: [signupRequestId, status]
+      properties:
+        signupRequestId:
+          type: string
+          description: Identifier of the signup request.
+        status:
+          $ref: '#/components/schemas/TenantSignupStatus'
+        registration:
+          type: object
+          allOf:
+            - $ref: '#/components/schemas/RegisterTenantResponse'
+          nullable: true
+          description: Resulting registration when the signup registered.
+      example:
+        signupRequestId: signup-9f12a7c4
+        status: REGISTERED
+        registration:
+          tenant:
+            id: 7b3c2d9e-1f4a-4c8b-9e2d-5a6f7c8b9d01
+            tenantType: organization
+            name: Acme Corporation
+            description: null
+            slug: acme
+            parentTenantId: null
+            status: PENDING_VERIFICATION
+            system: false
+            ownerPartyId: 2c4e6a80-3b5d-4f70-9a12-8c0d1e2f3a4b
+            createdAt: '2026-06-08T09:40:00Z'
+            createdById: null
+            updatedAt: '2026-06-08T09:40:00Z'
+            updatedById: null
+            deletedAt: null
+            deletedById: null
+          tenantUrl: https://acme.wallet.platform.example
+          serviceUrls:
+            authorizationServerUrl: https://acme.wallet.platform.example
+            issuerUrl: https://acme.wallet.platform.example
+            oid4vciIssuerUrl: https://acme.wallet.platform.example
+            oid4vpVerifierUrl: https://acme.wallet.platform.example
+          correlationId: reg-acme-7f12a7c4
+          created:
+            ownerPartyId: 2c4e6a80-3b5d-4f70-9a12-8c0d1e2f3a4b
+            ownerAccountId: 6c4e6a80-3b5d-4f70-9a12-8c0d1e2f3a4f
+            relationshipIds: []
+          delivery:
+            mode: none
+            status: NOT_REQUESTED
+            deliveryId: null
+            providerMessageId: null
+    TenantSignupRequestViewPage:
+      type: object
+      description: Paginated pending signup list.
+      required: [data, pagination]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/TenantSignupRequestView'
+        pagination:
+          $ref: './common-components.yml#/components/schemas/PageMeta'
+    RejectTenantSignupRequest:
+      type: object
+      description: Optional body for a signup rejection.
+      properties:
+        reason:
+          type: string
+          nullable: true
+          description: Operator-supplied rejection reason.
+      example:
+        reason: Domain ownership could not be confirmed.
+    ReconcileExpiredTenantSignupsRequest:
+      type: object
+      description: Reconciliation cutoff.
+      required: [now]
+      properties:
+        now:
+          type: string
+          format: date-time
+          description: Timestamp against which expiry is evaluated.
+      example:
+        now: '2026-06-09T09:00:00Z'
+    ReconcileExpiredTenantSignupsResponse:
+      type: object
+      description: Number of signup requests marked expired.
+      required: [expiredCount]
+      properties:
+        expiredCount:
+          type: integer
+          format: int32
+          minimum: 0
+          description: Count of requests marked expired.
+      example:
+        expiredCount: 3

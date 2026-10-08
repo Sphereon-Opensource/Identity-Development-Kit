@@ -1,0 +1,1757 @@
+openapi: 3.0.4
+info:
+  title: Workflow Authoring Components
+  version: 0.1.0
+  description: Domain schemas and parameters for the workflow authoring API.
+paths: {}
+components:
+
+  parameters:
+
+    # -------------------------------------------------------------------------
+    # Workflow Definition path parameters
+    # -------------------------------------------------------------------------
+
+    DefinitionKey:
+      name: definitionKey
+      in: path
+      required: true
+      # NOT `format: uuid`, and this is the same decision `StartWorkflowExecutionRequest.definitionKey`
+      # records in workflow-execution-components.yml. Production keys are URNs — the model pack pins
+      # `urn:vdx:model-pack:company-authority:workflow` — while the REST create door happens to mint
+      # a UUID for definitions published through it. Nothing in Kotlin, the store or the compiler
+      # constrains the field, so `format: uuid` was an unenforced overclaim: a generated client typed
+      # it as a UUID and then could not pass a URN-keyed definition to this operation at all, even
+      # though the execution API will happily start one.
+      description: >-
+        Key identifying the workflow definition family. An opaque string, in practice either a URN
+        (model-pack definitions) or a UUID (definitions created through this API).
+      schema:
+        type: string
+      example: urn:vdx:model-pack:company-authority:workflow
+
+    Version:
+      name: version
+      in: path
+      required: true
+      description: Monotonically increasing version number within a definition family.
+      schema:
+        type: integer
+        minimum: 1
+
+    # -------------------------------------------------------------------------
+    # Step Type path/query parameters
+    # -------------------------------------------------------------------------
+
+    StepTypeId:
+      name: stepTypeId
+      in: path
+      required: true
+      description: Unique step-type identifier within the scope.
+      schema:
+        type: string
+        minLength: 1
+
+    DescriptorVersion:
+      name: descriptorVersion
+      in: path
+      required: true
+      description: Monotonically increasing version number of the step-type descriptor.
+      schema:
+        type: integer
+        minimum: 1
+
+    Namespace:
+      name: namespace
+      in: query
+      required: false
+      description: Namespace scope for the step-type lookup or registration. Defaults to `default` when omitted; workers cannot register into the platform-global empty namespace.
+      schema:
+        type: string
+        minLength: 1
+
+    OptionSourceKey:
+      name: optionSourceKey
+      in: path
+      required: true
+      description: Key identifying the dynamic option source (e.g. `workflow.connections`, `workflow.publishedForms`, `workflow.taskQueues`).
+      schema:
+        type: string
+
+  schemas:
+
+    # -------------------------------------------------------------------------
+    # Enums
+    # -------------------------------------------------------------------------
+
+    StepKind:
+      type: string
+      description: |
+        The kind of workflow task a step type compiles to. Engine-interpreted nodes are NOT step kinds:
+        Branch/Match decision routing is modelled as WorkflowDecisionNode, human waits as
+        WorkflowHumanNode, time-based waits as WorkflowTimerNode, and graph boundaries as
+        WorkflowInputNode/WorkflowOutputNode. A step type is always an externally-bound invocation
+        (in-process command or out-of-process worker).
+      enum: [SYSTEM, NATIVE_ACTIVITY]
+
+    IntegrationFamily:
+      type: string
+      description: |
+        The integration family that owns the step-type's runtime binding. There is no ENGINE_BUILTIN
+        family: engine-interpreted behaviour (human wait, timer, decision, boundary) lives on
+        dedicated WorkflowNode variants, not on step-type descriptors.
+      enum: [SYSTEM, NATIVE_ACTIVITY]
+
+    ExecutionMode:
+      type: string
+      description: How the system-command binding is executed inside the engine.
+      enum: [SINGLE_COMMAND, IN_PROCESS_CHAIN, DURABLE_SAGA]
+
+    RestrictionMode:
+      type: string
+      description: Runtime restriction applied to a step-type property attribute.
+      enum: [READ_ONLY, HIDDEN, INTERNAL]
+
+    StepTypeLifecycle:
+      type: string
+      description: Publication lifecycle state of a registered step-type descriptor.
+      enum: [ACTIVE, STALE, DEPRECATED]
+
+    WorkflowDefinitionStatus:
+      type: string
+      description: Lifecycle status of a workflow definition version.
+      enum: [DRAFT, PUBLISHED, ARCHIVED]
+
+    WorkflowDecisionKind:
+      type: string
+      description: The kind of decision a decision node performs — BRANCH (binary) or MATCH (multi-way).
+      enum: [BRANCH, MATCH]
+
+    # -------------------------------------------------------------------------
+    # Cross-spec $ref aliases
+    # -------------------------------------------------------------------------
+
+    # Cardinality as a {min,max} object (not the SINGLE|MULTIPLE enum form).
+    AttributeCardinalityBounds:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/AttributeCardinality'
+
+    AttributeValueKind:
+      $ref: './forms-components.yml#/components/schemas/AttributeValueKind'
+
+    AttributeWidgetHint:
+      $ref: './forms-components.yml#/components/schemas/AttributeWidgetHint'
+
+    ResolvedForm:
+      $ref: './forms-components.yml#/components/schemas/ResolvedForm'
+
+    # -------------------------------------------------------------------------
+    # StepBinding
+    # -------------------------------------------------------------------------
+
+    StepBinding:
+      oneOf:
+        - $ref: '#/components/schemas/StepBindingSystemCommand'
+        - $ref: '#/components/schemas/StepBindingNativeActivity'
+      discriminator:
+        propertyName: type
+        # 'type' is the discriminator; the server emits these short values. There is no EngineBuiltin
+        # variant: engine-interpreted nodes (human/decision/boundary) are WorkflowNode variants, not
+        # step-type bindings.
+        mapping:
+          SystemCommand: '#/components/schemas/StepBindingSystemCommand'
+          NativeActivity: '#/components/schemas/StepBindingNativeActivity'
+
+    StepBindingSystemCommand:
+      type: object
+      required: [type, commandId, mode]
+      additionalProperties: false
+      properties:
+        type: { type: string, enum: [SystemCommand] }
+        commandId: { type: string, minLength: 1 }
+        mode: { $ref: '#/components/schemas/ExecutionMode' }
+
+    StepBindingNativeActivity:
+      type: object
+      required: [type, activityName, taskQueue]
+      additionalProperties: false
+      properties:
+        type: { type: string, enum: [NativeActivity] }
+        activityName: { type: string, minLength: 1 }
+        taskQueue: { type: string, minLength: 1 }
+
+    # -------------------------------------------------------------------------
+    # StepTypeDescriptor
+    # -------------------------------------------------------------------------
+
+    StepTypeScope:
+      type: object
+      required: [namespace, tenantId]
+      description: The namespace + tenant scope under which a step type is registered.
+      properties:
+        namespace:
+          type: string
+          description: Logical namespace; empty string denotes global scope.
+        tenantId:
+          type: string
+          description: Tenant that owns this registration; server-derived from the auth token.
+
+    StepIoContract:
+      type: object
+      required: [inputTypeName, outputTypeName]
+      description: Canonical fully-qualified type names for the step's input and output.
+      properties:
+        inputTypeName:
+          type: string
+          minLength: 1
+          description: Stable wire type identifier for the step input, resolved by the worker/compiler integration without exposing a language-specific class contract.
+        outputTypeName:
+          type: string
+          minLength: 1
+          description: Stable wire type identifier for the step output, resolved by the worker/compiler integration without exposing a language-specific class contract.
+
+    PaletteMetadata:
+      type: object
+      required: [displayName, category, sortOrder]
+      description: Designer-palette display metadata for a step type.
+      properties:
+        displayName:
+          type: string
+        category:
+          type: string
+        icon:
+          type: string
+          nullable: true
+        description:
+          type: string
+          nullable: true
+        sortOrder:
+          type: integer
+
+    StepPropertyAttribute:
+      type: object
+      required: [path, valueKind, widgetHint, sortOrder]
+      # Requiredness derives from cardinality.min; there is no separate 'mandatory' flag.
+      description: |
+        A single authored property on a step instance, corresponding to one OCA attribute.
+        Requiredness derives from cardinality.min (>= 1 = required); there is no separate
+        mandatory field.
+      properties:
+        path:
+          type: string
+          description: Dot-path attribute identifier within the property form.
+        valueKind:
+          $ref: '#/components/schemas/AttributeValueKind'
+        widgetHint:
+          $ref: '#/components/schemas/AttributeWidgetHint'
+        restrictions:
+          type: array
+          items: { $ref: '#/components/schemas/RestrictionMode' }
+        cardinality:
+          $ref: '#/components/schemas/AttributeCardinalityBounds'
+        labels:
+          type: object
+          additionalProperties: { type: string }
+          description: Locale-keyed display labels (BCP-47 keys).
+        descriptions:
+          type: object
+          additionalProperties: { type: string }
+          description: Locale-keyed description strings (BCP-47 keys).
+        entryCodes:
+          type: array
+          items: { type: string }
+          description: Allowlist of permitted entry codes when widgetHint is PICKLIST or RADIO_GROUP.
+        optionSourceKey:
+          type: string
+          nullable: true
+          description: Key into the dynamic-options endpoint for server-side type-ahead.
+        semanticBinding:
+          type: string
+          nullable: true
+          description: Optional semantic binding derived from a contract overlay policy mapping.
+        authoredDefault:
+          description: Optional literal or expression-tag default used when no current authored value exists.
+        sortOrder:
+          type: integer
+          description: Render order within the form section.
+
+    StepPropertyForm:
+      type: object
+      required: [attributes]
+      description: The authored property form for a step type — title and ordered attributes.
+      properties:
+        title:
+          type: string
+          nullable: true
+        attributes:
+          type: array
+          items: { $ref: '#/components/schemas/StepPropertyAttribute' }
+
+    StepTypeDescriptor:
+      type: object
+      required: [scope, stepTypeId, descriptorVersion, name, kind, integrationFamily, binding, io, propertyForm, palette, inputs, outputs]
+      description: |
+        A curated step type the designer can place — its identity (scope + id + version),
+        kind, execution binding, input/output contract, property-editor form, palette
+        metadata, and terminals. Registry lifecycle belongs to the RegisteredStepType wrapper.
+      properties:
+        scope:
+          $ref: '#/components/schemas/StepTypeScope'
+        stepTypeId:
+          type: string
+          minLength: 1
+          description: Unique step-type identifier within the scope.
+        descriptorVersion:
+          type: integer
+          minimum: 1
+          description: Monotonically increasing version of this descriptor.
+        name:
+          type: string
+          minLength: 1
+          description: Human-readable name of the step type.
+        description:
+          type: string
+          nullable: true
+        kind:
+          $ref: '#/components/schemas/StepKind'
+        integrationFamily:
+          $ref: '#/components/schemas/IntegrationFamily'
+        binding:
+          $ref: '#/components/schemas/StepBinding'
+        io:
+          $ref: '#/components/schemas/StepIoContract'
+        propertyForm:
+          $ref: '#/components/schemas/StepPropertyForm'
+        palette:
+          $ref: '#/components/schemas/PaletteMetadata'
+        inputs:
+          type: array
+          description: Declared input terminals. Empty = the step has a single implicit default input.
+          items: { $ref: '#/components/schemas/StepPort' }
+        outputs:
+          type: array
+          description: Declared output terminals (e.g. a command's ok/fail outcomes, a decision's branches, a sub-flow's exits). Empty = a single implicit default output.
+          items: { $ref: '#/components/schemas/StepPort' }
+      oneOf:
+        - description: A system-command descriptor; all three execution classifiers agree by construction.
+          properties:
+            kind: { type: string, enum: [SYSTEM] }
+            integrationFamily: { type: string, enum: [SYSTEM] }
+            binding: { $ref: '#/components/schemas/StepBindingSystemCommand' }
+        - description: A native-activity descriptor; all three execution classifiers agree by construction.
+          properties:
+            kind: { type: string, enum: [NATIVE_ACTIVITY] }
+            integrationFamily: { type: string, enum: [NATIVE_ACTIVITY] }
+            binding: { $ref: '#/components/schemas/StepBindingNativeActivity' }
+
+    # -------------------------------------------------------------------------
+    # Authored values (structured step config + expression tags)
+    # -------------------------------------------------------------------------
+
+    ExpressionValue:
+      type: object
+      required: ['$expr']
+      additionalProperties: false
+      description: |
+        An expression-valued authored value. Anywhere a literal may appear in authored step config
+        (AuthoredConfig) or in a sub-flow node's inputMappings, the value may instead be this tag,
+        deferring the value to a runtime expression evaluated against the running payload / workflow
+        variable scope. An object is an expression tag only when its complete shape is the single `$expr`
+        string member. There is no separate enum and no parallel side map. An expression tag is legal at
+        any value position a literal is legal: scalar leaves, array elements, and whole-object positions.
+        Reserved and defined now so authored definitions can carry expression bindings before the
+        pluggable ExpressionEvaluator ships (its SPI is deferred; see the Expressions API).
+      properties:
+        '$expr':
+          type: string
+          minLength: 1
+          description: Expression source, evaluated at runtime by the pluggable ExpressionEvaluator.
+
+    LiteralValue:
+      type: object
+      required: ['$literal']
+      additionalProperties: false
+      description: |
+        Escape for a literal JSON value whose exact object shape would otherwise be interpreted as an
+        expression tag. For example, `{ "$literal": { "$expr": "literal text" } }` authors the inner
+        object literally. The server removes exactly one `$literal` wrapper and does not reinterpret the
+        unwrapped value. Ordinary literal objects need no wrapper.
+      properties:
+        '$literal':
+          description: Any JSON value to preserve literally, including an object with a reserved `$expr` key.
+
+    AuthoredConfig:
+      type: object
+      additionalProperties: true
+      description: |
+        Structured authored configuration for a step instance, shaped like the step type's INPUT TYPE —
+        the same kotlinx `SerialDescriptor` the property form is derived from. It is, in effect, a partial
+        authored instance of that input type: nested objects stay nested, lists are arrays, and
+        omitted/optional fields are simply absent. This is NOT a flat map keyed by dotted attribute paths
+        — there is no stringly-typed path join between descriptor attributes and values; the two agree
+        structurally, by position within the input type.
+
+        Every value position holds one of:
+          * a raw literal — any JSON value (string / number / boolean / null / array / object), preserved
+            verbatim and byte-for-byte on round-trip, except the exact reserved tag shapes below;
+          * an expression tag — an object `{ "$expr": "<expression>" }` (see ExpressionValue), legal
+            anywhere a literal is legal; or
+          * a literal escape — `{ "$literal": <any JSON> }` (see LiteralValue), required only when the
+            literal itself has the exact reserved expression-tag shape.
+
+        Per-field metadata (valueKind, widgetHint, restrictions, labels, option sources, semanticBinding)
+        lives on the step type's descriptor (StepPropertyForm / StepPropertyAttribute) and is NEVER
+        duplicated onto authored values — authored config carries values only. The authoring API validates
+        this object structurally against the descriptor's input SerialDescriptor (types, requiredness from
+        cardinality, restrictions); expression tags pass through the expression parse-validation seam
+        rather than type-checking. Modelled as a free-form object here because the concrete shape is
+        per-step-type (dynamic) and cannot be statically enumerated in a shared contract; the structural
+        contract is the input type, enforced server-side.
+
+    # -------------------------------------------------------------------------
+    # Workflow graph model
+    # -------------------------------------------------------------------------
+
+    NodeUi:
+      type: object
+      description: Designer canvas metadata for a node. Additional client-defined keys are permitted.
+      properties:
+        positionX: { type: number }
+        positionY: { type: number }
+        width:
+          type: number
+          nullable: true
+          description: Rendered block width; null/absent lets the client auto-size.
+        height:
+          type: number
+          nullable: true
+          description: Rendered block height; null/absent lets the client auto-size.
+
+    EdgeUi:
+      type: object
+      description: Designer canvas metadata for an edge. Additional client-defined keys are permitted.
+      properties:
+        waypoints:
+          type: array
+          description: Ordered bend points the edge is routed through on the canvas; empty/absent lets the client auto-route.
+          items:
+            type: object
+            required: [positionX, positionY]
+            properties:
+              positionX: { type: number }
+              positionY: { type: number }
+
+    GraphUi:
+      type: object
+      description: Designer canvas metadata for the graph as a whole (persisted viewport). Additional client-defined keys are permitted.
+      properties:
+        viewportX: { type: number, nullable: true }
+        viewportY: { type: number, nullable: true }
+        zoom: { type: number, nullable: true }
+
+    WorkflowGraph:
+      type: object
+      required: [nodes, edges]
+      description: |
+        The directed graph describing a workflow's nodes and routing. A draft graph may be incomplete;
+        structural completeness is enforced at publish/validate, not by this schema.
+        Validation rules (validate endpoint + publish gate):
+        - A publishable graph has at least one INPUT node and at least one OUTPUT node. The definition's
+          signature is DERIVED from them (inputs/outputs ordered by sortOrder, then node id) — the
+          signature is read-only and never authored directly.
+        - Every node must be reachable from an INPUT node, and every path must terminate at an OUTPUT node.
+        - Each (node, output terminal) pair has at most ONE outgoing edge — there is no implicit parallel split.
+        - Multiple incoming edges to a node form an XOR-merge: whichever edge fires, the payload passes
+          through; there are no join/AND semantics.
+        - Every edge's from.port / to.port must reference a terminal the respective node declares, or be
+          omitted when that node has a single default terminal. INPUT nodes have no incoming edges;
+          OUTPUT nodes have no outgoing edges.
+        - A BRANCH decision node has exactly one case; a MATCH decision node has one or more cases
+          (evaluated in array order). Port names must be unique across a decision node's cases plus defaultPort.
+        - Step nodes route via their step type's output terminals; the step selects its port at runtime
+          (in code). To branch on a step's result, route the relevant output port into a decision node.
+        - A sub-flow node's edges must reference its declared inputs/outputs ports; its
+          (definitionKey, version) must resolve to a published definition; sub-flow references must not
+          form a cycle.
+        - Every step node's (stepTypeId, descriptorVersion) must resolve to a registered descriptor and
+          be compatible.
+        - Every condition expression must parse.
+      properties:
+        recoveryEntries:
+          type: object
+          description: Failed executable task id to an explicitly published recovery input port; a retry creates a new execution.
+          additionalProperties: { type: string, minLength: 1 }
+        nodes:
+          type: array
+          items: { $ref: '#/components/schemas/WorkflowNode' }
+        edges:
+          type: array
+          items: { $ref: '#/components/schemas/WorkflowEdge' }
+        ui:
+          allOf:
+            - $ref: '#/components/schemas/GraphUi'
+          description: Designer canvas metadata (persisted viewport).
+
+    WorkflowStepNode:
+      type: object
+      required: [nodeType, id, stepTypeId, descriptorVersion, authoredConfig, bindingSnapshot, paletteSnapshot]
+      description: |
+        A step-type-backed node inside a workflow graph. Routing leaves via the step type's declared
+        output terminals; which terminal fires is decided by the step at runtime (a command step selects
+        its output port in code — a code-embedded decision), not by conditions on this node's edges.
+        Edges are the single source of routing topology; this node carries no decision/condition field.
+      properties:
+        nodeType:
+          type: string
+          enum: [STEP]
+          description: Discriminator — a step-type-backed node.
+        id:
+          type: string
+          description: Step instance identifier, unique within the graph.
+        stepTypeId:
+          type: string
+          description: Identifier of the step type this instance is based on.
+        descriptorVersion:
+          type: integer
+          minimum: 1
+          description: Descriptor version locked at author time.
+        namespace:
+          type: string
+          nullable: true
+          description: Namespace scope of the referenced step type.
+        label:
+          type: string
+          nullable: true
+          description: Optional human-readable label for display in the designer canvas.
+        authoredConfig:
+          allOf:
+            - $ref: '#/components/schemas/AuthoredConfig'
+          description: |
+            Structured authored configuration for this step, shaped like the step type's input type (see
+            AuthoredConfig) — nested objects stay nested, no dotted attribute-path keys. Each value
+            position is a literal or an `{ "$expr": … }` expression tag.
+        publishToVars:
+          type: object
+          additionalProperties:
+            type: string
+          description: >
+            VDX-156 publish map — variable path to an expression evaluated against the step's command
+            output. On success the engine deep-sets each entry into the running workflow variable scope;
+            only this subset merges (the output never replaces the scope). Absent/empty = the step
+            publishes nothing. Each KEY must be a non-blank dot-separated variable path with no empty
+            segments (no leading/trailing/doubled dots); a malformed path is rejected non-retryably at
+            runtime.
+        bindingSnapshot:
+          allOf:
+            - $ref: '#/components/schemas/StepBinding'
+          description: Snapshot of the descriptor's StepBinding copied at author time; makes published definitions self-contained.
+        paletteSnapshot:
+          allOf:
+            - $ref: '#/components/schemas/PaletteMetadata'
+          description: Snapshot of the descriptor's palette metadata (displayName, icon, category) copied at author time, so the canvas renders the block's title bar without a registry lookup — even when the descriptor is later DEPRECATED. Mirrors bindingSnapshot.
+        outputs:
+          type: array
+          description: |
+            Snapshot of the step type's declared output terminals (e.g. a command's ok/fail outcomes or
+            content-based routes), copied at author time so the published definition is self-contained
+            (mirrors bindingSnapshot) and the engine can resolve and validate port routing without a
+            registry lookup. Empty or absent = a single implicit default output. Which port fires is
+            decided by the step's runtime, not by edge conditions.
+          items: { $ref: '#/components/schemas/StepPort' }
+        inputs:
+          type: array
+          description: |
+            Snapshot of the step type's declared input terminals, copied at author time (self-containment).
+            Empty or absent = a single implicit default input.
+          items: { $ref: '#/components/schemas/StepPort' }
+        ui:
+          allOf:
+            - $ref: '#/components/schemas/NodeUi'
+          description: Designer canvas metadata (position, size).
+
+    WorkflowSubFlowNode:
+      type: object
+      required: [nodeType, id, definitionKey, version, inputs, outputs]
+      description: A graph node that embeds another workflow definition as a sub-flow. Its terminals are a snapshot of the referenced definition's signature.
+      properties:
+        nodeType: { type: string, enum: [SUBFLOW], description: Discriminator — a sub-flow node. }
+        id: { type: string, description: "Node id, unique within the graph." }
+        definitionKey: { type: string, description: "The referenced sub-flow definition family. Opaque: a URN or a UUID, see the DefinitionKey parameter." }
+        version: { type: integer, minimum: 1, description: Pinned published version of the referenced definition (the parent is unaffected if the sub-flow evolves). }
+        label: { type: string, nullable: true }
+        inputs:
+          type: array
+          description: Snapshot of the referenced definition's signature input ports (this block's input terminals).
+          items: { $ref: '#/components/schemas/StepPort' }
+        outputs:
+          type: array
+          description: Snapshot of the referenced definition's signature output ports (this block's output terminals).
+          items: { $ref: '#/components/schemas/StepPort' }
+        inputMappings:
+          type: object
+          additionalProperties: true
+          description: |
+            Authored data mappings into the referenced sub-flow's signature input ports, keyed by input
+            PORT NAME — a real contract (the sub-flow signature's declared input ports), not flattened
+            struct paths. Each mapped value is an authored value: either a raw literal (any JSON, preserved
+            verbatim) or an expression tag `{ "$expr": "<expression>" }` (see ExpressionValue), consistent
+            with AuthoredConfig value positions.
+        ui:
+          allOf:
+            - $ref: '#/components/schemas/NodeUi'
+          description: Designer canvas metadata (position, size).
+
+    WorkflowDecisionCase:
+      type: object
+      required: [port, condition]
+      description: One conditional case of a decision node. The case's port is the output terminal the workflow leaves through when its condition evaluates true. Cases are evaluated in array order; the node's defaultPort fires when no case matches.
+      properties:
+        port:
+          allOf:
+            - $ref: '#/components/schemas/StepPort'
+          description: The output terminal this case exposes (rendered as a port on the decision block).
+        condition:
+          type: string
+          description: Expression over the running payload, evaluated by the pluggable expression evaluator.
+
+    WorkflowDecisionNode:
+      description: A schema-enforced BRANCH or MATCH decision node.
+      oneOf:
+        - $ref: '#/components/schemas/WorkflowBranchNode'
+        - $ref: '#/components/schemas/WorkflowMatchNode'
+      discriminator:
+        propertyName: decisionKind
+        mapping:
+          BRANCH: '#/components/schemas/WorkflowBranchNode'
+          MATCH: '#/components/schemas/WorkflowMatchNode'
+
+    WorkflowDecisionNodeBase:
+      type: object
+      required: [nodeType, id, decisionKind, cases, defaultPort]
+      description: |
+        A control-flow node that routes the workflow by evaluating its cases in array order over the
+        running payload and leaving through the first matching case's output port, or through
+        defaultPort when no case matches. It executes nothing and does not transform the payload.
+        All conditional logic lives on this node; edges are pure topology. The node has a single
+        implicit default input terminal. BRANCH = exactly one case plus defaultPort (binary);
+        MATCH = one or more cases plus defaultPort (multi-way).
+      properties:
+        nodeType: { type: string, enum: [DECISION], description: Node-type discriminator. }
+        id: { type: string, description: "Node id, unique within the graph." }
+        decisionKind:
+          allOf:
+            - $ref: '#/components/schemas/WorkflowDecisionKind'
+          description: BRANCH = exactly one case (binary); MATCH = one or more ordered cases (multi-way).
+        label: { type: string, nullable: true, description: Optional free-text label shown on the block. }
+        cases:
+          type: array
+          description: Ordered conditional cases; each case is an output terminal with its condition.
+          items: { $ref: '#/components/schemas/WorkflowDecisionCase' }
+        defaultPort:
+          allOf:
+            - $ref: '#/components/schemas/StepPort'
+          description: The mandatory fall-through output terminal taken when no case matches.
+        ui:
+          allOf:
+            - $ref: '#/components/schemas/NodeUi'
+          description: Designer canvas metadata (position, size).
+
+    WorkflowBranchNode:
+      allOf:
+        - $ref: '#/components/schemas/WorkflowDecisionNodeBase'
+        - type: object
+          description: Binary decision with exactly one conditional case plus its required default port.
+          properties:
+            decisionKind: { type: string, enum: [BRANCH] }
+            cases:
+              type: array
+              minItems: 1
+              maxItems: 1
+              items: { $ref: '#/components/schemas/WorkflowDecisionCase' }
+
+    WorkflowMatchNode:
+      allOf:
+        - $ref: '#/components/schemas/WorkflowDecisionNodeBase'
+        - type: object
+          description: Multi-way decision with one or more ordered conditional cases plus its required default port.
+          properties:
+            decisionKind: { type: string, enum: [MATCH] }
+            cases:
+              type: array
+              minItems: 1
+              items: { $ref: '#/components/schemas/WorkflowDecisionCase' }
+
+    WorkflowInputNode:
+      type: object
+      required: [nodeType, id, port]
+      description: |
+        A boundary node that defines one entry point of the workflow — one input port of the
+        definition's signature. Data enters the workflow here. The node exposes a single output
+        terminal (its port) and must have no incoming edges. The definition's signature.inputs is
+        derived from the graph's INPUT nodes, ordered by sortOrder then node id.
+      properties:
+        nodeType: { type: string, enum: [INPUT], description: Node-type discriminator. }
+        id: { type: string, description: "Node id, unique within the graph." }
+        port:
+          allOf:
+            - $ref: '#/components/schemas/StepPort'
+          description: The signature input port this node defines (name unique across the graph's INPUT nodes).
+        sortOrder:
+          type: integer
+          nullable: true
+          description: Position of this port within the derived signature.inputs; ties broken by node id.
+        label: { type: string, nullable: true }
+        ui:
+          allOf:
+            - $ref: '#/components/schemas/NodeUi'
+          description: Designer canvas metadata (position, size).
+
+    WorkflowOutputNode:
+      type: object
+      required: [nodeType, id, port]
+      description: |
+        A boundary node that defines one exit of the workflow — one output port of the definition's
+        signature. Reaching this node completes the workflow via that exit port (this is what a parent
+        workflow observes as the sub-flow's selected output port). The node exposes a single input
+        terminal (its port) and must have no outgoing edges. The definition's signature.outputs is
+        derived from the graph's OUTPUT nodes, ordered by sortOrder then node id.
+      properties:
+        nodeType: { type: string, enum: [OUTPUT], description: Node-type discriminator. }
+        id: { type: string, description: "Node id, unique within the graph." }
+        port:
+          allOf:
+            - $ref: '#/components/schemas/StepPort'
+          description: The signature output port this node defines (name unique across the graph's OUTPUT nodes).
+        sortOrder:
+          type: integer
+          nullable: true
+          description: Position of this port within the derived signature.outputs; ties broken by node id.
+        label: { type: string, nullable: true }
+        ui:
+          allOf:
+            - $ref: '#/components/schemas/NodeUi'
+          description: Designer canvas metadata (position, size).
+
+    WorkflowWaitBoundSeconds:
+      type: integer
+      format: int64
+      minimum: 1
+      maximum: 315575999700
+      # 315575999700 is the scheduling layer's own ceiling less the fixed margin the engine adds to
+      # every scheduled wait. Defined once here because the same bound applies to all three wait
+      # fields; the runtime derives it rather than typing it out (WorkflowTask.MAX_WAIT_SECONDS).
+      description: |
+        A wait bound, in seconds, as authored on a waiting node. `WorkflowHumanNode.timeoutSeconds`,
+        `WorkflowTimerNode.durationSeconds` and `WorkflowTimerNode.maxWaitSeconds` all carry this
+        bound, and it is defined once so the three cannot drift apart.
+
+        The maximum is the longest wait the platform will accept, and it is a limit rather than a
+        suggestion: a larger value is refused at validation and at publish time, never silently
+        clamped. It sits around ten thousand years, far past any operational wait, so a deadline
+        anywhere near it is a deliberate authoring choice and not a supported pattern.
+
+    WorkflowHumanNode:
+      type: object
+      required: [nodeType, id]
+      description: |
+        A human-wait node — the workflow pauses until an out-of-band signal arrives (typically a person
+        completing a published form, an approval, or an IDV completion). A Human step is NOT a
+        command-input shape, so its configuration is modelled as first-class typed fields on the node,
+        never as a generic authoredConfig bag: it has no step type, no stepTypeId/bindingSnapshot and no
+        authoredConfig. Mirrors the self-describing WorkflowDecisionNode / boundary-node pattern.
+
+        The node has a single implicit default input terminal. On the output side it may declare named
+        terminals through `outputs` (e.g. `submitted` / `approved` / `rejected`); an empty or absent
+        `outputs` list means a single implicit default output. Which of those declared terminals fires
+        is decided at runtime from the arriving signal, never by edge conditions.
+
+        `expired` is NOT one of those declared terminals. It is an implicit engine port, selectable
+        only by naming it explicitly on an edge's `from.port` — the same way `fail` works on a step
+        node — and it fires when the wait reaches its `timeoutSeconds` deadline with no signal. An
+        expiry with no `expired` edge wired fails the execution, which is what every definition
+        published before this port existed already does. Do not declare an output called `timeout` and
+        expect it to fire on its own: an author-declared terminal only fires when the arriving signal
+        selects it.
+
+        Engine-owned means engine-only, in both directions. An arriving signal cannot select
+        `expired` — a submission naming it is refused non-retryably rather than taking the timeout
+        route on demand — and `outputs` cannot declare a terminal called `expired`, which is refused
+        at validation and compile time rather than silently sharing the name.
+      properties:
+        nodeType: { type: string, enum: [HUMAN], description: "Node-type discriminator — a human-wait node." }
+        id: { type: string, description: "Node id, unique within the graph." }
+        formRef:
+          type: string
+          nullable: true
+          description: |
+            Reference to the published form the human completes, populated in the designer from the
+            `workflow.publishedForms` dynamic option source. Absent for a bare signal/approval wait with
+            no form.
+        correlationKey:
+          type: string
+          nullable: true
+          minLength: 1
+          description: |
+            Static key that matches an inbound signal to this wait node. A literal: no `${`
+            placeholders, and mutually exclusive with `correlationKeyExpression`. Defaults to the
+            node `id` when both are omitted. Allows only one in-flight execution per (definition,
+            node, tenant); use `correlationKeyExpression` for anything that runs concurrently.
+        correlationKeyExpression:
+          type: string
+          nullable: true
+          minLength: 1
+          description: |
+            Per-execution correlation key template: literal text with one or more `${path}`
+            placeholders, e.g. `${input.applicantId}:${input.applicationId}:${signalId}`. At least one
+            placeholder is required; mutually exclusive with `correlationKey`.
+
+            `path` is a dotted variable path (letters, digits, `_`, `-`; no `$.` prefix, indexing,
+            operators or functions), resolved against the workflow variable scope just before the
+            wait is bound. Every placeholder must resolve to a non-blank scalar (string, number or
+            boolean); otherwise, or if the rendered key exceeds 512 UTF-8 bytes, the execution fails
+            non-retryably before any binding. A template that does not parse is rejected at
+            validation and compile time.
+
+            The rendered key is persisted, logged and shown in workflow history as an opaque routing
+            id. Compose it from stable references carried on the workflow input (a business id, a
+            signal id, a completion token, a participant reference) — never from personal data,
+            credential content or legal notes.
+
+            Collision hazards the renderer cannot detect: a separator that can also occur inside a
+            value (`${a}:${b}` with `a="x:y"`), adjacent placeholders (`${a}${b}`, reported as a
+            `HUMAN_CORRELATION_KEY_AMBIGUOUS` warning but still publishable), and non-string scalars
+            rendered as JSON text (`42` and `"42"` collide). Pick separators and values that cannot
+            collide across executions.
+
+            The mutual exclusion with `correlationKey` and its no-`${` rule are documented in prose
+            rather than as `not`/`oneOf` schema constraints because generator support for those is
+            uneven; both are enforced server-side and a node that sets both is refused with
+            `HUMAN_CONFIG_INVALID`.
+        timeoutSeconds:
+          # `type` alongside `nullable` on an allOf-wrapped ref: OAS 3.0 attaches `nullable` to a
+          # type, and without it the schema is a lint warning rather than a nullable property.
+          type: integer
+          format: int64
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/WorkflowWaitBoundSeconds'
+          description: |
+            Bounded wait, in seconds. This is the authoritative deadline for the wait.
+
+            Absent does NOT mean "waits indefinitely". Absent means the engine's default wait
+            expiration of 365 days (31536000 seconds): the wait still expires, it just expires
+            late. A step that needs a different bound must state it here rather than leaving the
+            field out.
+
+            When present the value is honoured as authored; there is no one-year ceiling. The only
+            remaining bound is the shared maximum on `WorkflowWaitBoundSeconds`.
+
+            On expiry the engine fires the implicit `expired` port when an edge names it, and fails
+            the execution non-retryably when no edge does.
+        publishAllSubmittedFields:
+          type: boolean
+          nullable: true
+          description: |
+            When true (the compiler default when absent), all fields submitted with the form are
+            flat-merged into the workflow variable scope (VDX-141 per-field variable-binding feature).
+            Compiled onto the engine Human task and consumed by the interpreter at runtime (VDX-156);
+            with it enabled, a non-object submitted signal fails the workflow non-retryably.
+        variablePrefix:
+          type: string
+          nullable: true
+          pattern: '^[^.]+(\.[^.]+)*$'
+          description: |
+            Optional prefix applied to variable names when publishing submitted fields into the workflow
+            variable scope (VDX-141). Compiled onto the engine Human task and consumed by the interpreter
+            at runtime (VDX-156). Must be a non-blank dot-separated path with no empty segments (no
+            leading/trailing/doubled dots); a malformed prefix is rejected non-retryably at runtime.
+        submissionFields:
+          type: array
+          nullable: true
+          uniqueItems: true
+          items: { type: string, minLength: 1 }
+          description: |
+            Allow-list of form field paths a form-backed completion of this wait may publish into the
+            workflow variable scope (VDX-237).
+
+            **Authored here, on the definition, and nowhere else.** A submission that reaches a running
+            workflow lands verbatim in durable workflow history, so what may be disclosed is a property
+            of the published, reviewed workflow rather than of whoever starts an execution of it. The
+            execution API's `POST /executions` therefore takes no allow-list: it reads this one.
+
+            Absent or empty publishes no field values at all — there is no wildcard. Attachment
+            metadata (`evidenceId`, `mediaType`, `filename`) is gated on the same list: a file attached
+            to a field this list does not name is not disclosed either.
+
+            `uniqueItems` because the compiled form is a set; a repeated path is an authoring mistake,
+            not a way to publish a field twice.
+          example: [ "applicant.fullName" ]
+        submissionDefaults:
+          type: object
+          nullable: true
+          additionalProperties: true
+          description: |
+            Values merged for `submissionFields` entries a submission leaves absent (VDX-237). Every key
+            must also appear in `submissionFields`; a default for a path the allow-list excludes is
+            refused at validation and compile time, pointed at this node, because it would publish a
+            field the allow-list withheld.
+          example:
+            applicant.fullName: ""
+        completeOnSubmit:
+          type: boolean
+          nullable: true
+          description: |
+            Whether submitting the bound form completes this wait (VDX-237). Absent compiles to
+            `true`, which is what every form-backed wait did before this field existed.
+
+            `false` means a form submission alone does NOT complete the wait: the workflow-execution
+            API's completion operation is the only completer, and the platform's after-submit hook
+            leaves the task parked. Author it that way when the submission this wait needs carries
+            case-side references — a case-action submission, its evidence submissions, the case
+            stream's version — that the form session does not hold and only something that also
+            knows the case can mint. Completing on submit alone would settle the task with those
+            references absent and leave the step downstream reading its inputs as missing.
+
+            It is also the only shape in which a completion's `preconditions` are evaluated: the
+            after-submit hook and the completion door share one deterministic engine-side update id,
+            so a wait the hook already settled replays that acknowledgement rather than evaluating a
+            later caller's assertions.
+          example: false
+        label: { type: string, nullable: true, description: "Optional human-readable label shown on the block." }
+        outputs:
+          type: array
+          description: |
+            Declared output terminals (e.g. `submitted` / `timeout`). Empty or absent = a single implicit
+            default output.
+          items: { $ref: '#/components/schemas/StepPort' }
+        ui:
+          allOf:
+            - $ref: '#/components/schemas/NodeUi'
+          description: Designer canvas metadata (position, size).
+
+    WorkflowSignalNode:
+      type: object
+      additionalProperties: false
+      required: [nodeType, id, signalName, resultVariable]
+      description: A governed external-input wait, delivered through a validated idempotent engine update. Completion publishes payload under resultVariable and fires success; timeout fires expired or fails when unwired.
+      properties:
+        nodeType: { type: string, enum: [SIGNAL] }
+        id: { type: string, minLength: 1 }
+        signalName: { type: string, minLength: 1 }
+        resultVariable: { type: string, pattern: '^[A-Za-z_][A-Za-z0-9_]*$' }
+        requiredPayloadFields:
+          type: array
+          uniqueItems: true
+          items: { type: string, minLength: 1 }
+          default: []
+        timeoutSeconds: { $ref: '#/components/schemas/WorkflowWaitBoundSeconds' }
+        label: { type: string, nullable: true }
+        ui: { $ref: '#/components/schemas/NodeUi' }
+
+    WorkflowTimerNode:
+      type: object
+      required: [nodeType, id]
+      description: |
+        A timer node: the workflow waits until a point in time, then continues. Like the human-wait
+        node this is an engine-interpreted node rather than a command-input shape: it has no step type,
+        no stepTypeId/bindingSnapshot and no authoredConfig, and its configuration is modelled as
+        first-class typed fields.
+
+        EXACTLY ONE wait source must be set: `durationSeconds` (a fixed wait measured from the moment
+        the node is reached), `targetExpression` (an absolute instant read out of the running variable
+        scope), or `calendar` (the next matching wall-clock slot in a named timezone). Zero sources, or
+        more than one, is refused when the definition is validated, again when it is published, and
+        again when a stored definition is loaded for execution.
+
+        The node has a single implicit default input terminal and declares no outputs of its own. Its
+        output terminals are engine-owned: `success` and `expired` always, and `interrupted` if and
+        only if `interrupt` is present:
+
+          * `success`: the sole declared output terminal; fires when the wait completes. An edge
+            leaving the node may omit `from.port` and it resolves to `success`. It must be wired.
+          * `expired`: an implicit engine port, selectable only by naming it explicitly on an edge's
+            `from.port`, the same way `fail` works on a step node. It fires when the resolved wait
+            would run past `maxWaitSeconds`. Wiring it is optional; when no edge names it, that case
+            fails the execution non-retryably instead.
+
+        The timer never computes dates from business data. A target instant is an opaque scheduling
+        input: produce it in an upstream step and publish it into the variable scope through
+        `publishToVars` as an ISO-8601 date-time string (`format: date-time`), then point
+        `targetExpression` at it. Composite waits are composed from nodes rather than from arithmetic:
+        "20 days, then the next working morning" is a duration timer followed by a calendar timer.
+
+        The wait is durable. It survives a restart or an outage of the server that is running the
+        workflow, it fires exactly once, and it is never silently restarted from zero: a wait that
+        was half elapsed when the server went down still ends at the instant it was going to end.
+
+          * `interrupted`: present only with `interrupt`, and then it must be wired. It fires when a
+            matching, validated governed signal delivery ends the wait early; `success` and `expired`
+            are unchanged. Naming it on a timer without `interrupt` is an unknown port.
+      properties:
+        nodeType: { type: string, enum: [TIMER], description: "Node-type discriminator: a timer node." }
+        id: { type: string, description: "Node id, unique within the graph." }
+        durationSeconds:
+          # `type` alongside `nullable` on an allOf-wrapped ref: OAS 3.0 attaches `nullable` to a
+          # type, and without it the schema is a lint warning rather than a nullable property.
+          type: integer
+          format: int64
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/WorkflowWaitBoundSeconds'
+          description: |
+            Wait source A: a fixed wait, in seconds, measured from the moment the node is reached.
+            Mutually exclusive with `targetExpression` and `calendar`.
+
+            Must not exceed the expiration that applies to the node, which is `maxWaitSeconds` when
+            it is set and the engine's default of 365 days when it is not. A fixed wait longer than
+            its own expiration can only ever expire, which is an authoring mistake rather than a
+            route worth taking, so it is refused at publish time. To author a fixed wait beyond 365
+            days, raise `maxWaitSeconds` alongside it.
+        targetExpression:
+          type: string
+          nullable: true
+          minLength: 1
+          description: |
+            Wait source B: a `$.path` expression over the running workflow variable scope, in the
+            same grammar DECISION case conditions and `publishToVars` values use. Mutually exclusive
+            with `durationSeconds` and `calendar`.
+
+            It must resolve to an ISO-8601 date-time STRING, e.g. `2026-09-15T09:00:00Z`. A path that
+            resolves to nothing, to null, or to a non-string (a number, an object, an array) fails the
+            execution non-retryably, and so does a string that is not a parseable instant. Numbers are
+            refused deliberately: epoch seconds and epoch milliseconds are indistinguishable by
+            inspection, and a silent factor-of-1000 mistake is a silent multi-year wait.
+
+            A target that has already passed when the node is reached is not an error. The wait
+            completes immediately and the execution continues through `success` without scheduling
+            anything.
+        calendar:
+          # `type` alongside `nullable` on an allOf-wrapped ref: OAS 3.0 attaches `nullable` to a
+          # type, and without it the schema is a lint warning rather than a nullable property.
+          type: object
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/WorkflowTimerCalendar'
+          description: |
+            Wait source C: wait for the next wall-clock slot matching this calendar. Mutually
+            exclusive with `durationSeconds` and `targetExpression`.
+
+            Nullable like its two sibling wait sources: an explicit `null` reads as absent, which is
+            what the server decodes it as.
+        maxWaitSeconds:
+          # `type` alongside `nullable` on an allOf-wrapped ref: OAS 3.0 attaches `nullable` to a
+          # type, and without it the schema is a lint warning rather than a nullable property.
+          type: integer
+          format: int64
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/WorkflowWaitBoundSeconds'
+          description: |
+            Expiration for this wait. Absent = the engine's default of 365 days (31536000 seconds);
+            present = honoured as authored, with no ceiling beyond the shared maximum on
+            `WorkflowWaitBoundSeconds`.
+
+            This is a guard, not a second deadline. It is evaluated once, when the node is reached and
+            the wait source has resolved to a delay: if that delay would run past this expiration then
+            no timer is scheduled at all: the execution takes the `expired` route immediately when
+            one is wired, and fails non-retryably when none is. It never cuts short a timer that is
+            already running.
+
+            Absent does not mean unbounded, which is why a `durationSeconds` past the default is a
+            publish-time error rather than a node that silently expires on its first run. The two
+            data-driven sources are not checkable at publish time and keep taking the `expired` route
+            at runtime.
+        interrupt:
+          allOf:
+            - $ref: '#/components/schemas/WorkflowTimerInterrupt'
+          description: |
+            Optional governed-signal early exit. When set, a matching signal delivery while the
+            timer is parked ends the wait early through the `interrupted` port instead of waiting
+            out `success` or `expired`. Absent means the timer has no early exit: only `success` and
+            `expired` can fire.
+        label: { type: string, nullable: true, description: "Optional human-readable label shown on the block." }
+        ui:
+          allOf:
+            - $ref: '#/components/schemas/NodeUi'
+          description: Designer canvas metadata (position, size).
+
+    WorkflowTimerInterrupt:
+      type: object
+      additionalProperties: false
+      required: [signalName, resultVariable]
+      description: |
+        A governed early exit for a `WorkflowTimerNode`'s wait. While the timer is parked it also
+        listens for `signalName`, exactly as a `WorkflowSignalNode` does: a matching, validated
+        delivery publishes its payload under `resultVariable` and routes the execution through the
+        node's `interrupted` port instead of `success` or `expired`.
+      properties:
+        signalName:
+          type: string
+          minLength: 1
+          description: Governed signal name the timer also listens for while parked.
+        resultVariable:
+          type: string
+          pattern: '^[A-Za-z_][A-Za-z0-9_]*$'
+          description: Variable that receives the delivered payload on the interrupted port.
+        requiredPayloadFields:
+          type: array
+          uniqueItems: true
+          default: []
+          items: { type: string, minLength: 1 }
+
+    WorkflowTimerCalendar:
+      type: object
+      required: [timeOfDay, timezone]
+      description: |
+        A recurring wall-clock slot, used as a timer node's wait source. Resolved once, at the moment
+        the node is reached: the wait target is the first instant at or after that moment whose local
+        time in `timezone` equals `timeOfDay` on an allowed day.
+
+        A matching slot always exists, and it is never more than a week away: every weekday recurs
+        within a week, so the worst case is a slot allowed on exactly one day of the week whose
+        occurrence today has just passed.
+
+        Daylight-saving edges are defined here rather than left to the platform. A `timeOfDay` that
+        does not exist on a given date (the spring-forward gap) moves forward to the next instant that
+        does; a `timeOfDay` that occurs twice on a given date (the autumn overlap) takes the earlier of
+        the two offsets.
+      properties:
+        timeOfDay:
+          type: string
+          pattern: '^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d)?$'
+          description: |
+            Local wall-clock time in `timezone`, as `HH:mm` or `HH:mm:ss` on a 24-hour clock. Not an
+            instant, and not UTC unless `timezone` says so.
+
+            The pattern is the whole grammar, in both directions: the server accepts exactly what it
+            matches. Out-of-range components (`25:00`, `99:99:99`) are refused, and so are
+            fractional seconds (`09:00:00.123`). A general ISO time parser would take those, but a
+            value a schema-validating client cannot re-send is not a contract.
+        timezone:
+          type: string
+          minLength: 1
+          description: |
+            IANA timezone identifier, e.g. `Europe/Amsterdam`. Required, and never defaulted to the
+            server's own timezone: a wait whose meaning depends on which machine happened to run it is
+            not a contract. The identifier must be resolvable by the server's timezone database.
+        daysOfWeek:
+          type: array
+          nullable: true
+          minItems: 1
+          uniqueItems: true
+          description: |
+            Days on which the slot is allowed. Absent means every day. Names the days rather than
+            "working days" on purpose: a holiday calendar is a deployment concern the engine does not
+            carry.
+
+            `uniqueItems` is enforced, not merely declared: a repeated day is refused rather than
+            silently deduplicated. Names are matched exactly as spelled here, so `monday` is not
+            `MONDAY`.
+          items:
+            type: string
+            enum: [MONDAY, TUESDAY, WEDNESDAY, THURSDAY, FRIDAY, SATURDAY, SUNDAY]
+
+    WorkflowNode:
+      oneOf:
+        - $ref: '#/components/schemas/WorkflowStepNode'
+        - $ref: '#/components/schemas/WorkflowSubFlowNode'
+        - $ref: '#/components/schemas/WorkflowDecisionNode'
+        - $ref: '#/components/schemas/WorkflowHumanNode'
+        - $ref: '#/components/schemas/WorkflowTimerNode'
+        - $ref: '#/components/schemas/WorkflowSignalNode'
+        - $ref: '#/components/schemas/WorkflowInputNode'
+        - $ref: '#/components/schemas/WorkflowOutputNode'
+      discriminator:
+        propertyName: nodeType
+        mapping:
+          STEP: '#/components/schemas/WorkflowStepNode'
+          SUBFLOW: '#/components/schemas/WorkflowSubFlowNode'
+          DECISION: '#/components/schemas/WorkflowDecisionNode'
+          HUMAN: '#/components/schemas/WorkflowHumanNode'
+          TIMER: '#/components/schemas/WorkflowTimerNode'
+          SIGNAL: '#/components/schemas/WorkflowSignalNode'
+          INPUT: '#/components/schemas/WorkflowInputNode'
+          OUTPUT: '#/components/schemas/WorkflowOutputNode'
+      description: A node in the workflow graph — a step-type-backed step, an embedded sub-flow, a control-flow decision node, a human-wait node, a timer node, or an input/output boundary node defining the workflow's signature ports.
+
+    WorkflowEdgeEndpoint:
+      type: object
+      required: [nodeId]
+      description: One end of a WorkflowEdge — a node plus, optionally, one of its named terminals (ports).
+      properties:
+        nodeId:
+          type: string
+          description: The node this end attaches to.
+        port:
+          type: string
+          minLength: 1
+          nullable: true
+          description: Named terminal — an output port on `from`, an input port on `to`; references a port the node declares (StepTypeDescriptor.outputs / .inputs by name for step nodes, or the sub-flow's signature ports by name). Omit for a node that has a single default terminal.
+
+    StepPort:
+      type: object
+      required: [name]
+      description: A named input or output terminal of a step type. Edges reference these by name via WorkflowEdge.from.port / .to.port.
+      properties:
+        name:
+          type: string
+          minLength: 1
+          description: Terminal id, unique within the step type's input set or output set.
+        label:
+          type: string
+          nullable: true
+          description: UI display label for the terminal.
+        description:
+          type: string
+          nullable: true
+
+    WorkflowEdge:
+      type: object
+      required: [id, from, to]
+      description: |
+        A directed edge between two graph nodes — pure topology. `from.port` names the source output
+        terminal and the source node decides at runtime which of its terminals fires: a step (e.g. a
+        command) selects its output port in code, a decision node via its ordered cases. Edges carry
+        no conditions; all conditional routing lives on decision nodes.
+      properties:
+        id:
+          type: string
+          description: Edge identifier, unique within the graph.
+        from:
+          allOf:
+            - $ref: '#/components/schemas/WorkflowEdgeEndpoint'
+          description: Source node + output terminal.
+        to:
+          allOf:
+            - $ref: '#/components/schemas/WorkflowEdgeEndpoint'
+          description: Target node + input terminal.
+        label:
+          type: string
+          nullable: true
+          description: Optional human-readable annotation shown on the edge.
+        ui:
+          allOf:
+            - $ref: '#/components/schemas/EdgeUi'
+          description: Designer canvas metadata (waypoints).
+
+    # -------------------------------------------------------------------------
+    # Workflow definition schemas
+    # -------------------------------------------------------------------------
+
+    WorkflowSignature:
+      type: object
+      required: [inputs, outputs]
+      description: A workflow definition's public interface — the named entry input ports and exit output ports it exposes when referenced as a sub-flow. Empty = a single implicit default entry/exit. It is derived by the server from the graph's INPUT/OUTPUT boundary nodes and is read-only (never authored directly); a draft without boundary nodes has empty inputs/outputs.
+      properties:
+        inputs:
+          type: array
+          description: Named entry input ports (how data enters the workflow).
+          items: { $ref: '#/components/schemas/StepPort' }
+        outputs:
+          type: array
+          description: Named exit output ports — the distinct ways the workflow can complete.
+          items: { $ref: '#/components/schemas/StepPort' }
+
+    ValidationIssueSeverity:
+      type: string
+      description: Severity level of a workflow validation issue.
+      enum: [ERROR, WARNING]
+
+    ValidationIssue:
+      type: object
+      required: [severity, code, message, pointer]
+      description: A single validation finding from the graph validator.
+      properties:
+        severity:
+          $ref: '#/components/schemas/ValidationIssueSeverity'
+        code:
+          type: string
+          description: Stable machine-readable issue code.
+        message:
+          type: string
+          description: Human-readable description of the issue.
+        pointer:
+          type: string
+          minLength: 1
+          pattern: '^/'
+          description: Non-empty RFC 6901 JSON Pointer into the submitted document (for example `/graph/nodes/2/authoredConfig/recipient`); graph-wide issues point to `/graph`.
+
+    WorkflowValidationReport:
+      type: object
+      required: [valid, issues]
+      description: Result of a workflow graph validation (validate-without-persist or publish gate).
+      properties:
+        valid:
+          type: boolean
+          description: True if the graph passed all validation rules with no ERROR-severity issues.
+        issues:
+          type: array
+          items: { $ref: '#/components/schemas/ValidationIssue' }
+          description: All validation findings (both ERROR and WARNING severity).
+
+    WorkflowValidationApiError:
+      description: Canonical bare ApiError whose details carry the structured workflow validation report.
+      allOf:
+        - $ref: './common-components.yml#/components/schemas/ApiError'
+        - type: object
+          required: [details]
+          properties:
+            details:
+              $ref: '#/components/schemas/WorkflowValidationReport'
+
+    WorkflowDefinition:
+      type: object
+      required: [definitionKey, version, status, name, tags, graph, signature, createdAt, updatedAt]
+      description: |
+        Full workflow definition including the graph. The optimistic-lock token is exposed
+        via the ETag response header only — never as a body field.
+      properties:
+        definitionKey:
+          type: string
+          description: >-
+            Key identifying the definition family (= engine WorkflowDefinition.id). Opaque: a URN or
+            a UUID, see the `DefinitionKey` parameter.
+        version:
+          type: integer
+          minimum: 1
+          description: Monotonically increasing version number within the family.
+        basedOnVersion:
+          type: integer
+          minimum: 1
+          nullable: true
+          description: The version this draft was seeded from via revise; null for the initial v1.
+        status:
+          $ref: '#/components/schemas/WorkflowDefinitionStatus'
+        name:
+          type: string
+          description: Human-readable name of the workflow.
+        description:
+          type: string
+          nullable: true
+        tags:
+          type: array
+          items: { type: string }
+          description: User-defined labels for filtering and organisation.
+        graph:
+          $ref: '#/components/schemas/WorkflowGraph'
+        signature:
+          allOf:
+            - $ref: '#/components/schemas/WorkflowSignature'
+          description: The definition's public interface (entry/exit ports), used when it is referenced as a sub-flow (derived from the graph's INPUT/OUTPUT boundary nodes; read-only).
+        createdAt:
+          type: string
+          format: date-time
+          description: Timestamp when this version was created.
+        updatedAt:
+          type: string
+          format: date-time
+          description: Timestamp when this version was last modified.
+        createdBy:
+          type: string
+          nullable: true
+          description: Subject identifier of the user who created this version.
+        updatedBy:
+          type: string
+          nullable: true
+          description: Subject identifier of the user who last modified this version.
+
+    WorkflowDefinitionSummary:
+      type: object
+      required: [definitionKey, version, status, name, tags, signature, createdAt, updatedAt]
+      description: Workflow definition without the graph, used in list and version-history responses.
+      properties:
+        definitionKey:
+          type: string
+          description: >-
+            Key identifying the definition family. Opaque: a URN or a UUID, see the `DefinitionKey`
+            parameter.
+        version:
+          type: integer
+          minimum: 1
+          description: Monotonically increasing version number within the family.
+        basedOnVersion:
+          type: integer
+          minimum: 1
+          nullable: true
+          description: The version this draft was seeded from via revise; null for the initial v1.
+        status:
+          $ref: '#/components/schemas/WorkflowDefinitionStatus'
+        name:
+          type: string
+          description: Human-readable name of the workflow.
+        description:
+          type: string
+          nullable: true
+        tags:
+          type: array
+          items: { type: string }
+          description: User-defined labels for filtering and organisation.
+        signature:
+          allOf:
+            - $ref: '#/components/schemas/WorkflowSignature'
+          description: The definition's public interface (entry/exit ports), used when it is referenced as a sub-flow (derived from the graph's INPUT/OUTPUT boundary nodes; read-only).
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        createdBy:
+          type: string
+          nullable: true
+        updatedBy:
+          type: string
+          nullable: true
+
+    WorkflowDefinitionListResponse:
+      type: object
+      required: [items, page]
+      description: Paginated list of workflow definition summaries (family heads or version history).
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/WorkflowDefinitionSummary' }
+        page:
+          $ref: './common-components.yml#/components/schemas/PageMeta'
+
+    CreateWorkflowDefinitionInput:
+      type: object
+      required: [name]
+      additionalProperties: false
+      description: Input for creating a new workflow definition family (creates version 1 as a DRAFT).
+      properties:
+        name:
+          type: string
+          minLength: 1
+          description: Human-readable name of the workflow.
+        description:
+          type: string
+          nullable: true
+        tags:
+          type: array
+          items: { type: string }
+          description: User-defined labels.
+        graph:
+          allOf:
+            - $ref: '#/components/schemas/WorkflowGraph'
+          description: Optional initial graph; may be omitted to create an empty draft. Omit to create an empty draft — the server materializes an empty graph ({nodes:[], edges:[]}).
+        definitionKey:
+          type: string
+          minLength: 1
+          description: >-
+            Optional caller-authored key for the new definition family. Opaque: a URN (model-pack
+            definitions pin e.g. `urn:vdx:model-pack:company-authority:workflow`) or a UUID, see the
+            `DefinitionKey` parameter. Unique per tenant; the value is trimmed and must not be blank.
+            A key already occupied in the tenant is refused with 409 ALREADY_EXISTS_ERROR. Omit it
+            and the server mints a UUID.
+          example: urn:vdx:model-pack:company-authority:workflow
+
+    UpdateWorkflowDefinitionInput:
+      type: object
+      description: |
+        JSON Merge Patch (RFC 7396) body for editing a DRAFT workflow definition version.
+        A null value removes the field from the resource. Array values replace the array
+        wholesale — there is no item-level merge. Supplying a null or new `graph` replaces
+        the entire graph; individual steps or edges cannot be patched in-place.
+
+        Only the members below may be patched. The server rejects any other member by name
+        rather than dropping it silently, so a misspelled field is a 400 and never a patch
+        that appears to succeed while changing nothing.
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+          description: New name. Omit to leave unchanged.
+        description:
+          type: string
+          nullable: true
+          description: New description; set null to remove the existing description.
+        tags:
+          type: array
+          items: { type: string }
+          nullable: true
+          description: Replacement tag list; set null to clear all tags.
+        graph:
+          allOf:
+            - $ref: '#/components/schemas/WorkflowGraph'
+          description: Replace the entire graph. Omit to leave it unchanged (merge-patch); cannot be set to null.
+
+    ValidateWorkflowDefinitionInput:
+      type: object
+      required: [graph]
+      additionalProperties: false
+      description: Input for the validate-without-persist endpoint.
+      properties:
+        name:
+          type: string
+          nullable: true
+          description: Optional name used only for contextual validation messages.
+        graph:
+          allOf:
+            - $ref: '#/components/schemas/WorkflowGraph'
+          description: The candidate graph to validate.
+
+    # -------------------------------------------------------------------------
+    # Step Types palette + property editor
+    # -------------------------------------------------------------------------
+
+    StepTypeListResponse:
+      type: object
+      required: [items, page]
+      description: Paginated list of ACTIVE step-type descriptors (palette).
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/StepTypeDescriptor' }
+        page:
+          $ref: './common-components.yml#/components/schemas/PageMeta'
+
+    ResolveStepTypeFormInput:
+      type: object
+      additionalProperties: false
+      description: Input for resolving the property-editor form for a step type.
+      properties:
+        descriptorVersion:
+          type: integer
+          minimum: 1
+          nullable: true
+          description: Pin to a specific descriptor version; omit to use the latest ACTIVE version.
+        namespace:
+          type: string
+          nullable: true
+          description: Namespace scope; omit to use the caller's default namespace.
+        preferredLocale:
+          type: string
+          nullable: true
+          description: BCP-47 locale tag; the server returns labels in the closest available locale.
+        currentValues:
+          allOf:
+            - $ref: '#/components/schemas/AuthoredConfig'
+          description: |
+            Current authored configuration for prefill when editing an existing step instance — the same
+            structured, input-type-shaped AuthoredConfig carried on WorkflowStepNode (NOT a flat
+            attribute-path map). The server prefills the resolved form from it by structural position;
+            absent means new-step defaults. Expression-tagged values (`{ "$expr": … }`) are surfaced for
+            editing rather than evaluated.
+
+    ResolvedStepTypeForm:
+      type: object
+      required: [form, currentValues]
+      additionalProperties: false
+      description: |
+        Workflow-specific property-editor result. The generic Forms contract remains unchanged: layout,
+        access, labels, and options are carried by `form`, while workflow authored values—including the
+        canonical `{ "$expr": … }` tag—are carried once in their structured AuthoredConfig wire shape.
+      properties:
+        form:
+          $ref: '#/components/schemas/ResolvedForm'
+        currentValues:
+          allOf:
+            - $ref: '#/components/schemas/AuthoredConfig'
+          description: Resolved prefill values after server defaults are applied; expression tags remain unevaluated.
+
+    DynamicOption:
+      type: object
+      required: [value, label]
+      description: A single selectable option from a dynamic option source.
+      properties:
+        scheme: { type: string, nullable: true }
+        value:
+          type: string
+          description: The stored/submitted value.
+        label:
+          type: string
+          description: The human-readable display label.
+
+    DynamicOptionPage:
+      type: object
+      required: [items, page]
+      description: Page of dynamic options for type-ahead lookups.
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/DynamicOption' }
+        page:
+          $ref: './common-components.yml#/components/schemas/PageMeta'
+
+    # -------------------------------------------------------------------------
+    # Step Type Registry
+    # -------------------------------------------------------------------------
+
+    UpsertOutcome:
+      type: string
+      description: |
+        The outcome of a step-type descriptor upsert. REFRESHED means the write body was identical and only
+        liveness changed. UPDATED is limited to `name`, `description`, or `palette` presentation changes.
+        Every other change—including binding, kind/family, IO identifiers, terminals, property form,
+        restrictions, defaults, or scope—is structural and requires a new descriptorVersion; reusing the
+        version is rejected as HTTP 409 ApiError and is never returned as a body outcome.
+      enum: [INSERTED, REFRESHED, UPDATED]
+
+    RegisterStepTypeInput:
+      type: object
+      required: [name, kind, integrationFamily, binding, io, propertyForm, palette, inputs, outputs]
+      additionalProperties: false
+      description: |
+        Worker-authored descriptor content. Identity and lifecycle are deliberately absent: stepTypeId and
+        descriptorVersion come from the path, namespace from the query (default `default`), tenantId from the
+        authenticated worker, and lifecycle is owned by the registry. Path/query/session values are authoritative.
+      properties:
+        name:
+          type: string
+          minLength: 1
+        description:
+          type: string
+          nullable: true
+        kind:
+          $ref: '#/components/schemas/StepKind'
+        integrationFamily:
+          $ref: '#/components/schemas/IntegrationFamily'
+        binding:
+          $ref: '#/components/schemas/StepBinding'
+        io:
+          $ref: '#/components/schemas/StepIoContract'
+        propertyForm:
+          $ref: '#/components/schemas/StepPropertyForm'
+        palette:
+          $ref: '#/components/schemas/PaletteMetadata'
+        inputs:
+          type: array
+          items: { $ref: '#/components/schemas/StepPort' }
+        outputs:
+          type: array
+          items: { $ref: '#/components/schemas/StepPort' }
+      oneOf:
+        - properties:
+            kind: { type: string, enum: [SYSTEM] }
+            integrationFamily: { type: string, enum: [SYSTEM] }
+            binding: { $ref: '#/components/schemas/StepBindingSystemCommand' }
+        - properties:
+            kind: { type: string, enum: [NATIVE_ACTIVITY] }
+            integrationFamily: { type: string, enum: [NATIVE_ACTIVITY] }
+            binding: { $ref: '#/components/schemas/StepBindingNativeActivity' }
+
+    RegisteredStepType:
+      type: object
+      required: [descriptor, lifecycle, lastSeenAt, staleAt, deprecatesAt, createdAt, updatedAt]
+      description: A registered step-type descriptor with single-sourced, observable lifecycle and liveness metadata.
+      properties:
+        descriptor:
+          $ref: '#/components/schemas/StepTypeDescriptor'
+        lifecycle:
+          $ref: '#/components/schemas/StepTypeLifecycle'
+        lastSeenAt:
+          type: string
+          format: date-time
+          description: Timestamp when the worker last re-registered (refreshed) this descriptor.
+        staleAt:
+          type: string
+          format: date-time
+          description: Calculated time at which an ACTIVE descriptor becomes STALE unless refreshed.
+        deprecatesAt:
+          type: string
+          format: date-time
+          description: Calculated time at which an unrefreshed descriptor becomes DEPRECATED; deregistration may deprecate it earlier.
+        createdAt:
+          type: string
+          format: date-time
+          description: Timestamp when this descriptor version was first registered.
+        updatedAt:
+          type: string
+          format: date-time
+          description: Timestamp when this descriptor was last modified.
+
+    StepTypeRegistrationResult:
+      allOf:
+        - $ref: '#/components/schemas/RegisteredStepType'
+        - type: object
+          required: [upsertOutcome]
+          properties:
+            upsertOutcome:
+              $ref: '#/components/schemas/UpsertOutcome'
+
+    # -------------------------------------------------------------------------
+    # Expressions
+    # -------------------------------------------------------------------------
+
+    ValidateExpressionInput:
+      type: object
+      required: [expression]
+      description: Input for validating an expression string against the evaluator grammar.
+      properties:
+        expression:
+          type: string
+          description: The expression string to validate.
+        context:
+          type: object
+          additionalProperties: true
+          nullable: true
+          description: Optional execution context (payload sample) used for contextual validation; null is equivalent to omitting the field.
+
+    ExpressionDiagnostic:
+      type: object
+      required: [severity, message]
+      description: A single diagnostic finding from expression validation.
+      properties:
+        severity:
+          $ref: '#/components/schemas/ValidationIssueSeverity'
+        message:
+          type: string
+          description: Human-readable description of the diagnostic.
+        position:
+          type: integer
+          nullable: true
+          description: Zero-based character offset in the expression string where the diagnostic originates; null when the finding is not position-specific.
+
+    ExpressionValidationResult:
+      type: object
+      required: [valid, diagnostics]
+      description: Result of validating an expression string.
+      properties:
+        valid:
+          type: boolean
+          description: True when the expression contains no ERROR-severity diagnostics.
+        diagnostics:
+          type: array
+          items:
+            $ref: '#/components/schemas/ExpressionDiagnostic'
+          description: All diagnostics produced (both ERROR and WARNING severity).
+
+    ExpressionCapabilities:
+      type: object
+      required: [variables, functions]
+      description: The evaluator's available payload variables and registered functions, for editor autocomplete.
+      properties:
+        variables:
+          type: array
+          description: Payload paths available to expression authors.
+          items:
+            type: object
+            required: [path]
+            properties:
+              path:
+                type: string
+                description: Dot-path of the available variable (e.g. `$.input.partyId`).
+              valueKind:
+                $ref: '#/components/schemas/AttributeValueKind'
+              description:
+                type: string
+                nullable: true
+                description: Human-readable description of what this variable represents.
+        functions:
+          type: array
+          description: Registered evaluator functions available in expression strings.
+          items:
+            type: object
+            required: [name]
+            properties:
+              name:
+                type: string
+                description: Function name as it appears in an expression.
+              signature:
+                type: string
+                nullable: true
+                description: "Human-readable signature hint (e.g. `contains(array, value): boolean`)."
+              description:
+                type: string
+                nullable: true
+                description: Human-readable description of the function's behaviour.

@@ -55,8 +55,7 @@ data class OidfSuiteLock(
     }
 }
 
-private fun Properties.required(name: String): String =
-    getProperty(name)?.takeIf(String::isNotBlank) ?: error("Missing '$name' in suite.lock.properties")
+private fun Properties.required(name: String): String = getProperty(name)?.takeIf(String::isNotBlank) ?: error("Missing '$name' in suite.lock.properties")
 
 private fun String.hasImmutableReference(): Boolean {
     if (contains("@sha256:")) return true

@@ -36,8 +36,16 @@ resolve_external_base_url "${1:-}"
 resolve_profile "${2:-}"
 
 IDK_ROOT="$(cd ../../.. && pwd)"
-IDK_VERSION="$(grep '^version=' "${IDK_ROOT}/gradle.properties" | cut -d= -f2)"
-echo "IDK_VERSION=${IDK_VERSION} (from ${IDK_ROOT}/gradle.properties)"
+if [ -f "${IDK_ROOT}/platform-version.properties" ]; then
+  IDK_VERSION="$(grep -E '^platformVersion=' "${IDK_ROOT}/platform-version.properties" | cut -d= -f2- | tr -d '\r')"
+  echo "IDK_VERSION=${IDK_VERSION} (from ${IDK_ROOT}/platform-version.properties)"
+elif [ -f "${IDK_ROOT}/gradle.properties" ] && grep -qE '^version=' "${IDK_ROOT}/gradle.properties"; then
+  IDK_VERSION="$(grep -E '^version=' "${IDK_ROOT}/gradle.properties" | cut -d= -f2- | tr -d '\r')"
+  echo "IDK_VERSION=${IDK_VERSION} (from ${IDK_ROOT}/gradle.properties)"
+else
+  echo "ERROR: cannot resolve IDK_VERSION from platform-version.properties or gradle.properties" >&2
+  exit 1
+fi
 echo "Dev mode: building from local IDK source at ${IDK_ROOT}"
 
 cat > .env <<EOF

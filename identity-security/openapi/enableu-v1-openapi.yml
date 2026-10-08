@@ -1,0 +1,193 @@
+openapi: 3.0.4
+info:
+  title: Enable-U BRP and KVK Lookup API
+  version: 1.0.0
+  x-contract-version: v1
+  x-contract-stability: stable
+  x-products: [vdx]
+  contact:
+    name: Product Engineering
+    email: support@example.com
+    url: https://example.com
+  license:
+    name: Apache 2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0
+  x-operation-binding-fixtures:
+    - enableu-v1-operation-bindings.json
+  description: |
+    Versioned contract for the three Enable-U lookup operations used by governed VDX HTTP/OpenAPI
+    connectors. Business request bodies contain only lookup selectors and explicitly requested
+    fields. The connector runtime supplies OIN, organisation code, system, caller, and request time
+    from trusted execution configuration.
+
+    A successful authority lookup returns CONFIRMED or NOT_CONFIRMED. Transport, authentication,
+    upstream, and contract failures use TechnicalErrorResponse and are never represented as a
+    NOT_CONFIRMED business result.
+servers:
+  - url: https://enableu-simulator.example.test/v1
+    description: Deterministic simulator endpoint. Deployments replace this URL through connector configuration.
+security: []
+tags:
+  - name: Person
+    description: Requested-field-minimized BRP person lookup.
+  - name: Company
+    description: Requested-field-minimized KVK or VES company lookup.
+  - name: Authority
+    description: Current company representative authority lookup.
+paths:
+  /{oin}/GetPerson/{consumerApplication}/{sourceApplication}:
+    post:
+      operationId: GetPerson
+      summary: Retrieve explicitly requested person fields
+      description: Returns only fields named in requestedFields. Omitted fields are not inferred or expanded.
+      tags: [Person]
+      parameters:
+        - $ref: './enableu-v1-components.yml#/components/parameters/Oin'
+        - $ref: './enableu-v1-components.yml#/components/parameters/ConsumerApplication'
+        - $ref: './enableu-v1-components.yml#/components/parameters/SourceApplication'
+        - $ref: './enableu-v1-components.yml#/components/parameters/OrganisationCode'
+        - $ref: './enableu-v1-components.yml#/components/parameters/System'
+        - $ref: './enableu-v1-components.yml#/components/parameters/Caller'
+        - $ref: './enableu-v1-components.yml#/components/parameters/RequestTime'
+        - $ref: './common-components.yml#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './enableu-v1-components.yml#/components/schemas/GetPersonRequest'
+      responses:
+        '200':
+          description: Requested person fields were retrieved.
+          headers:
+            X-Correlation-ID:
+              $ref: './common-components.yml#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: './enableu-v1-components.yml#/components/schemas/GetPersonResponse'
+        '400':
+          $ref: '#/components/responses/TechnicalError'
+        '429':
+          $ref: '#/components/responses/TechnicalError'
+        '500':
+          $ref: '#/components/responses/TechnicalError'
+        '502':
+          $ref: '#/components/responses/TechnicalError'
+        '503':
+          $ref: '#/components/responses/TechnicalError'
+
+  /{oin}/GetCompany/{consumerApplication}/{sourceApplication}:
+    post:
+      operationId: GetCompany
+      summary: Retrieve explicitly requested company fields
+      description: Accepts exactly one KVK or VES search variant and returns only requested company fields.
+      tags: [Company]
+      parameters:
+        - $ref: './enableu-v1-components.yml#/components/parameters/Oin'
+        - $ref: './enableu-v1-components.yml#/components/parameters/ConsumerApplication'
+        - $ref: './enableu-v1-components.yml#/components/parameters/SourceApplication'
+        - $ref: './enableu-v1-components.yml#/components/parameters/OrganisationCode'
+        - $ref: './enableu-v1-components.yml#/components/parameters/System'
+        - $ref: './enableu-v1-components.yml#/components/parameters/Caller'
+        - $ref: './enableu-v1-components.yml#/components/parameters/RequestTime'
+        - $ref: './common-components.yml#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './enableu-v1-components.yml#/components/schemas/GetCompanyRequest'
+      responses:
+        '200':
+          description: Requested company fields were retrieved.
+          headers:
+            X-Correlation-ID:
+              $ref: './common-components.yml#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: './enableu-v1-components.yml#/components/schemas/GetCompanyResponse'
+        '400':
+          $ref: '#/components/responses/TechnicalError'
+        '429':
+          $ref: '#/components/responses/TechnicalError'
+        '500':
+          $ref: '#/components/responses/TechnicalError'
+        '502':
+          $ref: '#/components/responses/TechnicalError'
+        '503':
+          $ref: '#/components/responses/TechnicalError'
+
+  /{oin}/CheckCompanyRepresentativeAuthority/{consumerApplication}/{sourceApplication}:
+    post:
+      operationId: CheckCompanyRepresentativeAuthority
+      summary: Check current company representative authority
+      description: |
+        Checks the identified person's current role and capacity for exactly one KVK or VES company
+        identifier and the stated purpose. Technical failure never produces NOT_CONFIRMED.
+      tags: [Authority]
+      parameters:
+        - $ref: './enableu-v1-components.yml#/components/parameters/Oin'
+        - $ref: './enableu-v1-components.yml#/components/parameters/ConsumerApplication'
+        - $ref: './enableu-v1-components.yml#/components/parameters/SourceApplication'
+        - $ref: './enableu-v1-components.yml#/components/parameters/OrganisationCode'
+        - $ref: './enableu-v1-components.yml#/components/parameters/System'
+        - $ref: './enableu-v1-components.yml#/components/parameters/Caller'
+        - $ref: './enableu-v1-components.yml#/components/parameters/RequestTime'
+        - $ref: './common-components.yml#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './enableu-v1-components.yml#/components/schemas/CheckCompanyRepresentativeAuthorityRequest'
+      responses:
+        '200':
+          description: Current authority was evaluated and produced a substantive result.
+          headers:
+            X-Correlation-ID:
+              $ref: './common-components.yml#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: './enableu-v1-components.yml#/components/schemas/CheckCompanyRepresentativeAuthorityResponse'
+        '400':
+          $ref: '#/components/responses/TechnicalError'
+        '429':
+          $ref: '#/components/responses/TechnicalError'
+        '500':
+          $ref: '#/components/responses/TechnicalError'
+        '502':
+          $ref: '#/components/responses/TechnicalError'
+        '503':
+          $ref: '#/components/responses/TechnicalError'
+
+components:
+  responses:
+    TechnicalError:
+      description: Technical failure. This response never carries a substantive NOT_CONFIRMED authority result.
+      headers:
+        X-Correlation-ID:
+          $ref: './common-components.yml#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: './enableu-v1-components.yml#/components/schemas/TechnicalErrorResponse'
+  schemas:
+    GetPersonRequest:
+      $ref: './enableu-v1-components.yml#/components/schemas/GetPersonRequest'
+    GetPersonResponse:
+      $ref: './enableu-v1-components.yml#/components/schemas/GetPersonResponse'
+    GetCompanyRequest:
+      $ref: './enableu-v1-components.yml#/components/schemas/GetCompanyRequest'
+    GetCompanyResponse:
+      $ref: './enableu-v1-components.yml#/components/schemas/GetCompanyResponse'
+    CheckCompanyRepresentativeAuthorityRequest:
+      $ref: './enableu-v1-components.yml#/components/schemas/CheckCompanyRepresentativeAuthorityRequest'
+    CheckCompanyRepresentativeAuthorityResponse:
+      $ref: './enableu-v1-components.yml#/components/schemas/CheckCompanyRepresentativeAuthorityResponse'
+    AuthorityResult:
+      $ref: './enableu-v1-components.yml#/components/schemas/AuthorityResult'
+    TechnicalErrorResponse:
+      $ref: './enableu-v1-components.yml#/components/schemas/TechnicalErrorResponse'

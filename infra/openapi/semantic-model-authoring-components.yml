@@ -1,0 +1,2968 @@
+openapi: 3.0.4
+info:
+  title: Semantic Model Authoring API Components
+  version: 0.1.0
+  description: Entity schemas, enums, and path parameters for the Semantic Model Authoring REST Server API.
+paths: {}
+components:
+  parameters:
+    DataProductId:
+      name: dataProductId
+      in: path
+      required: true
+      description: Identifier of the data product.
+      schema:
+        type: string
+        format: uuid
+
+    DataDomainId:
+      name: dataDomainId
+      in: path
+      required: true
+      description: Identifier of the data domain.
+      schema:
+        type: string
+        format: uuid
+
+    BindingId:
+      name: bindingId
+      in: path
+      required: true
+      description: Identifier of a schema binding within the data domain.
+      schema:
+        type: string
+
+    TermPathParam:
+      name: termPath
+      in: path
+      required: true
+      description: |
+        Fully-qualified dotted path of the data-domain business term (e.g. `address.postal_code`). A
+        single object-type node contributes one path segment; nested paths join segments with `.`.
+      schema:
+        type: string
+
+    ObjectTypeName:
+      name: objectTypeName
+      in: path
+      required: true
+      description: Name of an object type within the data domain (unique within that data domain).
+      schema:
+        type: string
+
+    RelationshipTypeName:
+      name: relationshipTypeName
+      in: path
+      required: true
+      description: Name of a relationship type within the data domain (unique within that data domain).
+      schema:
+        type: string
+
+    ObjectModelId:
+      name: objectModelId
+      in: path
+      required: true
+      description: Identifier of the object model.
+      schema:
+        type: string
+        format: uuid
+
+    ChannelId:
+      name: channelId
+      in: path
+      required: true
+      description: Identifier of the channel definition.
+      schema:
+        type: string
+        format: uuid
+
+  schemas:
+    ModelLifecycleStatus:
+      type: string
+      description: |
+        Publication lifecycle. A DRAFT model is editable; a PUBLISHED model is a frozen snapshot that
+        downstream credential definitions may compose from.
+      enum:
+        - DRAFT
+        - PUBLISHED
+
+    ProductConformance:
+      type: string
+      description: |
+        Per-member conformance override. The data product may only tighten the object model's conformance:
+        OPTIONAL may be narrowed to MANDATORY, but MANDATORY may not be relaxed to OPTIONAL.
+      enum:
+        - MANDATORY
+        - OPTIONAL
+
+    ProductCardinality:
+      type: string
+      description: |
+        Per-member cardinality override. Only MULTIPLE -> SINGLE is a valid narrowing; the
+        narrow-only check relative to the resolved object model is enforced at resolution time.
+      enum:
+        - SINGLE
+        - MULTIPLE
+
+    ObjectModelRef:
+      type: object
+      example:
+        objectModelId: "c4d5e6f7-8a9b-4c0d-8e1f-2a3b4c5d6e7f"
+        objectModelVersion: 2
+      description: A reference pinning one object model to a specific snapshot version.
+      required: [objectModelId, objectModelVersion]
+      properties:
+        objectModelId:
+          type: string
+          format: uuid
+          description: The referenced object model id.
+        objectModelVersion:
+          type: integer
+          format: int64
+          minimum: 1
+          description: The pinned object model snapshot version (monotonic, starting at 1).
+
+    ProductSelection:
+      type: object
+      example:
+        roleRef: "employee"
+        path: ["givenName"]
+      description: |
+        One selection entry of a data product: a traversal `path` rooted at the object-model role named
+        by `roleRef`. The path walks the role object type's specializations, relationships and inline
+        compounds (e.g. `["residentialAddress","country"]` traverses the relationship into the
+        related object type).
+      required: [roleRef, path]
+      properties:
+        roleRef:
+          type: string
+          description: The object-model-local role id this selection's path is rooted at.
+        path:
+          type: array
+          items:
+            type: string
+          description: The traversal path rooted at the role's object type.
+
+    ProductOverride:
+      type: object
+      description: |
+        A closed allow-list of object-model business-term aspects a data product may override for one
+        selected member, keyed by `(roleRef, path)`. Each aspect is nullable; null means "read
+        through to the object model. All overrides are narrow-only relative to the resolved object model.
+      required: [roleRef, path]
+      properties:
+        roleRef:
+          type: string
+          description: The role this override's path is rooted at; must match a selection's roleRef.
+        path:
+          type: array
+          items:
+            type: string
+          description: |
+            The selected traversal path this override applies to. Together with `roleRef` it must
+            match one of the data product's `selected` entries.
+        conformance:
+          type: string
+          allOf:
+            - $ref: '#/components/schemas/ProductConformance'
+          nullable: true
+          description: Overrides the object-model member's conformance (mandatory vs optional).
+        cardinality:
+          type: object
+          allOf:
+            - $ref: '#/components/schemas/ProductCardinality'
+          nullable: true
+          description: Narrows the object-model member's cardinality.
+        entryCodesSubset:
+          type: array
+          nullable: true
+          description: |
+            Narrows the allowed entry codes. Null means no narrowing; otherwise a non-empty,
+            deduplicated subset of the resolved object-model member's entry codes.
+          items:
+            type: string
+        sensitive:
+          type: boolean
+          nullable: true
+          description: Tightens sensitivity to true. Loosening true -> false is a widening and rejected.
+
+    DataProduct:
+      type: object
+      example:
+        id: "1b2c3d4e-5f60-4a71-8b92-0c1d2e3f4a5b"
+        tenantId: "acme"
+        name: "Employee Badge - minimal"
+        version: 1
+        status: DRAFT
+        objectModelRef:
+          objectModelId: "c4d5e6f7-8a9b-4c0d-8e1f-2a3b4c5d6e7f"
+          objectModelVersion: 2
+        selected:
+          - roleRef: "employee"
+            path: ["givenName"]
+          - roleRef: "employee"
+            path: ["familyName"]
+        overrides: []
+        description: "Given and family name of the employee only"
+        createdAt: "2026-01-15T09:30:00Z"
+        updatedAt: "2026-01-15T09:30:00Z"
+      description: |
+        The L3 data-product tier: a named, tenant-owned subselection of exactly one published
+        object model. `selected` carries `(roleRef, path)` traversal entries; a data product may span
+        multiple roles/object types of the object model.
+      required:
+        - id
+        - tenantId
+        - name
+        - version
+        - status
+        - objectModelRef
+        - selected
+        - overrides
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenantId:
+          type: string
+        name:
+          type: string
+        version:
+          type: integer
+          format: int64
+          minimum: 1
+          description: Monotonic snapshot version, starting at 1.
+        status:
+          $ref: '#/components/schemas/ModelLifecycleStatus'
+        objectModelRef:
+          $ref: '#/components/schemas/ObjectModelRef'
+        selected:
+          type: array
+          description: The (roleRef, path) traversal entries this data product selects.
+          items:
+            $ref: '#/components/schemas/ProductSelection'
+        overrides:
+          type: array
+          description: Per-member governance tightening, keyed by (roleRef, path).
+          items:
+            $ref: '#/components/schemas/ProductOverride'
+        description:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    ResolvedDataProduct:
+      type: object
+      example:
+        dataProductId: "1b2c3d4e-5f60-4a71-8b92-0c1d2e3f4a5b"
+        dataProductVersion: 1
+        objectModelId: "c4d5e6f7-8a9b-4c0d-8e1f-2a3b4c5d6e7f"
+        objectModelVersion: 2
+        attributes:
+          - roleRef: "employee"
+            path: ["givenName"]
+            sourceEntity: "Person"
+            valueType: "Text"
+        schemaRelationships: []
+      description: |
+        The effective L3 projection produced by resolving a data product against the object model its
+        `objectModelRef` pins: the path selection and per-member narrowing overrides are already folded
+        in, so a downstream credential definition consumes this directly.
+      required:
+        - dataProductId
+        - dataProductVersion
+        - objectModelId
+        - objectModelVersion
+        - attributes
+        - schemaRelationships
+      properties:
+        dataProductId:
+          type: string
+          format: uuid
+        dataProductVersion:
+          type: integer
+          format: int64
+          minimum: 1
+        objectModelId:
+          type: string
+          format: uuid
+        objectModelVersion:
+          type: integer
+          format: int64
+          minimum: 1
+        attributes:
+          type: array
+          items:
+            $ref: '#/components/schemas/ResolvedProductTerm'
+        schemaRelationships:
+          type: array
+          items:
+            $ref: '#/components/schemas/ResolvedProductSchemaRelationship'
+
+    ResolvedProductTerm:
+      type: object
+      description: |
+        One business term as exposed by a resolved data product: the leaf business term a selection's traversal path
+        landed on, keyed by `(roleRef, path)`, with the EFFECTIVE overlays after the narrow-only
+        member override was applied. The effective values (conformance, cardinality, entry codes,
+        sensitivity) live inside `overlays`.
+      required:
+        - roleRef
+        - path
+        - sourceEntity
+        - valueType
+      properties:
+        entryCodeScheme:
+          allOf:
+            - { $ref: '#/components/schemas/SkosConceptSchemeReference' }
+          nullable: true
+        roleRef:
+          type: string
+          description: The object-model role the selection is rooted at.
+        path:
+          type: array
+          items:
+            type: string
+          description: The traversal path (rooted at the role's object type) the selection named.
+        sourceEntity:
+          type: string
+          description: The object type that declares the leaf business term (truthful provenance).
+        viaRelationship:
+          type: string
+          nullable: true
+          description: The last relationship traversed to reach the leaf's object type, or null when none was crossed.
+        valueType:
+          type: string
+          description: The OCA capture-base value type token of the resolved leaf business term.
+        overlays:
+          allOf:
+            - $ref: '#/components/schemas/AttributeOverlays'
+          description: The EFFECTIVE (post-narrowing) overlay bag for the resolved business term.
+
+    ResolvedProductSchemaRelationship:
+      type: object
+      description: |
+        One business-term-level schema relationship a resolved data product exposes (those anchored at a selected
+        object-model path). `setPath` equals `profilePath` for now; it is carried separately so a future
+        re-rooting data-product tier can diverge the two without a model change.
+      required:
+        - dataDomainId
+        - entity
+        - schemaBindingId
+        - externalPath
+        - semanticPath
+        - profilePath
+        - setPath
+        - relation
+        - direction
+      properties:
+        dataDomainId:
+          type: string
+          format: uuid
+        entity:
+          type: string
+          description: The object type owning the canonical business term the relationship anchors at.
+        schemaBindingId:
+          type: string
+        externalPath:
+          type: array
+          items:
+            type: string
+        semanticPath:
+          type: array
+          items:
+            type: string
+        profilePath:
+          type: array
+          items:
+            type: string
+        setPath:
+          type: array
+          items:
+            type: string
+        relation:
+          type: string
+          description: The nature of the relationship (a `SchemaAttributeRelation`; enum defined by the data-domain tier section).
+        equivalence:
+          type: string
+          nullable: true
+          description: Optional equivalence strength for equivalence relations (an `EquivalenceStrength`).
+        direction:
+          type: string
+          description: Which way the mapping flows (a `MappingDirection`).
+        transform:
+          type: object
+          additionalProperties: true
+          nullable: true
+          description: Optional value transform applied along the mapping (an `AttributeTransform`).
+
+    PartyRef:
+      type: string
+      description: |
+        An opaque Party identifier naming the org/business unit that governs a data domain. Carried as
+        a bare string value (a `@JvmInline value class` over `String` on the wire).
+
+    BusinessTermEntityType:
+      type: string
+      description: |
+        Optional marker classifying a compound (Reference) business term as a Party-typed object type
+        (metadata only at this tier).
+      enum:
+        - PERSON
+        - ORGANIZATION
+
+    AttributeValueType:
+      type: string
+      description: |
+        The OCA capture-base value type of a data-domain business term, serialized as an OCA capture-base
+        type token. One of the seven OCA capture-base types: the scalar/temporal bases `Text`,
+        `Numeric`, `Boolean`, `Binary`, `DateTime`, the compound discriminator `Reference`, and the
+        `Array` type written by wrapping a base in brackets - `[Text]`, `[Reference]`, and nested
+        `[[Text]]`. Array (a capture-base type) is independent of the separate `cardinality`
+        occurrence overlay; date-vs-time-vs-datetime precision rides the `formatHint` ISO 8601
+        pattern on top of `DateTime`, it is not a value type.
+      pattern: '^\[*(Text|Numeric|Boolean|Binary|DateTime|Reference)\]*$'
+      example: Text
+
+    AttributeWidgetHint:
+      type: string
+      description: Suggested UI widget for capturing/rendering a business term.
+      enum:
+        - TEXT_INPUT
+        - TEXT_AREA
+        - PICKLIST
+        - CHECKBOX
+        - RADIO_GROUP
+        - DATE_PICKER
+        - TIME_PICKER
+        - DATE_TIME_PICKER
+        - FILE_UPLOAD
+        - SIGNATURE
+        - HIDDEN
+
+    AttributeCardinality:
+      type: object
+      description: |
+        OCA cardinality overlay: the min/max occurrence bounds for a business term. Both bounds are
+        optional (nullable). A null `min` means no lower bound; a null `max` means no upper bound.
+        Use the companion constants for common shapes: SINGLE={min:1,max:1}, OPTIONAL={min:0,max:1},
+        UNBOUNDED={min:1,max:null}.
+      properties:
+        min:
+          type: integer
+          format: int32
+          nullable: true
+          minimum: 0
+          description: Minimum occurrences (>= 0), or null when there is no lower bound.
+        max:
+          type: integer
+          format: int32
+          nullable: true
+          minimum: 1
+          description: Maximum occurrences (>= 1), or null when there is no upper bound.
+
+    SdPolicy:
+      type: string
+      description: Selective-disclosure policy for a business term (per SD-JWT VC).
+      enum:
+        - ALWAYS
+        - NEVER
+        - OPTIONAL
+
+    DataClassification:
+      type: string
+      description: Personal-data classification per GDPR Articles 4 and 9.
+      enum:
+        - NON_PERSONAL
+        - PERSONAL
+        - SPECIAL_CATEGORY
+        - UNCLASSIFIED
+
+    SpecialCategoryType:
+      type: string
+      description: Specific special-category of personal data per GDPR Article 9(1) (and Article 10 for CRIMINAL).
+      enum:
+        - HEALTH
+        - BIOMETRIC
+        - RACIAL_ETHNIC
+        - POLITICAL
+        - RELIGIOUS
+        - TRADE_UNION
+        - GENETIC
+        - SEX_LIFE
+        - CRIMINAL
+
+    LegalBasis:
+      type: string
+      description: Lawful basis for processing personal data per GDPR Article 6(1).
+      enum:
+        - CONSENT
+        - CONTRACT
+        - LEGAL_OBLIGATION
+        - VITAL_INTEREST
+        - PUBLIC_INTEREST
+        - LEGITIMATE_INTEREST
+
+    CrossBorderPolicy:
+      type: string
+      description: |
+        Policy for cross-border data operations on a business term. Serializes in lowercase wire form
+        (`allow`/`restrict`/`deny`).
+      enum:
+        - allow
+        - restrict
+        - deny
+
+    RetentionPolicy:
+      type: object
+      description: Data-retention policy per GDPR Article 5(1)(e).
+      required: [deleteAfterPurpose]
+      properties:
+        retentionDays:
+          type: integer
+          format: int32
+          nullable: true
+          description: Maximum days the data may be retained, or null when no fixed limit applies.
+        retentionBasis:
+          type: string
+          nullable: true
+          description: Legal or business justification for the retention period.
+        deleteAfterPurpose:
+          type: boolean
+          description: Whether the data must be erased once its processing purpose is fulfilled.
+
+    SemanticTermReference:
+      type: object
+      description: A reference from a business term to a canonical term in a registered semantic vocabulary.
+      required: [semanticVocabularyId, termUri]
+      properties:
+        semanticVocabularyId:
+          type: string
+          format: uuid
+          description: The vocabulary that contains the referenced term.
+        termUri:
+          type: string
+          description: The canonical URI of the referenced term.
+        termLabel:
+          type: string
+          nullable: true
+          description: Optional cached display label for the term.
+
+    SkosConceptSchemeReference:
+      type: object
+      description: A lightweight reference to a SKOS concept scheme. The term's concept membership and its entry-code value-domain scheme are separate BusinessTerm fields that may point to this reference type.
+      required: [schemeUri]
+      properties:
+        vocabularyId: { type: string, format: uuid, nullable: true, description: Must be supplied together with vocabularyVersion. }
+        vocabularyVersion: { type: string, nullable: true, description: Immutable vocabulary revision; never resolved as latest. }
+        schemeUri:
+          type: string
+          description: The canonical URI identifying the SKOS concept scheme.
+        schemeName:
+          type: string
+          nullable: true
+          description: Optional human-readable name of the scheme.
+        codeListKind:
+          type: string
+          allOf:
+            - $ref: '#/components/schemas/CodeListKind'
+          nullable: true
+          description: Optional governed kind of code list represented by this concept scheme.
+
+    CodeListKind:
+      type: string
+      description: Governance classification of an entry-code scheme.
+      enum: [ENUMERATION, REFERENCE_LIST, CODE_LIST]
+
+    GroundingKind:
+      type: string
+      description: The governed kind of source that grounds a business-term definition.
+      enum: [LEGAL_SOURCE, AUTHORITATIVE_REGISTER, STANDARD, INTERNAL_DEFINITION]
+
+    LegalSourceRef:
+      type: object
+      description: A reference pinned to one immutable snapshot of a governed legal source.
+      required: [sourceId, snapshotId]
+      properties:
+        sourceId:
+          type: string
+          minLength: 1
+          description: Stable identifier of the governed legal source.
+        snapshotId:
+          type: string
+          minLength: 1
+          description: Identifier of the immutable source snapshot containing the referenced material.
+
+    Grounding:
+      type: object
+      description: Source provenance for a business-term definition.
+      required: [source, retrievedOn, kind]
+      properties:
+        source:
+          type: string
+          description: Authoritative source IRI or citation.
+        legalBasis:
+          type: object
+          allOf:
+            - $ref: '#/components/schemas/LegalSourceRef'
+          nullable: true
+          description: Optional pinned reference to a governed legal-source snapshot.
+        retrievedOn:
+          type: string
+          format: date-time
+          description: Instant at which the source material was retrieved.
+        kind:
+          $ref: '#/components/schemas/GroundingKind'
+
+    LanguageTaggedText:
+      type: object
+      description: A non-empty semantic text value identified by a BCP-47 language tag.
+      required: [language, value]
+      properties:
+        language:
+          type: string
+          minLength: 2
+          description: BCP-47 language tag.
+        value:
+          type: string
+          minLength: 1
+          description: The language-specific text.
+
+    RdfIri:
+      type: string
+      format: uri
+      description: Absolute RDF IRI.
+
+    RdfOcaMappingKind:
+      type: string
+      enum: [ONE_TO_ONE, ONE_TO_MANY, MANY_TO_ONE, COMPOUND, COMPUTED, UNMAPPED, NON_REPRESENTABLE]
+
+    MappingInformationLoss:
+      type: string
+      enum: [NONE, POSSIBLE, KNOWN]
+
+    SemanticMappingProvenance:
+      type: object
+      required: [sourceId]
+      properties:
+        sourceId:
+          type: string
+          minLength: 1
+        sourceRevision:
+          type: string
+          nullable: true
+        generated:
+          type: boolean
+          default: false
+        reviewed:
+          type: boolean
+          default: false
+
+    BusinessTermRdfMapping:
+      type: object
+      description: RDF datatype-property mapping for a business term.
+      required: [propertyIris, mappingKind, provenance, informationLoss]
+      properties:
+        propertyIris:
+          type: array
+          items:
+            $ref: '#/components/schemas/RdfIri'
+        datatypeIri:
+          allOf:
+            - $ref: '#/components/schemas/RdfIri'
+          nullable: true
+        mappingKind:
+          $ref: '#/components/schemas/RdfOcaMappingKind'
+        transformId:
+          type: string
+          nullable: true
+        provenance:
+          $ref: '#/components/schemas/SemanticMappingProvenance'
+        informationLoss:
+          $ref: '#/components/schemas/MappingInformationLoss'
+
+    BusinessTerm:
+      type: object
+      description: |
+        The OCA capture-base business-term definition held by a data domain: a `path` plus an OCA `valueType`.
+        A scalar business term (Text/Numeric/Boolean/Binary/DateTime) is a leaf with no `children`; a
+        compound (`Reference`) business term groups its `children`. Compound nodes (and scalars) may repeat
+        via `cardinality` to model lists. `path` is a single segment (no `.`); nested paths are composed
+        from the ancestor chain. The shape is recursive via `children`.
+      required: [path, valueType]
+      example:
+        path: ["country"]
+        valueType: "Text"
+        overlays:
+          widgetHint: PICKLIST
+          entryCodes:
+            codes: ["NL", "DE", "FR"]
+          standard: "ISO 3166-1"
+          i18n:
+            en:
+              label: "Country"
+              information: "ISO 3166-1 alpha-2 country code"
+              entries:
+                NL: "Netherlands"
+                DE: "Germany"
+                FR: "France"
+        entryCodeScheme:
+          schemeUri: "https://example.org/concept-schemes/iso-3166-1"
+          schemeName: "ISO 3166-1 country codes"
+          codeListKind: CODE_LIST
+        grounding:
+          source: "https://www.iso.org/iso-3166-country-codes.html"
+          retrievedOn: "2026-08-14T10:00:00Z"
+          kind: STANDARD
+      properties:
+        path:
+          type: array
+          items:
+            type: string
+          description: |
+            The single path segment identifying this business term relative to its parent (no `.`
+            separator). Always a single-element array for a data-domain node.
+        valueType:
+          $ref: '#/components/schemas/AttributeValueType'
+        overlays:
+          allOf:
+            - $ref: '#/components/schemas/AttributeOverlays'
+          description: |
+            The per-business-term overlay bag: cardinality, conformance, format, entry codes, entry-code
+            mapping, unit, standard, character encoding, sensitivity, i18n text, and the
+            selective-disclosure / widget extension overlays.
+          default: {}
+        entityType:
+          type: string
+          allOf:
+            - $ref: '#/components/schemas/BusinessTermEntityType'
+          nullable: true
+          description: Marks a compound (Reference) business term as a Party-typed object type; only meaningful for a Reference.
+        children:
+          type: array
+          description: Child business terms for a compound (Reference) business term; empty for a scalar business term.
+          default: []
+          items:
+            $ref: '#/components/schemas/BusinessTerm'
+        prefLabels:
+          type: array
+          default: []
+          items:
+            $ref: '#/components/schemas/LanguageTaggedText'
+          description: Repeatable language-tagged semantic preferred labels; at most one per language.
+        altLabels:
+          type: array
+          default: []
+          items:
+            $ref: '#/components/schemas/LanguageTaggedText'
+          description: Repeatable language-tagged semantic alternative labels.
+        definitions:
+          type: array
+          default: []
+          items:
+            $ref: '#/components/schemas/LanguageTaggedText'
+          description: Repeatable language-tagged semantic definitions.
+        conceptScheme:
+          type: object
+          allOf:
+            - $ref: '#/components/schemas/SkosConceptSchemeReference'
+          nullable: true
+          description: The SKOS concept scheme membership of this business term, distinct from entryCodeScheme.
+        entryCodeScheme:
+          type: object
+          allOf:
+            - $ref: '#/components/schemas/SkosConceptSchemeReference'
+          nullable: true
+          description: |
+            Optional SKOS concept scheme providing the controlled vocabulary for the business term's entry
+            codes. A structured RDF/SKOS reference distinct from the plain-string `standard` overlay.
+        semanticTerms:
+          type: array
+          default: []
+          items:
+            $ref: '#/components/schemas/SemanticTermReference'
+        rdfMapping:
+          type: object
+          allOf:
+            - $ref: '#/components/schemas/BusinessTermRdfMapping'
+          nullable: true
+        identifier:
+          type: boolean
+          default: false
+          description: Whether this term is designated as an identifier in the model context.
+        grounding:
+          type: object
+          allOf:
+            - $ref: '#/components/schemas/Grounding'
+          nullable: true
+          description: Source grounding for this business-term definition.
+        # Governance (classification, special-category, processing/legal-basis/retention, residency,
+        # assurance) is NOT a flat per-business-term key set: it lives in `overlays` (classification /
+        # processing / residency / assurance), grounded in DPV. The former flat keys
+        # (dataClassification / specialCategoryType / retentionPolicy / legalBasis / crossBorderPolicy /
+        # allowedResidencyRegions) were silently dropped on deserialization and have been removed.
+
+    AttributeOverlays:
+      type: object
+      description: |
+        The extensible per-business-term overlay bag. One optional field per known OCA overlay (and the
+        widget/sd-policy extension overlays), plus an `extensions` map for unknown/future overlays so
+        adding a new overlay is a new optional field rather than a restructure.
+      example:
+        cardinality:
+          min: 1
+          max: 1
+        conformance: MANDATORY
+        format: "YYYY-MM-DD"
+        i18n:
+          en:
+            label: "Date of birth"
+            information: "The holder's date of birth in ISO 8601 format"
+      properties:
+        cardinality:
+          type: object
+          allOf:
+            - $ref: '#/components/schemas/AttributeCardinality'
+          nullable: true
+          description: Occurrence range overlay; absent means the OCA-default single occurrence.
+        conformance:
+          type: string
+          allOf:
+            - $ref: '#/components/schemas/Conformance'
+          nullable: true
+          description: Mandatory vs optional (OCA `M`/`O`) conformance overlay.
+        format:
+          type: string
+          nullable: true
+          description: Format pattern overlay (e.g. an ISO 8601 pattern or a regex such as `^[A-Z]{2}$`).
+        entryCodes:
+          type: object
+          allOf:
+            - $ref: '#/components/schemas/EntryCodes'
+          nullable: true
+          description: The language-independent value domain (inline codes or an external code-table reference).
+        entryCodeMapping:
+          type: object
+          nullable: true
+          description: |
+            Maps the canonical entry codes to a foreign code table: outer key is the target table id,
+            inner map is canonical code to foreign code.
+          additionalProperties:
+            type: object
+            additionalProperties:
+              type: string
+        unit:
+          type: string
+          nullable: true
+          description: Optional measurement unit (e.g. `kg`, `EUR`).
+        standard:
+          type: string
+          nullable: true
+          description: Optional standard reference string (e.g. `ISO 3166-1`).
+        characterEncoding:
+          type: string
+          nullable: true
+          description: Optional value character encoding.
+        sensitive:
+          type: boolean
+          nullable: true
+          description: Whether the business term holds sensitive data that should be masked in UIs.
+        widgetHint:
+          type: string
+          allOf:
+            - $ref: '#/components/schemas/AttributeWidgetHint'
+          nullable: true
+          description: The preferred capture widget (extension overlay).
+        sdPolicy:
+          type: string
+          allOf:
+            - $ref: '#/components/schemas/SdPolicy'
+          nullable: true
+          description: The selective-disclosure policy (extension overlay).
+        i18n:
+          type: object
+          description: |
+            Per-language localized text, keyed by BCP-47 language tag; consolidates the OCA label,
+            information, and entry overlays.
+          default: {}
+          additionalProperties:
+            $ref: '#/components/schemas/I18nOverlay'
+        extensions:
+          type: object
+          description: Opaque forward overlays carried by overlay name, so unknown overlays survive a round-trip.
+          default: {}
+          additionalProperties: true
+
+    I18nOverlay:
+      type: object
+      description: |
+        The localized text for one business term in one language: the per-language label, optional longer
+        information, and optional entry-code labels (keyed by code).
+      properties:
+        label:
+          type: string
+          nullable: true
+          description: The localized display label.
+        information:
+          type: string
+          nullable: true
+          description: The localized longer description.
+        entries:
+          type: object
+          description: Localized labels for entry codes, keyed by code; the key-set must be a subset of the entry codes.
+          default: {}
+          additionalProperties:
+            type: string
+
+    EntryCodes:
+      type: object
+      description: |
+        The language-independent value domain for a constrained business term: either an inline `codes`
+        list OR a `codeTableRef` reference to an external table. Exactly one of the two is present.
+      properties:
+        codes:
+          type: array
+          nullable: true
+          description: The inline allowed code list; absent when `codeTableRef` is used.
+          items:
+            type: string
+        codeTableRef:
+          type: string
+          nullable: true
+          description: A reference id resolving to an external code table; absent when `codes` is used.
+
+    Conformance:
+      type: string
+      description: OCA conformance overlay value, mapping to `M` (mandatory) or `O` (optional) at the OCA boundary.
+      enum:
+        - MANDATORY
+        - OPTIONAL
+
+    SchemaOrigin:
+      type: string
+      description: Where a referenced schema came from relative to the data domain.
+      enum:
+        - EXTERNAL
+        - INTERNAL_GENERATED
+        - INTERNAL_AUTHORED
+
+    SchemaType:
+      type: string
+      description: The declared shape of a referenced or generated schema.
+      enum:
+        - JSON_SCHEMA
+        - XML_SCHEMA
+        - SD_JWT_VCT
+        - JSON_LD_CONTEXT
+        - OCA_BUNDLE
+
+    SchemaRef:
+      type: object
+      description: |
+        An identity-only reference to a schema a binding points at: it names the schema (namespace,
+        name, optional version) and may carry a registry handle and type, but does not embed the body.
+      required: [namespace, name]
+      properties:
+        namespace:
+          type: string
+          description: The schema namespace / vocabulary.
+        name:
+          type: string
+          description: The schema name within its namespace.
+        version:
+          type: string
+          nullable: true
+        schemaId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Optional handle into the schema registry, when the schema is registered there.
+        schemaType:
+          type: string
+          allOf:
+            - $ref: '#/components/schemas/SchemaType'
+          nullable: true
+        origin:
+          allOf:
+            - $ref: '#/components/schemas/SchemaOrigin'
+          default: EXTERNAL
+
+    SchemaBindingPurpose:
+      type: string
+      description: The role a schema binding plays for its data domain.
+      enum:
+        - EXTERNAL_REFERENCE
+        - INTERNAL_CATALOG_SCHEMA
+        - INTERNAL_PROFILE_SCHEMA
+        - ROUND_TRIP
+
+    DomainSchemaBinding:
+      type: object
+      description: A named binding from a data domain to one schema, referenced by relationships via its `id`.
+      required: [id, schema]
+      properties:
+        id:
+          type: string
+          description: Binding identifier, unique within a data domain.
+        schema:
+          $ref: '#/components/schemas/SchemaRef'
+        purpose:
+          allOf:
+            - $ref: '#/components/schemas/SchemaBindingPurpose'
+          default: EXTERNAL_REFERENCE
+        description:
+          type: string
+          nullable: true
+
+    SchemaAttributeRelation:
+      type: string
+      description: The nature of a business-term-level schema relationship.
+      enum:
+        - DERIVED_FROM_EXTERNAL
+        - USES_EXTERNAL_SHAPE
+        - EQUIVALENT_TO_EXTERNAL
+        - NEAR_EQUIVALENT_TO_EXTERNAL
+        - EXPORTS_AS_EXTERNAL
+
+    EquivalenceStrength:
+      type: string
+      description: How exactly a canonical business term matches an external attribute, for the equivalence relations.
+      enum:
+        - EXACT
+        - CLOSE
+        - BROADER_THAN_INTERNAL
+        - NARROWER_THAN_INTERNAL
+        - RELATED
+
+    MappingDirection:
+      type: string
+      description: The direction in which a schema-relationship mapping applies.
+      enum:
+        - EXTERNAL_TO_SEMANTIC
+        - SEMANTIC_TO_EXTERNAL
+        - BIDIRECTIONAL
+
+    AttributeTransformKind:
+      type: string
+      description: The kind of value transform an attribute transform describes.
+      enum:
+        - NONE
+        - RENAME_ONLY
+        - FORMAT
+        - CODE_MAP
+
+    AttributeTransform:
+      type: object
+      description: A value transform applied along a schema-relationship mapping.
+      properties:
+        kind:
+          allOf:
+            - $ref: '#/components/schemas/AttributeTransformKind'
+          default: NONE
+        expression:
+          type: string
+          nullable: true
+          description: Optional transform expression, for computed transforms.
+        codeMap:
+          type: object
+          description: Optional code/value mapping, for code-list translation.
+          additionalProperties:
+            type: string
+        unitConversion:
+          type: string
+          nullable: true
+
+    ExternalSchemaAttributeRef:
+      type: object
+      description: A reference to a single attribute/property within a bound schema (the external endpoint of a relationship).
+      required: [schemaBindingId, path]
+      properties:
+        schemaBindingId:
+          type: string
+          description: The binding id this external attribute belongs to.
+        path:
+          type: array
+          items:
+            type: string
+          description: The attribute path within the bound schema.
+        pointer:
+          type: string
+          nullable: true
+          description: Optional pointer into the schema document (e.g. a JSON Pointer).
+        uri:
+          type: string
+          nullable: true
+          description: Optional absolute identifier for the external attribute (e.g. a JSON-LD term IRI).
+        label:
+          type: string
+          nullable: true
+
+    SemanticAttributeSchemaRelationship:
+      type: object
+      description: |
+        A business-term-level relationship between one canonical data-domain business term (by `semanticPath`)
+        and one external schema attribute.
+      required: [id, semanticPath, external, relation]
+      properties:
+        id:
+          type: string
+          description: Relationship identifier, unique within a data domain.
+        semanticPath:
+          type: array
+          items:
+            type: string
+          description: The canonical business-term path; must exist among the data domain's business terms.
+        external:
+          $ref: '#/components/schemas/ExternalSchemaAttributeRef'
+        relation:
+          $ref: '#/components/schemas/SchemaAttributeRelation'
+        direction:
+          allOf:
+            - $ref: '#/components/schemas/MappingDirection'
+          default: BIDIRECTIONAL
+        equivalence:
+          type: string
+          allOf:
+            - $ref: '#/components/schemas/EquivalenceStrength'
+          nullable: true
+        confidence:
+          type: number
+          format: double
+          nullable: true
+          description: Optional confidence score for an inferred relationship (0.0 to 1.0).
+        notes:
+          type: string
+          nullable: true
+        transform:
+          type: object
+          allOf:
+            - $ref: '#/components/schemas/AttributeTransform'
+          nullable: true
+          description: Optional value transform; required for DERIVED_FROM_EXTERNAL relations.
+
+    ExternalSchemaAttribute:
+      type: object
+      description: A single external attribute/property discovered by introspecting an external schema document.
+      required: [path, pointer, type]
+      properties:
+        path:
+          type: array
+          items:
+            type: string
+          description: The attribute path built from the chain of property names.
+        pointer:
+          type: string
+          description: RFC 6901 JSON Pointer to the property's schema node.
+        type:
+          type: string
+          nullable: true
+          description: The JSON Schema `type` keyword value, or null when absent.
+        format:
+          type: string
+          nullable: true
+          description: The JSON Schema `format` keyword value, or null when absent.
+        enumValues:
+          type: array
+          default: []
+          items:
+            type: string
+        required:
+          type: boolean
+          default: false
+          description: Whether this property is listed in its parent object's `required` array.
+        multiple:
+          type: boolean
+          default: false
+          description: True when the property is `"type":"array"`.
+
+    ObjectType:
+      type: object
+      description: |
+        A single object type within a data domain, modelled as one OCA capture base: a named structured type
+        holding its own flat list of business-term capture bases plus an object-type-level overlay bag and
+        per-object-type schema relationships. There are two object-type kinds and both are parties:
+
+        PREDEFINED is a data-domain object type bound to a party type the platform knows upfront. The optional
+        partyType names the platform party-type (e.g. natural_person, organization, address). An
+        address object type, for example, mirrors the platform PhysicalAddress model and is linked via
+        first-class has-address relationships carrying a target-end role (e.g. home, postal, visit,
+        shipping) to distinguish multiple addresses of the same type.
+
+        SPECIALIZATION is an ad-hoc, tenant-defined subtype of a PREDEFINED object type that the system
+        does not model upfront (e.g. Student, Customer, Member). It specializes a PREDEFINED object type
+        additively and non-exclusively, and inherits party-ness from its specialization chain. A
+        SPECIALIZATION must not carry its own partyType.
+
+        Non-party structured sub-objects (e.g. the {first, last} fields of a name block) are
+        modelled as anonymous inline compounds: a Reference-typed business term with nested children,
+        owned by their containing object type. To link two parties, use a first-class RelationshipType;
+        inline compounds are for non-party structured data only. Relationship ends are therefore
+        party-to-party by construction.
+      required:
+        - name
+        - kind
+      example:
+        name: "Employee"
+        kind: SPECIALIZATION
+        specializes:
+          entity: "Person"
+        attributes:
+          - path: ["employee_id"]
+            valueType: "Text"
+            overlays:
+              conformance: MANDATORY
+              i18n:
+                en:
+                  label: "Employee ID"
+          - path: ["job_title"]
+            valueType: "Text"
+            overlays:
+              i18n:
+                en:
+                  label: "Job title"
+        schemaRelationships: []
+        overlays:
+          i18n:
+            en:
+              label: "Employee"
+              information: "A person employed by the organization"
+      properties:
+        name:
+          type: string
+          description: The object type name, unique within its data domain (e.g. Person, Address, Employee).
+        kind:
+          $ref: '#/components/schemas/ObjectTypeKind'
+        partyType:
+          type: string
+          nullable: true
+          description: |
+            The platform party-type this PREDEFINED object type maps to (e.g. natural_person, organization,
+            address). Only meaningful on a PREDEFINED root; must be absent on a SPECIALIZATION.
+        specializes:
+          type: object
+          allOf:
+            - $ref: '#/components/schemas/ObjectTypeRef'
+          nullable: true
+          description: The base object type a SPECIALIZATION extends; absent on PREDEFINED.
+        attributes:
+          type: array
+          default: []
+          items:
+            $ref: '#/components/schemas/BusinessTerm'
+        schemaRelationships:
+          type: array
+          default: []
+          items:
+            $ref: '#/components/schemas/SemanticAttributeSchemaRelationship'
+        overlays:
+          allOf:
+            - $ref: '#/components/schemas/AttributeOverlays'
+          default: {}
+          description: The object-type-level overlay bag (object-type meta / i18n label).
+
+    ObjectTypeKind:
+      type: string
+      description: |
+        The kind of a data-domain object type. Both kinds are parties.
+
+        PREDEFINED is a data-domain object type bound to a party type the platform knows upfront, named via
+        partyType (e.g. natural_person, organization, address). It maps to the platform Party model.
+
+        SPECIALIZATION is an ad-hoc, tenant-defined subtype of a PREDEFINED object type that the system
+        does not model upfront (e.g. Student, Customer, Member). It inherits party-ness from the
+        PREDEFINED object type it specializes and must not carry its own partyType.
+
+        Non-party structured sub-objects are anonymous inline compounds (a Reference business term with
+        nested children), not object types.
+      enum:
+        - PREDEFINED
+        - SPECIALIZATION
+
+    DataDomainRef:
+      type: object
+      example:
+        dataDomainId: "9f2c1b3e-7a44-4c1e-8b0a-2d6f5e9c1a77"
+        revision: 3
+      description: A revision-pinned reference to a specific published snapshot of another data domain.
+      required: [dataDomainId, revision]
+      properties:
+        dataDomainId:
+          type: string
+          format: uuid
+        revision:
+          type: integer
+          format: int64
+          minimum: 1
+
+    ObjectTypeRef:
+      type: object
+      description: |
+        A reference to an object type by name, optionally in another data domain. A bare name (no data
+        domain) resolves within the same data domain that carries it.
+      required: [entity]
+      properties:
+        entity:
+          type: string
+        dataDomain:
+          type: object
+          allOf:
+            - $ref: '#/components/schemas/DataDomainRef'
+          nullable: true
+
+    RelationshipEnd:
+      type: object
+      description: |
+        One end of a RelationshipType: the referenced object type, an optional role label, and the
+        end's multiplicity (cardinality). The role disambiguates when the same object type appears as
+        multiple ends (e.g. a visit-address vs a postal-address target end both pointing at Address).
+
+        `cardinality` uses UML look-across semantics: it expresses how many instances of THIS end's
+        object type relate to a single instance of the OTHER end. For a `hasAddress` relationship between
+        Organization (source) and Address (target):
+        - `source.cardinality` = how many Organizations share one Address (e.g. `{min:0}`)
+        - `target.cardinality` = how many Addresses belong to one Organization (e.g. `{min:1}`)
+      required: [entity]
+      properties:
+        entity:
+          $ref: '#/components/schemas/ObjectTypeRef'
+        role:
+          type: string
+          nullable: true
+          description: Optional role label for this end; null means no role is declared.
+        cardinality:
+          type: object
+          allOf:
+            - $ref: '#/components/schemas/AttributeCardinality'
+          nullable: true
+          description: |
+            How many instances of this end's object type relate to a single instance of the other end
+            (UML look-across / association-end multiplicity). Null means the multiplicity is
+            unspecified.
+
+    RelationshipType:
+      type: object
+      description: |
+        A first-class, overlay-bearing relationship type in a data domain: a directed, typed connection from a
+        source object-type end to a target object-type end. The relationship's multiplicity is expressed as
+        per-end cardinality on `source.cardinality` and `target.cardinality` using UML look-across
+        semantics: the source end's cardinality is how many sources relate to one target; the target
+        end's cardinality is how many targets relate to one source.
+
+        The `overlays` bag carries i18n, governance, and conformance for the relationship itself.
+        Relationship multiplicity is NOT expressed via `overlays.cardinality` (that field is an
+        business-term-level concern); multiplicity lives exclusively on `source.cardinality` and
+        `target.cardinality`.
+
+        The name is the traversal-path segment used by L2-L4. Multiple relationships of the same
+        relationType between the same object types are distinguished by name (and optionally role).
+        Source/target ends may be same-data-domain or cross-data-domain ObjectTypeRefs.
+      required:
+        - name
+        - relationType
+        - source
+        - target
+      example:
+        name: "residentialAddress"
+        relationType: "has-address"
+        source:
+          entity:
+            entity: "Person"
+          cardinality:
+            min: 0
+        target:
+          entity:
+            entity: "Address"
+          role: "residential"
+          cardinality:
+            min: 1
+            max: 1
+        overlays:
+          i18n:
+            en:
+              label: "Residential address"
+      properties:
+        name:
+          type: string
+          description: Traversal-path segment; unique within the data domain.
+        relationType:
+          type: string
+          description: |
+            Directed relation type identifier, e.g. has-address. Validated against the
+            RelationshipTypeRegistry at the service layer; unknown types are treated as custom.
+        source:
+          $ref: '#/components/schemas/RelationshipEnd'
+        target:
+          $ref: '#/components/schemas/RelationshipEnd'
+        overlays:
+          allOf:
+            - $ref: '#/components/schemas/AttributeOverlays'
+          default: {}
+          description: |
+            The relationship overlay bag: i18n labels the relationship itself; governance and
+            conformance carry cross-cutting metadata. Relationship multiplicity is NOT carried here;
+            it is expressed via `source.cardinality` and `target.cardinality` on each end.
+
+    DataDomain:
+      type: object
+      description: Stable tenant-scoped Data Domain identity. Semantic content is addressed only through revisions.
+      required: [id, tenantId, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenantId:
+          type: string
+        currentRevision:
+          type: integer
+          format: int64
+          nullable: true
+        currentPublicationId:
+          type: string
+          format: uuid
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    DataDomainPageResponse:
+      type: object
+      required: [data, pagination]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/DataDomain'
+        pagination:
+          $ref: './common-components.yml#/components/schemas/PageMeta'
+
+    DataDomainCreation:
+      type: object
+      required: [resource, initialRevision]
+      properties:
+        resource:
+          $ref: '#/components/schemas/DataDomain'
+        initialRevision:
+          $ref: '#/components/schemas/DataDomainRevision'
+
+    DataDomainContent:
+      type: object
+      required: [name, ownerPartyRef, entities, relationships, schemaBindings, overlays]
+      properties:
+        name:
+          type: string
+        ownerPartyRef:
+          $ref: '#/components/schemas/PartyRef'
+        entities:
+          type: array
+          items:
+            $ref: '#/components/schemas/ObjectType'
+        relationships:
+          type: array
+          items:
+            $ref: '#/components/schemas/RelationshipType'
+        schemaBindings:
+          type: array
+          items:
+            $ref: '#/components/schemas/DomainSchemaBinding'
+        overlays:
+          $ref: '#/components/schemas/DomainOverlays'
+        description:
+          type: string
+          nullable: true
+
+    DataDomainRevision:
+      type: object
+      required: [id, dataDomainId, tenantId, revision, lifecycle, content, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        dataDomainId:
+          type: string
+          format: uuid
+        tenantId:
+          type: string
+        revision:
+          type: integer
+          format: int64
+        lifecycle:
+          type: string
+          enum: [DRAFT, SEALED]
+        contentHash:
+          type: string
+          nullable: true
+        content:
+          $ref: '#/components/schemas/DataDomainContent'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    DataDomainComposedRevision:
+      type: object
+      description: Exact published revision snapshot with its authored content composed for reading.
+      required: [revisionId, dataDomainId, tenantId, revision, content, createdAt, updatedAt]
+      properties:
+        revisionId:
+          type: string
+          format: uuid
+        dataDomainId:
+          type: string
+          format: uuid
+        tenantId:
+          type: string
+        revision:
+          type: integer
+          format: int64
+        contentHash:
+          type: string
+          nullable: true
+        content:
+          $ref: '#/components/schemas/DataDomainContent'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    DataDomainRevisionPageResponse:
+      type: object
+      required: [data, pagination]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/DataDomainRevision'
+        pagination:
+          $ref: './common-components.yml#/components/schemas/PageMeta'
+
+    SemanticAttributeUsage:
+      type: object
+      description: One persisted semantic-attribute usage row with exact data-domain provenance.
+      required: [tenantId, dataDomainId, dataDomainRevision, artifactKind, artifactId, artifactVersion, roleRef, sourceEntity, traversalPath, role, createdAt]
+      properties:
+        tenantId:
+          type: string
+        dataDomainId:
+          type: string
+          format: uuid
+        dataDomainRevision:
+          type: integer
+          format: int64
+        artifactKind:
+          type: string
+          enum: [CREDENTIAL_DESIGN, DCQL_QUERY, FORM_CHANNEL, FORM_DEFINITION]
+        artifactId:
+          type: string
+        artifactVersion:
+          type: integer
+          format: int64
+        channelId:
+          type: string
+          format: uuid
+          nullable: true
+        channelVersion:
+          type: integer
+          format: int64
+          nullable: true
+        roleRef:
+          type: string
+        sourceEntity:
+          type: string
+        traversalPath:
+          type: string
+        role:
+          type: string
+          enum: [ISSUE, REQUEST, CAPTURE]
+        format:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+
+    SemanticAttributeUsagePageResponse:
+      type: object
+      required: [data, pagination]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/SemanticAttributeUsage'
+        pagination:
+          $ref: './common-components.yml#/components/schemas/PageMeta'
+
+    CreateDataDomainInput:
+      type: object
+      required: [name, ownerPartyRef]
+      properties:
+        name:
+          type: string
+        ownerPartyRef:
+          $ref: '#/components/schemas/PartyRef'
+        description:
+          type: string
+          nullable: true
+        overlays:
+          $ref: '#/components/schemas/DomainOverlays'
+
+    CreateDataDomainRevisionInput:
+      type: object
+      required: [content]
+      properties:
+        content:
+          $ref: '#/components/schemas/DataDomainContent'
+
+    UpdateDataDomainRevisionInput:
+      type: object
+      required: [content]
+      properties:
+        content:
+          $ref: '#/components/schemas/DataDomainContent'
+
+    DataDomainReview:
+      type: object
+      required: [id, dataDomainId, revisionId, lifecycle, requestedBy, requiredApprovals, decisions, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        dataDomainId:
+          type: string
+          format: uuid
+        revisionId:
+          type: string
+          format: uuid
+        lifecycle:
+          type: string
+          enum: [PENDING, APPROVED, REJECTED]
+        requestedBy:
+          type: string
+          readOnly: true
+        requiredApprovals:
+          type: integer
+          readOnly: true
+        decisions:
+          type: array
+          items:
+            $ref: '#/components/schemas/DataDomainReviewDecision'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    DataDomainReviewDecision:
+      type: object
+      required: [id, reviewId, verdict, decidedBy, decidedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        reviewId:
+          type: string
+          format: uuid
+        verdict:
+          type: string
+          enum: [APPROVE, REJECT]
+        decidedBy:
+          type: string
+          readOnly: true
+        reasonRef:
+          type: string
+          nullable: true
+        comment:
+          type: string
+          nullable: true
+        decidedAt:
+          type: string
+          format: date-time
+
+    CreateDataDomainReviewDecisionInput:
+      type: object
+      description: A REJECT verdict must include a non-blank reasonRef or comment. Approval evidence is optional.
+      required: [verdict]
+      additionalProperties: false
+      properties:
+        verdict:
+          type: string
+          enum: [APPROVE, REJECT]
+        reasonRef:
+          type: string
+          nullable: true
+        comment:
+          type: string
+          nullable: true
+
+    DataDomainReviewDecisionPageResponse:
+      type: object
+      required: [data, pagination]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/DataDomainReviewDecision'
+        pagination:
+          $ref: './common-components.yml#/components/schemas/PageMeta'
+
+    DataDomainReviewDecisionList:
+      type: object
+      required: [data, pagination]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/DataDomainReviewDecision'
+        pagination:
+          $ref: './common-components.yml#/components/schemas/PageMeta'
+
+    DataDomainPublication:
+      type: object
+      required: [id, tenantId, dataDomainId, revisionId, revision, lifecycle, publishedBy, publishedAt, contentHash]
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenantId:
+          type: string
+        dataDomainId:
+          type: string
+          format: uuid
+        revisionId:
+          type: string
+          format: uuid
+        revision:
+          type: integer
+          format: int64
+        lifecycle:
+          type: string
+          enum: [ACTIVE, DEPRECATED, SUPERSEDED, WITHDRAWN, RETIRED]
+        publishedBy:
+          type: string
+          readOnly: true
+        publishedAt:
+          type: string
+          format: date-time
+        contentHash:
+          type: string
+        supersedesPublicationId:
+          type: string
+          format: uuid
+          nullable: true
+        successorPublicationId:
+          type: string
+          format: uuid
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    CreateDataDomainPublicationInput:
+      type: object
+      required: [revision, reviewId]
+      additionalProperties: false
+      properties:
+        revision:
+          type: integer
+          format: int64
+        reviewId:
+          type: string
+          format: uuid
+        supersedesPublicationId:
+          type: string
+          format: uuid
+          nullable: true
+
+    DataDomainPublicationNotice:
+      type: object
+      required: [id, publicationId, dataDomainId, revision, kind, reason, effectiveAt, createdAt, createdBy]
+      properties:
+        id:
+          type: string
+          format: uuid
+        publicationId:
+          type: string
+          format: uuid
+        dataDomainId:
+          type: string
+          format: uuid
+        revision:
+          type: integer
+          format: int64
+        kind:
+          type: string
+          enum: [DEPRECATION, WITHDRAWAL, RETIREMENT]
+        reason:
+          type: string
+        effectiveAt:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+        createdBy:
+          type: string
+          readOnly: true
+
+    CreateDataDomainPublicationNoticeInput:
+      type: object
+      required: [kind, reason, effectiveAt]
+      additionalProperties: false
+      properties:
+        kind:
+          type: string
+          enum: [DEPRECATION, WITHDRAWAL, RETIREMENT]
+        reason:
+          type: string
+        effectiveAt:
+          type: string
+          format: date-time
+
+    DataDomainValidationResult:
+      type: object
+      required: [valid, issues]
+      properties:
+        valid:
+          type: boolean
+        issues:
+          type: array
+          items:
+            $ref: '#/components/schemas/DataDomainValidationIssue'
+
+    DataDomainValidationIssue:
+      type: object
+      required: [path, message]
+      properties:
+        path:
+          type: string
+        message:
+          type: string
+
+    DataDomainReviewList:
+      type: object
+      required: [data, pagination]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/DataDomainReview'
+        pagination:
+          $ref: './common-components.yml#/components/schemas/PageMeta'
+
+    DataDomainPublicationList:
+      type: object
+      required: [data, pagination]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/DataDomainPublication'
+        pagination:
+          $ref: './common-components.yml#/components/schemas/PageMeta'
+
+    DataDomainPublicationNoticeList:
+      type: object
+      required: [data, pagination]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/DataDomainPublicationNotice'
+        pagination:
+          $ref: './common-components.yml#/components/schemas/PageMeta'
+
+    GovernanceOdrlResult:
+      type: object
+      required: [policy, warnings]
+      properties:
+        policy:
+          type: object
+          additionalProperties: true
+        warnings:
+          type: array
+          items:
+            type: string
+
+    DomainOverlays:
+      type: object
+      description: |
+        The data-domain-root overlay bag: localized name/description per language, the governance overlay,
+        and an open extensions map for forward-incoming overlays.
+      example:
+        meta:
+          en:
+            name: "Acme Employee Catalog"
+            description: "Canonical employee attributes governed by HR"
+        governance:
+          jurisdictions:
+            - region: "EU"
+              laws: ["eu-gdpr"]
+              frameworks: ["GDPR", "EIDAS2", "NIS2"]
+              authority: "EDPB"
+              residency:
+                allowed: ["EU", "EEA"]
+                localizationRequired: false
+              defaultTransfer:
+                mechanism: "ADEQUACY_DECISION"
+          primaryJurisdiction: "EU"
+          controller:
+            partyId: "9f2c1b3e-7a44-4c1e-8b0a-2d6f5e9c1a77"
+            role: "CONTROLLER"
+            establishedIn: "NL"
+          classificationScheme: ["PUBLIC", "INTERNAL", "CONFIDENTIAL", "RESTRICTED"]
+      properties:
+        meta:
+          type: object
+          default: {}
+          description: Per-language localized data-domain name/description, keyed by BCP-47 language tag.
+          additionalProperties:
+            $ref: '#/components/schemas/DomainMetaText'
+        governance:
+          type: object
+          allOf:
+            - $ref: '#/components/schemas/DomainGovernance'
+          nullable: true
+        extensions:
+          type: object
+          default: {}
+          description: Any data-domain-root overlay not represented by a typed field, keyed by overlay name.
+          additionalProperties: true
+
+    DomainMetaText:
+      type: object
+      description: |
+        One language's localized data-domain name and/or description. At least one of name/description must
+        be present.
+      properties:
+        name:
+          type: string
+          nullable: true
+        description:
+          type: string
+          nullable: true
+
+    DomainGovernance:
+      type: object
+      description: |
+        The data-domain-root governance overlay: the cross-jurisdiction governance model carried on the
+        data domain (jurisdictions, controller, classification scheme, NIS2/MiCA classifications).
+      example:
+        jurisdictions:
+          - region: "EU"
+            laws: ["eu-gdpr"]
+            frameworks: ["GDPR", "EIDAS2", "NIS2"]
+            authority: "EDPB"
+            residency:
+              allowed: ["EU", "EEA"]
+              localizationRequired: false
+            defaultTransfer:
+              mechanism: "ADEQUACY_DECISION"
+        primaryJurisdiction: "EU"
+        controller:
+          partyId: "9f2c1b3e-7a44-4c1e-8b0a-2d6f5e9c1a77"
+          role: "CONTROLLER"
+          establishedIn: "NL"
+        classificationScheme: ["PUBLIC", "INTERNAL", "CONFIDENTIAL", "RESTRICTED"]
+      properties:
+        jurisdictions:
+          type: array
+          default: []
+          items:
+            $ref: '#/components/schemas/GovernanceJurisdiction'
+        primaryJurisdiction:
+          type: string
+          nullable: true
+        controller:
+          type: object
+          allOf:
+            - $ref: '#/components/schemas/GovernanceController'
+          nullable: true
+        classificationScheme:
+          type: array
+          default: []
+          items:
+            type: string
+        nis2:
+          type: object
+          allOf:
+            - $ref: '#/components/schemas/Nis2Classification'
+          nullable: true
+        mica:
+          type: object
+          allOf:
+            - $ref: '#/components/schemas/MicaClassification'
+          nullable: true
+
+    GovernanceJurisdiction:
+      type: object
+      description: A self-contained per-jurisdiction governance entry on the data-domain-root governance overlay.
+      required: [region]
+      properties:
+        region:
+          type: string
+          description: ISO 3166 / region-group identifier, e.g. EU, US-CA, CN.
+        laws:
+          type: array
+          default: []
+          items:
+            type: string
+        frameworks:
+          type: array
+          default: []
+          items:
+            type: string
+        authority:
+          type: string
+          nullable: true
+        residency:
+          type: object
+          allOf:
+            - $ref: '#/components/schemas/JurisdictionResidency'
+          nullable: true
+        defaultTransfer:
+          type: object
+          allOf:
+            - $ref: '#/components/schemas/JurisdictionTransfer'
+          nullable: true
+
+    JurisdictionResidency:
+      type: object
+      description: A jurisdiction's default residency rule.
+      properties:
+        allowed:
+          type: array
+          default: []
+          items:
+            type: string
+        localizationRequired:
+          type: boolean
+          nullable: true
+
+    JurisdictionTransfer:
+      type: object
+      description: A jurisdiction's default cross-border transfer mechanism.
+      required: [mechanism]
+      properties:
+        mechanism:
+          type: string
+          description: The GDPR Chapter V transfer mechanism applied by default in this jurisdiction.
+
+    GovernanceController:
+      type: object
+      description: The data controller for the data domain's data.
+      required: [partyId]
+      properties:
+        partyId:
+          type: string
+        role:
+          type: string
+          nullable: true
+        establishedIn:
+          type: string
+          nullable: true
+
+    Nis2Classification:
+      type: object
+      description: The data-domain-grain NIS2 entity criticality classification.
+      required: [entityClass]
+      properties:
+        entityClass:
+          type: string
+          description: The NIS2 entity criticality class.
+        sector:
+          type: string
+          nullable: true
+          description: The NIS2 sector the entity operates in.
+
+    MicaClassification:
+      type: object
+      description: The data-domain-grain MiCA crypto-asset classification (Regulation 2023/1114).
+      required: [assetClass]
+      properties:
+        assetClass:
+          type: string
+          description: The MiCA crypto-asset class.
+        whitepaperRef:
+          type: string
+          nullable: true
+        esmaRef:
+          type: string
+          nullable: true
+
+    ObjectTypeBinding:
+      type: object
+      example:
+        dataDomainId: "9f2c1b3e-7a44-4c1e-8b0a-2d6f5e9c1a77"
+        entity: "Person"
+      description: |
+        Names a data-domain object type an ObjectRole binds to: the object type name within the data domain
+        identified by `dataDomainId`. The data-domain snapshot version is not repeated here; it is fixed by
+        the matching DataDomainRef the object model pins for the same dataDomainId.
+      required: [dataDomainId, entity]
+      properties:
+        dataDomainId:
+          type: string
+          format: uuid
+          description: The data domain the object type lives in; must have a matching DataDomainRef on the object model.
+        entity:
+          type: string
+          description: The referenced object type's name within that data domain.
+
+    ObjectRole:
+      type: object
+      example:
+        id: "employee"
+        name: "Employee"
+        entity:
+          dataDomainId: "9f2c1b3e-7a44-4c1e-8b0a-2d6f5e9c1a77"
+          entity: "Person"
+        specializes: ["Employee"]
+        description: "The employee participant in the use case"
+      description: |
+        An object-model-local role naming one participant of a use case (e.g. `employer`), bound to a single
+        data-domain object type. The role's party type derives from the bound object type at resolution time;
+        `specializes` names the object type's specialization sub-types applied for this role.
+      required: [id, name, entity]
+      properties:
+        id:
+          type: string
+          description: The object-model-local role identifier, referenced by overrides and resolved relationship ends. Unique within an object model.
+        name:
+          type: string
+          description: Human-readable role name, e.g. `Employer`.
+        entity:
+          $ref: '#/components/schemas/ObjectTypeBinding'
+        specializes:
+          type: array
+          description: The specialization object-type names applied to the bound object type for this role; empty applies the object-type root unspecialized.
+          default: []
+          items:
+            type: string
+        description:
+          type: string
+          nullable: true
+          description: Optional free-form description of the role's purpose.
+
+    ObjectRelationshipRef:
+      type: object
+      example:
+        dataDomainId: "9f2c1b3e-7a44-4c1e-8b0a-2d6f5e9c1a77"
+        relationship: "employs"
+      description: |
+        Selects a first-class data-domain relationship type into an object model by its name within the data domain
+        identified by `dataDomainId`. The relationship type's ends resolve to the object model's bound roles (or are
+        pulled in as a target object type) during resolution.
+      required: [dataDomainId, relationship]
+      properties:
+        dataDomainId:
+          type: string
+          format: uuid
+          description: The data domain the selected relationship type belongs to; must have a matching DataDomainRef on the object model.
+        relationship:
+          type: string
+          description: The selected relationship type's unique name within that data domain.
+
+    ObjectOverride:
+      type: object
+      example:
+        roleRef: "employee"
+        path: ["givenName"]
+        sensitive: true
+      description: |
+        A narrow-only override an object model applies to a single data-domain business term of one of its roles,
+        keyed by (roleRef, path). Each overlay field is nullable; null reads through to the data domain.
+        The narrow-only rules are enforced by the data-domain-aware widening check, not structurally.
+      required: [roleRef, path]
+      properties:
+        roleRef:
+          type: string
+          description: The ObjectRole id whose object type owns the overridden business term.
+        path:
+          type: array
+          items:
+            type: string
+          description: The fully-qualified business-term path within that role's object type.
+        conformance:
+          type: string
+          allOf:
+            - $ref: '#/components/schemas/Conformance'
+          nullable: true
+          description: Overrides the attribute's mandatory/optional conformance for the use case.
+        sdPolicy:
+          type: string
+          allOf:
+            - $ref: '#/components/schemas/SdPolicy'
+          nullable: true
+          description: Overrides the attribute's selective-disclosure policy.
+        cardinality:
+          type: object
+          allOf:
+            - $ref: '#/components/schemas/AttributeCardinality'
+          nullable: true
+          description: Narrows the attribute's occurrence cardinality (narrow-only).
+        entryCodesSubset:
+          type: array
+          nullable: true
+          description: Narrows the attribute's allowed entry codes to this subset; null means no narrowing, never empty when present.
+          items:
+            type: string
+        sensitive:
+          type: boolean
+          nullable: true
+          description: Tightens the attribute's sensitivity (false -> true only).
+        retention:
+          type: object
+          allOf:
+            - $ref: '#/components/schemas/RetentionPolicy'
+          nullable: true
+          description: Overrides the attribute's retention policy.
+
+    ObjectModel:
+      type: object
+      example:
+        id: "c4d5e6f7-8a9b-4c0d-8e1f-2a3b4c5d6e7f"
+        tenantId: "acme"
+        name: "Employee Onboarding"
+        version: 2
+        status: PUBLISHED
+        domainRefs:
+          - dataDomainId: "9f2c1b3e-7a44-4c1e-8b0a-2d6f5e9c1a77"
+            revision: 3
+        roles:
+          - id: "employee"
+            name: "Employee"
+            entity:
+              dataDomainId: "9f2c1b3e-7a44-4c1e-8b0a-2d6f5e9c1a77"
+              entity: "Person"
+            specializes: ["Employee"]
+        relationships: []
+        overrides: []
+        description: "Use case composing employee attributes for badge issuance"
+        createdAt: "2026-01-15T09:30:00Z"
+        updatedAt: "2026-01-15T09:30:00Z"
+      description: |
+        The L2 object-model tier: a use-case curation over one or more published data domains. It binds
+        use-case roles to data-domain object types, selects the data-domain relationship types that connect those roles,
+        and applies narrow-only per-business-term overrides. Snapshot versioning is a monotonic counter;
+        status reuses the data-domain draft/published semantics.
+      required:
+        - id
+        - tenantId
+        - name
+        - version
+        - status
+        - domainRefs
+        - roles
+        - relationships
+        - overrides
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenantId:
+          type: string
+        name:
+          type: string
+        version:
+          type: integer
+          format: int64
+          minimum: 1
+          description: Monotonic snapshot version, starting at 1.
+        status:
+          $ref: '#/components/schemas/ModelLifecycleStatus'
+        domainRefs:
+          type: array
+          description: The data domains this object model draws from; at most one ref per data domain.
+          items:
+            $ref: '#/components/schemas/DataDomainRef'
+        roles:
+          type: array
+          description: The use-case roles, each bound to a data-domain object type.
+          items:
+            $ref: '#/components/schemas/ObjectRole'
+        relationships:
+          type: array
+          description: The data-domain relationship types selected into the object model.
+          items:
+            $ref: '#/components/schemas/ObjectRelationshipRef'
+        overrides:
+          type: array
+          description: The narrow-only per-business-term overrides, keyed by (roleRef, path).
+          items:
+            $ref: '#/components/schemas/ObjectOverride'
+        description:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    ResolvedObjectModel:
+      type: object
+      example:
+        objectModelId: "c4d5e6f7-8a9b-4c0d-8e1f-2a3b4c5d6e7f"
+        objectModelVersion: 2
+        domainRefs:
+          - dataDomainId: "9f2c1b3e-7a44-4c1e-8b0a-2d6f5e9c1a77"
+            revision: 3
+        roles: []
+        relationships: []
+        schemaRelationships: []
+      description: |
+        The effective object-type graph projection of an object model, produced by cross-data-domain resolution: each
+        role's bound object type (with applied specializations) is composed, the object model's narrow-only
+        overrides are applied on top of data-domain governance, and the selected relationship types are projected
+        over the bound roles.
+      required: [objectModelId, objectModelVersion, domainRefs, roles]
+      properties:
+        objectModelId:
+          type: string
+          format: uuid
+        objectModelVersion:
+          type: integer
+          format: int64
+          minimum: 1
+        domainRefs:
+          type: array
+          items:
+            $ref: '#/components/schemas/DataDomainRef'
+        roles:
+          type: array
+          items:
+            $ref: '#/components/schemas/ResolvedObjectRole'
+        relationships:
+          type: array
+          default: []
+          items:
+            $ref: '#/components/schemas/ResolvedObjectRelationship'
+        schemaRelationships:
+          type: array
+          default: []
+          items:
+            $ref: '#/components/schemas/ResolvedObjectSchemaRelationship'
+
+    ResolvedObjectRole:
+      type: object
+      description: |
+        One resolved role: the bound root object type, the specializations applied, the party type the
+        object type maps to, and the effective (post-narrowing) business terms contributed by the object type and its
+        applied specializations.
+      required: [id, entity]
+      properties:
+        id:
+          type: string
+        entity:
+          type: string
+          description: The root object-type name the role bound to.
+        specializes:
+          type: array
+          default: []
+          items:
+            type: string
+        partyType:
+          type: string
+          nullable: true
+          description: The party type derived from the object type; null when the object type declares none.
+        attributes:
+          type: array
+          default: []
+          items:
+            $ref: '#/components/schemas/ResolvedTerm'
+
+    ResolvedTerm:
+      type: object
+      description: |
+        One resolved business term of a role (or of a relationship target object type): its fully-qualified path
+        within the declaring object type, the OCA value type, the object type that declares it, and the effective
+        overlay bag after the object model's narrow-only overrides were applied over the data domain.
+      required: [path, valueType, sourceEntity, overlays]
+      properties:
+        entryCodeScheme:
+          allOf:
+            - { $ref: '#/components/schemas/SkosConceptSchemeReference' }
+          nullable: true
+        path:
+          type: array
+          items:
+            type: string
+          description: The fully-qualified path within the declaring object type.
+        valueType:
+          type: string
+          description: The OCA capture-base value type token (e.g. `Text`, `[Text]`, `Reference`).
+        sourceEntity:
+          type: string
+          description: The object type that declares the business term (the base object type or a specialization).
+        overlays:
+          $ref: '#/components/schemas/AttributeOverlays'
+
+    ResolvedObjectRelationship:
+      type: object
+      description: |
+        One resolved relationship: the data-domain relationship type name and type, the source role it walks
+        from, and either the target role (when the target object type is also a bound role) or the target
+        object type pulled in via this relationship (with that object type's business terms).
+      required: [name, relationType, sourceRole]
+      properties:
+        name:
+          type: string
+        relationType:
+          type: string
+        sourceRole:
+          type: string
+        targetRole:
+          type: string
+          nullable: true
+        targetEntity:
+          type: string
+          nullable: true
+        overlays:
+          $ref: '#/components/schemas/AttributeOverlays'
+        targetAttributes:
+          type: array
+          default: []
+          items:
+            $ref: '#/components/schemas/ResolvedTerm'
+
+    ResolvedObjectSchemaRelationship:
+      type: object
+      description: |
+        One business-term-level schema relationship a resolved object model exposes: the object-type-qualified
+        projection of a data-domain schema relationship for a business term the object model resolved.
+      required:
+        - dataDomainId
+        - entity
+        - schemaBindingId
+        - externalPath
+        - semanticPath
+        - relation
+        - direction
+      properties:
+        dataDomainId:
+          type: string
+          format: uuid
+        entity:
+          type: string
+          description: The object type owning the canonical business term the relationship anchors at.
+        schemaBindingId:
+          type: string
+        externalPath:
+          type: array
+          items:
+            type: string
+          description: The attribute path within the bound external schema.
+        semanticPath:
+          type: array
+          items:
+            type: string
+          description: The canonical data-domain business-term path the relationship is anchored at.
+        relation:
+          $ref: '#/components/schemas/SchemaAttributeRelation'
+        equivalence:
+          type: string
+          allOf:
+            - $ref: '#/components/schemas/EquivalenceStrength'
+          nullable: true
+        direction:
+          $ref: '#/components/schemas/MappingDirection'
+        transform:
+          type: object
+          allOf:
+            - $ref: '#/components/schemas/AttributeTransform'
+          nullable: true
+
+    ChannelType:
+      type: string
+      description: The output channel a product-backed definition renders its bound data product into.
+      enum:
+        - FORM
+        - PDF_DOCUMENT
+        - VERIFIABLE_CREDENTIAL
+        - API_PAYLOAD
+        - OID4VCI
+
+    DataProductRef:
+      type: object
+      example:
+        dataProductId: "1b2c3d4e-5f60-4a71-8b92-0c1d2e3f4a5b"
+        dataProductVersion: 1
+      description: |
+        A reference to exactly one L3 data product, pinned to a specific snapshot version. An L4
+        definition binds to its data product through this ref and resolves deterministically as the data product evolves.
+        There is intentionally no data-domain or object-model reference on a definition.
+      required: [dataProductId, dataProductVersion]
+      properties:
+        dataProductId:
+          type: string
+          format: uuid
+          description: The referenced data product id.
+        dataProductVersion:
+          type: integer
+          format: int64
+          minimum: 1
+          description: The pinned data-product snapshot version (monotonic, starting at 1).
+
+    ChannelFieldMapping:
+      type: object
+      description: |
+        The binding half of a channel. It maps one named output of the channel (a form field, a PDF
+        field, an API payload key) to the one data-product selection that supplies its value. This is
+        the same shape for every channel type, so the binding contract stays uniform; the per-channel
+        rendering (widget, placement, claim, etc.) lives in a separate array and is joined to this
+        mapping by `fieldName`.
+
+        `set` is a `(roleRef, path)` selection within the bound data product. Keying on `(roleRef, path)` rather
+        than a bare path lets the channel tell apart the same business-term path under different object-model
+        roles (for example an employee's `givenName` versus an employer's `givenName`). A channel may
+        only map to selections that actually exist in its bound data product.
+      required: [fieldName, set]
+      properties:
+        fieldName:
+          type: string
+          description: The channel output name this mapping binds; the matching render entry uses the same name. Must be non-blank.
+        set:
+          $ref: '#/components/schemas/ProductSelection'
+
+    FormWidget:
+      type: string
+      description: The input widget a business-term-capture form renders a field with.
+      enum:
+        - TEXT
+        - TEXTAREA
+        - SELECT
+        - DATE
+        - CHECKBOX
+        - RADIO
+        - NUMBER
+        - FILE
+
+    FormFieldRender:
+      type: object
+      description: |
+        The rendering half of a form field: how the field is presented (widget, grouping, wizard step,
+        input mask, validation message, placeholder). It pairs with a `ChannelFieldMapping` by
+        `fieldName` to learn which data-product selection the field captures; this entry carries no data-product
+        binding of its own. The one exception is `required`: a non-null value is a per-field constraint
+        the binding validator checks for widening, so a form may tighten an optional data-product business term to
+        required but may not loosen a mandatory one to optional.
+      required: [fieldName, widget]
+      properties:
+        fieldName:
+          type: string
+          description: The form field name; must be non-blank and match a ChannelFieldMapping.
+        widget:
+          $ref: '#/components/schemas/FormWidget'
+        required:
+          type: boolean
+          nullable: true
+          description: Whether this field is required; null inherits the data product's effective optionality. Checked for widening.
+        group:
+          type: string
+          nullable: true
+          description: Optional logical group/section name the field belongs to.
+        step:
+          type: integer
+          nullable: true
+          description: Optional 1-based wizard step/page index the field appears on.
+        inputMask:
+          type: string
+          nullable: true
+          description: Optional input mask pattern applied to the widget.
+        validationMessage:
+          type: string
+          nullable: true
+          description: Optional override message shown when the field fails validation.
+        placeholder:
+          type: string
+          nullable: true
+          description: Optional placeholder shown in an empty input.
+
+    PdfPlacement:
+      type: object
+      description: The placement of one bound business term on a rendered PDF/document page. Rendering-only.
+      required: [fieldName, page, x, y]
+      properties:
+        fieldName:
+          type: string
+          description: The document field name; must match a ChannelFieldMapping and be non-blank.
+        page:
+          type: integer
+          minimum: 1
+          description: The 1-based page the value is drawn on.
+        x:
+          type: number
+          format: double
+          description: The x coordinate of the value's anchor.
+        y:
+          type: number
+          format: double
+          description: The y coordinate of the value's anchor.
+        format:
+          type: string
+          nullable: true
+          description: Optional value format string applied before drawing.
+
+    PdfRepeatedSection:
+      type: object
+      description: |
+        A document section that repeats per element of a multi-valued bound attribute. The
+        sourceFieldName names the repeating bound field; placements are drawn once per element.
+      required: [sourceFieldName]
+      properties:
+        sourceFieldName:
+          type: string
+          description: The bound field whose multiple values drive the repetition.
+        placements:
+          type: array
+          default: []
+          items:
+            $ref: '#/components/schemas/PdfPlacement'
+
+    DisclosureMode:
+      type: string
+      description: Whether a credential claim is always disclosed or selectively disclosable by the holder.
+      enum:
+        - ALWAYS
+        - SELECTIVE
+
+    VcClaimMapping:
+      type: object
+      description: |
+        Maps one credential CLAIM in the signed credential subject to the `(roleRef, path)` data-product
+        selection that supplies its value, with the claim's disclosure mode. Distinct from
+        ChannelFieldMapping because a credential claim carries disclosure semantics a generic field
+        mapping does not. The `set` selection lets a claim be sourced from the right object-model role when
+        the bound data product spans several roles.
+      required: [set]
+      properties:
+        set:
+          $ref: '#/components/schemas/ProductSelection'
+        claimPath:
+          type: array
+          nullable: true
+          items:
+            type: string
+          description: |
+            OPTIONAL wire claim path within the credential subject, as a flat array of CLEAN segments
+            (no segment carries a dot). When omitted it defaults to the semantic `set` path's segments,
+            so a mapping only states `claimPath` when the wire shape differs (a rename, a re-nesting,
+            or an mdoc element reduction). The mdoc namespace is NEVER a path segment; it is the
+            `namespace` field (or the channel-level namespace), combined with this element by the
+            format converter.
+        namespace:
+          type: string
+          nullable: true
+          description: |
+            OPTIONAL per-claim mdoc namespace override; takes precedence over the channel-level
+            namespace for this claim (multi-namespace mdocs). An opaque mdoc identifier that MAY
+            contain dots (it is an identifier, not a path).
+        disclosure:
+          allOf:
+            - $ref: '#/components/schemas/DisclosureMode'
+          default: ALWAYS
+
+    VerifiableCredentialChannelRef:
+      type: object
+      description: |
+        A version-pinned reference to a verifiable-credential definition. An OID4VCI issuance
+        definition references one or more of these instead of binding an data product directly.
+      required: [channelId, channelVersion]
+      properties:
+        channelId:
+          type: string
+          format: uuid
+          description: The referenced verifiable-credential definition id.
+        channelVersion:
+          type: integer
+          format: int64
+          minimum: 1
+          description: The pinned VC-definition snapshot version (monotonic, starting at 1).
+
+    Oid4vciGrantType:
+      type: string
+      description: An OID4VCI grant type an offer may advertise.
+      enum:
+        - AUTHORIZATION_CODE
+        - PRE_AUTHORIZED_CODE
+
+    Oid4vciOfferConfig:
+      type: object
+      description: |
+        The per-credential offer-shaping configuration: which grant(s) the offer advertises and how an
+        offer URI behaves. Each composed credential configures this independently.
+      properties:
+        grants:
+          type: array
+          items:
+            $ref: '#/components/schemas/Oid4vciGrantType'
+          default: []
+          description: The grant types this credential's offer advertises; empty means the issuer default applies.
+        txCodeRequired:
+          type: boolean
+          default: false
+          description: Whether a transaction code is required to redeem a pre-authorized offer.
+        validitySeconds:
+          type: integer
+          format: int64
+          nullable: true
+          description: Optional validity window for an issued offer, in seconds.
+
+    Oid4vciSigning:
+      type: object
+      description: |
+        The per-credential signing configuration, mapping to the OID4VCI issuer-metadata
+        `credential_signing_alg_values_supported` and `cryptographic_binding_methods_supported`.
+      required: [algorithm, keyBinding]
+      properties:
+        algorithm:
+          type: string
+          description: The signature algorithm, e.g. `ES256`, `EdDSA`.
+        keyBinding:
+          type: string
+          description: The cryptographic binding method, e.g. a DID method (`did:jwk`) or `x5c`.
+
+    Oid4vciCredentialConfiguration:
+      type: object
+      description: |
+        One credential configuration an OID4VCI issuance channel advertises: a self-contained binding
+        of an issuer credential-configuration id to one composed VC channel, with its own signing and
+        offer setup. Every id an offer can reference is declared here.
+      required: [credentialConfigurationId, channelRef, signing]
+      properties:
+        credentialConfigurationId:
+          type: string
+          description: The issuer-metadata credential configuration id; non-blank, unique within the channel.
+        channelRef:
+          $ref: '#/components/schemas/VerifiableCredentialChannelRef'
+        signing:
+          $ref: '#/components/schemas/Oid4vciSigning'
+        offer:
+          allOf:
+            - $ref: '#/components/schemas/Oid4vciOfferConfig'
+          default: {}
+
+    ApiPayloadRole:
+      type: string
+      description: Which side of an external API exchange a payload definition shapes.
+      enum:
+        - REQUEST
+        - RESPONSE
+
+    ApiNamingConvention:
+      type: string
+      description: The external naming convention an API payload renders its keys with. Rendering-only.
+      enum:
+        - CAMEL_CASE
+        - SNAKE_CASE
+        - KEBAB_CASE
+        - PASCAL_CASE
+
+    ApiPathMapping:
+      type: object
+      description: |
+        Maps one bound field to the external (possibly nested, dotted/slash) path it occupies in the
+        API payload. Rendering-only: expresses where a value sits in the external shape, not a data-product
+        constraint.
+      required: [fieldName, externalPath]
+      properties:
+        fieldName:
+          type: string
+          description: The bound field name; must match a ChannelFieldMapping and be non-blank.
+        externalPath:
+          type: string
+          description: The path within the external payload (e.g. `data.subject.givenName`).
+
+    ChannelEnvelope:
+      type: object
+      example:
+        channel: FORM
+        payload:
+          id: "a1b2c3d4-e5f6-4071-8293-a4b5c6d7e8f9"
+          tenantId: "acme"
+          name: "Employee badge capture form"
+          version: 1
+          channel: FORM
+          setRef:
+            dataProductId: "1b2c3d4e-5f60-4a71-8b92-0c1d2e3f4a5b"
+            dataProductVersion: 1
+          fieldMappings:
+            - fieldName: "givenName"
+              set:
+                roleRef: "employee"
+                path: ["givenName"]
+          fields:
+            - fieldName: "givenName"
+              widget: TEXT
+              required: true
+              step: 1
+          stepLabels: ["Personal details"]
+      description: |
+        The REST read shape for an L4 channel: a `channel` type discriminator plus the
+        concrete channel as a JSON object that itself carries an inline `channel` discriminator. A
+        consumer reads `channel` to learn the concrete type, then decodes `payload` into the matching
+        concrete channel (FormChannel, PdfDocumentChannel, VerifiableCredentialChannel,
+        Oid4vciIssuanceChannel, or ApiPayloadChannel).
+      required: [channel, payload]
+      properties:
+        channel:
+          $ref: '#/components/schemas/ChannelType'
+        payload:
+          type: object
+          additionalProperties: true
+          description: |
+            The concrete channel-specific definition, pre-serialized as a JSON object. Its shape is the
+            channel definition selected by `channel` plus an inline `channel` discriminator. The four
+            product-backed channels (FORM, PDF_DOCUMENT, VERIFIABLE_CREDENTIAL, API_PAYLOAD) carry
+            `id`, `tenantId`, `name`, `version`, `setRef`, `fieldMappings` and their channel-specific
+            rendering fields (e.g. `fields`/`stepLabels` for FORM, `templateRef`/`placements` for
+            PDF_DOCUMENT, `credentialFormat`/`claimMappings`/`brandingRef` for VERIFIABLE_CREDENTIAL,
+            `payloadName`/`role`/`namingConvention`/`externalPathMappings` for API_PAYLOAD). The OID4VCI
+            issuance channel has no `setRef`/`fieldMappings`; it carries a `credentialConfigurations`
+            array (each entry: `credentialConfigurationId`, `channelRef`, `signing`, `offer`).
+
+    BrandingLocale:
+      type: object
+      example:
+        language: "en"
+        name: "Acme Employee Badge"
+        description: "Official employee identification credential"
+        logoUri: "https://assets.acme.example/logo.png"
+        backgroundColor: "#1A237E"
+        textColor: "#FFFFFF"
+        backgroundImageUri: null
+      description: |
+        Per-language presentation overlay for a credential-branding record. Grounded in OCA
+        branding-overlay conventions: display name, logo, colors, and optional background image
+        for the wallet credential card in one language.
+      required: [language, name]
+      properties:
+        language:
+          type: string
+          description: BCP-47 language tag (e.g. `en`, `nl`, `de-DE`); must be non-blank.
+        name:
+          type: string
+          description: The credential display name in this language; must be non-blank.
+        description:
+          type: string
+          nullable: true
+          description: |
+            Optional per-locale credential description. The OID4VCI credential `display` description and
+            the wallet card subtitle derive from this; the design no longer re-states it.
+        logoUri:
+          type: string
+          nullable: true
+          description: Optional URI to the credential issuer logo.
+        backgroundColor:
+          type: string
+          nullable: true
+          description: Optional CSS color string for the card background (e.g. `#1A237E`).
+        textColor:
+          type: string
+          nullable: true
+          description: Optional CSS color string for card text.
+        backgroundImageUri:
+          type: string
+          nullable: true
+          description: Optional URI to a background image for the card.
+
+    CredentialBranding:
+      type: object
+      example:
+        id: "d4e5f607-1829-4a3b-9c4d-5e6f70819a2b"
+        tenantId: "acme"
+        name: "Acme Employee Badge branding"
+        version: 1
+        status: DRAFT
+        locales:
+          - language: "en"
+            name: "Acme Employee Badge"
+            description: "Official employee identification credential"
+            logoUri: "https://assets.acme.example/logo.png"
+            backgroundColor: "#1A237E"
+            textColor: "#FFFFFF"
+        layout: null
+        description: "Branding for the employee badge credential"
+        createdAt: "2026-01-15T09:30:00Z"
+        updatedAt: "2026-01-15T09:30:00Z"
+      description: |
+        The L4 credential-branding overlay: a named, tenant-owned presentation overlay authored
+        once per credential type. Holds per-language display metadata (locales), an optional layout
+        hint, lifecycle status, and a monotonic snapshot version. Referenced by VC definitions via
+        BrandingRef in Round 2.
+      required: [id, tenantId, name, version, status, locales, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenantId:
+          type: string
+        name:
+          type: string
+          description: Internal human-readable name for this branding record.
+        version:
+          type: integer
+          format: int64
+          minimum: 1
+          description: Monotonic snapshot version, starting at 1.
+        status:
+          $ref: '#/components/schemas/ModelLifecycleStatus'
+        locales:
+          type: array
+          description: Per-language presentation overlays; language tags are unique within the list.
+          default: []
+          items:
+            $ref: '#/components/schemas/BrandingLocale'
+        layout:
+          type: string
+          nullable: true
+          description: Optional opaque layout hint (e.g. a template id or layout name).
+        description:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    BrandingRef:
+      type: object
+      example:
+        brandingId: "d4e5f607-1829-4a3b-9c4d-5e6f70819a2b"
+        version: 1
+      description: |
+        A version-pinned reference to a CredentialBranding record. VC definitions use this to
+        point at the exact branding snapshot they were authored against.
+      required: [brandingId, version]
+      properties:
+        brandingId:
+          type: string
+          format: uuid
+          description: The referenced branding record id.
+        version:
+          type: integer
+          format: int64
+          minimum: 1
+          description: The pinned CredentialBranding.version snapshot (monotonic, starting at 1).

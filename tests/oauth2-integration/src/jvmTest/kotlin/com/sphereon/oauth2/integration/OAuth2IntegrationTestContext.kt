@@ -23,6 +23,11 @@ import com.sphereon.crypto.kms.provider.software.SoftwareKmsProviderImpl
 import com.sphereon.di.app.AppGraph
 import com.sphereon.di.session.SessionInstance
 import com.sphereon.oauth2.common.config.OAuth2ServersConfigProvider
+import com.sphereon.oauth2.common.model.GrantType
+import com.sphereon.oauth2.common.model.ResponseType
+import com.sphereon.oauth2.server.authorization.model.ClientRegistration
+import com.sphereon.oauth2.server.authorization.model.ClientType
+import com.sphereon.oauth2.server.authorization.storage.ClientRegistry
 import com.sphereon.oauth2.server.authorization.storage.OAuth2SigningKey
 import com.sphereon.oauth2.server.authorization.storage.OAuth2SigningKeyState
 import com.sphereon.oauth2.server.authorization.storage.SigningKeyStore
@@ -70,6 +75,26 @@ class OAuth2IntegrationTestContext(
         val providerFactory = (app as SoftwareKmsProviderFactoryImpl.Graph).softwareKmsProvider
         kmsProvider = providerFactory.create(providerConfig, execution)
         keyManagerService.registerProvider(kmsProvider, makeDefaultKms = true)
+    }
+
+    /** Registers the RP client through the same session registry used by ID-token minting. */
+    suspend fun ensureClientRegistration(clientId: String) {
+        val registry = (session.graph as OAuth2ClientRegistryGraph).clientRegistry
+        val existing = registry.getClient(clientId)
+        check(existing.isOk) { "Failed to read integration client registration" }
+        if (existing.value != null) return
+        val registered =
+            registry.registerClient(
+                ClientRegistration(
+                    clientId = clientId,
+                    clientType = ClientType.PUBLIC,
+                    grantTypes = listOf(GrantType.AUTHORIZATION_CODE),
+                    responseTypes = listOf(ResponseType.CODE),
+                    redirectUris = listOf("https://rp.test/callback"),
+                    allowedScopes = listOf("openid", "read"),
+                ),
+            )
+        check(registered.isOk) { "Failed to register integration client" }
     }
 
     /**
@@ -148,4 +173,9 @@ class OAuth2IntegrationTestContext(
 @ContributesTo(AppScope::class)
 interface OAuth2SigningKeyStoreGraph {
     val signingKeyStore: SigningKeyStore
+}
+
+@ContributesTo(com.sphereon.di.session.SessionScope::class)
+interface OAuth2ClientRegistryGraph {
+    val clientRegistry: ClientRegistry
 }

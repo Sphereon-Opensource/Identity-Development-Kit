@@ -41,8 +41,7 @@ class WalletE2ETestCredentialAttributeContributor : CredentialAttributeContribut
         session: IssuanceSession,
         tokenContext: ValidatedTokenContext,
         credentialConfigurationId: String,
-    ): IdkResult<CredentialAttributeContribution, IdkError> =
-        Ok(configuredContributions[credentialConfigurationId] ?: CredentialAttributeContribution(emptyMap()))
+    ): IdkResult<CredentialAttributeContribution, IdkError> = Ok(configuredContributions[credentialConfigurationId] ?: CredentialAttributeContribution(emptyMap()))
 
     companion object {
         @Volatile

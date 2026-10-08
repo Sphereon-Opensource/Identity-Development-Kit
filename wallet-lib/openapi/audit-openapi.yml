@@ -1,0 +1,158 @@
+openapi: 3.0.4
+info:
+  title: Audit API
+  version: 0.1.0
+  x-products: [edk, vdx]
+  description: |
+    Read-only query surface for immutable EDK audit events.
+
+    Audit events are produced by command execution and persisted through the VDX
+    audit store. This API is intentionally separate from the platform-admin API:
+    admin-console users may consume it, but deployments can authorize audit
+    access independently with dedicated roles and policies.
+  contact:
+    name: Product Engineering
+    email: support@example.com
+    url: https://example.com
+  license:
+    name: Apache 2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0
+servers:
+  - url: https://api.example.com/api/audit/v1
+    description: Production server.
+  - url: http://localhost:8080/api/audit/v1
+    description: Local development server.
+security:
+  - bearer: []
+tags:
+  - name: Audit
+    description: Query immutable audit events.
+paths:
+  /events:
+    get:
+      tags: [Audit]
+      summary: List audit events
+      description: |
+        Returns immutable EDK audit events for the requested tenant. The query
+        fields mirror `AuditQueryFilter` and are AND-combined by the audit query
+        service. Events are ordered newest first by the underlying store.
+      operationId: listAuditEvents
+      parameters:
+        - name: tenantId
+          in: query
+          required: true
+          description: Tenant whose audit log is queried. Required by the EDK audit query service for isolation.
+          schema:
+            type: string
+          example: 7b3c2d9e-1f4a-4c8b-9e2d-5a6f7c8b9d01
+        - name: commandId
+          in: query
+          required: false
+          description: Exact command identifier to match.
+          schema:
+            type: string
+          example: tenant.admin.register
+        - name: module
+          in: query
+          required: false
+          description: Command module segment as stored by the audit persistence layer.
+          schema:
+            type: string
+          example: tenant
+        - name: actorId
+          in: query
+          required: false
+          description: Actor/principal identifier to match.
+          schema:
+            type: string
+        - name: traceId
+          in: query
+          required: false
+          description: W3C trace identifier to match.
+          schema:
+            type: string
+        - name: result
+          in: query
+          required: false
+          description: Audit result status to match.
+          schema:
+            $ref: '#/components/schemas/AuditEventResult'
+        - name: fromTimestamp
+          in: query
+          required: false
+          description: Inclusive lower timestamp bound in epoch milliseconds.
+          schema:
+            type: integer
+            format: int64
+        - name: toTimestamp
+          in: query
+          required: false
+          description: Inclusive upper timestamp bound in epoch milliseconds.
+          schema:
+            type: integer
+            format: int64
+        - name: limit
+          in: query
+          required: false
+          description: Maximum number of events to return. The service clamps this to `[1, 1000]`.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000
+            default: 100
+        - name: offset
+          in: query
+          required: false
+          description: Number of matching events to skip.
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        '200':
+          description: Audit events.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditEventList'
+              example:
+                data:
+                  - eventId: 018fe3d2-07aa-7451-83d4-a73ef4f6ac6a
+                    commandId: tenant.admin.register
+                    command: register
+                    actorId: operator-123
+                    subjectId: null
+                    resourceId: tenant-acme
+                    result: succeeded
+                    timestamp: 1782748800000
+                    correlationId: 7f12a7c4-1b6d-4038-9a4c-2f9a4c7e1b6d
+                    tenantId: tenant-acme
+                    durationMs: 42
+                    traceId: 4bf92f3577b34da6a3ce929d0e0e4736
+                    spanId: 00f067aa0ba902b7
+                    transportType: http
+                    transportScope: platform-admin
+                    metadata:
+                      requestId: req-123
+                limit: 100
+                offset: 0
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+
+components:
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    AuditEventResult:
+      $ref: './audit-components.yml#/components/schemas/AuditEventResult'
+    AuditEvent:
+      $ref: './audit-components.yml#/components/schemas/AuditEvent'
+    AuditEventList:
+      $ref: './audit-components.yml#/components/schemas/AuditEventList'

@@ -1,0 +1,422 @@
+openapi: 3.0.4
+info:
+  title: Enable-U BRP and KVK Lookup Components
+  version: 1.0.0
+paths: {}
+components:
+  parameters:
+    Oin:
+      name: oin
+      in: path
+      required: true
+      x-trusted-execution-config: true
+      description: OIN supplied by trusted connector execution configuration, never by ordinary business input.
+      schema:
+        $ref: '#/components/schemas/Oin'
+    ConsumerApplication:
+      name: consumerApplication
+      in: path
+      required: true
+      x-trusted-execution-config: true
+      description: Consumer application code. The deterministic simulator profile defaults to SVS.
+      schema:
+        allOf:
+          - $ref: '#/components/schemas/OrganisationIdentifier'
+        default: SVS
+    SourceApplication:
+      name: sourceApplication
+      in: path
+      required: true
+      x-trusted-execution-config: true
+      description: Source application code. The deterministic simulator profile defaults to MKS.
+      schema:
+        allOf:
+          - $ref: '#/components/schemas/OrganisationIdentifier'
+        default: MKS
+    OrganisationCode:
+      name: X-Organisation-Code
+      in: header
+      required: true
+      x-trusted-execution-config: true
+      description: Organisation code populated by trusted connector execution configuration.
+      schema:
+        $ref: '#/components/schemas/OrganisationIdentifier'
+    System:
+      name: X-System
+      in: header
+      required: true
+      x-trusted-execution-config: true
+      description: Calling system identity populated by trusted connector execution configuration.
+      schema:
+        $ref: '#/components/schemas/OrganisationIdentifier'
+    Caller:
+      name: X-Caller
+      in: header
+      required: true
+      x-trusted-execution-config: true
+      description: Caller identity populated by trusted connector execution configuration.
+      schema:
+        $ref: '#/components/schemas/CallerIdentifier'
+    RequestTime:
+      name: X-Request-Time
+      in: header
+      required: true
+      x-trusted-execution-config: true
+      description: RFC 3339 UTC execution time populated by the connector runtime.
+      schema:
+        $ref: '#/components/schemas/UtcTimestamp'
+
+  schemas:
+    Oin:
+      type: string
+      minLength: 1
+      maxLength: 40
+      pattern: '^[0-9A-Za-z._:-]+$'
+      description: Organisation identification number.
+      example: '00000001821002189000'
+
+    OrganisationIdentifier:
+      type: string
+      minLength: 1
+      maxLength: 64
+      pattern: '^[0-9A-Za-z._:-]+$'
+      example: SVS
+
+    CallerIdentifier:
+      type: string
+      minLength: 1
+      maxLength: 128
+      pattern: '^[0-9A-Za-z@._:-]+$'
+      example: vdx-source-assertion
+
+    UtcTimestamp:
+      type: string
+      format: date-time
+      pattern: 'Z$'
+      description: RFC 3339 timestamp normalized to UTC with the Z designator.
+      example: '2026-09-15T12:00:00Z'
+
+    Bsn:
+      type: string
+      pattern: '^[0-9]{9}$'
+      description: Nine-digit Dutch citizen service number. It remains protected data.
+      example: '111222333'
+
+    KvkNumber:
+      type: string
+      pattern: '^[0-9]{8}$'
+      description: Eight-digit KVK number.
+      example: '12345678'
+
+    VesNumber:
+      type: string
+      minLength: 1
+      maxLength: 32
+      pattern: '^[0-9A-Za-z._:-]+$'
+      description: VES company identifier used when the KVK variant is not selected.
+      example: VES-NOORDLICHT-001
+
+    SourceReference:
+      type: string
+      minLength: 1
+      maxLength: 256
+      description: Stable reference returned by the source for audit and protected-response linkage.
+      example: kvk:authority:12345678:2026-09-15T12:00:00Z
+
+    LookupPurpose:
+      type: string
+      minLength: 1
+      maxLength: 256
+      description: Specific declared business purpose for the authority check.
+      example: Confirm current authority before supplier onboarding.
+
+    PersonRequestedField:
+      type: string
+      enum:
+        - RESIDENCE_STATUS
+        - GIVEN_NAMES
+        - FAMILY_NAME
+        - DATE_OF_BIRTH
+        - RESIDENTIAL_ADDRESS
+
+    CompanyRequestedField:
+      type: string
+      enum:
+        - LEGAL_NAME
+        - TRADE_NAMES
+        - REGISTRATION_STATUS
+        - LEGAL_FORM
+        - REGISTERED_ADDRESS
+
+    GetPersonRequest:
+      type: object
+      additionalProperties: false
+      required: [bsn, requestedFields]
+      properties:
+        bsn:
+          $ref: '#/components/schemas/Bsn'
+        requestedFields:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          description: Exact allowlist of person fields the source may return.
+          items:
+            $ref: '#/components/schemas/PersonRequestedField'
+      example:
+        bsn: '111222333'
+        requestedFields: [RESIDENCE_STATUS]
+
+    PersonResult:
+      type: object
+      additionalProperties: false
+      description: Contains only properties explicitly selected by requestedFields; unrequested properties are omitted.
+      properties:
+        residenceStatus:
+          type: string
+          nullable: true
+          example: RESIDENT
+        givenNames:
+          type: string
+          nullable: true
+          example: Samira
+        familyName:
+          type: string
+          nullable: true
+          example: De Vries
+        dateOfBirth:
+          type: string
+          format: date
+          nullable: true
+          example: '1984-03-21'
+        residentialAddress:
+          $ref: '#/components/schemas/Address'
+
+    Address:
+      type: object
+      additionalProperties: false
+      properties:
+        street:
+          type: string
+          nullable: true
+        houseNumber:
+          type: string
+          nullable: true
+        postalCode:
+          type: string
+          nullable: true
+        city:
+          type: string
+          nullable: true
+        countryCode:
+          type: string
+          pattern: '^[A-Z]{2}$'
+          nullable: true
+
+    GetPersonResponse:
+      type: object
+      additionalProperties: false
+      required: [person, sourceReference, observedAt]
+      properties:
+        person:
+          $ref: '#/components/schemas/PersonResult'
+        sourceReference:
+          $ref: '#/components/schemas/SourceReference'
+        observedAt:
+          $ref: '#/components/schemas/UtcTimestamp'
+
+    GetCompanyRequest:
+      description: Exactly one company-search variant is accepted.
+      oneOf:
+        - $ref: '#/components/schemas/KvkCompanySearchRequest'
+        - $ref: '#/components/schemas/VesCompanySearchRequest'
+
+    KvkCompanySearchRequest:
+      type: object
+      additionalProperties: false
+      required: [kvk, requestedFields]
+      properties:
+        kvk:
+          $ref: '#/components/schemas/KvkNumber'
+        requestedFields:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          description: Exact allowlist of company fields the source may return.
+          items:
+            $ref: '#/components/schemas/CompanyRequestedField'
+      example:
+        kvk: '12345678'
+        requestedFields: [LEGAL_NAME, REGISTRATION_STATUS]
+
+    VesCompanySearchRequest:
+      type: object
+      additionalProperties: false
+      required: [ves, requestedFields]
+      properties:
+        ves:
+          $ref: '#/components/schemas/VesNumber'
+        requestedFields:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          description: Exact allowlist of company fields the source may return.
+          items:
+            $ref: '#/components/schemas/CompanyRequestedField'
+      example:
+        ves: VES-NOORDLICHT-001
+        requestedFields: [LEGAL_NAME, REGISTRATION_STATUS]
+
+    CompanyResult:
+      type: object
+      additionalProperties: false
+      description: Contains only properties explicitly selected by requestedFields; unrequested properties are omitted.
+      properties:
+        kvk:
+          type: string
+          allOf:
+            - $ref: '#/components/schemas/KvkNumber'
+          nullable: true
+        ves:
+          type: string
+          allOf:
+            - $ref: '#/components/schemas/VesNumber'
+          nullable: true
+        legalName:
+          type: string
+          nullable: true
+        tradeNames:
+          type: array
+          nullable: true
+          items:
+            type: string
+        registrationStatus:
+          type: string
+          nullable: true
+          example: REGISTERED
+        legalForm:
+          type: string
+          nullable: true
+        registeredAddress:
+          $ref: '#/components/schemas/Address'
+
+    GetCompanyResponse:
+      type: object
+      additionalProperties: false
+      required: [company, sourceReference, observedAt]
+      properties:
+        company:
+          $ref: '#/components/schemas/CompanyResult'
+        sourceReference:
+          $ref: '#/components/schemas/SourceReference'
+        observedAt:
+          $ref: '#/components/schemas/UtcTimestamp'
+
+    CheckCompanyRepresentativeAuthorityRequest:
+      description: Contains BSN, purpose, and exactly one KVK or VES company identifier.
+      oneOf:
+        - $ref: '#/components/schemas/KvkAuthorityRequest'
+        - $ref: '#/components/schemas/VesAuthorityRequest'
+
+    KvkAuthorityRequest:
+      type: object
+      additionalProperties: false
+      required: [bsn, kvk, purpose]
+      properties:
+        bsn:
+          $ref: '#/components/schemas/Bsn'
+        kvk:
+          $ref: '#/components/schemas/KvkNumber'
+        purpose:
+          $ref: '#/components/schemas/LookupPurpose'
+      example:
+        bsn: '111222333'
+        kvk: '12345678'
+        purpose: Confirm current authority before supplier onboarding.
+
+    VesAuthorityRequest:
+      type: object
+      additionalProperties: false
+      required: [bsn, ves, purpose]
+      properties:
+        bsn:
+          $ref: '#/components/schemas/Bsn'
+        ves:
+          $ref: '#/components/schemas/VesNumber'
+        purpose:
+          $ref: '#/components/schemas/LookupPurpose'
+      example:
+        bsn: '111222333'
+        ves: VES-NOORDLICHT-001
+        purpose: Confirm current authority before supplier onboarding.
+
+    AuthorityStatus:
+      type: string
+      enum: [CONFIRMED, NOT_CONFIRMED]
+
+    ValidityInterval:
+      type: object
+      additionalProperties: false
+      description: Optional effective interval reported by the source. Open ends are represented with nullable endpoints.
+      properties:
+        validFrom:
+          type: string
+          allOf:
+            - $ref: '#/components/schemas/UtcTimestamp'
+          nullable: true
+        validUntil:
+          type: string
+          allOf:
+            - $ref: '#/components/schemas/UtcTimestamp'
+          nullable: true
+
+    AuthorityResult:
+      type: object
+      additionalProperties: false
+      required: [status, role, capacity, sourceReference, observedAt]
+      properties:
+        status:
+          $ref: '#/components/schemas/AuthorityStatus'
+        role:
+          type: string
+          minLength: 1
+          description: Source-reported representative role.
+          example: DIRECTOR
+        capacity:
+          type: string
+          minLength: 1
+          description: Source-reported capacity or authority scope.
+          example: INDEPENDENTLY_AUTHORIZED
+        sourceReference:
+          $ref: '#/components/schemas/SourceReference'
+        observedAt:
+          $ref: '#/components/schemas/UtcTimestamp'
+        validityInterval:
+          $ref: '#/components/schemas/ValidityInterval'
+
+    CheckCompanyRepresentativeAuthorityResponse:
+      type: object
+      additionalProperties: false
+      required: [result]
+      properties:
+        result:
+          $ref: '#/components/schemas/AuthorityResult'
+      example:
+        result:
+          status: CONFIRMED
+          role: DIRECTOR
+          capacity: INDEPENDENTLY_AUTHORIZED
+          sourceReference: kvk:authority:12345678:2026-09-15T12:00:00Z
+          observedAt: '2026-09-15T12:00:00Z'
+          validityInterval:
+            validFrom: '2024-01-01T00:00:00Z'
+
+    TechnicalErrorResponse:
+      allOf:
+        - $ref: './common-components.yml#/components/schemas/ErrorResponse'
+      description: Technical error envelope used for transport, authentication, rate-limit, upstream, and contract failures.
+      example:
+        error:
+          code: ENABLEU_UPSTREAM_UNAVAILABLE
+          message: The configured upstream source is unavailable.
+          category: UNAVAILABLE
+          correlationId: fides-enableu-0001

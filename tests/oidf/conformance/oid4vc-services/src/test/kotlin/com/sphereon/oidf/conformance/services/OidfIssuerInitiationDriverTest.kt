@@ -26,20 +26,47 @@ class OidfIssuerInitiationDriverTest {
             )
 
         assertEquals("https://issuer.example.test", body.getValue("issuerId").jsonPrimitive.content)
-        assertEquals("EuPid", body.getValue("credentialConfigurationIds").jsonArray.single().jsonPrimitive.content)
-        assertTrue(body.getValue("authorizationCodeGrant").jsonPrimitive.content.toBoolean())
-        assertFalse(body.getValue("preAuthorizedCodeGrant").jsonPrimitive.content.toBoolean())
-        assertFalse(body.getValue("txCodeRequired").jsonPrimitive.content.toBoolean())
+        assertEquals(
+            "EuPid",
+            body
+                .getValue("credentialConfigurationIds")
+                .jsonArray
+                .single()
+                .jsonPrimitive.content
+        )
+        assertTrue(
+            body
+                .getValue("authorizationCodeGrant")
+                .jsonPrimitive.content
+                .toBoolean()
+        )
+        assertFalse(
+            body
+                .getValue("preAuthorizedCodeGrant")
+                .jsonPrimitive.content
+                .toBoolean()
+        )
+        assertFalse(
+            body
+                .getValue("txCodeRequired")
+                .jsonPrimitive.content
+                .toBoolean()
+        )
         assertEquals("oidf-test-123", body.getValue("state").jsonPrimitive.content)
         assertEquals(
             setOf("/given_name", "/family_name", "/birth_date", "/age_over_18"),
-            body.getValue("preSeededGroups").jsonArray
+            body
+                .getValue("preSeededGroups")
+                .jsonArray
                 .single()
                 .jsonObject
                 .getValue("attributes")
                 .jsonArray
-                .map { it.jsonObject.getValue("path").jsonPrimitive.content }
-                .toSet(),
+                .map {
+                    it.jsonObject
+                        .getValue("path")
+                        .jsonPrimitive.content
+                }.toSet(),
         )
         assertNull(body["credential_configuration_ids"])
         assertNull(body["credential_subject_data"])
@@ -56,9 +83,24 @@ class OidfIssuerInitiationDriverTest {
                 grantType = "pre_authorization_code",
             )
 
-        assertTrue(body.getValue("preAuthorizedCodeGrant").jsonPrimitive.content.toBoolean())
-        assertFalse(body.getValue("authorizationCodeGrant").jsonPrimitive.content.toBoolean())
-        assertTrue(body.getValue("txCodeRequired").jsonPrimitive.content.toBoolean())
+        assertTrue(
+            body
+                .getValue("preAuthorizedCodeGrant")
+                .jsonPrimitive.content
+                .toBoolean()
+        )
+        assertFalse(
+            body
+                .getValue("authorizationCodeGrant")
+                .jsonPrimitive.content
+                .toBoolean()
+        )
+        assertTrue(
+            body
+                .getValue("txCodeRequired")
+                .jsonPrimitive.content
+                .toBoolean()
+        )
         assertNull(body["state"])
     }
 }

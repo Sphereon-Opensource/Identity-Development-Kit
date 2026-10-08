@@ -1,0 +1,485 @@
+openapi: 3.0.4
+info:
+  title: Issuance Batch API Components
+  version: 0.1.0
+  description: >-
+    Request, result, and column-mapping value objects for the Issuance Batch API.
+    These components are referenced by issuance-batch-openapi.yml and are not served
+    on their own.
+paths: {}
+components:
+  schemas:
+    # ---- Column-to-claim mapping value objects ------------------------------
+    ClaimTransform:
+      type: object
+      description: |
+        Value transform applied between the raw tabular cell and the credential claim.
+        The set is closed so the operator UI, the server projection layer, and the audit
+        trail agree on every supported transform. The `type` discriminator selects the kind:
+          - `identity`: use the cell value unchanged.
+          - `constant`: ignore the cell and emit a fixed value.
+          - `date-format`: reparse the cell with `sourceFormat` and re-render it with `targetFormat`.
+          - `lower-case` / `upper-case`: change the case of the cell value.
+          - `trim`: strip leading and trailing whitespace.
+          - `split`: split the cell on `separator` and take the element at `index`.
+          - `concat`: join the named source columns with `separator`.
+      required: [type]
+      discriminator:
+        propertyName: type
+        mapping:
+          identity: '#/components/schemas/ClaimTransformIdentity'
+          constant: '#/components/schemas/ClaimTransformConstant'
+          date-format: '#/components/schemas/ClaimTransformDateFormat'
+          lower-case: '#/components/schemas/ClaimTransformLowerCase'
+          upper-case: '#/components/schemas/ClaimTransformUpperCase'
+          trim: '#/components/schemas/ClaimTransformTrim'
+          split: '#/components/schemas/ClaimTransformSplit'
+          concat: '#/components/schemas/ClaimTransformConcat'
+      oneOf:
+        - $ref: '#/components/schemas/ClaimTransformIdentity'
+        - $ref: '#/components/schemas/ClaimTransformConstant'
+        - $ref: '#/components/schemas/ClaimTransformDateFormat'
+        - $ref: '#/components/schemas/ClaimTransformLowerCase'
+        - $ref: '#/components/schemas/ClaimTransformUpperCase'
+        - $ref: '#/components/schemas/ClaimTransformTrim'
+        - $ref: '#/components/schemas/ClaimTransformSplit'
+        - $ref: '#/components/schemas/ClaimTransformConcat'
+
+    ClaimTransformIdentity:
+      type: object
+      description: Use the cell value unchanged. This is the default transform.
+      required: [type]
+      properties:
+        type:
+          type: string
+          enum: [identity]
+
+    ClaimTransformConstant:
+      type: object
+      description: Ignore the cell and emit a fixed value for every row.
+      required: [type, value]
+      properties:
+        type:
+          type: string
+          enum: [constant]
+        value:
+          type: string
+          description: The literal value written to the target claim.
+          example: NL
+
+    ClaimTransformDateFormat:
+      type: object
+      description: Reparse the cell with `sourceFormat` and re-render it with `targetFormat`.
+      required: [type, sourceFormat, targetFormat]
+      properties:
+        type:
+          type: string
+          enum: [date-format]
+        sourceFormat:
+          type: string
+          description: Pattern the cell value is parsed with.
+          example: dd-MM-yyyy
+        targetFormat:
+          type: string
+          description: Pattern the claim value is rendered with.
+          example: yyyy-MM-dd
+
+    ClaimTransformLowerCase:
+      type: object
+      description: Lower-case the cell value.
+      required: [type]
+      properties:
+        type:
+          type: string
+          enum: [lower-case]
+
+    ClaimTransformUpperCase:
+      type: object
+      description: Upper-case the cell value.
+      required: [type]
+      properties:
+        type:
+          type: string
+          enum: [upper-case]
+
+    ClaimTransformTrim:
+      type: object
+      description: Strip leading and trailing whitespace from the cell value.
+      required: [type]
+      properties:
+        type:
+          type: string
+          enum: [trim]
+
+    ClaimTransformSplit:
+      type: object
+      description: Split the cell value on `separator` and keep the element at `index`.
+      required: [type, separator, index]
+      properties:
+        type:
+          type: string
+          enum: [split]
+        separator:
+          type: string
+          description: The literal separator the cell value is split on.
+          example: " "
+        index:
+          type: integer
+          description: Zero-based index of the element to keep.
+          example: 0
+
+    ClaimTransformConcat:
+      type: object
+      description: Join the values of the named source columns with `separator`.
+      required: [type, sources, separator]
+      properties:
+        type:
+          type: string
+          enum: [concat]
+        sources:
+          type: array
+          description: Ordered source column names whose values are joined.
+          items:
+            type: string
+          example: [firstName, lastName]
+        separator:
+          type: string
+          description: The literal separator inserted between joined values.
+          example: " "
+
+    ColumnMapping:
+      type: object
+      description: >-
+        Single column-to-claim binding. `targetClaim` is an OID4VCI claims-path-pointer:
+        a list of segments addressing where the column value lands in the issued
+        credential's claims object.
+      required: [sourceColumn, targetClaim]
+      properties:
+        sourceColumn:
+          type: string
+          description: Name of the tabular column supplying the value.
+          example: given_name
+        targetClaim:
+          type: array
+          description: Ordered claims-path-pointer segments, for example `["address","locality"]`.
+          items:
+            type: string
+          example: [address, locality]
+        transform:
+          allOf:
+            - $ref: '#/components/schemas/ClaimTransform'
+          description: Transform applied to the cell value. Defaults to the `identity` transform.
+        required:
+          type: boolean
+          description: When true, a row with a blank or missing value for this column is rejected at mint.
+          default: false
+
+    SaveAsAttributeSource:
+      type: object
+      description: >-
+        Marker for the operator's "save this table as a reusable attribute source"
+        toggle. Carries the display name for the new ASSET party that backs the source.
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          description: Non-blank display name for the new ASSET party.
+          example: Q3 graduates roster
+
+    # ---- Per-recipient rejection --------------------------------------------
+    RejectedRecipient:
+      type: object
+      description: >-
+        Per-recipient mint failure. The run response carries a capped sample so the
+        operator can see which rows did not make it without a follow-up call; the full
+        detail lives behind the invitation batch errors endpoint.
+      required: [sourceItemId, reason, errorCode]
+      properties:
+        sourceItemId:
+          type: string
+          description: Identifier of the source row that was rejected.
+          example: row-42
+        reason:
+          type: string
+          description: Human-readable explanation of why the row was rejected.
+          example: Recipient column 'email' was blank
+        errorCode:
+          type: string
+          description: Stable machine-readable rejection code.
+          example: RECIPIENT_MISSING
+
+    # ---- Run request and result ---------------------------------------------
+    BatchInviteOrchestratorArgs:
+      type: object
+      description: |
+        Body of `POST /run`. Tenant and caller identity are resolved from the
+        authenticated session and are never accepted on the wire.
+
+        **Source input, exactly one of the two paths:**
+
+          - Upload: set `csvBase64` and `csvHeaders`. Optionally set
+            `saveAsAttributeSource` to promote the uploaded table to a reusable
+            ASSET-party-backed attribute source.
+          - Reuse: set `tabularSourceId` to reference an existing tabular source. The
+            upload and ingest steps are skipped and `saveAsAttributeSource` is ignored.
+
+        **Column mapping, at most one of the two paths:** reference a stored mapping
+        template with `mappingTemplateRef`, or pass the mapping inline with
+        `inlineColumns` and optionally persist it as a new template via `saveMappingAs`.
+        When neither is set, the credential configuration's own claim defaults apply.
+
+        **Mode.** `issuance` (default) issues a credential and requires
+        `credentialConfigurationId`. `verification` invites every row to present
+        against one DCQL request and requires `verifierInstanceId`, `clientId`,
+        `dcqlQuery`, and a `responseUri` or `redirectUri`. Those verification fields
+        are copied onto every row as `sharedContext`; do not put them on the row
+        target, which is `sourceId:batchId:rowId`.
+      required:
+        - emailSubject
+      properties:
+        originRef:
+          allOf:
+            - $ref: './invitation-components.yml#/components/schemas/InvitationOriginRef'
+          nullable: true
+          description: >-
+            Records which feature is minting this invitation, so the originating surface can later
+            list its own. Omit and the invitation is untraceable to a surface.
+        csvBase64:
+          type: string
+          format: byte
+          nullable: true
+          description: >-
+            Raw CSV bytes, base64-encoded. Required on the upload path; must be absent
+            when `tabularSourceId` is set.
+        csvHeaders:
+          type: array
+          nullable: true
+          description: >-
+            Ordered column names parsed by the caller from the CSV header row, used to
+            build the tabular schema. Required when `csvBase64` is set.
+          items:
+            type: string
+          example: [email, given_name, family_name]
+        businessKeyColumns:
+          type: array
+          nullable: true
+          description: >-
+            Subset of `csvHeaders` forming each row's business key. When absent or empty
+            it falls back to `[recipientColumn]`.
+          items:
+            type: string
+          example: [email]
+        recipientColumn:
+          type: string
+          description: Column whose value is the recipient's email address.
+          default: email
+        mappingTemplateRef:
+          type: string
+          format: uuid
+          nullable: true
+          description: >-
+            Identifier of a stored mapping template. When set, per-row claim projection is
+            driven by that template. Mutually exclusive with `inlineColumns`.
+        inlineColumns:
+          type: array
+          nullable: true
+          description: >-
+            Inline column-to-claim mapping, used when no template is referenced. Mutually
+            exclusive with `mappingTemplateRef`.
+          items:
+            $ref: '#/components/schemas/ColumnMapping'
+        saveMappingAs:
+          type: string
+          nullable: true
+          description: >-
+            When set together with `inlineColumns`, the mapping is persisted as a new
+            template under this name after the batch is submitted, and its identifier is
+            returned as `savedMappingTemplateId`.
+          example: Graduate diploma mapping
+        mode:
+          type: string
+          description: >-
+            `issuance` (default) mints credential.issuance invitations.
+            `verification` mints credential.verification invitations.
+          enum: [issuance, verification]
+          default: issuance
+        credentialConfigurationId:
+          type: string
+          nullable: true
+          description: >-
+            OID4VCI credential configuration the batch issues. Required when
+            `mode` is `issuance`. Ignored for verification.
+          example: EmployeeBadge
+        credentialFormat:
+          allOf:
+            - $ref: './wallet-credential-components.yml#/components/schemas/CredentialFormat'
+          description: >-
+            OID4VCI credential format hint. Issuance only. This field accepts credential formats,
+            including VCDM 1.1 `jwt_vc_json` and VCDM 2.0 `jwt_vc_json-ld`; presentation formats
+            such as `jwt_vp_json` are not valid here.
+          default: dc+sd-jwt
+        invitationTtlIso8601:
+          type: string
+          description: Invitation lifetime as an ISO 8601 duration.
+          default: P14D
+          example: P14D
+        landingUrlTemplate:
+          type: string
+          nullable: true
+          description: >-
+            URL template for the recipient's landing page. The literal `{token}` placeholder is
+            substituted with the recipient's invitation token at delivery time.
+
+
+            OMIT IT unless the batch genuinely needs a custom page. A configured template WINS over
+            the landing the action resolves to, so supplying one suppresses the tenant's registered
+            satellite landing: `/invite` for `credential.issuance`, the presentation landing
+            `/oid4vp/invite` for `credential.verification`. Supplying an issuance-shaped claim URL
+            for a verification batch therefore mails every recipient a link to a page that cannot
+            redeem their invitation.
+
+
+            When omitted, the delivery channel resolves the landing from the invitation's action and
+            the instance that owns it, and fails loudly if the tenant has no registered public
+            endpoint for it — which is the better failure than a link that 404s in the recipient's
+            inbox.
+          example: https://wallet.example.com/invite?t={token}
+        emailSubject:
+          type: string
+          description: Subject line of the invitation email.
+          example: Your diploma credential is ready
+        batchName:
+          type: string
+          nullable: true
+          description: Operator-friendly name for the batch. Defaults to a timestamp-derived value.
+          example: Q3 graduates
+        tabularSourceId:
+          type: string
+          nullable: true
+          description: >-
+            Reuse an existing tabular source instead of uploading. Mutually exclusive
+            with `csvBase64`.
+        saveAsAttributeSource:
+          allOf:
+            - $ref: '#/components/schemas/SaveAsAttributeSource'
+          nullable: true
+          description: >-
+            On the upload path, promote the uploaded table to a reusable
+            ASSET-party-backed attribute source. Ignored on the reuse path.
+        verifierInstanceId:
+          type: string
+          nullable: true
+          description: >-
+            OID4VP verifier instance that owns the presentation request. Required
+            when `mode` is `verification`. Copied into shared context as
+            `verifierInstanceId` because a batch row's target cannot name it.
+          example: b12f86b9-fab4-48c7-9e14-e0a930a64182
+        clientId:
+          type: string
+          nullable: true
+          description: >-
+            OID4VP client_id the verification handler requires. Required when
+            `mode` is `verification`.
+          example: 'x509_san_dns:verifier.acme.example'
+        dcqlQuery:
+          type: object
+          additionalProperties: true
+          nullable: true
+          description: >-
+            DCQL request the verification handler requires. Required when `mode`
+            is `verification`. Each credential query must include `meta`; a query
+            with only `id` and `format` is refused here rather than at afterMint.
+          example:
+            credentials:
+              - id: badge
+                format: dc+sd-jwt
+                meta:
+                  vct_values: ['https://acme.example/vct/badge']
+        responseUri:
+          type: string
+          format: uri
+          nullable: true
+          description: >-
+            OID4VP response_uri. One of `responseUri` or `redirectUri` is required
+            when `mode` is `verification`.
+          example: https://verifier.acme.example/oid4vp/response
+        redirectUri:
+          type: string
+          format: uri
+          nullable: true
+          description: >-
+            OID4VP redirect_uri. One of `responseUri` or `redirectUri` is required
+            when `mode` is `verification`.
+        nonce:
+          type: string
+          nullable: true
+          description: Optional nonce for the verification authorization request.
+        hookAllowList:
+          type: array
+          nullable: true
+          description: >-
+            Optional post-presentation hook command ids. When present, only the
+            listed hooks run for the verifier session.
+          items:
+            type: string
+          example: [hook.post-presentation.invitation-redeem]
+
+    BatchInviteOrchestratorResult:
+      type: object
+      description: >-
+        Outcome of one batch-invite run: the identifiers the operator follows the run
+        with, the row counts, and a capped sample of per-recipient rejections.
+      required:
+        - sourceId
+        - batchId
+        - invitationBatchId
+        - totalRowCount
+        - emittedCount
+        - rejectedAtMint
+      properties:
+        sourceId:
+          type: string
+          description: Identifier of the tabular source the run read from, uploaded or reused.
+        batchId:
+          type: string
+          description: Identifier of the tabular batch created for this run.
+        invitationBatchId:
+          type: string
+          description: >-
+            Identifier of the invitation batch the run minted into. Use it against the
+            invitation API to follow delivery progress.
+        totalRowCount:
+          type: integer
+          description: Number of rows read from the source.
+          example: 250
+        emittedCount:
+          type: integer
+          description: Number of invitations successfully minted and handed to delivery.
+          example: 248
+        rejectedAtMint:
+          type: integer
+          description: Number of rows rejected before an invitation could be minted.
+          example: 2
+        rejectedRecipients:
+          type: array
+          description: >-
+            Capped sample of the rejected rows. May be shorter than `rejectedAtMint`; the
+            full list lives behind the invitation batch errors endpoint.
+          items:
+            $ref: '#/components/schemas/RejectedRecipient'
+        savedMappingTemplateId:
+          type: string
+          format: uuid
+          nullable: true
+          description: >-
+            Identifier of the mapping template persisted for this run. Set only when
+            `saveMappingAs` was supplied and the template was stored successfully.
+        savedAttributeSourceId:
+          type: string
+          nullable: true
+          description: >-
+            Identifier of the ASSET party created for the reusable attribute source. Set
+            only when `saveAsAttributeSource` was supplied and registration succeeded;
+            null when not requested, on the reuse path, or when registration was skipped
+            without aborting the batch.

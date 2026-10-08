@@ -1,0 +1,2771 @@
+openapi: 3.0.4
+info:
+  title: Enterprise Organization API
+  version: 0.3.0
+  description: Generic typed event-stream operations for governed organization models and staged projections.
+servers:
+  - url: https://api.example.com/api/organization/v1
+  - url: http://localhost:8080/api/organization/v1
+security:
+  - bearer: []
+tags:
+  - name: EnterpriseOrganization
+  - name: EnterpriseOrganizationGraph
+paths:
+  /case-review-sources:read:
+    post:
+      tags: [EnterpriseOrganization]
+      operationId: readCaseReviewSource
+      x-command-id: organization.case.review-source
+      summary: Read current governed review inputs for a canonical case execution
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReadCaseReviewSourceArgs' }
+      responses:
+        '200':
+          description: Current canonical case, action and decision lineage
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CaseReviewSourceSnapshot' }
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+  /lifecycle-executions:reserve-form:
+    post:
+      tags: [EnterpriseOrganization]
+      operationId: reserveCaseFormWorkflow
+      x-command-id: organization.case-lifecycle.reserve-form
+      summary: Authorize and reserve a server-derived form execution identity
+      parameters:
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/IfMatch' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReserveCaseFormWorkflowRequest' }
+      responses:
+        '200':
+          description: Canonical immutable execution reservation
+          content:
+            application/json:
+              schema: { $ref: './enterprise-lifecycle-openapi.yml#/components/schemas/LifecycleLaunchReservation' }
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+  /lifecycle-executions:reserve:
+    post:
+      tags: [EnterpriseOrganization]
+      operationId: reserveCaseLifecycleExecution
+      x-command-id: organization.case-lifecycle.reserve
+      summary: Authorize and reserve a server-derived lifecycle execution identity
+      parameters:
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/IfMatch' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReserveCaseLifecycleRequest' }
+      responses:
+        '200':
+          description: Canonical immutable execution reservation
+          content:
+            application/json:
+              schema: { $ref: './enterprise-lifecycle-openapi.yml#/components/schemas/LifecycleLaunchReservation' }
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+  /lifecycle-executions:authorize:
+    post:
+      tags: [EnterpriseOrganization]
+      operationId: authorizeCaseLifecycleExecution
+      x-command-id: organization.case-lifecycle.authorize
+      summary: Authorize an operation on an existing canonical case execution
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [executionRef, operation]
+              properties:
+                executionRef: { $ref: './enterprise-lifecycle-openapi.yml#/components/schemas/LifecycleExecutionRef' }
+                operation: { type: string, minLength: 1 }
+      responses:
+        '200':
+          description: Authorized canonical execution and immutable launch event identity
+          content:
+            application/json:
+              schema: { $ref: './enterprise-lifecycle-openapi.yml#/components/schemas/LifecycleLaunchReservation' }
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+  /models:
+    post:
+      tags: [EnterpriseOrganization]
+      operationId: initializeOrganizationModel
+      x-command-id: organization.model.initialize
+      summary: Initialize a model event stream from a pinned semantic model
+      parameters:
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/IfMatch' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/InitializeModelRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/MutationResultResponse' }
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+  /models/{modelId}/stream:
+    get:
+      tags: [EnterpriseOrganization]
+      operationId: readOrganizationStream
+      x-command-id: organization.stream.read
+      summary: Read stream and active projection metadata
+      parameters:
+        - { $ref: '#/components/parameters/ModelId' }
+      responses:
+        '200':
+          description: Stream metadata
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OrganizationStreamMetadata' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '404': { $ref: './common-components.yml#/components/responses/NotFound' }
+  /models/{modelId}/replays:
+    post:
+      tags: [EnterpriseOrganization]
+      operationId: startOrganizationReplay
+      x-command-id: organization.replay.start
+      summary: Replay typed events into a staged projection revision
+      parameters:
+        - { $ref: '#/components/parameters/ModelId' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/IfMatch' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StartReplayRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/ReplayStatusResponse' }
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+  /models/{modelId}/replays/{projectionRevision}:
+    get:
+      tags: [EnterpriseOrganization]
+      operationId: inspectOrganizationReplay
+      x-command-id: organization.replay.inspect
+      summary: Inspect a staged or active replay
+      parameters:
+        - { $ref: '#/components/parameters/ModelId' }
+        - { $ref: '#/components/parameters/ProjectionRevision' }
+      responses:
+        '200': { $ref: '#/components/responses/ReplayStatusResponse' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '404': { $ref: './common-components.yml#/components/responses/NotFound' }
+  /models/{modelId}/replays/{projectionRevision}:activate:
+    post:
+      tags: [EnterpriseOrganization]
+      operationId: activateOrganizationReplay
+      x-command-id: organization.replay.activate
+      summary: Verify and atomically activate a staged projection revision
+      parameters:
+        - { $ref: '#/components/parameters/ModelId' }
+        - { $ref: '#/components/parameters/ProjectionRevision' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/IfMatch' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ActivateReplayRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/ReplayStatusResponse' }
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+  /models/{modelId}/parties:
+    post:
+      tags: [EnterpriseOrganizationGraph]
+      summary: Organization party register
+      operationId: organizationPartyRegister
+      x-command-id: organization.party.register
+      parameters:
+        - { $ref: '#/components/parameters/ModelId' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/IfMatch' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PartyMutationInput' }
+      responses:
+        '200': { $ref: '#/components/responses/GraphMutationResultResponse' }
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+  /models/{modelId}/parties/{recordId}:
+    put:
+      tags: [EnterpriseOrganizationGraph]
+      summary: Organization party revise
+      operationId: organizationPartyRevise
+      x-command-id: organization.party.revise
+      parameters:
+        - { $ref: '#/components/parameters/ModelId' }
+        - { $ref: '#/components/parameters/RecordId' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/IfMatch' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PartyMutationInput' }
+      responses:
+        '200': { $ref: '#/components/responses/GraphMutationResultResponse' }
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+  /models/{modelId}/parties/{recordId}:bind-semantic:
+    post:
+      tags: [EnterpriseOrganizationGraph]
+      summary: Organization party bind semantic
+      operationId: organizationPartyBindSemantic
+      x-command-id: organization.party.bind-semantic
+      parameters:
+        - { $ref: '#/components/parameters/ModelId' }
+        - { $ref: '#/components/parameters/RecordId' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/IfMatch' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PartyMutationInput' }
+      responses:
+        '200': { $ref: '#/components/responses/GraphMutationResultResponse' }
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+  /models/{modelId}/identifiers:
+    post:
+      tags: [EnterpriseOrganizationGraph]
+      summary: Organization identifier bind
+      operationId: organizationIdentifierBind
+      x-command-id: organization.identifier.bind
+      parameters:
+        - { $ref: '#/components/parameters/ModelId' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/IfMatch' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/IdentifierMutationInput' }
+      responses:
+        '200': { $ref: '#/components/responses/GraphMutationResultResponse' }
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+  /models/{modelId}/identifiers/{recordId}:verify:
+    post:
+      tags: [EnterpriseOrganizationGraph]
+      summary: Organization identifier verify
+      operationId: organizationIdentifierVerify
+      x-command-id: organization.identifier.verify
+      parameters:
+        - { $ref: '#/components/parameters/ModelId' }
+        - { $ref: '#/components/parameters/RecordId' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/IfMatch' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/IdentifierMutationInput' }
+      responses:
+        '200': { $ref: '#/components/responses/GraphMutationResultResponse' }
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+  /models/{modelId}/identifiers/{recordId}:supersede:
+    post:
+      tags: [EnterpriseOrganizationGraph]
+      summary: Organization identifier supersede
+      operationId: organizationIdentifierSupersede
+      x-command-id: organization.identifier.supersede
+      parameters:
+        - { $ref: '#/components/parameters/ModelId' }
+        - { $ref: '#/components/parameters/RecordId' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/IfMatch' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/IdentifierMutationInput' }
+      responses:
+        '200': { $ref: '#/components/responses/GraphMutationResultResponse' }
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+  /models/{modelId}/identifiers/{recordId}:
+    delete:
+      tags: [EnterpriseOrganizationGraph]
+      summary: Organization identifier remove
+      operationId: organizationIdentifierRemove
+      x-command-id: organization.identifier.remove
+      parameters:
+        - { $ref: '#/components/parameters/ModelId' }
+        - { $ref: '#/components/parameters/RecordId' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/IfMatch' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/IdentifierMutationInput' }
+      responses:
+        '200': { $ref: '#/components/responses/GraphMutationResultResponse' }
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+  /models/{modelId}/relationships:
+    post:
+      tags: [EnterpriseOrganizationGraph]
+      summary: Organization relationship establish
+      operationId: organizationRelationshipEstablish
+      x-command-id: organization.relationship.establish
+      parameters:
+        - { $ref: '#/components/parameters/ModelId' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/IfMatch' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RelationshipMutationInput' }
+      responses:
+        '200': { $ref: '#/components/responses/GraphMutationResultResponse' }
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+  /models/{modelId}/relationships/{recordId}:revise:
+    post:
+      tags: [EnterpriseOrganizationGraph]
+      summary: Organization relationship revise
+      operationId: organizationRelationshipRevise
+      x-command-id: organization.relationship.revise
+      parameters:
+        - { $ref: '#/components/parameters/ModelId' }
+        - { $ref: '#/components/parameters/RecordId' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/IfMatch' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RelationshipMutationInput' }
+      responses:
+        '200': { $ref: '#/components/responses/GraphMutationResultResponse' }
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+  /models/{modelId}/relationships/{recordId}:suspend:
+    post:
+      tags: [EnterpriseOrganizationGraph]
+      summary: Organization relationship suspend
+      operationId: organizationRelationshipSuspend
+      x-command-id: organization.relationship.suspend
+      parameters:
+        - { $ref: '#/components/parameters/ModelId' }
+        - { $ref: '#/components/parameters/RecordId' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/IfMatch' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RelationshipMutationInput' }
+      responses:
+        '200': { $ref: '#/components/responses/GraphMutationResultResponse' }
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+  /models/{modelId}/relationships/{recordId}:end:
+    post:
+      tags: [EnterpriseOrganizationGraph]
+      summary: Organization relationship end
+      operationId: organizationRelationshipEnd
+      x-command-id: organization.relationship.end
+      parameters:
+        - { $ref: '#/components/parameters/ModelId' }
+        - { $ref: '#/components/parameters/RecordId' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/IfMatch' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RelationshipMutationInput' }
+      responses:
+        '200': { $ref: '#/components/responses/GraphMutationResultResponse' }
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+  /models/{modelId}/agreements:
+    post:
+      tags: [EnterpriseOrganizationGraph]
+      summary: Organization agreement establish
+      operationId: organizationAgreementEstablish
+      x-command-id: organization.agreement.establish
+      parameters:
+        - { $ref: '#/components/parameters/ModelId' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/IfMatch' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AgreementMutationInput' }
+      responses:
+        '200': { $ref: '#/components/responses/GraphMutationResultResponse' }
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+  /models/{modelId}/agreements/{recordId}:revise:
+    post:
+      tags: [EnterpriseOrganizationGraph]
+      summary: Organization agreement revise
+      operationId: organizationAgreementRevise
+      x-command-id: organization.agreement.revise
+      parameters:
+        - { $ref: '#/components/parameters/ModelId' }
+        - { $ref: '#/components/parameters/RecordId' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/IfMatch' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AgreementMutationInput' }
+      responses:
+        '200': { $ref: '#/components/responses/GraphMutationResultResponse' }
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+  /models/{modelId}/agreements/{recordId}:activate:
+    post:
+      tags: [EnterpriseOrganizationGraph]
+      summary: Organization agreement activate
+      operationId: organizationAgreementActivate
+      x-command-id: organization.agreement.activate
+      parameters:
+        - { $ref: '#/components/parameters/ModelId' }
+        - { $ref: '#/components/parameters/RecordId' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/IfMatch' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AgreementMutationInput' }
+      responses:
+        '200': { $ref: '#/components/responses/GraphMutationResultResponse' }
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+  /models/{modelId}/agreements/{recordId}:suspend:
+    post:
+      tags: [EnterpriseOrganizationGraph]
+      summary: Organization agreement suspend
+      operationId: organizationAgreementSuspend
+      x-command-id: organization.agreement.suspend
+      parameters:
+        - { $ref: '#/components/parameters/ModelId' }
+        - { $ref: '#/components/parameters/RecordId' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/IfMatch' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AgreementMutationInput' }
+      responses:
+        '200': { $ref: '#/components/responses/GraphMutationResultResponse' }
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+  /models/{modelId}/agreements/{recordId}:end:
+    post:
+      tags: [EnterpriseOrganizationGraph]
+      summary: Organization agreement end
+      operationId: organizationAgreementEnd
+      x-command-id: organization.agreement.end
+      parameters:
+        - { $ref: '#/components/parameters/ModelId' }
+        - { $ref: '#/components/parameters/RecordId' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/IfMatch' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AgreementMutationInput' }
+      responses:
+        '200': { $ref: '#/components/responses/GraphMutationResultResponse' }
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+  /models/{modelId}/assignments:
+    post:
+      tags: [EnterpriseOrganizationGraph]
+      summary: Organization assignment create
+      operationId: organizationAssignmentCreate
+      x-command-id: organization.assignment.create
+      parameters:
+        - { $ref: '#/components/parameters/ModelId' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/IfMatch' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AssignmentMutationInput' }
+      responses:
+        '200': { $ref: '#/components/responses/GraphMutationResultResponse' }
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+  /models/{modelId}/assignments/{recordId}:revise:
+    post:
+      tags: [EnterpriseOrganizationGraph]
+      summary: Organization assignment revise
+      operationId: organizationAssignmentRevise
+      x-command-id: organization.assignment.revise
+      parameters:
+        - { $ref: '#/components/parameters/ModelId' }
+        - { $ref: '#/components/parameters/RecordId' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/IfMatch' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AssignmentMutationInput' }
+      responses:
+        '200': { $ref: '#/components/responses/GraphMutationResultResponse' }
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+  /models/{modelId}/assignments/{recordId}:activate:
+    post:
+      tags: [EnterpriseOrganizationGraph]
+      summary: Organization assignment activate
+      operationId: organizationAssignmentActivate
+      x-command-id: organization.assignment.activate
+      parameters:
+        - { $ref: '#/components/parameters/ModelId' }
+        - { $ref: '#/components/parameters/RecordId' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/IfMatch' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AssignmentMutationInput' }
+      responses:
+        '200': { $ref: '#/components/responses/GraphMutationResultResponse' }
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+  /models/{modelId}/assignments/{recordId}:expire:
+    post:
+      tags: [EnterpriseOrganizationGraph]
+      summary: Organization assignment expire
+      operationId: organizationAssignmentExpire
+      x-command-id: organization.assignment.expire
+      parameters:
+        - { $ref: '#/components/parameters/ModelId' }
+        - { $ref: '#/components/parameters/RecordId' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/IfMatch' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AssignmentMutationInput' }
+      responses:
+        '200': { $ref: '#/components/responses/GraphMutationResultResponse' }
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+  /models/{modelId}/assignments/{recordId}:revoke:
+    post:
+      tags: [EnterpriseOrganizationGraph]
+      summary: Organization assignment revoke
+      operationId: organizationAssignmentRevoke
+      x-command-id: organization.assignment.revoke
+      parameters:
+        - { $ref: '#/components/parameters/ModelId' }
+        - { $ref: '#/components/parameters/RecordId' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/IfMatch' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AssignmentMutationInput' }
+      responses:
+        '200': { $ref: '#/components/responses/GraphMutationResultResponse' }
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+  /models/{modelId}/assets:
+    post:
+      tags: [EnterpriseOrganizationGraph]
+      summary: Organization asset register
+      operationId: organizationAssetRegister
+      x-command-id: organization.asset.register
+      parameters:
+        - { $ref: '#/components/parameters/ModelId' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/IfMatch' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AssetMutationInput' }
+      responses:
+        '200': { $ref: '#/components/responses/GraphMutationResultResponse' }
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+  /models/{modelId}/assets/{recordId}/resource:
+    put:
+      tags: [EnterpriseOrganizationGraph]
+      summary: Organization resource revise
+      operationId: organizationResourceRevise
+      x-command-id: organization.resource.revise
+      parameters:
+        - { $ref: '#/components/parameters/ModelId' }
+        - { $ref: '#/components/parameters/RecordId' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/IfMatch' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AssetMutationInput' }
+      responses:
+        '200': { $ref: '#/components/responses/GraphMutationResultResponse' }
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+  /models/{modelId}/capabilities:
+    post:
+      tags: [EnterpriseOrganizationGraph]
+      summary: Organization capability grant
+      operationId: organizationCapabilityGrant
+      x-command-id: organization.capability.grant
+      parameters:
+        - { $ref: '#/components/parameters/ModelId' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/IfMatch' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CapabilityMutationInput' }
+      responses:
+        '200': { $ref: '#/components/responses/GraphMutationResultResponse' }
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+  /models/{modelId}/capabilities/{recordId}:suspend:
+    post:
+      tags: [EnterpriseOrganizationGraph]
+      summary: Organization capability suspend
+      operationId: organizationCapabilitySuspend
+      x-command-id: organization.capability.suspend
+      parameters:
+        - { $ref: '#/components/parameters/ModelId' }
+        - { $ref: '#/components/parameters/RecordId' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/IfMatch' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CapabilityMutationInput' }
+      responses:
+        '200': { $ref: '#/components/responses/GraphMutationResultResponse' }
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+  /models/{modelId}/capabilities/{recordId}:resume:
+    post:
+      tags: [EnterpriseOrganizationGraph]
+      summary: Organization capability resume
+      operationId: organizationCapabilityResume
+      x-command-id: organization.capability.resume
+      parameters:
+        - { $ref: '#/components/parameters/ModelId' }
+        - { $ref: '#/components/parameters/RecordId' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/IfMatch' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CapabilityMutationInput' }
+      responses:
+        '200': { $ref: '#/components/responses/GraphMutationResultResponse' }
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+  /models/{modelId}/capabilities/{recordId}:revoke:
+    post:
+      tags: [EnterpriseOrganizationGraph]
+      summary: Organization capability revoke
+      operationId: organizationCapabilityRevoke
+      x-command-id: organization.capability.revoke
+      parameters:
+        - { $ref: '#/components/parameters/ModelId' }
+        - { $ref: '#/components/parameters/RecordId' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/IfMatch' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CapabilityMutationInput' }
+      responses:
+        '200': { $ref: '#/components/responses/GraphMutationResultResponse' }
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+  /models/{modelId}/source-assertions:record:
+    post:
+      tags: [EnterpriseOrganizationGraph]
+      summary: Organization source record
+      operationId: organizationSourceRecord
+      x-command-id: organization.source.record
+      parameters:
+        - { $ref: '#/components/parameters/ModelId' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/IfMatch' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SourceAssertionEvidence' }
+      responses:
+        '200': { $ref: '#/components/responses/GraphMutationResultResponse' }
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+  /models/{modelId}/source-assertions/{recordId}:refresh:
+    post:
+      tags: [EnterpriseOrganizationGraph]
+      summary: Organization source refresh
+      operationId: organizationSourceRefresh
+      x-command-id: organization.source.refresh
+      parameters:
+        - { $ref: '#/components/parameters/ModelId' }
+        - { $ref: '#/components/parameters/RecordId' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/IfMatch' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SourceAssertionEvidence' }
+      responses:
+        '200': { $ref: '#/components/responses/GraphMutationResultResponse' }
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+  /models/{modelId}/source-assertions/{recordId}:supersede:
+    post:
+      tags: [EnterpriseOrganizationGraph]
+      summary: Organization source supersede
+      operationId: organizationSourceSupersede
+      x-command-id: organization.source.supersede
+      parameters:
+        - { $ref: '#/components/parameters/ModelId' }
+        - { $ref: '#/components/parameters/RecordId' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/IfMatch' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SourceAssertionEvidence' }
+      responses:
+        '200': { $ref: '#/components/responses/GraphMutationResultResponse' }
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+  /models/{modelId}/decisions/{recordId}:supersede:
+    post:
+      tags: [EnterpriseOrganizationGraph]
+      summary: Organization decision supersede
+      operationId: organizationDecisionSupersede
+      x-command-id: organization.decision.supersede
+      description: >-
+        Records a decision that replaces an earlier one. Like organization.policy.evaluate, a decision
+        that names a case makes its principal a reader of that case, so the link is authorized against
+        the case and a principal the case neither names nor policy admits gets 403.
+      parameters:
+        - { $ref: '#/components/parameters/ModelId' }
+        - { $ref: '#/components/parameters/RecordId' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/IfMatch' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EvaluatePolicyRequest' }
+      responses:
+        '200':
+          description: Append-only superseding decision evidence
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PolicyDecisionEvidence' }
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+  /models/{modelId}/source-assertions:request:
+    post:
+      tags: [EnterpriseOrganizationGraph]
+      summary: Organization source request
+      operationId: organizationSourceRequest
+      x-command-id: organization.source.request
+      parameters:
+        - { $ref: '#/components/parameters/ModelId' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/IfMatch' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RequestSourceAssertionRequest' }
+      responses:
+        '200':
+          description: Accepted result
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SourceAssertionExecutionReceipt' }
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+        '503': { $ref: './common-components.yml#/components/responses/Error' }
+  /models/{modelId}/decisions:evaluate:
+    post:
+      tags: [EnterpriseOrganizationGraph]
+      summary: Organization policy evaluate
+      operationId: organizationPolicyEvaluate
+      x-command-id: organization.policy.evaluate
+      description: >-
+        Evaluates the pinned inputs against the bound policy and records the decision. When the request
+        names a case, the decision's principal becomes a reader of that case, so linking to a case is
+        authorized against it: the calling principal must be one the case names, or one the tenant's
+        authorization policy permits to write to it, and gets 403 otherwise.
+      parameters:
+        - { $ref: '#/components/parameters/ModelId' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/IfMatch' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EvaluatePolicyRequest' }
+      responses:
+        '200':
+          description: Accepted result
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PolicyDecisionEvidence' }
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+        '503': { $ref: './common-components.yml#/components/responses/Error' }
+  /models/{modelId}/records/{recordType}/{recordId}:
+    get:
+      tags: [EnterpriseOrganizationGraph]
+      summary: Organization record read
+      operationId: organizationRecordRead
+      x-command-id: organization.record.read
+      parameters:
+        - { $ref: '#/components/parameters/ModelId' }
+        - { $ref: '#/components/parameters/RecordId' }
+        - { $ref: '#/components/parameters/RecordType' }
+        - { $ref: '#/components/parameters/EffectiveAt' }
+        - { $ref: '#/components/parameters/RecordedAt' }
+      responses:
+        '200':
+          description: Authorized organization graph result
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OrganizationGraphRecord' }
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '404': { $ref: './common-components.yml#/components/responses/NotFound' }
+  /models/{modelId}/records:
+    get:
+      tags: [EnterpriseOrganizationGraph]
+      summary: Organization record list
+      operationId: organizationRecordList
+      x-command-id: organization.record.list
+      parameters:
+        - { $ref: '#/components/parameters/ModelId' }
+        - { $ref: '#/components/parameters/EffectiveAt' }
+        - { $ref: '#/components/parameters/RecordedAt' }
+        - { $ref: './common-components.yml#/components/parameters/Limit' }
+        - { $ref: './common-components.yml#/components/parameters/Offset' }
+        - { $ref: '#/components/parameters/RecordTypeQuery' }
+      responses:
+        '200':
+          description: Authorized organization graph result
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OrganizationGraphPage' }
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '404': { $ref: './common-components.yml#/components/responses/NotFound' }
+  /models/{modelId}/graph:
+    get:
+      tags: [EnterpriseOrganizationGraph]
+      summary: Organization graph read
+      operationId: organizationGraphRead
+      x-command-id: organization.graph.read
+      parameters:
+        - { $ref: '#/components/parameters/ModelId' }
+        - { $ref: '#/components/parameters/EffectiveAt' }
+        - { $ref: '#/components/parameters/RecordedAt' }
+      responses:
+        '200':
+          description: Authorized organization graph result
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OrganizationGraphView' }
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '404': { $ref: './common-components.yml#/components/responses/NotFound' }
+  /models/{modelId}/projection:
+    get:
+      tags: [EnterpriseOrganizationGraph]
+      summary: Organization projection inspect
+      operationId: organizationProjectionInspect
+      x-command-id: organization.projection.inspect
+      parameters:
+        - { $ref: '#/components/parameters/ModelId' }
+      responses:
+        '200':
+          description: Authorized organization graph result
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OrganizationProjectionStatus' }
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '404': { $ref: './common-components.yml#/components/responses/NotFound' }
+  /models/{modelId}/source-assertions/{recordId}:
+    get:
+      tags: [EnterpriseOrganizationGraph]
+      summary: Organization source inspect
+      operationId: organizationSourceInspect
+      x-command-id: organization.source.inspect
+      parameters:
+        - { $ref: '#/components/parameters/ModelId' }
+        - { $ref: '#/components/parameters/RecordId' }
+      responses:
+        '200':
+          description: Authorized organization graph result
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SourceAssertionRecord' }
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '404': { $ref: './common-components.yml#/components/responses/NotFound' }
+  /models/{modelId}/decisions/{recordId}:
+    get:
+      tags: [EnterpriseOrganizationGraph]
+      summary: Organization decision read
+      operationId: organizationDecisionRead
+      x-command-id: organization.decision.read
+      parameters:
+        - { $ref: '#/components/parameters/ModelId' }
+        - { $ref: '#/components/parameters/RecordId' }
+      responses:
+        '200':
+          description: Authorized organization graph result
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PolicyDecisionEvidence' }
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '404': { $ref: './common-components.yml#/components/responses/NotFound' }
+
+  /models/{modelId}/cases:
+    post:
+      tags: [EnterpriseOrganization]
+      operationId: createCase
+      x-command-id: organization.case.create
+      summary: Create Case
+      parameters:
+        - { $ref: '#/components/parameters/ModelId' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/IfMatch' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: './enterprise-contract-components.yml#/components/schemas/BusinessCase' }
+      responses:
+        '200':
+          description: Successful createCase result.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CaseCommandResult' }
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '404': { $ref: './common-components.yml#/components/responses/NotFound' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+  /models/{modelId}/cases/{caseId}:
+    get:
+      tags: [EnterpriseOrganization]
+      operationId: readCase
+      x-command-id: organization.case.read
+      summary: Read Case
+      description: >-
+        Returns the focused case view for a principal the case names as a party, or for a principal the tenant's
+        authorization policy permits. A principal that is neither gets 403, and that refusal is
+        identical whether or not the case exists in the tenant, so it cannot be used to discover
+        which cases a tenant holds. 404 therefore means the opposite of a refusal: the principal
+        would have been allowed to read this case, and it is not there.
+      parameters:
+        - { $ref: '#/components/parameters/ModelId' }
+        - { $ref: '#/components/parameters/CaseId' }
+        - { $ref: '#/components/parameters/CaseTypeNamespace' }
+        - { $ref: '#/components/parameters/CaseType' }
+      responses:
+        '200':
+          description: Successful readCase result.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CaseView' }
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '404': { $ref: './common-components.yml#/components/responses/NotFound' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+  /models/{modelId}/cases/{caseId}/actions:
+    post:
+      tags: [EnterpriseOrganization]
+      operationId: submitCaseAction
+      x-command-id: organization.case-action.submit
+      summary: Submit Case Action
+      parameters:
+        - { $ref: '#/components/parameters/ModelId' }
+        - { $ref: '#/components/parameters/CaseId' }
+        - { $ref: '#/components/parameters/CaseTypeNamespace' }
+        - { $ref: '#/components/parameters/CaseType' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/IfMatch' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CaseActionSubmission' }
+      responses:
+        '200':
+          description: Successful submitCaseAction result.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CaseCommandResult' }
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '404': { $ref: './common-components.yml#/components/responses/NotFound' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+  /models/{modelId}/cases/{caseId}/transitions:evaluate:
+    post:
+      tags: [EnterpriseOrganization]
+      operationId: evaluateCaseTransition
+      x-command-id: organization.case-transition.evaluate
+      summary: Evaluate Case Transition
+      parameters:
+        - { $ref: '#/components/parameters/ModelId' }
+        - { $ref: '#/components/parameters/CaseId' }
+        - { $ref: '#/components/parameters/CaseTypeNamespace' }
+        - { $ref: '#/components/parameters/CaseType' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/IfMatch' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ArtifactRef' }
+      responses:
+        '200':
+          description: Successful evaluateCaseTransition result.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TransitionEvaluation' }
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '404': { $ref: './common-components.yml#/components/responses/NotFound' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+  /models/{modelId}/cases/{caseId}/transitions:apply:
+    post:
+      tags: [EnterpriseOrganization]
+      operationId: applyCaseTransition
+      x-command-id: organization.case-transition.apply
+      summary: Apply Case Transition
+      parameters:
+        - { $ref: '#/components/parameters/ModelId' }
+        - { $ref: '#/components/parameters/CaseId' }
+        - { $ref: '#/components/parameters/CaseTypeNamespace' }
+        - { $ref: '#/components/parameters/CaseType' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/IfMatch' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: './enterprise-contract-components.yml#/components/schemas/CaseStageTransition' }
+      responses:
+        '200':
+          description: Successful applyCaseTransition result.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CaseCommandResult' }
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '404': { $ref: './common-components.yml#/components/responses/NotFound' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+  /models/{modelId}/cases/{caseId}/evidence:
+    post:
+      tags: [EnterpriseOrganization]
+      operationId: recordEvidence
+      x-command-id: organization.evidence.record
+      summary: Record Evidence
+      description: >-
+        Records one evidence submission on a case. The submitter reference the body carries makes that
+        party a reader of the case, so the append itself is authorized against the case: the calling
+        principal must be one the case names, or one the tenant's authorization policy permits to write
+        to it. A principal that is neither gets 403, identically whether or not the case exists.
+      parameters:
+        - { $ref: '#/components/parameters/ModelId' }
+        - { $ref: '#/components/parameters/CaseId' }
+        - { $ref: '#/components/parameters/CaseTypeNamespace' }
+        - { $ref: '#/components/parameters/CaseType' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/IfMatch' }
+        - { $ref: '#/components/parameters/IfMatchSubmission' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: './enterprise-contract-components.yml#/components/schemas/EvidenceSubmission' }
+      responses:
+        '200':
+          description: Successful recordEvidence result.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CaseCommandResult' }
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '404': { $ref: './common-components.yml#/components/responses/NotFound' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+  /models/{modelId}/cases/{caseId}/evidence/{submissionId}/verification-requests:
+    post:
+      tags: [EnterpriseOrganization]
+      operationId: requestEvidenceVerification
+      x-command-id: organization.evidence-verification.request
+      summary: Verify governed evidence
+      parameters:
+        - { $ref: '#/components/parameters/ModelId' }
+        - { $ref: '#/components/parameters/CaseId' }
+        - { $ref: '#/components/parameters/SubmissionId' }
+        - { $ref: '#/components/parameters/CaseTypeNamespace' }
+        - { $ref: '#/components/parameters/CaseType' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/IfMatch' }
+        - { $ref: '#/components/parameters/IfMatchSubmission' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: Empty object; verification behavior is governed by the pinned evidence requirement.
+              additionalProperties: { type: string }
+              maxProperties: 0
+      responses:
+        '200':
+          description: Successful requestEvidenceVerification result.
+          content:
+            application/json:
+              schema: { $ref: './enterprise-contract-components.yml#/components/schemas/EvidenceVerificationResult' }
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '404': { $ref: './common-components.yml#/components/responses/NotFound' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+  /models/{modelId}/cases/{caseId}/evidence/{submissionId}/verification-requests:complete:
+    post:
+      tags: [EnterpriseOrganization]
+      operationId: completeEvidenceVerification
+      x-command-id: organization.evidence-verification.complete
+      summary: Verify governed evidence
+      parameters:
+        - { $ref: '#/components/parameters/ModelId' }
+        - { $ref: '#/components/parameters/CaseId' }
+        - { $ref: '#/components/parameters/SubmissionId' }
+        - { $ref: '#/components/parameters/CaseTypeNamespace' }
+        - { $ref: '#/components/parameters/CaseType' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/IfMatch' }
+        - { $ref: '#/components/parameters/IfMatchSubmission' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [operationId], properties: { operationId: { type: string } } }
+      responses:
+        '200':
+          description: Successful completeEvidenceVerification result.
+          content:
+            application/json:
+              schema: { $ref: './enterprise-contract-components.yml#/components/schemas/EvidenceVerificationResult' }
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '404': { $ref: './common-components.yml#/components/responses/NotFound' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+  /models/{modelId}/cases/{caseId}/evidence/{submissionId}:validate:
+    post:
+      tags: [EnterpriseOrganization]
+      operationId: validateEvidence
+      x-command-id: organization.evidence.validate
+      summary: Validate Evidence
+      parameters:
+        - { $ref: '#/components/parameters/ModelId' }
+        - { $ref: '#/components/parameters/CaseId' }
+        - { $ref: '#/components/parameters/SubmissionId' }
+        - { $ref: '#/components/parameters/CaseTypeNamespace' }
+        - { $ref: '#/components/parameters/CaseType' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/IfMatch' }
+        - { $ref: '#/components/parameters/IfMatchSubmission' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EvidenceValidationResult' }
+      responses:
+        '200':
+          description: Successful validateEvidence result.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CaseCommandResult' }
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '404': { $ref: './common-components.yml#/components/responses/NotFound' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+  /models/{modelId}/cases/{caseId}/evidence/{submissionId}:dispose:
+    post:
+      tags: [EnterpriseOrganization]
+      operationId: disposeEvidence
+      x-command-id: organization.evidence.dispose
+      summary: Dispose Evidence
+      parameters:
+        - { $ref: '#/components/parameters/ModelId' }
+        - { $ref: '#/components/parameters/CaseId' }
+        - { $ref: '#/components/parameters/SubmissionId' }
+        - { $ref: '#/components/parameters/CaseTypeNamespace' }
+        - { $ref: '#/components/parameters/CaseType' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/IfMatch' }
+        - { $ref: '#/components/parameters/IfMatchSubmission' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DisposeEvidenceRequest' }
+      responses:
+        '200':
+          description: Successful disposeEvidence result.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CaseCommandResult' }
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '404': { $ref: './common-components.yml#/components/responses/NotFound' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+  /models/{modelId}/cases/{caseId}/confirmations:
+    post:
+      tags: [EnterpriseOrganization]
+      operationId: recordCaseConfirmation
+      x-command-id: organization.case-confirmation.record
+      summary: Record Case Confirmation
+      parameters:
+        - { $ref: '#/components/parameters/ModelId' }
+        - { $ref: '#/components/parameters/CaseId' }
+        - { $ref: '#/components/parameters/CaseTypeNamespace' }
+        - { $ref: '#/components/parameters/CaseType' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/IfMatch' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CaseConfirmation' }
+      responses:
+        '200':
+          description: Successful recordCaseConfirmation result.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CaseCommandResult' }
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '404': { $ref: './common-components.yml#/components/responses/NotFound' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+  /models/{modelId}/cases/{caseId}/receipts:
+    post:
+      tags: [EnterpriseOrganization]
+      operationId: attachIntegrationReceipt
+      x-command-id: organization.integration-receipt.attach
+      summary: Attach Integration Receipt
+      parameters:
+        - { $ref: '#/components/parameters/ModelId' }
+        - { $ref: '#/components/parameters/CaseId' }
+        - { $ref: '#/components/parameters/CaseTypeNamespace' }
+        - { $ref: '#/components/parameters/CaseType' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/IfMatch' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: './enterprise-contract-components.yml#/components/schemas/IntegrationReceiptRef' }
+      responses:
+        '200':
+          description: Successful attachIntegrationReceipt result.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CaseCommandResult' }
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '404': { $ref: './common-components.yml#/components/responses/NotFound' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+  /models/{modelId}/cases/{caseId}/lifecycle-receipts:
+    post:
+      tags: [EnterpriseOrganization]
+      operationId: attachLifecycleReceipt
+      x-command-id: organization.lifecycle-receipt.attach
+      summary: Attach Lifecycle Receipt
+      parameters:
+        - { $ref: '#/components/parameters/ModelId' }
+        - { $ref: '#/components/parameters/CaseId' }
+        - { $ref: '#/components/parameters/CaseTypeNamespace' }
+        - { $ref: '#/components/parameters/CaseType' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/IfMatch' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LifecycleReceipt' }
+      responses:
+        '200':
+          description: Successful attachLifecycleReceipt result.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CaseCommandResult' }
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '404': { $ref: './common-components.yml#/components/responses/NotFound' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+  /models/{modelId}/cases/{caseId}/lifecycle-plans:activate:
+    post:
+      tags: [EnterpriseOrganization]
+      operationId: activateLifecyclePlan
+      x-command-id: organization.lifecycle-plan.activate
+      summary: Activate Lifecycle Plan
+      parameters:
+        - { $ref: '#/components/parameters/ModelId' }
+        - { $ref: '#/components/parameters/CaseId' }
+        - { $ref: '#/components/parameters/CaseTypeNamespace' }
+        - { $ref: '#/components/parameters/CaseType' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/IfMatch' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ActivateLifecyclePlanRequest' }
+      responses:
+        '200':
+          description: Successful activateLifecyclePlan result.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CaseCommandResult' }
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '404': { $ref: './common-components.yml#/components/responses/NotFound' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+  /models/{modelId}/cases/{caseId}/timeline:
+    get:
+      tags: [EnterpriseOrganization]
+      operationId: readCaseTimeline
+      x-command-id: organization.case-timeline.read
+      summary: Read Case Timeline
+      description: >-
+        Returns the case's event timeline for a principal the case names as a party, or for a principal the tenant's
+        authorization policy permits. A principal that is neither gets 403, and that refusal is
+        identical whether or not the case exists in the tenant, so it cannot be used to discover
+        which cases a tenant holds. 404 therefore means the opposite of a refusal: the principal
+        would have been allowed to read this case, and it is not there.
+      parameters:
+        - { $ref: '#/components/parameters/ModelId' }
+        - { $ref: '#/components/parameters/CaseId' }
+        - { $ref: '#/components/parameters/CaseTypeNamespace' }
+        - { $ref: '#/components/parameters/CaseType' }
+        - { $ref: './common-components.yml#/components/parameters/Limit' }
+        - { $ref: './common-components.yml#/components/parameters/Offset' }
+        - { $ref: './common-components.yml#/components/parameters/Sort' }
+        - { $ref: './common-components.yml#/components/parameters/SortDirection' }
+      responses:
+        '200':
+          description: Successful readCaseTimeline result.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CaseTimelinePage' }
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '404': { $ref: './common-components.yml#/components/responses/NotFound' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+  /models/{modelId}/cases/{caseId}/lineage:
+    get:
+      tags: [EnterpriseOrganization]
+      operationId: readCaseLineage
+      x-command-id: organization.case-lineage.read
+      summary: Read Case Lineage
+      description: >-
+        Returns the case's artifact lineage for a principal the case names as a party, or for a principal the tenant's
+        authorization policy permits. A principal that is neither gets 403, and that refusal is
+        identical whether or not the case exists in the tenant, so it cannot be used to discover
+        which cases a tenant holds. 404 therefore means the opposite of a refusal: the principal
+        would have been allowed to read this case, and it is not there.
+      parameters:
+        - { $ref: '#/components/parameters/ModelId' }
+        - { $ref: '#/components/parameters/CaseId' }
+        - { $ref: '#/components/parameters/CaseTypeNamespace' }
+        - { $ref: '#/components/parameters/CaseType' }
+      responses:
+        '200':
+          description: Successful readCaseLineage result.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CaseLineage' }
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '404': { $ref: './common-components.yml#/components/responses/NotFound' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+  /models/{modelId}/cases/{caseId}/gates:override:
+    post:
+      tags: [EnterpriseOrganization]
+      operationId: overrideCaseGate
+      x-command-id: organization.case-gate.override
+      summary: Override Case Gate
+      description: >-
+        Authorizes an override of a started, not-yet-elapsed elapsed gate. A policy denial is recorded
+        canonically as OVERRIDE_DENIED and returned as `Ok`; it is not a refusal. A policy engine that is
+        unavailable, unhealthy or failing answers 503 with nothing recorded. Refused as INVALID_STATE for
+        a cancelled or completed case and for a gate instance that already carries a granted override.
+        A replay never restates delivery (`notification` is NOT_APPLICABLE); re-drive it with
+        notifyCaseControl.
+      parameters:
+        - { $ref: '#/components/parameters/ModelId' }
+        - { $ref: '#/components/parameters/CaseId' }
+        - { $ref: '#/components/parameters/CaseTypeNamespace' }
+        - { $ref: '#/components/parameters/CaseType' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/IfMatch' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OverrideCaseGateArgs' }
+      responses:
+        '200':
+          description: Successful overrideCaseGate result.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CaseControlResult' }
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '404': { $ref: './common-components.yml#/components/responses/NotFound' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+        '503': { $ref: '#/components/responses/PolicyUnavailable' }
+  /models/{modelId}/cases/{caseId}:cancel:
+    post:
+      tags: [EnterpriseOrganization]
+      operationId: cancelCase
+      x-command-id: organization.case.cancel
+      summary: Cancel Case
+      description: >-
+        Canonically cancels an open case. Refused as INVALID_STATE once the case is already CANCELLED
+        or COMPLETED, or once a lifecycle plan has been activated on it.
+      parameters:
+        - { $ref: '#/components/parameters/ModelId' }
+        - { $ref: '#/components/parameters/CaseId' }
+        - { $ref: '#/components/parameters/CaseTypeNamespace' }
+        - { $ref: '#/components/parameters/CaseType' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/IfMatch' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CancelCaseArgs' }
+      responses:
+        '200':
+          description: Successful cancelCase result.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CaseControlResult' }
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '404': { $ref: './common-components.yml#/components/responses/NotFound' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+  /models/{modelId}/cases/{caseId}/controls:notify:
+    post:
+      tags: [EnterpriseOrganization]
+      operationId: notifyCaseControl
+      x-command-id: organization.case-control.notify
+      summary: Notify Case Control
+      description: >-
+        Re-drives delivery of a previously recorded control receipt to the case's pinned lifecycle
+        execution. Idempotent per signalling principal through the lifecycle reservation; refuses a
+        DENIED receipt. Nothing is appended, but `If-Match` is still checked against the model stream
+        head, and a stale value answers 409 like every case mutation.
+      parameters:
+        - { $ref: '#/components/parameters/ModelId' }
+        - { $ref: '#/components/parameters/CaseId' }
+        - { $ref: '#/components/parameters/CaseTypeNamespace' }
+        - { $ref: '#/components/parameters/CaseType' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/IfMatch' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/NotifyCaseControlArgs' }
+      responses:
+        '200':
+          description: Successful notifyCaseControl result.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CaseControlResult' }
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '404': { $ref: './common-components.yml#/components/responses/NotFound' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+  /models/{modelId}/cases/{caseId}/coordination:
+    get:
+      tags: [EnterpriseOrganization]
+      operationId: readCaseCoordination
+      x-command-id: organization.case-coordination.read
+      summary: Read Case Coordination
+      description: >-
+        Narrow projection from the case stream only, sized to enter Temporal history in full: stage,
+        status, opened-at, stream version, the requested gate's latest started instance, whether it is
+        satisfied by override, and the named control receipt when it belongs to this case. The control
+        receipt is named by all three controlReceipt parameters together or by none of them.
+      parameters:
+        - { $ref: '#/components/parameters/ModelId' }
+        - { $ref: '#/components/parameters/CaseId' }
+        - { $ref: '#/components/parameters/CaseTypeNamespace' }
+        - { $ref: '#/components/parameters/CaseType' }
+        - name: gateId
+          in: query
+          required: true
+          description: Id of the elapsed gate whose latest started instance the read projects.
+          schema: { type: string, minLength: 1 }
+        - name: gateVersion
+          in: query
+          required: true
+          description: SemVer package version of that gate.
+          schema: { type: string, minLength: 1 }
+        - name: controlReceiptTypeNamespace
+          in: query
+          required: false
+          description: Namespace of the governed type of a control receipt to resolve against this case.
+          schema: { type: string, minLength: 1 }
+        - name: controlReceiptType
+          in: query
+          required: false
+          description: Value of the governed type of a control receipt to resolve against this case.
+          schema: { type: string, minLength: 1 }
+        - name: controlReceiptId
+          in: query
+          required: false
+          description: Id of a control receipt to resolve against this case.
+          schema: { type: string, minLength: 1 }
+      responses:
+        '200':
+          description: Successful readCaseCoordination result.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CaseCoordination' }
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '404': { $ref: './common-components.yml#/components/responses/NotFound' }
+
+components:
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    CaseId:
+      name: caseId
+      in: path
+      required: true
+      schema: { type: string, minLength: 1 }
+    SubmissionId:
+      name: submissionId
+      in: path
+      required: true
+      schema: { type: string, minLength: 1 }
+    CaseTypeNamespace:
+      name: caseTypeNamespace
+      in: query
+      required: true
+      description: Namespace of the governed case type used to resolve the exact case stream.
+      schema: { type: string, minLength: 1 }
+    CaseType:
+      name: caseType
+      in: query
+      required: true
+      description: Value of the governed case type used to resolve the exact case stream.
+      schema: { type: string, minLength: 1 }
+    ModelId:
+      name: modelId
+      in: path
+      required: true
+      schema: { type: string, minLength: 1 }
+    ProjectionRevision:
+      name: projectionRevision
+      in: path
+      required: true
+      schema: { type: integer, format: int64, minimum: 1 }
+    RecordId:
+      name: recordId
+      in: path
+      required: true
+      schema: { type: string, minLength: 1 }
+    RecordType:
+      name: recordType
+      in: path
+      required: true
+      description: Full governed type identifier, using the final colon as namespace separator.
+      schema: { type: string, minLength: 3 }
+    RecordTypeQuery:
+      name: recordType
+      in: query
+      required: false
+      schema: { type: string, minLength: 3 }
+    EffectiveAt:
+      name: effectiveAt
+      in: query
+      required: false
+      description: Business-time view instant. Mutually exclusive with recordedAt.
+      schema: { type: string, format: date-time }
+    RecordedAt:
+      name: recordedAt
+      in: query
+      required: false
+      description: System recorded-time view instant. Mutually exclusive with effectiveAt.
+      schema: { type: string, format: date-time }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema: { type: string, minLength: 1 }
+    IfMatchSubmission:
+      name: If-Match-Submission
+      in: header
+      required: false
+      description: Canonical evidence submission revision, zero for a new submission. Allows unrelated evidence writes since If-Match; other intervening events still conflict.
+      schema: { type: string, pattern: '^"[0-9]+"$' }
+    IfMatch:
+      name: If-Match
+      in: header
+      required: true
+      description: Expected stream version.
+      schema: { type: string, pattern: '^"[0-9]+"$' }
+  responses:
+    MutationResultResponse:
+      description: Typed mutation result
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/OrganizationMutationResult' }
+    ReplayStatusResponse:
+      description: Replay status
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/OrganizationReplayStatus' }
+    GraphMutationResultResponse:
+      description: Typed organization graph mutation result
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/OrganizationGraphMutationResult' }
+    PolicyUnavailable:
+      description: The policy engine could not decide the request; nothing was recorded and the same request may be retried.
+      content:
+        application/json:
+          schema: { $ref: './common-components.yml#/components/schemas/ApiError' }
+  schemas:
+    CaseCommandResult:
+      type: object
+      required: [caseRef, streamVersion, commandDigest, replayedFromIdempotency]
+      properties:
+        caseRef: { $ref: './enterprise-contract-components.yml#/components/schemas/CaseRef' }
+        streamVersion: { type: integer, format: int64, minimum: 0 }
+        commandDigest: { $ref: './enterprise-contract-components.yml#/components/schemas/ContentHash' }
+        replayedFromIdempotency: { type: boolean, default: false }
+        elapsedGateStart:
+          allOf: [{ $ref: './enterprise-contract-components.yml#/components/schemas/ElapsedGateStart' }]
+          description: Persisted authored gate identity and server deadline, stable across retries.
+    CaseControlOutcome:
+      type: string
+      enum: [OVERRIDE_GRANTED, OVERRIDE_DENIED, CASE_CANCELLED]
+    CaseControlNotification:
+      type: string
+      enum: [DELIVERED, PENDING, NOT_APPLICABLE]
+    CaseControlReceipt:
+      type: object
+      required: [controlReceiptRef, outcome, reasonRef, decidedAt]
+      properties:
+        controlReceiptRef: { $ref: './enterprise-contract-components.yml#/components/schemas/BusinessObjectRef' }
+        outcome: { $ref: '#/components/schemas/CaseControlOutcome' }
+        gateRef:
+          allOf: [{ $ref: './enterprise-contract-components.yml#/components/schemas/ArtifactRef' }]
+          description: Present for an override outcome only.
+        gateStartedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: Pins the exact started gate instance the override applied to. Present for an override outcome only.
+        reasonRef: { $ref: './enterprise-contract-components.yml#/components/schemas/ArtifactRef' }
+        decidedAt: { type: string, format: date-time }
+    CaseControlResult:
+      type: object
+      required: [caseRef, streamVersion, commandDigest, receipt, notification, replayedFromIdempotency]
+      properties:
+        caseRef: { $ref: './enterprise-contract-components.yml#/components/schemas/CaseRef' }
+        streamVersion: { type: integer, format: int64, minimum: 0 }
+        commandDigest: { $ref: './enterprise-contract-components.yml#/components/schemas/ContentHash' }
+        receipt: { $ref: '#/components/schemas/CaseControlReceipt' }
+        notification:
+          allOf: [{ $ref: '#/components/schemas/CaseControlNotification' }]
+          description: >-
+            What delivery the command itself attempted. An idempotent replay always answers
+            NOT_APPLICABLE because it never re-attempts delivery; re-drive it with notifyCaseControl.
+        replayedFromIdempotency: { type: boolean, default: false }
+    CaseCoordination:
+      type: object
+      required: [caseRef, templateRef, currentStage, status, openedAt, streamVersion, gateSatisfiedByOverride]
+      properties:
+        caseRef: { $ref: './enterprise-contract-components.yml#/components/schemas/CaseRef' }
+        templateRef: { $ref: './enterprise-contract-components.yml#/components/schemas/ArtifactRef' }
+        workflowRef:
+          allOf: [{ $ref: './enterprise-contract-components.yml#/components/schemas/WorkflowDefinitionRef' }]
+          nullable: true
+          description: The case's pinned workflow definition; omitted when the case pins none.
+        currentStage: { type: string }
+        status: { $ref: './enterprise-contract-components.yml#/components/schemas/CaseStatus' }
+        openedAt: { type: string, format: date-time }
+        streamVersion: { type: integer, format: int64, minimum: 0 }
+        elapsedGateStart:
+          allOf: [{ $ref: './enterprise-contract-components.yml#/components/schemas/ElapsedGateStart' }]
+          nullable: true
+          description: The requested gate's latest started instance on the case stream; omitted when none.
+        gateSatisfiedByOverride: { type: boolean }
+        control: { $ref: '#/components/schemas/CaseControlReceipt' }
+    OverrideCaseGateArgs:
+      type: object
+      required: [metadata, caseRef, gateRef, reasonRef]
+      properties:
+        metadata: { $ref: './enterprise-contract-components.yml#/components/schemas/CommandRequestMetadata' }
+        caseRef: { $ref: './enterprise-contract-components.yml#/components/schemas/CaseRef' }
+        gateRef: { $ref: './enterprise-contract-components.yml#/components/schemas/ArtifactRef' }
+        reasonRef: { $ref: './enterprise-contract-components.yml#/components/schemas/ArtifactRef' }
+    CancelCaseArgs:
+      type: object
+      required: [metadata, caseRef, reasonRef]
+      properties:
+        metadata: { $ref: './enterprise-contract-components.yml#/components/schemas/CommandRequestMetadata' }
+        caseRef: { $ref: './enterprise-contract-components.yml#/components/schemas/CaseRef' }
+        reasonRef: { $ref: './enterprise-contract-components.yml#/components/schemas/ArtifactRef' }
+    NotifyCaseControlArgs:
+      type: object
+      required: [metadata, caseRef, controlReceiptRef]
+      properties:
+        metadata: { $ref: './enterprise-contract-components.yml#/components/schemas/CommandRequestMetadata' }
+        caseRef: { $ref: './enterprise-contract-components.yml#/components/schemas/CaseRef' }
+        controlReceiptRef: { $ref: './enterprise-contract-components.yml#/components/schemas/BusinessObjectRef' }
+    CaseView:
+      type: object
+      required: [businessCase, evidence, receipts, lifecycleReceipts, sourceAssertions, projectionHash, streamVersion]
+      properties:
+        businessCase: { $ref: './enterprise-contract-components.yml#/components/schemas/BusinessCase' }
+        latestDecision: { $ref: './enterprise-contract-components.yml#/components/schemas/DecisionRecord' }
+        evidence: { type: array, items: { $ref: './enterprise-contract-components.yml#/components/schemas/EvidenceSubmission' } }
+        receipts: { type: array, items: { $ref: './enterprise-contract-components.yml#/components/schemas/IntegrationReceiptRef' } }
+        lifecycleReceipts: { type: array, items: { $ref: '#/components/schemas/LifecycleReceipt' } }
+        sourceAssertions:
+          type: array
+          items: { $ref: '#/components/schemas/SourceAssertionFreshness' }
+          description: >-
+            The freshness of every source assertion latestDecision pinned, in the order that decision's
+            manifest names them, de-duplicated. Empty when the case has no decision yet. A manifest entry
+            that resolves to no source assertion - the case reference a journey pins alongside its
+            assertion - is left out rather than reported.
+        projectionHash: { $ref: './enterprise-contract-components.yml#/components/schemas/ContentHash' }
+        streamVersion: { type: integer, format: int64, minimum: 0 }
+    TransitionEvaluation:
+      type: object
+      required: [caseRef, transitionRef, outcome, reasons, preconditions, evaluatedAt, currentStreamVersion]
+      properties:
+        caseRef: { $ref: './enterprise-contract-components.yml#/components/schemas/CaseRef' }
+        transitionRef: { $ref: '#/components/schemas/ArtifactRef' }
+        outcome: { $ref: './enterprise-contract-components.yml#/components/schemas/DecisionOutcome' }
+        reasons: { type: array, items: { $ref: './enterprise-contract-components.yml#/components/schemas/DecisionReason' } }
+        preconditions: { type: array, items: { $ref: './enterprise-contract-components.yml#/components/schemas/GateResult' } }
+        evaluatedAt: { type: string, format: date-time }
+        currentStreamVersion: { type: integer, format: int64, minimum: 0 }
+        actionSubmissionRevision: { type: integer, format: int64, minimum: 0, readOnly: true }
+        policyDecisions:
+          type: array
+          readOnly: true
+          items: { $ref: '#/components/schemas/DecisionInputRef' }
+    ActivateLifecyclePlanRequest:
+      type: object
+      required: [id, version]
+      properties:
+        id: { type: string, minLength: 1 }
+        version: { $ref: '#/components/schemas/PackageVersion' }
+        agreementRef: { $ref: '#/components/schemas/BusinessObjectRef' }
+    CaseActionSubmission:
+      type: object
+      required: [actionRef, submittedAt]
+      properties:
+        actionRef: { $ref: '#/components/schemas/ArtifactRef' }
+        inputRef: { $ref: './enterprise-contract-components.yml#/components/schemas/ProtectedPayloadRef' }
+        evidenceRefs: { type: array, items: { $ref: './enterprise-contract-components.yml#/components/schemas/BusinessObjectRef' } }
+        receiptRefs: { type: array, items: { $ref: './enterprise-contract-components.yml#/components/schemas/IntegrationReceiptRef' } }
+        submittedAt: { type: string, format: date-time }
+    EvidenceValidationResult:
+      type: object
+      required: [validator, valid, reasons]
+      properties:
+        validator: { $ref: '#/components/schemas/ArtifactRef' }
+        valid: { type: boolean, readOnly: true, description: Derived from canonical policy execution. }
+        decisionRef:
+          allOf: [{ $ref: './enterprise-contract-components.yml#/components/schemas/BusinessObjectRef' }]
+          readOnly: true
+          nullable: true
+        decisionHash:
+          allOf: [{ $ref: './enterprise-contract-components.yml#/components/schemas/ContentHash' }]
+          readOnly: true
+          nullable: true
+        outcome:
+          allOf: [{ $ref: './enterprise-contract-components.yml#/components/schemas/DecisionOutcome' }]
+          readOnly: true
+          nullable: true
+        reasons: { type: array, items: { $ref: './enterprise-contract-components.yml#/components/schemas/DecisionReason' } }
+        # Nullable only because this record is also the request body of evidence validate (CR-6): the
+        # authored workflow that sends it may not read a clock. The server stamps it before the
+        # validation is stored, so a validation read back always carries it. Same follow-up as
+        # CaseStageTransition.effectiveAt in enterprise-contract-components.yml.
+        recordedAt: { type: string, format: date-time, nullable: true }
+    DisposeEvidenceRequest:
+      type: object
+      required: [state]
+      properties:
+        state: { type: string, enum: [PENDING, AUTOMATED_ACCEPTED, REVIEW_REQUIRED, APPROVED, REJECTED, MORE_INFORMATION_REQUIRED] }
+        disposition: { type: string }
+        reasons: { type: array, items: { $ref: './enterprise-contract-components.yml#/components/schemas/DecisionReason' } }
+        reviewer: { $ref: '#/components/schemas/ApprovalRecord' }
+    CaseConfirmation:
+      type: object
+      required: [confirmationRef, reviewedCaseRevision, reviewedDecisionRefs, actor, authorityRef, confirmedAt]
+      properties:
+        confirmationRef: { $ref: '#/components/schemas/ArtifactRef' }
+        reviewedCaseRevision: { type: integer, format: int64, minimum: 0 }
+        reviewedDecisionRefs: { type: array, items: { $ref: './enterprise-contract-components.yml#/components/schemas/BusinessObjectRef' } }
+        actor: { $ref: './enterprise-contract-components.yml#/components/schemas/ActorRef' }
+        authorityRef: { $ref: './enterprise-contract-components.yml#/components/schemas/BusinessObjectRef' }
+        confirmedAt: { type: string, format: date-time }
+        transitionRef:
+          $ref: '#/components/schemas/ArtifactRef'
+          description: Selects the reviewed transition when an action has multiple approval paths; the server persists the resolved pin.
+    LifecycleReceipt:
+      type: object
+      required: [receiptRef, kind, recordedAt]
+      properties:
+        receiptRef: { $ref: '#/components/schemas/ArtifactRef' }
+        kind: { $ref: './enterprise-contract-components.yml#/components/schemas/GovernedTypeId' }
+        executionRef: { $ref: './enterprise-contract-components.yml#/components/schemas/BusinessObjectRef' }
+        timerRef: { $ref: '#/components/schemas/ArtifactRef' }
+        contentHash: { $ref: './enterprise-contract-components.yml#/components/schemas/ContentHash' }
+        recordedAt: { type: string, format: date-time }
+    CaseTimelineEntry:
+      type: object
+      required: [streamVersion, eventType, caseRef, recordedAt, effectiveAt, correlation]
+      properties:
+        streamVersion: { type: integer, format: int64, minimum: 0 }
+        eventType: { type: string, minLength: 1 }
+        caseRef: { $ref: './enterprise-contract-components.yml#/components/schemas/CaseRef' }
+        recordedAt: { type: string, format: date-time }
+        effectiveAt: { type: string, format: date-time }
+        correlation: { $ref: './enterprise-contract-components.yml#/components/schemas/CorrelationContext' }
+    CaseTimelinePage:
+      type: object
+      required: [items, pagination]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/CaseTimelineEntry' } }
+        pagination: { $ref: './common-components.yml#/components/schemas/PageMeta' }
+    CaseLineage:
+      type: object
+      required: [caseRef, semanticRefs, evidenceRefs, decisionRefs, receiptRefs, lifecycleReceipts, projectionHash]
+      properties:
+        caseRef: { $ref: './enterprise-contract-components.yml#/components/schemas/CaseRef' }
+        templateRef: { $ref: '#/components/schemas/ArtifactRef' }
+        semanticRefs: { type: array, items: { $ref: './enterprise-contract-components.yml#/components/schemas/SemanticResourceRef' } }
+        evidenceRefs: { type: array, items: { $ref: './enterprise-contract-components.yml#/components/schemas/BusinessObjectRef' } }
+        decisionRefs: { type: array, items: { $ref: './enterprise-contract-components.yml#/components/schemas/BusinessObjectRef' } }
+        receiptRefs: { type: array, items: { $ref: './enterprise-contract-components.yml#/components/schemas/IntegrationReceiptRef' } }
+        lifecycleReceipts: { type: array, items: { $ref: '#/components/schemas/LifecycleReceipt' } }
+        projectionHash: { $ref: './enterprise-contract-components.yml#/components/schemas/ContentHash' }
+    PartySemanticBindingInput:
+      type: object
+      required: [bindingId, semanticProfileRef, semanticRelease, effectiveInterval]
+      additionalProperties: false
+      properties:
+        bindingId: { type: string, minLength: 1 }
+        semanticProfileRef: { $ref: '#/components/schemas/SemanticResourceRef' }
+        semanticRelease: { $ref: '#/components/schemas/JointSemanticReleaseRef' }
+        effectiveInterval: { $ref: '#/components/schemas/EffectiveInterval' }
+        supersedesBindingId: { type: string }
+    PartyMutationInput:
+      type: object
+      required: [recordRef, rootKind, attributes, lifecycle, effectiveInterval, revision]
+      additionalProperties: false
+      properties:
+        recordRef: { $ref: '#/components/schemas/BusinessObjectRef' }
+        rootKind: { type: string, enum: [NATURAL_PERSON, ORGANIZATION, ORGANIZATION_UNIT, GROUP, AGENT, SERVICE, SOFTWARE, ASSET] }
+        semanticBinding: { $ref: '#/components/schemas/PartySemanticBindingInput' }
+        attributes: { $ref: '#/components/schemas/JsonObject' }
+        lifecycle: { $ref: '#/components/schemas/RecordLifecycle' }
+        effectiveInterval: { $ref: '#/components/schemas/EffectiveInterval' }
+        revision: { type: integer, format: int64, minimum: 1 }
+        supersedesRevision: { type: integer, format: int64, minimum: 1 }
+    IdentifierMutationInput:
+      type: object
+      required: [recordRef, partyRef, scheme, normalizedValueHash, lifecycle, effectiveInterval]
+      additionalProperties: false
+      properties:
+        recordRef: { $ref: '#/components/schemas/BusinessObjectRef' }
+        partyRef: { $ref: '#/components/schemas/BusinessObjectRef' }
+        scheme: { $ref: '#/components/schemas/IdentifierScheme' }
+        normalizedValueHash: { $ref: '#/components/schemas/ContentHash' }
+        protectedValueRef: { $ref: './enterprise-contract-components.yml#/components/schemas/ProtectedPayloadRef' }
+        displayValue: { type: string }
+        lifecycle: { $ref: '#/components/schemas/RecordLifecycle' }
+        effectiveInterval: { $ref: '#/components/schemas/EffectiveInterval' }
+        supersedesBindingRef: { $ref: '#/components/schemas/BusinessObjectRef' }
+    RelationshipMutationInput:
+      type: object
+      required: [recordRef, definition, sourcePartyRef, targetPartyRef, lifecycle, effectiveInterval, revision]
+      additionalProperties: false
+      properties:
+        recordRef: { $ref: '#/components/schemas/BusinessObjectRef' }
+        definition: { $ref: '#/components/schemas/RelationshipDefinition' }
+        sourcePartyRef: { $ref: '#/components/schemas/BusinessObjectRef' }
+        targetPartyRef: { $ref: '#/components/schemas/BusinessObjectRef' }
+        contextRef: { $ref: '#/components/schemas/BusinessObjectRef' }
+        lifecycle: { $ref: '#/components/schemas/RecordLifecycle' }
+        effectiveInterval: { $ref: '#/components/schemas/EffectiveInterval' }
+        revision: { type: integer, format: int64, minimum: 1 }
+        supersedesRevision: { type: integer, format: int64, minimum: 1 }
+    AgreementMutationInput:
+      type: object
+      required: [recordRef, partyRoles, protectedTermsRef, contentHash, lifecycle, effectiveInterval]
+      additionalProperties: false
+      properties:
+        recordRef: { $ref: '#/components/schemas/BusinessObjectRef' }
+        partyRoles: { type: array, minItems: 2, items: { $ref: '#/components/schemas/AgreementPartyRole' } }
+        protectedTermsRef: { $ref: './enterprise-contract-components.yml#/components/schemas/ProtectedPayloadRef' }
+        contentHash: { $ref: '#/components/schemas/ContentHash' }
+        lifecycle: { $ref: '#/components/schemas/RecordLifecycle' }
+        effectiveInterval: { $ref: '#/components/schemas/EffectiveInterval' }
+        amendmentOfRef: { $ref: '#/components/schemas/BusinessObjectRef' }
+    AssignmentMutationInput:
+      type: object
+      required: [recordRef, assigningPartyRef, assignedPartyRef, role, lifecycle, effectiveInterval]
+      additionalProperties: false
+      properties:
+        recordRef: { $ref: '#/components/schemas/BusinessObjectRef' }
+        assigningPartyRef: { $ref: '#/components/schemas/BusinessObjectRef' }
+        assignedPartyRef: { $ref: '#/components/schemas/BusinessObjectRef' }
+        role: { $ref: './enterprise-contract-components.yml#/components/schemas/GovernedTypeId' }
+        agreementRef: { $ref: '#/components/schemas/BusinessObjectRef' }
+        contextRef: { $ref: '#/components/schemas/BusinessObjectRef' }
+        lifecycle: { $ref: '#/components/schemas/RecordLifecycle' }
+        effectiveInterval: { $ref: '#/components/schemas/EffectiveInterval' }
+        revokesAssignmentRef: { $ref: '#/components/schemas/BusinessObjectRef' }
+    ResourceExtensionInput:
+      type: object
+      required: [resourceRef, resourceType, allocatable, schedulable, capacity, effectiveInterval, revision]
+      additionalProperties: false
+      properties:
+        resourceRef: { $ref: '#/components/schemas/BusinessObjectRef' }
+        resourceType: { $ref: './enterprise-contract-components.yml#/components/schemas/GovernedTypeId' }
+        allocatable: { type: boolean }
+        schedulable: { type: boolean }
+        capacity: { $ref: '#/components/schemas/JsonObject' }
+        effectiveInterval: { $ref: '#/components/schemas/EffectiveInterval' }
+        revision: { type: integer, format: int64, minimum: 1 }
+    AssetMutationInput:
+      type: object
+      required: [recordRef, lifecycle, effectiveInterval]
+      additionalProperties: false
+      properties:
+        recordRef: { $ref: '#/components/schemas/BusinessObjectRef' }
+        ownerPartyRef: { $ref: '#/components/schemas/BusinessObjectRef' }
+        semanticBinding: { $ref: '#/components/schemas/PartySemanticBindingInput' }
+        resourceExtension: { $ref: '#/components/schemas/ResourceExtensionInput' }
+        lifecycle: { $ref: '#/components/schemas/RecordLifecycle' }
+        effectiveInterval: { $ref: '#/components/schemas/EffectiveInterval' }
+    CapabilityMutationInput:
+      type: object
+      required: [recordRef, subjectRef, action, sourceRef, lifecycle, effectiveInterval]
+      additionalProperties: false
+      properties:
+        recordRef: { $ref: '#/components/schemas/BusinessObjectRef' }
+        subjectRef: { $ref: '#/components/schemas/BusinessObjectRef' }
+        action: { $ref: './enterprise-contract-components.yml#/components/schemas/GovernedTypeId' }
+        resourceRef: { $ref: '#/components/schemas/BusinessObjectRef' }
+        contextRef: { $ref: '#/components/schemas/BusinessObjectRef' }
+        sourceRef: { $ref: '#/components/schemas/BusinessObjectRef' }
+        lifecycle: { $ref: '#/components/schemas/RecordLifecycle' }
+        effectiveInterval: { $ref: '#/components/schemas/EffectiveInterval' }
+        revokesGrantRef: { $ref: '#/components/schemas/BusinessObjectRef' }
+        capabilityRef: { $ref: './enterprise-contract-components.yml#/components/schemas/ArtifactRef' }
+    OrganizationGraphMutationResult:
+      type: object
+      required: [recordRef, streamVersion, commandDigest, replayedFromIdempotency]
+      properties:
+        recordRef: { $ref: '#/components/schemas/BusinessObjectRef' }
+        streamVersion: { type: integer, format: int64, minimum: 1 }
+        commandDigest: { $ref: '#/components/schemas/ContentHash' }
+        replayedFromIdempotency: { type: boolean, default: false }
+    OrganizationGraphRecord:
+      type: object
+      required: [type, value]
+      properties:
+        type:
+          type: string
+          enum: [party, identifier, relationship, agreement, assignment, asset, capability]
+        value:
+          oneOf:
+            - { $ref: '#/components/schemas/PartyRecord' }
+            - { $ref: '#/components/schemas/PartyIdentifierBinding' }
+            - { $ref: '#/components/schemas/PartyRelationshipRecord' }
+            - { $ref: '#/components/schemas/AgreementRecord' }
+            - { $ref: '#/components/schemas/WorkAssignment' }
+            - { $ref: '#/components/schemas/AssetRecord' }
+            - { $ref: '#/components/schemas/CapabilityGrant' }
+      discriminator: { propertyName: type }
+    PartySemanticBinding:
+      type: object
+      required: [bindingId, partyRef, semanticProfileRef, semanticRelease, effectiveInterval, recordedAt]
+      additionalProperties: false
+      properties:
+        bindingId: { type: string, minLength: 1 }
+        partyRef: { $ref: '#/components/schemas/BusinessObjectRef' }
+        semanticProfileRef: { $ref: '#/components/schemas/SemanticResourceRef' }
+        semanticRelease: { $ref: '#/components/schemas/JointSemanticReleaseRef' }
+        effectiveInterval: { $ref: '#/components/schemas/EffectiveInterval' }
+        supersedesBindingId: { type: string }
+        recordedAt: { type: string, format: date-time }
+    PartyRecord:
+      type: object
+      required: [partyRef, tenantId, homeModelId, rootKind, attributes, lifecycle, effectiveInterval, revision, recordedAt]
+      additionalProperties: false
+      properties:
+        partyRef: { $ref: '#/components/schemas/BusinessObjectRef' }
+        tenantId: { type: string, minLength: 1 }
+        homeModelId: { type: string, minLength: 1 }
+        rootKind: { type: string, enum: [NATURAL_PERSON, ORGANIZATION, ORGANIZATION_UNIT, GROUP, AGENT, SERVICE, SOFTWARE, ASSET] }
+        semanticBinding: { $ref: '#/components/schemas/PartySemanticBinding' }
+        attributes: { $ref: '#/components/schemas/JsonObject' }
+        lifecycle: { $ref: '#/components/schemas/RecordLifecycle' }
+        effectiveInterval: { $ref: '#/components/schemas/EffectiveInterval' }
+        revision: { type: integer, format: int64, minimum: 1 }
+        supersedesRevision: { type: integer, format: int64, minimum: 1 }
+        recordedAt: { type: string, format: date-time }
+    IdentifierScheme:
+      type: object
+      required: [schemeId, normalizationRuleRef, uniquenessScope, sensitive]
+      additionalProperties: false
+      properties:
+        schemeId: { $ref: './enterprise-contract-components.yml#/components/schemas/GovernedTypeId' }
+        issuingAuthority: { $ref: '#/components/schemas/BusinessObjectRef' }
+        jurisdiction: { $ref: './enterprise-contract-components.yml#/components/schemas/GovernedTypeId' }
+        normalizationRuleRef: { $ref: '#/components/schemas/ArtifactRef' }
+        uniquenessScope: { type: string, enum: [MODEL, TENANT, AUTHORITY, JURISDICTION] }
+        verificationPolicyRef: { $ref: '#/components/schemas/ArtifactRef' }
+        sensitive: { type: boolean }
+    PartyIdentifierBinding:
+      type: object
+      required: [bindingRef, partyRef, scheme, normalizedValueHash, lifecycle, effectiveInterval, recordedAt]
+      additionalProperties: false
+      properties:
+        bindingRef: { $ref: '#/components/schemas/BusinessObjectRef' }
+        partyRef: { $ref: '#/components/schemas/BusinessObjectRef' }
+        scheme: { $ref: '#/components/schemas/IdentifierScheme' }
+        normalizedValueHash: { $ref: '#/components/schemas/ContentHash' }
+        protectedValueRef: { $ref: './enterprise-contract-components.yml#/components/schemas/ProtectedPayloadRef' }
+        displayValue: { type: string }
+        verifiedAt: { type: string, format: date-time }
+        verifiedBy: { $ref: './enterprise-contract-components.yml#/components/schemas/ActorRef' }
+        lifecycle: { $ref: '#/components/schemas/RecordLifecycle' }
+        effectiveInterval: { $ref: '#/components/schemas/EffectiveInterval' }
+        supersedesBindingRef: { $ref: '#/components/schemas/BusinessObjectRef' }
+        recordedAt: { type: string, format: date-time }
+    RelationshipCardinality:
+      type: object
+      required: [minimum]
+      additionalProperties: false
+      properties:
+        minimum: { type: integer, format: int32, minimum: 0, default: 0 }
+        maximum: { type: integer, format: int32, minimum: 0 }
+    RelationshipDefinition:
+      type: object
+      required: [definitionRef, relationshipType, sourceRole, targetRole, sourceCardinality, targetCardinality, provenanceRef]
+      additionalProperties: false
+      properties:
+        definitionRef: { $ref: '#/components/schemas/SemanticResourceRef' }
+        relationshipType: { $ref: './enterprise-contract-components.yml#/components/schemas/GovernedTypeId' }
+        sourceRole: { $ref: './enterprise-contract-components.yml#/components/schemas/GovernedTypeId' }
+        targetRole: { $ref: './enterprise-contract-components.yml#/components/schemas/GovernedTypeId' }
+        sourceCardinality: { $ref: '#/components/schemas/RelationshipCardinality' }
+        targetCardinality: { $ref: '#/components/schemas/RelationshipCardinality' }
+        inverseRelationshipType: { $ref: './enterprise-contract-components.yml#/components/schemas/GovernedTypeId' }
+        provenanceRef: { $ref: '#/components/schemas/ArtifactRef' }
+    PartyRelationshipRecord:
+      type: object
+      required: [relationshipRef, definition, sourcePartyRef, targetPartyRef, lifecycle, effectiveInterval, revision, recordedAt]
+      additionalProperties: false
+      properties:
+        relationshipRef: { $ref: '#/components/schemas/BusinessObjectRef' }
+        definition: { $ref: '#/components/schemas/RelationshipDefinition' }
+        sourcePartyRef: { $ref: '#/components/schemas/BusinessObjectRef' }
+        targetPartyRef: { $ref: '#/components/schemas/BusinessObjectRef' }
+        contextRef: { $ref: '#/components/schemas/BusinessObjectRef' }
+        lifecycle: { $ref: '#/components/schemas/RecordLifecycle' }
+        effectiveInterval: { $ref: '#/components/schemas/EffectiveInterval' }
+        revision: { type: integer, format: int64, minimum: 1 }
+        supersedesRevision: { type: integer, format: int64, minimum: 1 }
+        recordedAt: { type: string, format: date-time }
+    AgreementPartyRole:
+      type: object
+      required: [partyRef, role]
+      additionalProperties: false
+      properties:
+        partyRef: { $ref: '#/components/schemas/BusinessObjectRef' }
+        role: { $ref: './enterprise-contract-components.yml#/components/schemas/GovernedTypeId' }
+    AgreementRecord:
+      type: object
+      required: [agreementRef, partyRoles, protectedTermsRef, contentHash, lifecycle, effectiveInterval, recordedAt]
+      additionalProperties: false
+      properties:
+        agreementRef: { $ref: '#/components/schemas/BusinessObjectRef' }
+        partyRoles: { type: array, minItems: 2, items: { $ref: '#/components/schemas/AgreementPartyRole' } }
+        protectedTermsRef: { $ref: './enterprise-contract-components.yml#/components/schemas/ProtectedPayloadRef' }
+        contentHash: { $ref: '#/components/schemas/ContentHash' }
+        lifecycle: { $ref: '#/components/schemas/RecordLifecycle' }
+        effectiveInterval: { $ref: '#/components/schemas/EffectiveInterval' }
+        amendmentOfRef: { $ref: '#/components/schemas/BusinessObjectRef' }
+        recordedAt: { type: string, format: date-time }
+    WorkAssignment:
+      type: object
+      required: [assignmentRef, assigningPartyRef, assignedPartyRef, role, lifecycle, effectiveInterval, recordedAt]
+      additionalProperties: false
+      properties:
+        assignmentRef: { $ref: '#/components/schemas/BusinessObjectRef' }
+        assigningPartyRef: { $ref: '#/components/schemas/BusinessObjectRef' }
+        assignedPartyRef: { $ref: '#/components/schemas/BusinessObjectRef' }
+        role: { $ref: './enterprise-contract-components.yml#/components/schemas/GovernedTypeId' }
+        agreementRef: { $ref: '#/components/schemas/BusinessObjectRef' }
+        contextRef: { $ref: '#/components/schemas/BusinessObjectRef' }
+        lifecycle: { $ref: '#/components/schemas/RecordLifecycle' }
+        effectiveInterval: { $ref: '#/components/schemas/EffectiveInterval' }
+        revokesAssignmentRef: { $ref: '#/components/schemas/BusinessObjectRef' }
+        recordedAt: { type: string, format: date-time }
+    ResourceExtension:
+      type: object
+      required: [resourceRef, assetRef, resourceType, allocatable, schedulable, capacity, effectiveInterval, revision, recordedAt]
+      additionalProperties: false
+      properties:
+        resourceRef: { $ref: '#/components/schemas/BusinessObjectRef' }
+        assetRef: { $ref: '#/components/schemas/BusinessObjectRef' }
+        resourceType: { $ref: './enterprise-contract-components.yml#/components/schemas/GovernedTypeId' }
+        allocatable: { type: boolean }
+        schedulable: { type: boolean }
+        capacity: { $ref: '#/components/schemas/JsonObject' }
+        effectiveInterval: { $ref: '#/components/schemas/EffectiveInterval' }
+        revision: { type: integer, format: int64, minimum: 1 }
+        recordedAt: { type: string, format: date-time }
+    AssetRecord:
+      type: object
+      required: [assetRef, lifecycle, effectiveInterval, recordedAt]
+      additionalProperties: false
+      properties:
+        assetRef: { $ref: '#/components/schemas/BusinessObjectRef' }
+        ownerPartyRef: { $ref: '#/components/schemas/BusinessObjectRef' }
+        semanticBinding: { $ref: '#/components/schemas/PartySemanticBinding' }
+        resourceExtension: { $ref: '#/components/schemas/ResourceExtension' }
+        lifecycle: { $ref: '#/components/schemas/RecordLifecycle' }
+        effectiveInterval: { $ref: '#/components/schemas/EffectiveInterval' }
+        recordedAt: { type: string, format: date-time }
+    CapabilityGrant:
+      type: object
+      required: [grantRef, subjectRef, action, sourceRef, lifecycle, effectiveInterval, recordedAt]
+      additionalProperties: false
+      properties:
+        grantRef: { $ref: '#/components/schemas/BusinessObjectRef' }
+        capabilityRef: { $ref: './enterprise-contract-components.yml#/components/schemas/ArtifactRef' }
+        subjectRef: { $ref: '#/components/schemas/BusinessObjectRef' }
+        action: { $ref: './enterprise-contract-components.yml#/components/schemas/GovernedTypeId' }
+        resourceRef: { $ref: '#/components/schemas/BusinessObjectRef' }
+        contextRef: { $ref: '#/components/schemas/BusinessObjectRef' }
+        sourceRef: { $ref: '#/components/schemas/BusinessObjectRef' }
+        lifecycle: { $ref: '#/components/schemas/RecordLifecycle' }
+        effectiveInterval: { $ref: '#/components/schemas/EffectiveInterval' }
+        revokesGrantRef: { $ref: '#/components/schemas/BusinessObjectRef' }
+        recordedAt: { type: string, format: date-time }
+    RecordLifecycle:
+      type: string
+      enum: [DRAFT, ACTIVE, SUSPENDED, ENDED, REVOKED]
+    OrganizationGraphPage:
+      type: object
+      required: [items, pagination]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/OrganizationGraphRecord' }
+        pagination: { $ref: './common-components.yml#/components/schemas/PageMeta' }
+    OrganizationViewPoint:
+      type: object
+      required: [mode]
+      additionalProperties: false
+      properties:
+        mode: { type: string, enum: [CURRENT, EFFECTIVE_AT, AS_OF_RECORDED_AT] }
+        instant: { type: string, format: date-time }
+    GraphEdge:
+      type: object
+      required: [relationshipRef, sourceRef, targetRef, relationshipType, inverse]
+      additionalProperties: false
+      properties:
+        relationshipRef: { $ref: '#/components/schemas/BusinessObjectRef' }
+        sourceRef: { $ref: '#/components/schemas/BusinessObjectRef' }
+        targetRef: { $ref: '#/components/schemas/BusinessObjectRef' }
+        relationshipType: { $ref: './enterprise-contract-components.yml#/components/schemas/GovernedTypeId' }
+        inverse: { type: boolean, default: false }
+    OrganizationGraphView:
+      type: object
+      required: [tenantId, modelId, viewPoint, records, adjacency, streamVersion, projectionHash]
+      additionalProperties: false
+      properties:
+        tenantId: { type: string, minLength: 1 }
+        modelId: { type: string, minLength: 1 }
+        viewPoint: { $ref: '#/components/schemas/OrganizationViewPoint' }
+        records: { type: array, items: { $ref: '#/components/schemas/OrganizationGraphRecord' } }
+        adjacency:
+          type: object
+          additionalProperties:
+            type: array
+            items: { $ref: '#/components/schemas/GraphEdge' }
+        streamVersion: { type: integer, format: int64, minimum: 0 }
+        projectionHash: { $ref: '#/components/schemas/ContentHash' }
+    OrganizationProjectionStatus:
+      type: object
+      required: [modelId, streamVersion, activeProjectionRevision, activeProjectionHash, projectedStreamVersion, lag]
+      properties:
+        modelId: { type: string, minLength: 1 }
+        streamVersion: { type: integer, format: int64, minimum: 0 }
+        activeProjectionRevision: { $ref: '#/components/schemas/ProjectionRevision' }
+        activeProjectionHash: { $ref: '#/components/schemas/ContentHash' }
+        projectedStreamVersion: { type: integer, format: int64, minimum: 0 }
+        lag: { type: integer, format: int64, minimum: 0 }
+    SourceRouteRef:
+      type: object
+      required: [route, connectorId, adapterMetadata]
+      additionalProperties: false
+      properties:
+        route: { $ref: '#/components/schemas/ArtifactRef' }
+        connectorId: { type: string, minLength: 1 }
+        adapterMetadata: { $ref: '#/components/schemas/JsonObject' }
+    RequestSourceAssertionRequest:
+      type: object
+      required: [routeRef, subjectRef, parameters]
+      additionalProperties: false
+      properties:
+        routeRef: { $ref: '#/components/schemas/ArtifactRef' }
+        subjectRef: { $ref: '#/components/schemas/BusinessObjectRef' }
+        protectedRequestRef: { $ref: './enterprise-contract-components.yml#/components/schemas/ProtectedPayloadRef' }
+        parameters: { $ref: '#/components/schemas/JsonObject' }
+    SourceAssertionExecutionReceipt:
+      type: object
+      required: [modelId, routeRef, connectorRunId, technicalStatus, correlation]
+      additionalProperties: false
+      properties:
+        modelId: { type: string, minLength: 1 }
+        routeRef: { $ref: '#/components/schemas/SourceRouteRef' }
+        connectorRunId: { type: string, minLength: 1 }
+        technicalStatus: { $ref: './enterprise-contract-components.yml#/components/schemas/GovernedTypeId' }
+        correlation: { $ref: './enterprise-contract-components.yml#/components/schemas/CorrelationContext' }
+        # The three CR-1 fields and the two caseRef fields below are emitted as explicit nulls by the
+        # REST response path when unset, so they are declared nullable. OAS 3.0 ignores siblings of
+        # $ref, hence the allOf wrapper this repo uses for every nullable reference.
+        assertionRef:
+          allOf:
+            - $ref: '#/components/schemas/BusinessObjectRef'
+          nullable: true
+        contentHash:
+          allOf:
+            - $ref: '#/components/schemas/ContentHash'
+          nullable: true
+        state:
+          allOf:
+            - $ref: './enterprise-contract-components.yml#/components/schemas/SourceAssertionStatus'
+          nullable: true
+        streamVersion: { type: integer, format: int64, nullable: true }
+    SourceFieldProvenance:
+      type: object
+      required: [sourcePath]
+      additionalProperties: false
+      properties:
+        sourcePath: { type: string }
+        transformationRef: { $ref: '#/components/schemas/ArtifactRef' }
+    NormalizedFact:
+      type: object
+      required: [semantic, valueHash, provenance]
+      additionalProperties: false
+      properties:
+        semantic: { $ref: './enterprise-contract-components.yml#/components/schemas/SemanticCoordinate' }
+        value: { $ref: '#/components/schemas/JsonElement' }
+        protectedValueRef: { $ref: './enterprise-contract-components.yml#/components/schemas/ProtectedPayloadRef' }
+        valueHash: { $ref: '#/components/schemas/ContentHash' }
+        provenance: { $ref: '#/components/schemas/SourceFieldProvenance' }
+    SourceAssertionEvidence:
+      type: object
+      required: [assertionRef, connectorRunId, routeRef, sourcePurpose, subjectRef, semantics, freshnessPolicyRef, contentHash, normalizedFacts]
+      additionalProperties: false
+      properties:
+        assertionRef: { $ref: '#/components/schemas/BusinessObjectRef' }
+        connectorRunId: { type: string, minLength: 1 }
+        routeRef: { $ref: '#/components/schemas/ArtifactRef' }
+        sourcePurpose: { $ref: './enterprise-contract-components.yml#/components/schemas/GovernedTypeId' }
+        subjectRef: { $ref: '#/components/schemas/BusinessObjectRef' }
+        semantics:
+          type: array
+          minItems: 1
+          items: { $ref: './enterprise-contract-components.yml#/components/schemas/SemanticCoordinate' }
+        sourceEffectiveAt: { type: string, format: date-time }
+        freshUntil: { type: string, format: date-time }
+        freshnessPolicyRef: { $ref: '#/components/schemas/ArtifactRef' }
+        protectedRawResponseRef: { $ref: './enterprise-contract-components.yml#/components/schemas/ProtectedPayloadRef' }
+        contentHash: { $ref: '#/components/schemas/ContentHash' }
+        normalizedFacts: { type: array, items: { $ref: '#/components/schemas/NormalizedFact' } }
+    SourceAssertionRecord:
+      type: object
+      required: [assertionRef, tenantId, modelId, sourcePurpose, operation, subjectRef, semantics, routeRef, observedAt, freshnessPolicyRef, technicalStatus, contentHash, normalizedFacts, correlation, recordedAt]
+      additionalProperties: false
+      properties:
+        assertionRef: { $ref: '#/components/schemas/BusinessObjectRef' }
+        tenantId: { type: string }
+        modelId: { type: string }
+        sourcePurpose: { $ref: './enterprise-contract-components.yml#/components/schemas/GovernedTypeId' }
+        operation: { $ref: './enterprise-contract-components.yml#/components/schemas/GovernedTypeId' }
+        subjectRef: { $ref: '#/components/schemas/BusinessObjectRef' }
+        semantics: { type: array, items: { $ref: './enterprise-contract-components.yml#/components/schemas/SemanticCoordinate' } }
+        routeRef: { $ref: '#/components/schemas/SourceRouteRef' }
+        observedAt: { type: string, format: date-time }
+        sourceEffectiveAt: { type: string, format: date-time }
+        freshUntil: { type: string, format: date-time }
+        freshnessPolicyRef: { $ref: '#/components/schemas/ArtifactRef' }
+        technicalStatus: { $ref: './enterprise-contract-components.yml#/components/schemas/GovernedTypeId' }
+        protectedRawResponseRef: { $ref: './enterprise-contract-components.yml#/components/schemas/ProtectedPayloadRef' }
+        contentHash: { $ref: '#/components/schemas/ContentHash' }
+        normalizedFacts: { type: array, items: { $ref: '#/components/schemas/NormalizedFact' } }
+        correlation: { $ref: './enterprise-contract-components.yml#/components/schemas/CorrelationContext' }
+        supersedesAssertionRef: { $ref: '#/components/schemas/BusinessObjectRef' }
+        recordedAt: { type: string, format: date-time }
+        state:
+          allOf:
+            - $ref: './enterprise-contract-components.yml#/components/schemas/SourceAssertionStatus'
+          nullable: true
+    SourceAssertionFreshness:
+      type: object
+      description: >-
+        The freshness of one source assertion a decision pinned: the assertion reference, the composer's
+        reading of the source and the two freshness instants. It deliberately carries no normalized facts,
+        no protected raw response reference, no content hash and no route reference.
+      required: [assertionRef]
+      additionalProperties: false
+      properties:
+        assertionRef:
+          allOf:
+            - $ref: '#/components/schemas/BusinessObjectRef'
+          description: The source assertion the decision pinned, as the case's own history names it.
+        state:
+          allOf:
+            - $ref: './enterprise-contract-components.yml#/components/schemas/SourceAssertionStatus'
+          nullable: true
+          description: >-
+            The register's own verdict on the assertion. Absent when the recording route reported none;
+            it is never inferred.
+        sourceEffectiveAt:
+          type: string
+          format: date-time
+          description: >-
+            When the register's answer became effective in the register. This is not when the register
+            was consulted, which the case view does not carry.
+        freshUntil:
+          type: string
+          format: date-time
+          description: When the register's answer stops being usable. Absent when the register set no expiry.
+    EvaluatePolicyRequest:
+      type: object
+      required: [decisionRef, policyBindingRef, normalizedRequest, inputRefs, humanActions]
+      additionalProperties: false
+      properties:
+        decisionRef: { $ref: '#/components/schemas/BusinessObjectRef' }
+        policyBindingRef: { $ref: '#/components/schemas/PolicyBindingRef' }
+        normalizedRequest: { $ref: '#/components/schemas/NormalizedPolicyRequest' }
+        inputRefs: { type: array, items: { $ref: '#/components/schemas/DecisionInputRef' } }
+        humanActions: { type: array, items: { $ref: '#/components/schemas/ApprovalRecord' } }
+        protectedDiagnosticsRef: { $ref: './enterprise-contract-components.yml#/components/schemas/ProtectedPayloadRef' }
+        supersedesDecisionRef: { $ref: '#/components/schemas/BusinessObjectRef' }
+        caseRef:
+          allOf:
+            - $ref: './enterprise-contract-components.yml#/components/schemas/CaseRef'
+          nullable: true
+    PolicyDecisionEvidence:
+      type: object
+      required: [decisionRef, tenantId, modelId, policyBindingRef, engineProfile, backendPolicyRef, semanticRelease, normalizedRequest, normalizedRequestHash, inputRefs, machineResults, outcome, reasonIds, recordedAt, effectiveAt, decisionHash, correlation]
+      additionalProperties: false
+      properties:
+        decisionRef: { $ref: '#/components/schemas/BusinessObjectRef' }
+        tenantId: { type: string }
+        modelId: { type: string }
+        policyBindingRef: { $ref: '#/components/schemas/PolicyBindingRef' }
+        engineProfile: { $ref: './enterprise-contract-components.yml#/components/schemas/GovernedTypeId' }
+        backendPolicyRef: { $ref: '#/components/schemas/ArtifactRef' }
+        semanticRelease: { $ref: '#/components/schemas/JointSemanticReleaseRef' }
+        normalizedRequest: { $ref: '#/components/schemas/NormalizedPolicyRequest' }
+        normalizedRequestHash: { $ref: '#/components/schemas/ContentHash' }
+        inputRefs: { type: array, items: { $ref: '#/components/schemas/DecisionInputRef' } }
+        machineResults: { type: array, items: { $ref: '#/components/schemas/RuleEvaluationResult' } }
+        outcome: { $ref: './enterprise-contract-components.yml#/components/schemas/GovernedTypeId' }
+        reasonIds: { type: array, items: { $ref: './enterprise-contract-components.yml#/components/schemas/GovernedTypeId' } }
+        explanation: { type: string }
+        remediationRef: { $ref: '#/components/schemas/BusinessObjectRef' }
+        protectedDiagnosticsRef: { $ref: './enterprise-contract-components.yml#/components/schemas/ProtectedPayloadRef' }
+        recordedAt: { type: string, format: date-time }
+        effectiveAt: { type: string, format: date-time }
+        decisionHash: { $ref: '#/components/schemas/ContentHash' }
+        supersedesDecisionRef: { $ref: '#/components/schemas/BusinessObjectRef' }
+        correlation: { $ref: './enterprise-contract-components.yml#/components/schemas/CorrelationContext' }
+        extension: { $ref: '#/components/schemas/JsonObject' }
+        caseRef:
+          allOf:
+            - $ref: './enterprise-contract-components.yml#/components/schemas/CaseRef'
+          nullable: true
+        streamVersion: { type: integer, format: int64, nullable: true }
+    NormalizedPolicyRequest:
+      type: object
+      required: [principalRef, action, context]
+      additionalProperties: false
+      properties:
+        principalRef: { $ref: '#/components/schemas/BusinessObjectRef' }
+        action: { $ref: './enterprise-contract-components.yml#/components/schemas/GovernedTypeId' }
+        resourceRef: { $ref: '#/components/schemas/BusinessObjectRef' }
+        context: { $ref: '#/components/schemas/JsonObject' }
+    DecisionInputRef:
+      type: object
+      required: [objectRef, contentHash]
+      additionalProperties: false
+      properties:
+        semantic: { $ref: './enterprise-contract-components.yml#/components/schemas/SemanticCoordinate' }
+        objectRef: { $ref: '#/components/schemas/BusinessObjectRef' }
+        contentHash: { $ref: '#/components/schemas/ContentHash' }
+        version: { type: string }
+    ApprovalRecord:
+      type: object
+      required: [actor, authorityRef, action, reviewedVersion, recordedAt]
+      additionalProperties: false
+      properties:
+        actor: { $ref: './enterprise-contract-components.yml#/components/schemas/ActorRef' }
+        authorityRef: { $ref: '#/components/schemas/BusinessObjectRef' }
+        action: { type: string }
+        reviewedVersion: { type: string }
+        recordedAt: { type: string, format: date-time }
+    RuleEvaluationResult:
+      type: object
+      required: [ruleId, outcome, reasons]
+      additionalProperties: false
+      properties:
+        ruleId: { type: string }
+        outcome: { type: string, enum: [PERMIT, DENY, REVIEW_REQUIRED, INDETERMINATE] }
+        reasons: { type: array, items: { $ref: './enterprise-contract-components.yml#/components/schemas/DecisionReason' } }
+    JsonElement: {}
+    JsonObject:
+      type: object
+      additionalProperties: { $ref: '#/components/schemas/JsonElement' }
+    ArtifactRef:
+      type: object
+      required: [id, version]
+      properties:
+        id: { type: string, minLength: 1 }
+        version: { $ref: '#/components/schemas/PackageVersion' }
+    PackageVersion:
+      type: object
+      required: [value]
+      properties:
+        value: { type: string, pattern: '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$' }
+    BusinessObjectRef: { $ref: './enterprise-contract-components.yml#/components/schemas/BusinessObjectRef' }
+    ContentHash: { $ref: './enterprise-contract-components.yml#/components/schemas/ContentHash' }
+    SemanticResourceRef:
+      type: object
+      required: [id, revision]
+      properties:
+        id: { type: string, minLength: 1 }
+        revision: { $ref: '#/components/schemas/SemanticResourceRevision' }
+    SemanticResourceRevision:
+      type: object
+      required: [value]
+      properties:
+        value: { type: integer, format: int64, minimum: 1 }
+    PolicyBindingRef:
+      type: object
+      required: [modelRef, bindingId, version]
+      properties:
+        modelRef: { $ref: '#/components/schemas/SemanticResourceRef' }
+        bindingId: { type: string, minLength: 1 }
+        version: { $ref: '#/components/schemas/PackageVersion' }
+    InitializeModelRequest:
+      type: object
+      required: [modelId, activeSemanticRelease, lifecycle, effectiveInterval]
+      properties:
+        modelId: { type: string, minLength: 1 }
+        activeTemplateRef: { $ref: '#/components/schemas/ArtifactRef' }
+        activeSemanticRelease: { $ref: '#/components/schemas/JointSemanticReleaseRef' }
+        lifecycle: { type: string, enum: [DRAFT, ACTIVE, SUSPENDED, ENDED, REVOKED], default: ACTIVE }
+        effectiveInterval: { $ref: '#/components/schemas/EffectiveInterval' }
+    JointSemanticReleaseRef:
+      type: object
+      required: [releaseId, modelRef, rdfGraphHash, ocaBundleSaid, mappingManifestHash]
+      properties:
+        releaseId: { type: string, minLength: 1 }
+        modelRef: { $ref: '#/components/schemas/SemanticResourceRef' }
+        rdfGraphHash: { $ref: '#/components/schemas/ContentHash' }
+        ocaBundleSaid: { type: string, minLength: 1 }
+        mappingManifestHash: { $ref: '#/components/schemas/ContentHash' }
+        shapesGraphHash: { $ref: '#/components/schemas/ContentHash' }
+    EffectiveInterval:
+      type: object
+      required: [validFrom]
+      properties:
+        validFrom: { type: string, format: date-time }
+        validUntil: { type: string, format: date-time }
+    OrganizationMutationResult:
+      type: object
+      required: [recordRef, streamVersion, commandDigest, replayedFromIdempotency]
+      properties:
+        recordRef: { $ref: '#/components/schemas/BusinessObjectRef' }
+        streamVersion: { type: integer, format: int64, minimum: 1 }
+        commandDigest: { $ref: '#/components/schemas/ContentHash' }
+        replayedFromIdempotency: { type: boolean, default: false }
+    OrganizationStreamMetadata:
+      type: object
+      required: [modelId, streamVersion, activeProjectionRevision, projectionHash]
+      properties:
+        modelId: { type: string }
+        streamVersion: { type: integer, format: int64, minimum: 0 }
+        activeProjectionRevision: { $ref: '#/components/schemas/ProjectionRevision' }
+        projectionHash: { $ref: '#/components/schemas/ContentHash' }
+        lastRecordedAt: { type: string, format: date-time }
+    ProjectorRef:
+      type: object
+      required: [id, revision]
+      properties:
+        id: { type: string, minLength: 1 }
+        revision: { $ref: '#/components/schemas/ProjectorRevision' }
+    ProjectorRevision:
+      type: object
+      required: [value]
+      properties:
+        value: { type: integer, format: int64, minimum: 1 }
+    ProjectionRevision:
+      type: object
+      required: [value]
+      properties:
+        value: { type: integer, format: int64, minimum: 1 }
+    StartReplayRequest:
+      type: object
+      required: [projectors]
+      properties:
+        projectors:
+          type: array
+          minItems: 1
+          items: { $ref: '#/components/schemas/ProjectorRef' }
+    ActivateReplayRequest:
+      type: object
+      required: [expectedProjectionHash]
+      properties:
+        expectedProjectionHash: { $ref: '#/components/schemas/ContentHash' }
+    OrganizationReplayStatus:
+      type: object
+      required: [modelId, projectionRevision, state, projectors, eventCount]
+      properties:
+        modelId: { type: string }
+        projectionRevision: { $ref: '#/components/schemas/ProjectionRevision' }
+        state: { type: string, enum: [BUILDING, FAILED, VERIFIED, ACTIVE, SUPERSEDED] }
+        projectors: { type: array, items: { $ref: '#/components/schemas/ProjectorRef' } }
+        eventCount: { type: integer, format: int64, minimum: 0 }
+        projectionHash: { $ref: '#/components/schemas/ContentHash' }
+        safeFailure: { type: string }
+
+    ReserveCaseLifecycleRequest:
+      allOf:
+        - $ref: './enterprise-lifecycle-openapi.yml#/components/schemas/StartLifecycleExecutionRequest'
+        - type: object
+          properties:
+            replacesExecutionRef:
+              allOf:
+                - $ref: './enterprise-lifecycle-openapi.yml#/components/schemas/LifecycleExecutionRef'
+              description: Optional canonical predecessor linkage. Does not assert failure or authorize engine recovery; the lifecycle retry command verifies engine state and the pinned recovery entry.
+
+    ReserveCaseFormWorkflowRequest:
+      type: object
+      required: [modelId, caseRef, definitionRef, formSessionId, bindingDigest]
+      properties:
+        modelId: { type: string }
+        caseRef: { $ref: './enterprise-contract-components.yml#/components/schemas/CaseRef' }
+        definitionRef: { $ref: './enterprise-lifecycle-openapi.yml#/components/schemas/WorkflowDefinitionRef' }
+        formSessionId: { type: string, format: uuid }
+        bindingDigest: { $ref: '#/components/schemas/ContentHash' }
+        timerRef: { $ref: '#/components/schemas/ArtifactRef' }
+
+    ReadCaseReviewSourceArgs:
+      type: object
+      required: [executionRef]
+      properties:
+        executionRef: { $ref: './enterprise-lifecycle-openapi.yml#/components/schemas/LifecycleExecutionRef' }
+    CaseReviewSourceSnapshot:
+      type: object
+      required: [caseRef, templateRef, semanticRef, reviewedRevision, inputRevision, actionContext, decisionHashes, document]
+      properties:
+        caseRef: { $ref: './enterprise-contract-components.yml#/components/schemas/CaseRef' }
+        templateRef: { $ref: '#/components/schemas/ArtifactRef' }
+        semanticRef: { $ref: '#/components/schemas/SemanticResourceRef' }
+        reviewedRevision: { type: integer, format: int64 }
+        inputRevision: { type: integer, format: int64 }
+        actionContext: { type: object, additionalProperties: true }
+        decisionHashes:
+          type: object
+          additionalProperties: { $ref: '#/components/schemas/ContentHash' }
+        document: { type: object, additionalProperties: true }

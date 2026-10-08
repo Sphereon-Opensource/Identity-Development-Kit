@@ -1,0 +1,13 @@
+components:
+  schemas:
+    DeveloperConsolePublicClient:
+      type: object
+      required: [clientId, clientType, grantTypes, tokenEndpointAuthMethod, requirePkce, codeChallengeMethods, redirectUris]
+      properties:
+        clientId: {type: string, enum: [developer-console, developer-postman]}
+        clientType: {type: string, enum: [PUBLIC]}
+        grantTypes: {type: array, items: {type: string, enum: [authorization_code]}}
+        tokenEndpointAuthMethod: {type: string, enum: [none]}
+        requirePkce: {type: boolean, const: true}
+        codeChallengeMethods: {type: array, items: {type: string, enum: [S256]}}
+        redirectUris: {type: array, items: {type: string, format: uri}}

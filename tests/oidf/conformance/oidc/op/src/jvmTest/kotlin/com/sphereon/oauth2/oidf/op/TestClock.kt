@@ -17,8 +17,10 @@
 package com.sphereon.oauth2.oidf.op
 
 import com.sphereon.core.defaults.time.ClockModule
+import com.sphereon.oauth2.server.authorization.impl.time.OAuth2ArtifactClockModule
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesTo
+import dev.zacsweers.metro.Named
 import dev.zacsweers.metro.Provides
 import dev.zacsweers.metro.SingleIn
 import java.util.concurrent.atomic.AtomicReference
@@ -68,7 +70,7 @@ class TestClock : Clock {
  * advancement on every consumer in the merged graph. Picked up by [OidfOpTestAppGraph], which
  * is compiled in jvmTest where this contribution is visible.
  */
-@ContributesTo(AppScope::class, replaces = [ClockModule::class])
+@ContributesTo(AppScope::class, replaces = [ClockModule::class, OAuth2ArtifactClockModule::class])
 interface TestClockModule {
     @Provides
     @SingleIn(AppScope::class)
@@ -77,4 +79,9 @@ interface TestClockModule {
     @Provides
     @SingleIn(AppScope::class)
     fun provideClock(testClock: TestClock): Clock = testClock
+
+    @Provides
+    @SingleIn(AppScope::class)
+    @Named("oauth2-artifact-clock")
+    fun provideArtifactClock(testClock: TestClock): Clock = testClock
 }

@@ -1,0 +1,152 @@
+# Redocly lint configuration for product OpenAPI specs.
+# `npx @redocly/cli lint` must pass. The acceptance gate is `no-unresolved-refs: error`,
+# which proves every same-directory `$ref` resolves under the flat single-folder layout.
+#
+# Baseline is `minimal` (most stylistic rules warn/off) because this repo is
+# "consolidate now, normalize later". Only structural gates are errors.
+# Component bundles (*-components.yml) are linted transitively via their referrers.
+# external/** is intentionally NOT listed and is never linted.
+
+extends:
+  - minimal
+
+apis:
+  idk-did-manager:
+    root: did-openapi.yml
+  idk-did-hosting:
+    root: did-hosting-openapi.yml
+  idk-dcql:
+    root: dcql-openapi.yml
+  idk-oid4vp-universal:
+    root: oid4vp-universal-openapi.yml
+  idk-oid4vci-issuer-session:
+    root: oid4vci-issuer-session-openapi.yml
+  idk-statuslist-hosting:
+    root: statuslist-hosting-openapi.yml
+  idk-blob-store:
+    root: blob-store-openapi.yml
+  idk-vault:
+    root: vault-openapi.yml
+  idk-wallet-interaction:
+    root: wallet-interaction-openapi.yml
+  idk-wallet-credential:
+    root: wallet-credential-openapi.yml
+
+  edk-semantic-model-authoring:
+    root: semantic-model-authoring-openapi.yml
+  edk-statuslist-management:
+    root: statuslist-management-openapi.yml
+  edk-eidas-signature:
+    root: eidas-signature-openapi.yaml
+  edk-identity-auth:
+    root: identity-auth-openapi.yaml
+  edk-platform-admin:
+    root: platform-admin-openapi.yaml
+  edk-platform-setup:
+    root: platform-setup-openapi.yaml
+  edk-platform-bootstrap:
+    root: platform-bootstrap-openapi.yaml
+  edk-application-bff-oauth-client:
+    root: application-bff-oauth-client-openapi.yaml
+  edk-platform-config:
+    root: platform-config-openapi.yaml
+  edk-secret-management:
+    root: secret-management-openapi.yml
+  edk-audit:
+    root: audit-openapi.yml
+  edk-trust-domain:
+    root: trust-domain-openapi.yaml
+  edk-webhook:
+    root: webhook-openapi.yml
+  edk-catalog:
+    root: catalog-openapi.yaml
+  edk-wallet-unit:
+    root: wallet-unit-openapi.yml
+  edk-wallet-recovery:
+    root: wallet-recovery-openapi.yml
+  edk-business-conduit:
+    root: business-conduit-openapi.yml
+  vdx-theme:
+    root: theme-openapi.yml
+  vdx-wallet-entitlement:
+    root: wallet-entitlement-openapi.yml
+  vdx-wallet-onboarding:
+    root: wallet-onboarding-openapi.yml
+  edk-oid4vp-verifier:
+    root: oid4vp-verifier-openapi.yaml
+  edk-oid4vci-issuer:
+    root: oid4vci-issuer-openapi.yaml
+  edk-dcql:
+    root: dcql-edk-openapi.yml
+  edk-credential-design:
+    root: credential-design-openapi.yml
+  edk-assets:
+    root: asset-openapi.yml
+  edk-oid4vci-issuance-template:
+    root: oid4vci-issuance-template-openapi.yml
+  edk-oid4vp-verification-template:
+    root: oid4vp-verification-template-openapi.yml
+
+  vdx-party-manager:
+    root: party-manager-openapi.yml
+  vdx-license-portal:
+    root: license-portal-openapi.yaml
+  vdx-connector:
+    root: connector-openapi.yml
+  vdx-connector-integration:
+    root: connector-integration-openapi.yml
+  vdx-resource-manager:
+    root: resource-manager-openapi.yml
+  vdx-user-manager:
+    root: user-manager-openapi.yml
+  vdx-software-manager:
+    root: software-manager-openapi.yml
+  vdx-forms:
+    root: forms-openapi.yml
+  vdx-workflow-authoring:
+    root: workflow-authoring-openapi.yml
+  vdx-workflow-execution:
+    root: workflow-execution-openapi.yml
+  vdx-semantic-binding:
+    root: semantic-binding-openapi.yml
+  vdx-semantic-vocabulary:
+    root: semantic-vocabulary-openapi.yml
+  vdx-invitation:
+    root: invitation-openapi.yml
+  vdx-issuance-batch:
+    root: issuance-batch-openapi.yml
+  vdx-account-action:
+    root: account-action-openapi.yml
+  vdx-email:
+    root: email-openapi.yaml
+  vdx-dcql:
+    root: dcql-vdx-openapi.yml
+  vdx-identity-manager:
+    root: identity-manager-openapi.yaml
+  vdx-enterprise-modeling:
+    root: enterprise-modeling-openapi.yml
+  vdx-enterprise-organization:
+    root: enterprise-organization-openapi.yml
+  vdx-enterprise-lifecycle:
+    root: enterprise-lifecycle-openapi.yml
+
+rules:
+  # Acceptance gates (must pass), structural integrity of the consolidated repo
+  no-unresolved-refs: error
+  no-identical-paths: error
+  operation-operationId-unique: error
+
+  # Deferred to the normalization pass, surfaced, not blocking
+  struct: error
+  no-invalid-parameter-examples: error
+  no-invalid-media-type-examples: error
+  no-example-value-and-externalValue: warn
+  operation-4xx-response: off
+  operation-2xx-response: off
+  no-server-example.com: off
+  info-license: off
+  info-contact: off
+  tag-description: off
+
+  vdx-workflow-execution:
+    root: workflow-execution-openapi.yml

@@ -1,0 +1,2566 @@
+openapi: 3.0.4
+info:
+  title: Forms API
+  version: 0.2.0
+  description: |
+    Manage form definitions and form sessions. Definitions cover authoring, lifecycle, and
+    resolution. Sessions cover runtime state: field values, validation, navigation,
+    form-action lifecycle, and submission.
+
+    ## Concurrency
+    Session endpoints that revise session state support optimistic concurrency via `If-Match`
+    carrying the session [revision]. A mismatch returns `412 Precondition Failed` with code
+    `OPTIMISTIC_LOCK_CONFLICT`. Successful responses carry the new revision back via the `ETag`
+    response header (RFC 7232 strong validator), which clients use as the next request's `If-Match`.
+
+    ## Idempotency
+    Session endpoints that revise session state accept `Idempotency-Key`. The platform replays the
+    original result when the same key is reused; reusing a key with a different request body returns
+    `409` with code `IDEMPOTENCY_KEY_CONFLICT`. A recorded result is re-read at replay time, so when
+    the session has moved past the revision it was produced at the replay returns `409` with code
+    `IDEMPOTENCY_REPLAY_EXPIRED` rather than a stale body.
+
+    Each operation lists the headers it accepts; form-definition and authoring endpoints carry
+    neither.
+servers:
+  - url: http://localhost:8080/api/forms/v1
+    description: Local development.
+
+security:
+  - bearer: []
+
+tags:
+  - name: Forms
+    description: Form definitions, sessions, and form actions.
+  - name: Form Lifecycle
+    description: |
+      Draft authoring and version lifecycle: creating drafts, validating and previewing them without
+      persisting, publishing a draft, and deriving a new version or a new form from an existing one.
+paths:
+  /definitions:
+    post:
+      tags: [Forms]
+      summary: Create a form definition
+      operationId: createForm
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateFormDefinitionRequest'
+      responses:
+        '201':
+          description: Form definition created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FormDefinition'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/Error'
+    get:
+      tags: [Forms]
+      summary: List form definitions
+      operationId: listForms
+      description: |
+        Returns a page of form definitions matching the optional filter. Pagination accepts both
+        `limit`/`offset` and OpenAPI-style `page`/`size`; the parser normalises and clamps `limit`
+        to `[1, 100]` (default `20`). Default sort is `createdAt DESC`.
+      parameters:
+        - $ref: '#/components/parameters/FilterNameContains'
+        - $ref: '#/components/parameters/FilterStatus'
+        - $ref: '#/components/parameters/FilterKind'
+        - $ref: '#/components/parameters/FilterDataProductId'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+        - $ref: '#/components/parameters/Sort'
+        - $ref: '#/components/parameters/SortDirection'
+      responses:
+        '200':
+          description: Page of form definitions.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FormDefinitionPageResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/Error'
+
+  /definitions/{formId}:
+    parameters:
+      - $ref: '#/components/parameters/FormId'
+    get:
+      tags: [Forms]
+      summary: Get one form definition
+      operationId: getForm
+      responses:
+        '200':
+          description: Form definition.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FormDefinition'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/Error'
+    put:
+      tags: [Forms]
+      summary: Update a form definition
+      operationId: updateForm
+      description: Null fields in the input are left unchanged.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateFormDefinitionRequest'
+      responses:
+        '200':
+          description: Updated form definition.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FormDefinition'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/Error'
+    delete:
+      tags: [Forms]
+      summary: Soft-delete a form definition
+      operationId: deleteForm
+      responses:
+        '204':
+          description: Form definition soft-deleted.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/Error'
+
+  /definitions/{formId}/resolve:
+    parameters:
+      - $ref: '#/components/parameters/FormId'
+    post:
+      tags: [Forms]
+      summary: Resolve a form definition
+      operationId: resolveForm
+      description: |
+        Returns the form's runtime tree resolved for the given locale, principal, and roles.
+        Steps and elements are filtered by access policy and locale-keyed labels are
+        collapsed to the requested locale.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResolveFormRequest'
+      responses:
+        '200':
+          description: Resolved form runtime tree.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResolvedForm'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/Error'
+
+  /definitions/drafts:
+    post:
+      tags: [Form Lifecycle]
+      summary: Create a new form as a draft
+      operationId: createFormDraft
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateFormDefinitionRequest'
+      responses:
+        '201':
+          description: Draft form definition created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FormDefinition'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/Error'
+
+  /definitions/validate:
+    post:
+      tags: [Form Lifecycle]
+      summary: Validate a form draft without persisting it
+      operationId: validateFormDraft
+      description: |
+        Returns an authoring-violation report rather than rejecting the request, so an editor can
+        render per-field errors while a draft is still being authored.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateFormDefinitionRequest'
+      responses:
+        '200':
+          description: Draft validation report.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FormDraftValidationReportResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/Error'
+
+  /definitions/resolve:
+    post:
+      tags: [Form Lifecycle]
+      summary: Resolve a form draft for preview without persisting it
+      operationId: previewFormDraft
+      description: |
+        Resolves the draft into a renderer-ready form. Nothing is persisted and no semantic lineage
+        is written.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PreviewFormDraftRequest'
+      responses:
+        '200':
+          description: Non-persistent preview of the resolved draft.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PreviewFormDraftResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/Error'
+
+  /definitions/{formId}/publication:
+    parameters:
+      - $ref: '#/components/parameters/FormId'
+    put:
+      tags: [Form Lifecycle]
+      summary: Publish a draft form definition
+      operationId: publishForm
+      description: |
+        Transitions a DRAFT to PUBLISHED, stamps approval, and freezes the row. The only path that
+        transitions a form to PUBLISHED. Publishing a form that is not in DRAFT is a state conflict
+        and returns `409`.
+      responses:
+        '200':
+          description: Published form definition.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FormDefinition'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/Error'
+
+  /definitions/{formId}/versions:
+    parameters:
+      - $ref: '#/components/parameters/FormId'
+    get:
+      tags: [Form Lifecycle]
+      summary: List a form's published versions
+      operationId: listFormVersions
+      description: |
+        Every published version of the form, newest first. A version is recorded when it is
+        published, so a form whose only content is an unpublished draft returns an empty list.
+      responses:
+        '200':
+          description: The form's version history.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FormDefinitionVersionList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/Error'
+    post:
+      tags: [Form Lifecycle]
+      summary: Open the next draft version of a published form
+      operationId: createFormVersion
+      description: |
+        Advances the form to its next version and returns it to DRAFT. The form keeps its `id`, so
+        every reference to it stays valid; the version it leaves stays readable at
+        `GET /definitions/{formId}/versions/{version}` and keeps serving the sessions pinned to it.
+        Rejected with `409` when the form is not currently PUBLISHED.
+      responses:
+        '201':
+          description: New draft version opened.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FormDefinition'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/Error'
+
+  /definitions/{formId}/versions/{version}:
+    parameters:
+      - $ref: '#/components/parameters/FormId'
+      - $ref: '#/components/parameters/FormVersion'
+    get:
+      tags: [Form Lifecycle]
+      summary: Read a form as it was at a given version
+      operationId: getFormVersion
+      description: |
+        The form as it was when that version published. Answers the same thing however far the form
+        has moved on since, which is what a pinned reference and a running session read.
+      responses:
+        '200':
+          description: The form at that version.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FormDefinition'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/Error'
+
+  /definitions/{formId}/versions/{version}/restorations:
+    parameters:
+      - $ref: '#/components/parameters/FormId'
+      - $ref: '#/components/parameters/FormVersion'
+    post:
+      tags: [Form Lifecycle]
+      summary: Bring an earlier version back as the form's working draft
+      operationId: restoreFormVersion
+      description: |
+        Writes an earlier version's content back onto the form as a DRAFT. History is append-only:
+        nothing is rewritten or removed, and the restored content becomes the next version once it is
+        published — so a running session keeps resolving the version it pinned. Restoring onto a form
+        that already has an open draft replaces that draft, which is how a draft is discarded.
+      responses:
+        '200':
+          description: The form, now a draft carrying the restored content.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FormDefinition'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/Error'
+
+  /definitions/{formId}/clones:
+    parameters:
+      - $ref: '#/components/parameters/FormId'
+    post:
+      tags: [Form Lifecycle]
+      summary: Clone a form into a new independent form
+      operationId: cloneForm
+      responses:
+        '201':
+          description: Cloned draft form definition created as a new form.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FormDefinition'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/Error'
+
+  /definitions/{formId}/sessions:
+    parameters:
+      - $ref: '#/components/parameters/FormId'
+    post:
+      tags: [Forms]
+      summary: Create a form session
+      operationId: createFormSession
+      description: |
+        Creates a new runtime session bound to the form version identified by `formId`. The
+        session inherits the resolved form tree for the supplied locale/principal/roles and
+        starts at `currentStepIndex = 0`.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateFormSessionRequest'
+      responses:
+        '201':
+          description: Form session created.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FormSession'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/Error'
+
+  /sessions/{sessionId}:
+    parameters:
+      - $ref: '#/components/parameters/SessionId'
+    get:
+      tags: [Forms]
+      summary: Get the full session
+      operationId: getFormSession
+      responses:
+        '200':
+          description: Form session.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FormSession'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/Error'
+
+  /sessions/{sessionId}/snapshot:
+    parameters:
+      - $ref: '#/components/parameters/SessionId'
+    get:
+      tags: [Forms]
+      summary: Get the session snapshot
+      operationId: getFormSessionSnapshot
+      description: |
+        Returns the client-oriented snapshot: state, progress, allowed commands, and revision.
+        Snapshots omit raw field values, fetch the full session for those.
+      responses:
+        '200':
+          description: Session snapshot.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FormSessionSnapshot'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/Error'
+
+  /sessions/{sessionId}/events:
+    parameters:
+      - $ref: '#/components/parameters/SessionId'
+    get:
+      tags: [Forms]
+      summary: List session events
+      operationId: listFormSessionEvents
+      description: |
+        Returns appended session events in monotonically increasing `sequence` order. Use
+        `afterSequence` to tail events past a known cursor; `limit` is clamped to `[1, 1000]`.
+      parameters:
+        - $ref: '#/components/parameters/EventAfterSequence'
+        - $ref: '#/components/parameters/EventLimit'
+      responses:
+        '200':
+          description: Session events list.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FormSessionEventListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/Error'
+
+  /sessions/{sessionId}/resolve-sources:
+    parameters:
+      - $ref: '#/components/parameters/SessionId'
+    post:
+      tags: [Forms]
+      summary: Resolve governed sources into a form session
+      operationId: resolveFormSessionSources
+      description: |
+        Resolves the published form's source bindings under authenticated context and persists
+        their values and provenance against the expected session revision. The locator selects
+        context; it cannot supply authoritative values, identity or evaluation results.
+        Workflow-bound sources must match the session's canonical execution and pending task.
+        Resolution is explicit so displayed review inputs cannot silently change.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResolveFormSourcesInput'
+      responses:
+        '200':
+          description: Session with resolved values and their canonical provenance.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FormSession'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Source or session access denied.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '412':
+          description: The expected session revision no longer matches canonical state.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/Error'
+
+  /sessions/{sessionId}/values:
+    parameters:
+      - $ref: '#/components/parameters/SessionId'
+    put:
+      tags: [Forms]
+      summary: Update session field values
+      operationId: updateFormSessionValues
+      description: |
+        Applies the supplied field-value map to the session and returns the resulting mutation
+        with a per-field diff. Field paths must exist in the session's current `resolvedForm`;
+        HIDDEN-by-policy fields are absent from the resolved tree and are rejected.
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateFieldValuesRequest'
+      responses:
+        '200':
+          description: Mutation applied.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FormSessionMutationResult'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '412':
+          $ref: '#/components/responses/PreconditionFailed'
+        '500':
+          $ref: '#/components/responses/Error'
+
+  /sessions/{sessionId}/steps/{stepIndex}/navigate:
+    parameters:
+      - $ref: '#/components/parameters/SessionId'
+      - $ref: '#/components/parameters/StepIndex'
+    post:
+      tags: [Forms]
+      summary: Navigate to a step
+      operationId: navigateFormSessionStep
+      description: |
+        Navigates the session to the step at `stepIndex`. Forward navigation is gated on the
+        target step's required actions being satisfied; backward navigation is unconditional
+        within mutable session states.
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: Navigation applied.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FormSession'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '412':
+          $ref: '#/components/responses/PreconditionFailed'
+        '500':
+          $ref: '#/components/responses/Error'
+
+  /sessions/{sessionId}/steps/{stepIndex}/validate:
+    parameters:
+      - $ref: '#/components/parameters/SessionId'
+      - $ref: '#/components/parameters/StepIndex'
+    post:
+      tags: [Forms]
+      summary: Validate every field within a step
+      operationId: validateFormSessionStep
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: Step validated. Returns a map from field path to validation error messages (empty when the step is valid).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StepValidationErrors'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '412':
+          $ref: '#/components/responses/PreconditionFailed'
+        '500':
+          $ref: '#/components/responses/Error'
+
+  /sessions/{sessionId}/fields/validate:
+    parameters:
+      - $ref: '#/components/parameters/SessionId'
+    post:
+      tags: [Forms]
+      summary: Validate a single field
+      operationId: validateFormSessionField
+      description: |
+        Validating a field changes nothing, so no `Idempotency-Key` is accepted: there is no
+        execution to replay. `If-Match` still applies — a report computed from a session that has
+        already moved on describes state the caller never saw.
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ValidateFieldRequest'
+      responses:
+        '200':
+          description: Field validated. Returns the list of validation error messages (empty when the field is valid).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FieldValidationErrors'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '412':
+          $ref: '#/components/responses/PreconditionFailed'
+        '500':
+          $ref: '#/components/responses/Error'
+
+  /sessions/{sessionId}/submit:
+    parameters:
+      - $ref: '#/components/parameters/SessionId'
+    post:
+      tags: [Forms]
+      summary: Submit a form session
+      operationId: submitFormSession
+      description: |
+        Validates all steps, applies final values, and transitions the session to `SUBMITTED`.
+        Rejected when the session status forbids submission (see `FormSessionStatus.canSubmit`).
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubmitFormInput'
+      responses:
+        '200':
+          description: Session submitted.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FormSession'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '412':
+          $ref: '#/components/responses/PreconditionFailed'
+        '500':
+          $ref: '#/components/responses/Error'
+
+  /sessions/{sessionId}/cancel:
+    parameters:
+      - $ref: '#/components/parameters/SessionId'
+    post:
+      tags: [Forms]
+      summary: Cancel a form session
+      operationId: cancelFormSession
+      description: Transitions the session to `CANCELLED`.
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '204':
+          description: Session cancelled.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '412':
+          $ref: '#/components/responses/PreconditionFailed'
+        '500':
+          $ref: '#/components/responses/Error'
+
+  /sessions/{sessionId}/fields/invalidate:
+    parameters:
+      - $ref: '#/components/parameters/SessionId'
+    post:
+      tags: [Forms]
+      summary: Mark a field as needing re-validation
+      operationId: invalidateFormSessionField
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InvalidateFieldInput'
+      responses:
+        '200':
+          description: Field invalidated.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FormSession'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '412':
+          $ref: '#/components/responses/PreconditionFailed'
+        '500':
+          $ref: '#/components/responses/Error'
+
+  /sessions/{sessionId}/fields/remotevalidation:
+    parameters:
+      - $ref: '#/components/parameters/SessionId'
+    post:
+      tags: [Forms]
+      summary: Force a remote validation result on a field
+      operationId: forceFormSessionFieldValidation
+      description: |
+        Empty `errors` marks the field as remotely valid; non-empty marks it remotely invalid
+        and stamps the session phase as `FAILED`.
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ForceFieldValidationInput'
+      responses:
+        '200':
+          description: Forced validation applied.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FormSession'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '412':
+          $ref: '#/components/responses/PreconditionFailed'
+        '500':
+          $ref: '#/components/responses/Error'
+
+  /sessions/{sessionId}/fields/remotevalidation/clear:
+    parameters:
+      - $ref: '#/components/parameters/SessionId'
+    post:
+      tags: [Forms]
+      summary: Clear forced remote validation on a field
+      operationId: clearFormSessionFieldForcedValidation
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ClearForcedFieldValidationInput'
+      responses:
+        '200':
+          description: Forced validation cleared.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FormSession'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '412':
+          $ref: '#/components/responses/PreconditionFailed'
+        '500':
+          $ref: '#/components/responses/Error'
+
+  /sessions/{sessionId}/servererrors:
+    parameters:
+      - $ref: '#/components/parameters/SessionId'
+    post:
+      tags: [Forms]
+      summary: Apply server-side field errors in bulk
+      operationId: applyFormSessionServerErrors
+      description: |
+        Stamps the session phase as `FAILED`. The next accepted user update to a targeted field
+        clears its remote errors via the existing field lifecycle.
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApplyServerFieldErrorsInput'
+      responses:
+        '200':
+          description: Server errors applied.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FormSession'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '412':
+          $ref: '#/components/responses/PreconditionFailed'
+        '500':
+          $ref: '#/components/responses/Error'
+
+  /sessions/{sessionId}/actions/{actionId}/start:
+    parameters:
+      - $ref: '#/components/parameters/SessionId'
+      - $ref: '#/components/parameters/ActionId'
+    post:
+      tags: [Forms]
+      summary: Start a form action
+      operationId: startFormAction
+      description: |
+        Transitions a form action from `PENDING` -> `IN_PROGRESS` and returns the prompt the
+        client must fulfill (presentation request, evidence upload target, signature challenge,
+        artifact handle, or `None` for synchronous actions).
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: Form action started; prompt returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FormActionPrompt'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '412':
+          $ref: '#/components/responses/PreconditionFailed'
+        '500':
+          $ref: '#/components/responses/Error'
+
+  /sessions/{sessionId}/actions/{actionId}/complete:
+    parameters:
+      - $ref: '#/components/parameters/SessionId'
+      - $ref: '#/components/parameters/ActionId'
+    post:
+      tags: [Forms]
+      summary: Complete a form action
+      operationId: completeFormAction
+      description: The `result` variant must match the declared `FormAction` variant on the resolved form.
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CompleteStepActionInput'
+      responses:
+        '200':
+          description: Form action completed.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FormSession'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '412':
+          $ref: '#/components/responses/PreconditionFailed'
+        '500':
+          $ref: '#/components/responses/Error'
+
+  /sessions/{sessionId}/actions/{actionId}/cancel:
+    parameters:
+      - $ref: '#/components/parameters/SessionId'
+      - $ref: '#/components/parameters/ActionId'
+    post:
+      tags: [Forms]
+      summary: Cancel a form action
+      operationId: cancelFormAction
+      description: Terminal state with optional reason recorded for audit.
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CancelStepActionInput'
+      responses:
+        '200':
+          description: Form action cancelled.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FormSession'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '412':
+          $ref: '#/components/responses/PreconditionFailed'
+        '500':
+          $ref: '#/components/responses/Error'
+
+  /sessions/{sessionId}/evidence:
+    parameters:
+      - $ref: '#/components/parameters/SessionId'
+      - $ref: './forms-components.yml#/components/parameters/EvidenceGrantId'
+    post:
+      tags: [Forms]
+      summary: Upload an evidence attachment for a session
+      description: |
+        The single place file content enters a form. Both ways of attaching evidence use it: a
+        `RequireEvidence` form action points its prompt here, and an inline upload field posts to it
+        directly.
+
+        The content is checked against the bytes rather than the declared type, and against an
+        accept list the server reads for itself: from the upload grant named by `grantId` when the
+        prompt supplied one, and otherwise from the authored field named by `fieldPath`. Content
+        that cannot be identified is refused. Attachments are bounded at 10 MB decoded.
+
+        The grant may be named either as the `grantId` query parameter — which the prompt's upload
+        address already carries, so posting to that address as given is enough — or in the request
+        body. When both are present, the body wins.
+      operationId: uploadFormSessionEvidence
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './forms-components.yml#/components/schemas/UploadEvidenceRequest'
+      responses:
+        '201':
+          description: The attachment was stored.
+          content:
+            application/json:
+              schema:
+                $ref: './forms-components.yml#/components/schemas/UploadEvidenceResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/Error'
+
+  /sessions/{sessionId}/evidence/{evidenceId}:
+    parameters:
+      - $ref: '#/components/parameters/SessionId'
+      - $ref: './forms-components.yml#/components/parameters/EvidenceId'
+    get:
+      tags: [Forms]
+      summary: Read back an evidence attachment
+      description: |
+        Returns one attachment together with its content.
+
+        Evidence is private to the session that collected it, so the attachment must belong to the
+        session in the path. One that does not is reported as not found rather than as forbidden.
+      operationId: downloadFormSessionEvidence
+      responses:
+        '200':
+          description: The attachment and its content.
+          content:
+            application/json:
+              schema:
+                $ref: './forms-components.yml#/components/schemas/DownloadEvidenceResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/Error'
+
+  /sessions/{sessionId}/credential-requests:
+    parameters:
+      - $ref: '#/components/parameters/SessionId'
+    post:
+      tags: [Forms]
+      summary: Start a credential presentation request
+      description: |
+        Asks a wallet to present a credential the form is bound to, and returns the deep link to
+        open it with. Poll the returned `correlationId` for the outcome.
+      operationId: startFormSessionCredentialRequest
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './forms-components.yml#/components/schemas/StartCredentialRequestInput'
+      responses:
+        '201':
+          description: The exchange was started.
+          content:
+            application/json:
+              schema:
+                $ref: './forms-components.yml#/components/schemas/StartCredentialRequestResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/Error'
+
+  /sessions/{sessionId}/credential-requests/{correlationId}:
+    parameters:
+      - $ref: '#/components/parameters/SessionId'
+      - $ref: './forms-components.yml#/components/parameters/CorrelationId'
+    get:
+      tags: [Forms]
+      summary: Get the status of a session's credential presentation request
+      description: |
+        Reports how far the exchange has got. The correlation must belong to the session in the
+        path; one that does not is reported as not found.
+      operationId: getFormSessionCredentialRequestStatus
+      responses:
+        '200':
+          description: Current status of the exchange.
+          content:
+            application/json:
+              schema:
+                $ref: './forms-components.yml#/components/schemas/CredentialRequestStatusResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/Error'
+
+  /definitions/impact/data-products/{dataProductId}:
+    get:
+      tags: [Form Lifecycle]
+      summary: List published forms pinned behind an data product's current version
+      operationId: findImpactedForms
+      description: |
+        The forms an author would have to deliberately remap to pick up a newer set.
+
+        A listed form is **impacted, not broken**: its resolved shape is frozen at publish, so it
+        keeps rendering, validating and running exactly as pinned until someone remaps it. This is a
+        visibility query, not an error report.
+
+        Each impacted form is listed with the published version that pins the data product
+        version, so each published version is its own entry.
+
+        This is the forms half of the attribute-lineage picture; the other queries live on the
+        semantic-model API under `/usage`.
+      parameters:
+        - $ref: '#/components/parameters/ImpactDataProductId'
+        - $ref: '#/components/parameters/TraversalPathsQuery'
+      responses:
+        '200':
+          description: The published forms pinned behind the data product's current version.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImpactedSemanticFormList'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /definitions/authoring/capabilities:
+    get:
+      tags: [Form Lifecycle]
+      summary: Report which form authoring modes this tenant may use
+      operationId: getFormAuthoringCapabilities
+      description: |
+        Reports whether governed (data-product-bound) authoring is available, which modes may be
+        used, and whether any published data product exists to bind to.
+
+        Deliberately not gated: a tenant without governed authoring must still be able to learn that,
+        and this answer is what tells a client not to call the governed endpoints at all.
+      responses:
+        '200':
+          description: The tenant's authoring capabilities.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FormAuthoringCapabilities'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/Error'
+
+  /definitions/authoring/semantic-palette:
+    get:
+      tags: [Form Lifecycle]
+      summary: List the governed attributes an data product exposes for form authoring
+      operationId: getSemanticPalette
+      description: |
+        Each entry is a flat projection of one data-product member: its value kind, widget, entry
+        codes, cardinality, localized labels and governance overlays, plus the `(roleRef, path)` pair
+        that identifies it.
+
+        There is no version parameter. The version a form sees is decided by its pin, not by the
+        caller, so a client cannot request a projection the form could never be authored against.
+      parameters:
+        - $ref: '#/components/parameters/DataProductIdQuery'
+      responses:
+        '200':
+          description: The data product's governed attributes.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SemanticPalette'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/Error'
+
+  /definitions/{formId}/data-product/compatibility-checks:
+    post:
+      tags: [Form Lifecycle]
+      summary: Check a form against its pinned data product
+      operationId: checkFormSemanticCompatibility
+      description: |
+        Reports every reason a data-product-bound form is not compatible with the data product it pins:
+        selections the data product does not expose, controls that cannot render the attribute's value kind,
+        required flags loosened, entry codes or cardinality widened, sensitivity defeated, an
+        unpublished layer in the data product's chain, or a data product that has moved past the form's pinned version.
+
+        `POST` because the check is an action run against the live semantic chain, not a stored
+        property. It has no side effects, persists nothing, and is not gated.
+
+        A free-form form is trivially compatible.
+      parameters:
+        - $ref: '#/components/parameters/FormId'
+      responses:
+        '200':
+          description: The compatibility report.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FormSemanticCompatibility'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/Error'
+
+components:
+  securitySchemes:
+    bearer:
+      $ref: './common-components.yml#/components/securitySchemes/bearer'
+  parameters:
+    ImpactDataProductId:
+      name: dataProductId
+      in: path
+      required: true
+      description: |
+        The data product whose current version the published forms are compared against, identified
+        by the data product it is published as.
+      schema:
+        type: string
+        format: uuid
+
+    TraversalPathsQuery:
+      name: traversalPaths
+      in: query
+      required: false
+      description: |
+        Comma-separated traversal paths to restrict the answer to — the useful shape when only part of
+        a data product changed. Omit for every path the data product exposes.
+      schema:
+        type: string
+    DataProductIdQuery:
+      name: dataProductId
+      in: query
+      required: true
+      description: The data product to project.
+      schema:
+        type: string
+        format: uuid
+    IfMatch:
+      $ref: './forms-components.yml#/components/parameters/IfMatch'
+    IdempotencyKey:
+      $ref: './forms-components.yml#/components/parameters/IdempotencyKey'
+    FormId:
+      $ref: './forms-components.yml#/components/parameters/FormId'
+    FormVersion:
+      name: version
+      in: path
+      required: true
+      description: A form version number, as reported by `GET /definitions/{formId}/versions`.
+      schema:
+        type: integer
+        format: int32
+        minimum: 1
+    SessionId:
+      $ref: './forms-components.yml#/components/parameters/SessionId'
+    StepIndex:
+      $ref: './forms-components.yml#/components/parameters/StepIndex'
+    ActionId:
+      $ref: './forms-components.yml#/components/parameters/ActionId'
+    EventAfterSequence:
+      $ref: './forms-components.yml#/components/parameters/EventAfterSequence'
+    EventLimit:
+      $ref: './forms-components.yml#/components/parameters/EventLimit'
+    FilterNameContains:
+      $ref: './forms-components.yml#/components/parameters/FilterNameContains'
+    FilterStatus:
+      $ref: './forms-components.yml#/components/parameters/FilterStatus'
+    FilterKind:
+      $ref: './forms-components.yml#/components/parameters/FilterKind'
+    FilterDataProductId:
+      $ref: './forms-components.yml#/components/parameters/FilterDataProductId'
+    Limit:
+      $ref: './forms-components.yml#/components/parameters/Limit'
+    Offset:
+      $ref: './forms-components.yml#/components/parameters/Offset'
+    Sort:
+      $ref: './forms-components.yml#/components/parameters/Sort'
+    SortDirection:
+      $ref: './forms-components.yml#/components/parameters/SortDirection'
+  headers:
+    ETag:
+      description: |
+        Strong entity-tag (RFC 7232) carrying the resource's current [revision]. Clients echo
+        this back unchanged as the `If-Match` request header on the next mutating call to opt
+        into optimistic concurrency.
+      schema:
+        type: string
+      example: '"42"'
+
+  responses:
+    NotFound:
+      description: The requested entity was not found.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    ValidationError:
+      description: Request validation failed.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Unauthorized:
+      description: Authentication required.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Conflict:
+      description: |
+        Idempotency, policy-gate, or lifecycle state conflict. The `code` field distinguishes
+        `IDEMPOTENCY_KEY_CONFLICT` (a key reused with a different request body),
+        `IDEMPOTENCY_REPLAY_EXPIRED` (a key whose recorded result no longer answers the request,
+        because the session has moved past the revision it was produced at),
+        `POLICY_GATE_REJECTED`, and the lifecycle codes
+        `FORM_NOT_IN_DRAFT` (publishing a form that is not in DRAFT) and `FORM_NOT_PUBLISHED`
+        (opening the next version of a form that is not PUBLISHED). Malformed input
+        remains `400`; optimistic-lock failures are surfaced as `412 Precondition Failed` — see
+        [PreconditionFailed].
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    PreconditionFailed:
+      description: |
+        Optimistic-concurrency precondition failed. Returned when the `If-Match` request header
+        does not match the resource's current [revision]. The `code` field is
+        `OPTIMISTIC_LOCK_CONFLICT`. Clients typically re-fetch the resource to pick up the latest
+        revision before retrying.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Error:
+      description: An unexpected error occurred.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+  schemas:
+    FormDefinitionVersionList:
+      type: array
+      description: A form's published versions, newest first.
+      items:
+        $ref: '#/components/schemas/FormDefinitionVersionSummary'
+
+    FormDefinitionVersionSummary:
+      type: object
+      description: |
+        One entry in a form's version history: the version and when it was published, without its
+        content. Read the version itself to get the definition back.
+      required: [version, createdAt, published]
+      properties:
+        version:
+          type: integer
+          format: int32
+          minimum: 1
+        createdAt:
+          type: string
+          format: date-time
+          description: When this version was published.
+        createdBy:
+          type: string
+          nullable: true
+          description: The principal that published it, when recorded.
+        published:
+          type: boolean
+          description: |
+            Whether this is the version the form is currently published at. At most one entry is,
+            and none is while the form's only content is an unpublished draft.
+
+    ImpactedSemanticFormList:
+      type: array
+      items:
+        $ref: '#/components/schemas/ImpactedSemanticForm'
+
+    ImpactedSemanticForm:
+      type: object
+      description: One published form version pinned behind its data product's current version.
+      required: [formDefinitionId, name, formVersion, pinnedDataProductVersion, currentDataProductVersion]
+      properties:
+        formDefinitionId:
+          type: string
+          format: uuid
+        name:
+          type: string
+        formVersion:
+          type: integer
+          format: int32
+          description: The published version this entry is about.
+        pinnedDataProductVersion:
+          type: integer
+          format: int64
+        currentDataProductVersion:
+          type: integer
+          format: int64
+        affectedPaths:
+          type: array
+          description: The traversal paths this version consumes that fall within the query's scope.
+          items:
+            type: string
+    FormAuthoringCapabilities:
+      $ref: './forms-components.yml#/components/schemas/FormAuthoringCapabilities'
+    SemanticPalette:
+      $ref: './forms-components.yml#/components/schemas/SemanticPalette'
+    FormSemanticCompatibility:
+      $ref: './forms-components.yml#/components/schemas/FormSemanticCompatibility'
+    PaginationMeta:
+      type: object
+      description: Pagination metadata returned alongside paged collections.
+      required: [limit, offset, total, hasMore]
+      properties:
+        limit:
+          type: integer
+          minimum: 0
+        offset:
+          type: integer
+          minimum: 0
+        total:
+          type: integer
+          format: int64
+          minimum: 0
+        hasMore:
+          type: boolean
+
+    FormDefinitionPageResponse:
+      type: object
+      description: Paged list of form definitions.
+      required: [data, pagination]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/FormDefinition'
+        pagination:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    FormSessionEventListResponse:
+      type: object
+      description: Wire envelope for `GET /sessions/{sessionId}/events`.
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/FormSessionEvent'
+
+    ApiError:
+      type: object
+      description: Error body content.
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          description: Stable, machine-readable error category.
+          example: NOT_FOUND
+        message:
+          type: string
+        details:
+          type: object
+          additionalProperties:
+            type: string
+          description: Optional field-level error detail (key -> message).
+
+    ErrorResponse:
+      type: object
+      description: Envelope wrapping an [ApiError].
+      required: [error]
+      properties:
+        error:
+          $ref: '#/components/schemas/ApiError'
+
+    FormStatus:
+      $ref: './forms-components.yml#/components/schemas/FormStatus'
+    FormKind:
+      $ref: './forms-components.yml#/components/schemas/FormKind'
+    FormSessionStatus:
+      $ref: './forms-components.yml#/components/schemas/FormSessionStatus'
+    FormSessionPhase:
+      $ref: './forms-components.yml#/components/schemas/FormSessionPhase'
+    FormActionStatus:
+      $ref: './forms-components.yml#/components/schemas/FormActionStatus'
+    FormDefinition:
+      $ref: './forms-components.yml#/components/schemas/FormDefinition'
+    FormStepDefinition:
+      $ref: './forms-components.yml#/components/schemas/FormStepDefinition'
+    FormElement:
+      $ref: './forms-components.yml#/components/schemas/FormElement'
+    FormFieldDefinition:
+      $ref: './forms-components.yml#/components/schemas/FormFieldDefinition'
+    FormAuthoringMode:
+      $ref: './forms-components.yml#/components/schemas/FormAuthoringMode'
+    FormPresentation:
+      $ref: './forms-components.yml#/components/schemas/FormPresentation'
+    FormSemanticBinding:
+      $ref: './forms-components.yml#/components/schemas/FormSemanticBinding'
+    DataProductRef:
+      $ref: './forms-components.yml#/components/schemas/DataProductRef'
+    FormThemeRef:
+      $ref: './forms-components.yml#/components/schemas/FormThemeRef'
+    FormFieldShape:
+      $ref: './forms-components.yml#/components/schemas/FormFieldShape'
+    FormFieldSemanticBinding:
+      $ref: './forms-components.yml#/components/schemas/FormFieldSemanticBinding'
+    FormSourceBinding:
+      $ref: './forms-components.yml#/components/schemas/FormSourceBinding'
+    FormRef:
+      $ref: './forms-components.yml#/components/schemas/FormRef'
+    CreateFormDefinitionRequest:
+      type: object
+      description: |
+        Request body for creating a new form definition. Free-form forms (`authoringMode: FREE_FORM`)
+        carry no `dataProductId`/`semanticBinding` and author field shape directly; data-product-bound
+        semantic forms (`authoringMode: DATA_PRODUCT_BOUND`) pin one published data product.
+      required: [name, kind, content]
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        kind:
+          $ref: '#/components/schemas/FormKind'
+        authoringMode:
+          $ref: '#/components/schemas/FormAuthoringMode'
+        dataProductId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Pinned data product id. Present only for DATA_PRODUCT_BOUND forms.
+        semanticBinding:
+          allOf:
+            - $ref: '#/components/schemas/FormSemanticBinding'
+          type: object
+          nullable: true
+        presentation:
+          allOf:
+            - $ref: '#/components/schemas/FormPresentation'
+          type: string
+          nullable: true
+        themeRef:
+          allOf:
+            - $ref: '#/components/schemas/FormThemeRef'
+          type: object
+          nullable: true
+        content:
+          type: array
+          description: |
+            The form's element tree — the whole form when `steps` is omitted or empty. Required:
+            a single-page form carries its body here.
+          items:
+            $ref: '#/components/schemas/CreateFormElement'
+        steps:
+          type: array
+          description: |
+            Ordered pages for a stepped (wizard) form; each step is a page with its own `content`.
+            A non-empty array takes precedence over the top-level `content`. Omitted or `[]` means
+            single-page — sending `[]` is how a previously stepped form is flattened back.
+          items:
+            $ref: '#/components/schemas/CreateFormStepInput'
+        actions:
+          type: array
+          description: |
+            The work the form gates on. A step is a way of paging a form, not a thing that owns work,
+            so a single-page form declares its actions here and they are carried onto its one implicit
+            page at runtime. Mutually exclusive with per-form actions: declare an action on a step only
+            to gate navigation past that step. A body carrying both is rejected with
+            `ACTIONS_AND_STEPS_BOTH_PRESENT`.
+          items:
+            $ref: '#/components/schemas/FormAction'
+        reusable:
+          type: boolean
+          default: false
+          description: Whether this form may be embedded by another form as a reusable reference.
+        policyResourceKey:
+          type: string
+          nullable: true
+        credentialBindings:
+          type: array
+          items:
+            $ref: '#/components/schemas/FormCredentialBinding'
+
+    FormAuthoringViolation:
+      type: object
+      description: A single authoring-validation violation produced when validating a form draft.
+      required: [path, code, message]
+      properties:
+        path:
+          type: string
+          description: Location of the offending element (e.g. `content[0].children[1].field.shape`).
+        code:
+          type: string
+          description: Stable machine code for the violation (e.g. `FREE_FORM_FIELD_MISSING_SHAPE`).
+        message:
+          type: string
+        authoringId:
+          type: string
+          nullable: true
+          description: |
+            The caller-supplied correlation id of the offending element or step, echoed from the
+            input's `authoringId`, when the violation targets a single node the caller identified.
+            Lets an editor navigate to that node by id instead of re-deriving the positional layout
+            from `path`. Null for form-level or multi-target violations, or when the input carried
+            no ids.
+
+    FormDraftValidationReportResponse:
+      type: object
+      description: Result of validating a form draft without persisting it.
+      required: [accepted, violations]
+      properties:
+        accepted:
+          type: boolean
+          description: True when the draft passed all authoring validation.
+        violations:
+          type: array
+          items:
+            $ref: '#/components/schemas/FormAuthoringViolation'
+
+    ClearableFormDefinitionField:
+      type: string
+      description: A nullable form-definition property that an update can explicitly remove.
+      enum:
+        - DESCRIPTION
+        - DATA_PRODUCT_ID
+        - POLICY_RESOURCE_KEY
+        - SEMANTIC_BINDING
+        - PRESENTATION
+        - THEME_REF
+
+    PreviewPolicyMode:
+      type: string
+      description: |
+        Controls how access policy is applied when previewing a draft. `PERMISSIVE` shows the whole
+        form regardless of actor; `ENFORCED` applies policy as the supplied preview actor.
+      enum:
+        - PERMISSIVE
+        - ENFORCED
+
+    PreviewActorContext:
+      type: object
+      description: Simulated actor a draft is previewed as, used only when `policyMode` is `ENFORCED`.
+      properties:
+        principalId:
+          type: string
+          nullable: true
+          description: Opaque principal subject; null for an anonymous actor.
+        roleIds:
+          type: array
+          items:
+            type: string
+
+    PreviewFormSessionResponse:
+      type: object
+      description: |
+        Non-persistent preview of a resolved draft. Never stored and never writes semantic lineage;
+        exists only to feed the renderer a resolved form during authoring.
+      required: [previewId, resolvedForm, policyMode]
+      properties:
+        previewId:
+          type: string
+          format: uuid
+          description: Transient identifier for this preview (not a persisted session id).
+        resolvedForm:
+          $ref: '#/components/schemas/ResolvedForm'
+        policyMode:
+          $ref: '#/components/schemas/PreviewPolicyMode'
+        actor:
+          allOf:
+            - $ref: '#/components/schemas/PreviewActorContext'
+          type: object
+          nullable: true
+
+    PreviewFormDraftRequest:
+      type: object
+      description: Request to resolve a form draft for preview without persisting anything.
+      required: [input]
+      properties:
+        input:
+          $ref: '#/components/schemas/CreateFormDefinitionRequest'
+        preferredLocale:
+          type: string
+          nullable: true
+          description: BCP-47 locale used to collapse locale-keyed labels.
+        policyMode:
+          allOf:
+            - $ref: '#/components/schemas/PreviewPolicyMode'
+          default: PERMISSIVE
+          description: |
+            Defaults to `PERMISSIVE` — the whole draft is returned regardless of `actor`. Supply
+            `ENFORCED` together with `actor` to preview the form as that actor would see it.
+        actor:
+          allOf:
+            - $ref: '#/components/schemas/PreviewActorContext'
+          type: object
+          nullable: true
+
+    PreviewFormDraftResponse:
+      type: object
+      description: Response for a draft preview wrapping a non-persistent preview session.
+      required: [previewSession]
+      properties:
+        previewSession:
+          $ref: '#/components/schemas/PreviewFormSessionResponse'
+
+    CreateFormStepInput:
+      type: object
+      description: Input for a step (page) within [CreateFormDefinitionRequest].
+      required: [name, labels, sortOrder, content, actions]
+      properties:
+        name:
+          type: string
+        labels:
+          type: object
+          description: Locale-keyed label map (BCP-47 locale -> display string).
+          additionalProperties:
+            type: string
+        descriptions:
+          type: object
+          additionalProperties:
+            type: string
+        sortOrder:
+          type: integer
+        required:
+          type: boolean
+          default: true
+          description: |
+            Whether the step gates submission. Defaults to required; `false` marks the step
+            optional (skippable), so it never blocks submission.
+        content:
+          type: array
+          items:
+            $ref: '#/components/schemas/CreateFormElement'
+        actions:
+          type: array
+          items:
+            $ref: '#/components/schemas/FormAction'
+        policyResourceKey:
+          type: string
+          nullable: true
+        authoringId:
+          type: string
+          nullable: true
+          description: |
+            Opaque caller-supplied correlation id, echoed on any [FormAuthoringViolation] targeting
+            this step (e.g. `EMPTY_STEP`). Not persisted — step ids are minted server-side.
+
+    CreateFormElement:
+      description: |
+        A node in the element tree of a create/update request: a field leaf, a layout container
+        holding more elements, or a reference to another form embedded here. A tagged variant
+        identified by the `type` discriminator, mirroring [FormElement] on the read side.
+
+        Nodes carry an optional `authoringId` — an opaque client-supplied identifier echoed back on
+        any [FormAuthoringViolation] targeting that node, so a validation failure can be mapped to
+        the exact element the caller sent. The layout variants carry it directly; the `field`
+        variant carries it on its inner [CreateFormFieldInput].
+      oneOf:
+        - $ref: '#/components/schemas/CreateFormFieldElement'
+        - $ref: '#/components/schemas/CreateFormGroupElement'
+        - $ref: '#/components/schemas/CreateFormHorizontalElement'
+        - $ref: '#/components/schemas/CreateFormVerticalElement'
+        - $ref: '#/components/schemas/CreateFormEmbeddedElement'
+      discriminator:
+        propertyName: type
+        mapping:
+          field: '#/components/schemas/CreateFormFieldElement'
+          group: '#/components/schemas/CreateFormGroupElement'
+          horizontal: '#/components/schemas/CreateFormHorizontalElement'
+          vertical: '#/components/schemas/CreateFormVerticalElement'
+          embeddedFormRef: '#/components/schemas/CreateFormEmbeddedElement'
+
+    CreateFormFieldElement:
+      type: object
+      description: A field control as a leaf in the create-side element tree.
+      required: [type, field]
+      properties:
+        type:
+          type: string
+          enum: [field]
+        field:
+          $ref: '#/components/schemas/CreateFormFieldInput'
+
+    CreateFormGroupElement:
+      type: object
+      description: A labelled container grouping related elements.
+      required: [type, children]
+      properties:
+        type:
+          type: string
+          enum: [group]
+        labels:
+          type: object
+          description: Locale-keyed label map (BCP-47 locale -> display string).
+          additionalProperties:
+            type: string
+        descriptions:
+          type: object
+          description: Locale-keyed description map (BCP-47 locale -> display string).
+          additionalProperties:
+            type: string
+        requirementCondition:
+          allOf:
+            - $ref: '#/components/schemas/FieldCondition'
+          type: object
+          nullable: true
+        visibilityCondition:
+          allOf:
+            - $ref: '#/components/schemas/FieldCondition'
+          type: object
+          nullable: true
+        children:
+          type: array
+          items:
+            $ref: '#/components/schemas/CreateFormElement'
+        authoringId:
+          type: string
+          nullable: true
+
+    CreateFormHorizontalElement:
+      type: object
+      description: An unlabelled container laying its children out side by side (a row).
+      required: [type, children]
+      properties:
+        type:
+          type: string
+          enum: [horizontal]
+        visibilityCondition:
+          allOf:
+            - $ref: '#/components/schemas/FieldCondition'
+          type: object
+          nullable: true
+        children:
+          type: array
+          items:
+            $ref: '#/components/schemas/CreateFormElement'
+        authoringId:
+          type: string
+          nullable: true
+
+    CreateFormVerticalElement:
+      type: object
+      description: An unlabelled container laying its children out one above the other (a column).
+      required: [type, children]
+      properties:
+        type:
+          type: string
+          enum: [vertical]
+        visibilityCondition:
+          allOf:
+            - $ref: '#/components/schemas/FieldCondition'
+          type: object
+          nullable: true
+        children:
+          type: array
+          items:
+            $ref: '#/components/schemas/CreateFormElement'
+        authoringId:
+          type: string
+          nullable: true
+
+    CreateFormEmbeddedElement:
+      type: object
+      description: |
+        A reference to another (reusable) form embedded at this position. The referenced form's
+        elements are inlined under a labelled group during resolution. The reference must pin a
+        concrete version.
+      required: [type, formRef]
+      properties:
+        type:
+          type: string
+          enum: [embeddedFormRef]
+        formRef:
+          $ref: '#/components/schemas/FormRef'
+        titleOverride:
+          type: object
+          description: Locale-keyed title replacing the referenced form's name on the inlined group.
+          additionalProperties:
+            type: string
+        visibilityCondition:
+          allOf:
+            - $ref: '#/components/schemas/FieldCondition'
+          type: object
+          nullable: true
+        authoringId:
+          type: string
+          nullable: true
+
+    CreateFormFieldInput:
+      type: object
+      description: A field's authored payload inside a [CreateFormFieldElement].
+      required: [attributePath, sortOrder]
+      properties:
+        attributePath:
+          $ref: '#/components/schemas/AttributePath'
+        sortOrder:
+          type: integer
+        validationRules:
+          type: array
+          items:
+            $ref: '#/components/schemas/FieldValidationRule'
+        defaultValue:
+          allOf:
+            - $ref: '#/components/schemas/FieldValue'
+          type: object
+          nullable: true
+        placeholders:
+          type: object
+          additionalProperties:
+            type: string
+        visibilityCondition:
+          allOf:
+            - $ref: '#/components/schemas/FieldCondition'
+          type: object
+          nullable: true
+        qualificationCondition:
+          allOf:
+            - $ref: '#/components/schemas/FieldCondition'
+          type: object
+          nullable: true
+        disqualificationBehavior:
+          $ref: '#/components/schemas/DisqualificationBehavior'
+        readOnly:
+          type: boolean
+          default: false
+        widgetHintOverride:
+          allOf:
+            - $ref: '#/components/schemas/AttributeWidgetHint'
+          type: string
+          nullable: true
+        mandatoryOverride:
+          $ref: '#/components/schemas/MandatoryOverride'
+        policyResourceKey:
+          type: string
+          nullable: true
+          description: |
+            Per-field access-policy binding. When absent the field falls back to the enclosing
+            step's or form's key.
+        requiredCondition:
+          allOf:
+            - $ref: '#/components/schemas/FieldCondition'
+          type: object
+          nullable: true
+          description: When present, the field is mandatory whenever this condition evaluates true.
+        shape:
+          allOf:
+            - $ref: '#/components/schemas/FormFieldShape'
+          type: object
+          nullable: true
+          description: Self-contained field shape. Required on FREE_FORM fields.
+        semanticBinding:
+          allOf:
+            - $ref: '#/components/schemas/FormFieldSemanticBinding'
+          type: object
+          nullable: true
+          description: |
+            Per-field mapping into the form's pinned data product. Supplied only for
+            fields of a DATA_PRODUCT_BOUND form.
+        sourceBinding:
+          allOf:
+            - $ref: '#/components/schemas/FormSourceBinding'
+          type: object
+          nullable: true
+          description: |
+            Binding to an attribute source that supplies or looks up this field's value. Omit for
+            a plain user-input field.
+        authoringId:
+          type: string
+          nullable: true
+          description: |
+            Opaque caller-supplied correlation id, echoed on any [FormAuthoringViolation] targeting
+            this field. Not persisted — element ids are minted server-side.
+
+    UpdateFormDefinitionRequest:
+      type: object
+      description: |
+        Request body for updating a form definition. Omitted (or null) fields are left unchanged
+        (PATCH semantics).
+
+        Because null already means "unchanged", removing an optional value needs its own channel:
+        name the property in `clear`. A property named there is removed regardless of any value
+        supplied for it in the same request.
+      properties:
+        name:
+          type: string
+          nullable: true
+        description:
+          type: string
+          nullable: true
+        kind:
+          allOf:
+            - $ref: '#/components/schemas/FormKind'
+          type: string
+          nullable: true
+        dataProductId:
+          type: string
+          format: uuid
+          nullable: true
+          description: |
+            Pinned data product id. Use `clear` with `DATA_PRODUCT_ID` to unpin a data product
+            rather than sending null, which means "leave unchanged".
+        authoringMode:
+          allOf:
+            - $ref: '#/components/schemas/FormAuthoringMode'
+          type: string
+          nullable: true
+        semanticBinding:
+          allOf:
+            - $ref: '#/components/schemas/FormSemanticBinding'
+          type: object
+          nullable: true
+        presentation:
+          allOf:
+            - $ref: '#/components/schemas/FormPresentation'
+          type: string
+          nullable: true
+        themeRef:
+          allOf:
+            - $ref: '#/components/schemas/FormThemeRef'
+          type: object
+          nullable: true
+        status:
+          allOf:
+            - $ref: '#/components/schemas/FormStatus'
+          type: string
+          nullable: true
+        content:
+          type: array
+          nullable: true
+          description: |
+            When supplied, replaces the form's element tree wholesale. Use `null` to leave the
+            existing tree unchanged.
+          items:
+            $ref: '#/components/schemas/CreateFormElement'
+        steps:
+          type: array
+          nullable: true
+          description: |
+            When supplied, replaces the entire step list; `[]` flattens a stepped form back to
+            single-page. Use `null` to leave existing steps unchanged.
+          items:
+            $ref: '#/components/schemas/CreateFormStepInput'
+        actions:
+          type: array
+          nullable: true
+          description: |
+            When supplied, replaces the form's action list; `[]` clears it. `null` leaves the existing
+            actions unchanged, except in a request that also flattens a stepped form (`steps: []`),
+            which promotes that form's form actions onto the form rather than dropping them.
+          items:
+            $ref: '#/components/schemas/FormAction'
+        policyResourceKey:
+          type: string
+          nullable: true
+        clear:
+          type: array
+          description: |
+            Properties to remove outright. Needed because a null value means "leave unchanged", so
+            without this an optional value could be set once and never unset.
+          items:
+            $ref: '#/components/schemas/ClearableFormDefinitionField'
+        credentialBindings:
+          type: array
+          nullable: true
+          description: When supplied, replaces the entire credential-binding list. Use `null` to leave existing bindings unchanged.
+          items:
+            $ref: '#/components/schemas/FormCredentialBinding'
+
+    ResolveFormRequest:
+      type: object
+      description: |
+        Request body for resolving a [FormDefinition]. Carries presentation preferences only — the
+        identity whose access policy decides which steps, fields and actions are returned is taken
+        from the authenticated request and cannot be supplied here.
+      properties:
+        preferredLocale:
+          type: string
+          description: Preferred locale (BCP-47, e.g. `en`, `nl-NL`). Used to collapse locale-keyed labels.
+
+    ResolvedForm:
+      $ref: './forms-components.yml#/components/schemas/ResolvedForm'
+    ResolvedFormStep:
+      $ref: './forms-components.yml#/components/schemas/ResolvedFormStep'
+    ResolvedFormElement:
+      $ref: './forms-components.yml#/components/schemas/ResolvedFormElement'
+    ResolvedFormField:
+      $ref: './forms-components.yml#/components/schemas/ResolvedFormField'
+    FieldValue:
+      $ref: './forms-components.yml#/components/schemas/FieldValue'
+    FieldValueAbsent:
+      $ref: './forms-components.yml#/components/schemas/FieldValueAbsent'
+    FieldValueText:
+      $ref: './forms-components.yml#/components/schemas/FieldValueText'
+    FieldValueNumber:
+      $ref: './forms-components.yml#/components/schemas/FieldValueNumber'
+    FieldValueBool:
+      $ref: './forms-components.yml#/components/schemas/FieldValueBool'
+    FieldValueDate:
+      $ref: './forms-components.yml#/components/schemas/FieldValueDate'
+    FieldValueDateTime:
+      $ref: './forms-components.yml#/components/schemas/FieldValueDateTime'
+    FieldValueCode:
+      $ref: './forms-components.yml#/components/schemas/FieldValueCode'
+    FieldValueMulti:
+      $ref: './forms-components.yml#/components/schemas/FieldValueMulti'
+    FieldValueEvidenceRef:
+      $ref: './forms-components.yml#/components/schemas/FieldValueEvidenceRef'
+    FieldValueCredentialRef:
+      $ref: './forms-components.yml#/components/schemas/FieldValueCredentialRef'
+    FieldValueArtifactRef:
+      $ref: './forms-components.yml#/components/schemas/FieldValueArtifactRef'
+    FieldValidationError:
+      $ref: './forms-components.yml#/components/schemas/FieldValidationError'
+    FieldTargetedServerError:
+      $ref: './forms-components.yml#/components/schemas/FieldTargetedServerError'
+    FormActionResult:
+      $ref: './forms-components.yml#/components/schemas/FormActionResult'
+    FormActionResultCredentialReceived:
+      $ref: './forms-components.yml#/components/schemas/FormActionResultCredentialReceived'
+    FormActionResultEvidenceAttached:
+      $ref: './forms-components.yml#/components/schemas/FormActionResultEvidenceAttached'
+    FormActionResultSignatureOrSealApplied:
+      $ref: './forms-components.yml#/components/schemas/FormActionResultSignatureOrSealApplied'
+    FormActionResultPolicyEvaluated:
+      $ref: './forms-components.yml#/components/schemas/FormActionResultPolicyEvaluated'
+    FormActionResultArtifactProduced:
+      $ref: './forms-components.yml#/components/schemas/FormActionResultArtifactProduced'
+    FormActionPrompt:
+      $ref: './forms-components.yml#/components/schemas/FormActionPrompt'
+    FormActionPromptNone:
+      $ref: './forms-components.yml#/components/schemas/FormActionPromptNone'
+    FormActionPromptPresentationRequest:
+      $ref: './forms-components.yml#/components/schemas/FormActionPromptPresentationRequest'
+    FormActionPromptEvidenceUpload:
+      $ref: './forms-components.yml#/components/schemas/FormActionPromptEvidenceUpload'
+    FormActionPromptSignatureChallenge:
+      $ref: './forms-components.yml#/components/schemas/FormActionPromptSignatureChallenge'
+    FormActionPromptArtifactHandle:
+      $ref: './forms-components.yml#/components/schemas/FormActionPromptArtifactHandle'
+    ResolveFormSourcesInput:
+      type: object
+      required: [expectedRevision]
+      properties:
+        expectedRevision:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Revision of the session whose displayed inputs are being resolved.
+        locator:
+          type: object
+          additionalProperties: true
+          default: {}
+          description: Source context locator checked against server-owned session bindings.
+        idempotencyKey:
+          type: string
+          nullable: true
+          description: Retry identity; reuse with different input is rejected.
+
+    SubmitFormInput:
+      type: object
+      description: |
+        Input for submitting a form session. Carries the final, typed field values keyed by
+        their attribute path.
+      required: [fieldValues]
+      properties:
+        fieldValues:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/FieldValue'
+
+    ValidateFieldRequest:
+      type: object
+      description: |
+        Input for `validateField`. `value` is a typed [FieldValue], callers pass the
+        `Absent` variant for "no value supplied" (there is no nullable variant).
+      required: [fieldPath, value]
+      properties:
+        fieldPath:
+          type: string
+        value:
+          $ref: '#/components/schemas/FieldValue'
+
+    StepValidationErrors:
+      $ref: './forms-components.yml#/components/schemas/StepValidationErrors'
+    FieldValidationErrors:
+      $ref: './forms-components.yml#/components/schemas/FieldValidationErrors'
+    FormSession:
+      $ref: './forms-components.yml#/components/schemas/FormSession'
+    FormSessionPhaseState:
+      $ref: './forms-components.yml#/components/schemas/FormSessionPhaseState'
+    FormSessionProgress:
+      $ref: './forms-components.yml#/components/schemas/FormSessionProgress'
+    FormStepProgress:
+      $ref: './forms-components.yml#/components/schemas/FormStepProgress'
+    FormSessionFieldSnapshot:
+      $ref: './forms-components.yml#/components/schemas/FormSessionFieldSnapshot'
+    FormSessionCommandCapability:
+      $ref: './forms-components.yml#/components/schemas/FormSessionCommandCapability'
+    FormSessionSnapshot:
+      $ref: './forms-components.yml#/components/schemas/FormSessionSnapshot'
+    FormSessionEventType:
+      $ref: './forms-components.yml#/components/schemas/FormSessionEventType'
+    FormSessionEvent:
+      $ref: './forms-components.yml#/components/schemas/FormSessionEvent'
+    FormSessionDiff:
+      $ref: './forms-components.yml#/components/schemas/FormSessionDiff'
+    FormSessionMutationResult:
+      $ref: './forms-components.yml#/components/schemas/FormSessionMutationResult'
+    CreateFormSessionRequest:
+      type: object
+      description: |
+        Request body for `POST /definitions/{formId}/sessions`. The form-definition identifier is
+        supplied by the URL path; only per-session preferences appear in the body.
+
+        The acting principal and its roles are NOT part of this body: they are taken from the
+        authenticated request and frozen onto the session at creation.
+      properties:
+        preferredLocale:
+          type: string
+          description: BCP-47 locale (e.g. `en`, `nl-NL`). Used to collapse locale-keyed labels in the resolved form.
+          default: en
+
+    UpdateFieldValuesRequest:
+      type: object
+      description: Request body for `PUT /sessions/{sessionId}/values`.
+      required: [fieldValues]
+      properties:
+        fieldValues:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/FieldValue'
+
+    CompleteStepActionInput:
+      type: object
+      description: |
+        Request body for
+        `POST /sessions/{sessionId}/actions/{actionId}/complete`. The
+        `result` variant must match the declared `FormAction` variant on the resolved form.
+      required: [result]
+      properties:
+        result:
+          $ref: '#/components/schemas/FormActionResult'
+
+    CancelStepActionInput:
+      type: object
+      description: |
+        Request body for
+        `POST /sessions/{sessionId}/actions/{actionId}/cancel`.
+      properties:
+        reason:
+          type: string
+          nullable: true
+
+    InvalidateFieldInput:
+      type: object
+      description: Request body for `POST /sessions/{sessionId}/fields/invalidate`.
+      required: [fieldPath]
+      properties:
+        fieldPath:
+          type: string
+
+    ClearForcedFieldValidationInput:
+      type: object
+      description: |
+        Request body for `POST /sessions/{sessionId}/fields/remotevalidation/clear`.
+      required: [fieldPath]
+      properties:
+        fieldPath:
+          type: string
+
+    ForceFieldValidationInput:
+      type: object
+      description: |
+        Request body for `POST /sessions/{sessionId}/fields/remotevalidation`. Empty
+        `errors` marks the field as remotely valid; non-empty marks it remotely invalid.
+      required: [fieldPath, errors]
+      properties:
+        fieldPath:
+          type: string
+        errors:
+          type: array
+          items:
+            $ref: '#/components/schemas/FieldValidationError'
+
+    ApplyServerFieldErrorsInput:
+      type: object
+      description: Request body for `POST /sessions/{sessionId}/servererrors`.
+      required: [fieldErrors]
+      properties:
+        reasons:
+          type: array
+          items:
+            type: string
+        fieldErrors:
+          type: array
+          items:
+            $ref: '#/components/schemas/FieldTargetedServerError'
+
+    CredentialClaimPath:
+      $ref: './forms-components.yml#/components/schemas/CredentialClaimPath'
+    FormAttributeMapping:
+      $ref: './forms-components.yml#/components/schemas/FormAttributeMapping'
+    FormCredentialBinding:
+      $ref: './forms-components.yml#/components/schemas/FormCredentialBinding'
+    FormCredentialBindingInput:
+      $ref: './forms-components.yml#/components/schemas/FormCredentialBindingInput'
+    FormCredentialBindingOutput:
+      $ref: './forms-components.yml#/components/schemas/FormCredentialBindingOutput'
+    PresentedCredentialClaim:
+      $ref: './forms-components.yml#/components/schemas/PresentedCredentialClaim'
+    PresentedCredentialClaims:
+      $ref: './forms-components.yml#/components/schemas/PresentedCredentialClaims'
+    CredentialClaimProvenance:
+      $ref: './forms-components.yml#/components/schemas/CredentialClaimProvenance'
+    FieldValueProvenanceSource:
+      $ref: './forms-components.yml#/components/schemas/FieldValueProvenanceSource'
+    FieldValueProvenance:
+      $ref: './forms-components.yml#/components/schemas/FieldValueProvenance'
+    FieldLockReason:
+      $ref: './forms-components.yml#/components/schemas/FieldLockReason'
+    # -------------------------------------------------------------------------
+    # Domain enums and scalar types
+    # -------------------------------------------------------------------------
+
+    AttributePath:
+      $ref: './forms-components.yml#/components/schemas/AttributePath'
+    AttributeValueKind:
+      $ref: './forms-components.yml#/components/schemas/AttributeValueKind'
+    AttributeWidgetHint:
+      $ref: './forms-components.yml#/components/schemas/AttributeWidgetHint'
+    AttributeCardinality:
+      $ref: './forms-components.yml#/components/schemas/AttributeCardinality'
+    FieldAccessMode:
+      $ref: './forms-components.yml#/components/schemas/FieldAccessMode'
+    MandatoryOverride:
+      $ref: './forms-components.yml#/components/schemas/MandatoryOverride'
+    DisqualificationBehavior:
+      $ref: './forms-components.yml#/components/schemas/DisqualificationBehavior'
+    ArtifactKind:
+      $ref: './forms-components.yml#/components/schemas/ArtifactKind'
+    AssuranceLevel:
+      $ref: './forms-components.yml#/components/schemas/AssuranceLevel'
+    SignatureOrSealKind:
+      $ref: './forms-components.yml#/components/schemas/SignatureOrSealKind'
+    PolicyDecision:
+      $ref: './forms-components.yml#/components/schemas/PolicyDecision'
+    FieldValidationSource:
+      $ref: './forms-components.yml#/components/schemas/FieldValidationSource'
+    FormSessionOperation:
+      $ref: './forms-components.yml#/components/schemas/FormSessionOperation'
+    # -------------------------------------------------------------------------
+    # Runtime state
+    # -------------------------------------------------------------------------
+
+    FieldRuntimeState:
+      $ref: './forms-components.yml#/components/schemas/FieldRuntimeState'
+    FieldValidationState:
+      $ref: './forms-components.yml#/components/schemas/FieldValidationState'
+    FieldUpdateSource:
+      $ref: './forms-components.yml#/components/schemas/FieldUpdateSource'
+    FormActionState:
+      $ref: './forms-components.yml#/components/schemas/FormActionState'
+    # -------------------------------------------------------------------------
+    # Field validation rules (tagged union)
+    # -------------------------------------------------------------------------
+
+    FieldValidationRule:
+      $ref: './forms-components.yml#/components/schemas/FieldValidationRule'
+    FieldValidationRuleRequired:
+      $ref: './forms-components.yml#/components/schemas/FieldValidationRuleRequired'
+    FieldValidationRuleMinLength:
+      $ref: './forms-components.yml#/components/schemas/FieldValidationRuleMinLength'
+    FieldValidationRuleMaxLength:
+      $ref: './forms-components.yml#/components/schemas/FieldValidationRuleMaxLength'
+    FieldValidationRulePattern:
+      $ref: './forms-components.yml#/components/schemas/FieldValidationRulePattern'
+    FieldValidationRuleRange:
+      $ref: './forms-components.yml#/components/schemas/FieldValidationRuleRange'
+    FieldValidationRuleEmail:
+      $ref: './forms-components.yml#/components/schemas/FieldValidationRuleEmail'
+    FieldValidationRuleUri:
+      $ref: './forms-components.yml#/components/schemas/FieldValidationRuleUri'
+    FieldValidationRuleCustom:
+      $ref: './forms-components.yml#/components/schemas/FieldValidationRuleCustom'
+    # -------------------------------------------------------------------------
+    # Field conditions (tagged union)
+    # -------------------------------------------------------------------------
+
+    FieldCondition:
+      $ref: './forms-components.yml#/components/schemas/FieldCondition'
+    FieldConditionEquals:
+      $ref: './forms-components.yml#/components/schemas/FieldConditionEquals'
+    FieldConditionNotEmpty:
+      $ref: './forms-components.yml#/components/schemas/FieldConditionNotEmpty'
+    FieldConditionContains:
+      $ref: './forms-components.yml#/components/schemas/FieldConditionContains'
+    FieldConditionGreaterThan:
+      $ref: './forms-components.yml#/components/schemas/FieldConditionGreaterThan'
+    FieldConditionLessThan:
+      $ref: './forms-components.yml#/components/schemas/FieldConditionLessThan'
+    FieldConditionAnd:
+      $ref: './forms-components.yml#/components/schemas/FieldConditionAnd'
+    FieldConditionOr:
+      $ref: './forms-components.yml#/components/schemas/FieldConditionOr'
+    FieldConditionNot:
+      $ref: './forms-components.yml#/components/schemas/FieldConditionNot'
+    # -------------------------------------------------------------------------
+    # Form actions (tagged union)
+    # -------------------------------------------------------------------------
+
+    FormAction:
+      $ref: './forms-components.yml#/components/schemas/FormAction'
+    FormActionRequestCredential:
+      $ref: './forms-components.yml#/components/schemas/FormActionRequestCredential'
+    FormActionRequireEvidence:
+      $ref: './forms-components.yml#/components/schemas/FormActionRequireEvidence'
+    FormActionRequireSignatureOrSeal:
+      $ref: './forms-components.yml#/components/schemas/FormActionRequireSignatureOrSeal'
+    FormActionPolicyGate:
+      $ref: './forms-components.yml#/components/schemas/FormActionPolicyGate'
+    FormActionProduceArtifact:
+      $ref: './forms-components.yml#/components/schemas/FormActionProduceArtifact'
+    FormActionSideEffect:
+      $ref: './forms-components.yml#/components/schemas/FormActionSideEffect'
+    FormActionSideEffectApplyReceivedCredentialClaims:
+      $ref: './forms-components.yml#/components/schemas/FormActionSideEffectApplyReceivedCredentialClaims'
+    FormActionSideEffectWriteCredentialReference:
+      $ref: './forms-components.yml#/components/schemas/FormActionSideEffectWriteCredentialReference'
+    FormActionSideEffectWriteEvidenceReference:
+      $ref: './forms-components.yml#/components/schemas/FormActionSideEffectWriteEvidenceReference'
+    FormActionSideEffectWriteArtifactReference:
+      $ref: './forms-components.yml#/components/schemas/FormActionSideEffectWriteArtifactReference'
+    FormActionSideEffectWriteSignatureLocator:
+      $ref: './forms-components.yml#/components/schemas/FormActionSideEffectWriteSignatureLocator'
+    FormActionSideEffectWritePolicyDecision:
+      $ref: './forms-components.yml#/components/schemas/FormActionSideEffectWritePolicyDecision'

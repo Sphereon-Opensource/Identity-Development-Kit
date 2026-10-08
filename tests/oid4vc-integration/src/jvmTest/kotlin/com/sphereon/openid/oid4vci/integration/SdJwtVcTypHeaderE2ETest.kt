@@ -45,8 +45,9 @@ import kotlin.test.assertTrue
  */
 @ContributesTo(SessionScope::class)
 interface SdJwtVcFormatHandlerTestGraph {
-    val sdJwtVcFormatHandler:
-        com.sphereon.openid.oid4vci.issuer.impl.format.SdJwtVcFormatHandler
+    val credentialFormatHandlers: Set<CredentialFormatHandler>
+    val sdJwtVcFormatHandler: CredentialFormatHandler
+        get() = credentialFormatHandlers.single { it.supportedFormat == CredentialFormat.SD_JWT_VC.value }
 }
 
 /**
@@ -93,6 +94,12 @@ class SdJwtVcTypHeaderE2ETest {
                 put("y", JsonPrimitive("wB9mebM-vuLK7lkrw0UU4APHi5YQJu1Hh7wpqTlw-w8"))
             }
 
+        val signingVerificationMethodId =
+            (ctx.session.graph as IssuerKeyIdResolverTestGraph)
+                .issuerKeyIdResolver
+                .resolveDidVerificationMethodId(keyAlias, "jwk")
+                .getOrThrow()
+
         val issuanceContext =
             IssuanceContext(
                 subject = "test-subject",
@@ -110,6 +117,7 @@ class SdJwtVcTypHeaderE2ETest {
                 attributes = mapOf("given_name" to JsonPrimitive("Alice")),
                 signingKeyAlias = keyAlias,
                 signingKeyMode = SigningKeyMode.Did("jwk"),
+                signingVerificationMethodId = signingVerificationMethodId,
             )
 
         val result =
@@ -145,7 +153,9 @@ class SdJwtVcTypHeaderE2ETest {
             val handler = (ctx.session.graph as SdJwtVcFormatHandlerTestGraph).sdJwtVcFormatHandler
             assertFalse(
                 handler.canHandle(
-                    request = com.sphereon.openid.oid4vci.common.model.CredentialRequest(format = CredentialFormat.W3C_VC_SD_JWT.value),
+                    request =
+                        com.sphereon.openid.oid4vci.common.model
+                            .CredentialRequest(format = CredentialFormat.W3C_VC_SD_JWT.value),
                     configuration = CredentialConfigurationSupported(format = CredentialFormat.W3C_VC_SD_JWT.value),
                 ),
                 "The IETF SD-JWT VC handler must not treat W3C `vc+sd-jwt` as a `dc+sd-jwt` alias",

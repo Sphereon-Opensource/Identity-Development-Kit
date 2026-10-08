@@ -1,0 +1,2085 @@
+openapi: 3.0.4
+info:
+  title: Wallet Interaction API Components
+  version: 0.1.0
+  description: Entity schemas, enums, and parameters for the Wallet Interaction REST API.
+paths: {}
+components:
+  parameters:
+    WalletUnitId:
+      name: walletUnitId
+      in: path
+      required: true
+      description: Stable wallet unit identifier that owns the interaction.
+      schema:
+        type: string
+    InteractionSessionId:
+      name: sessionId
+      in: path
+      required: true
+      description: Wallet interaction session identifier. On the wire this is the plain string value of the session id, never an object.
+      schema:
+        $ref: '#/components/schemas/WalletInteractionSessionId'
+    HandoffSessionId:
+      name: sessionId
+      in: path
+      required: true
+      description: Credential hand-off session identifier. On the wire this is the plain string value of the hand-off session id, never an object.
+      schema:
+        $ref: '#/components/schemas/HandoffSessionId'
+    LastEventId:
+      name: Last-Event-ID
+      in: header
+      required: false
+      description: Standard SSE reconnect header. When present, only recorded state events with a revision greater than this value are replayed.
+      schema:
+        type: integer
+        format: int64
+        minimum: 0
+
+  schemas:
+    StringMap:
+      type: object
+      description: String-valued metadata or argument map. Keys are stable names; values are already serialized for transport.
+      additionalProperties:
+        type: string
+      example:
+        origin: mobile-scanner
+
+    JsonValue:
+      description: Arbitrary JSON value preserved as supplied. Claim path segments are typically strings or non-negative integers.
+
+    WalletInteractionSessionId:
+      type: string
+      minLength: 1
+      description: Wallet interaction session identifier. Serialized as a plain JSON string because the Kotlin model is an inline value class, never as an object.
+      example: 018f5c1e-9a3b-7c4d-8e2f-3a4b5c6d7e8f
+
+    ProtocolExecutionOwner:
+      type: string
+      description: The wallet component that is the first semantic interpreter of captured interaction input and owns the complete protocol exchange. Locked before semantic interpretation and immutable for the lifetime of the interaction.
+      enum: [WALLET_APP, WALLET_BACKEND]
+
+    WalletInteractionFlowKind:
+      type: string
+      description: High-level interaction flow classification.
+      enum: [CredentialReceive, CredentialPresent, AttendedPresent]
+
+    WalletProtocol:
+      type: string
+      description: Wallet protocol family handling the interaction.
+      enum: [OID4VCI, OID4VP, ISO18013, CUSTOM]
+
+    WalletEntryPointKind:
+      type: string
+      description: How the interaction entry point was captured or classified.
+      enum: [RAW_QR, DEEP_LINK, UNIVERSAL_LINK, HTTPS_LINK, NFC_HANDOVER, BLE_HANDOVER, WIFI_AWARE_HANDOVER, PARSED_OBJECT]
+
+    WalletEntryPoint:
+      type: object
+      description: Captured entry point that starts an interaction. Exactly one of raw, bytes, or parsed carries the payload depending on the kind.
+      required: [kind]
+      example:
+        kind: RAW_QR
+        raw: openid-credential-offer://?credential_offer_uri=https%3A%2F%2Fissuer.example.com%2Foffer%2F123
+        source: mobile-scanner
+      properties:
+        kind:
+          $ref: '#/components/schemas/WalletEntryPointKind'
+        raw:
+          type: string
+          nullable: true
+          description: Raw textual payload such as scanned QR contents or a link URI.
+        bytes:
+          type: array
+          nullable: true
+          description: Raw binary payload in the kotlinx-serialization JSON form of a Kotlin ByteArray, an array of signed byte integers.
+          items:
+            type: integer
+            format: int32
+            minimum: -128
+            maximum: 127
+        parsedType:
+          type: string
+          nullable: true
+          description: Type discriminator for an already parsed entry-point object.
+        parsed:
+          $ref: '#/components/schemas/JsonValue'
+        source:
+          type: string
+          nullable: true
+          description: Free-form capture source hint.
+
+    WalletEntryPointSummary:
+      type: object
+      description: Non-sensitive summary of the captured entry point retained in interaction state. The raw payload never appears here.
+      required: [kind]
+      example:
+        kind: RAW_QR
+        source: mobile-scanner
+        scheme: openid-credential-offer
+        fingerprint: 3f9a1c2b4d5e6f70
+      properties:
+        kind:
+          $ref: '#/components/schemas/WalletEntryPointKind'
+        source:
+          type: string
+          nullable: true
+        scheme:
+          type: string
+          nullable: true
+          description: URI scheme extracted from a textual entry point.
+        fingerprint:
+          type: string
+          nullable: true
+          description: Stable non-cryptographic fingerprint of the captured payload for correlation.
+
+    WalletInteractionInput:
+      type: object
+      description: Input for starting a wallet interaction from a captured entry point.
+      required: [walletUnitId, entryPoint]
+      example:
+        walletUnitId: wu-7f9d
+        entryPoint:
+          kind: RAW_QR
+          raw: openid-credential-offer://?credential_offer_uri=https%3A%2F%2Fissuer.example.com%2Foffer%2F123
+        executionOwner: WALLET_APP
+        requestedFlowKinds: [CredentialReceive]
+      properties:
+        walletUnitId:
+          type: string
+          minLength: 1
+          description: Wallet unit starting the interaction. Must equal the walletUnitId path parameter.
+        entryPoint:
+          $ref: '#/components/schemas/WalletEntryPoint'
+        executionOwner:
+          $ref: '#/components/schemas/ProtocolExecutionOwner'
+        requestedFlowKinds:
+          type: array
+          description: Optional narrowing of the flow kinds the caller expects. Empty means no restriction.
+          items:
+            $ref: '#/components/schemas/WalletInteractionFlowKind'
+          default: []
+        metadata:
+          $ref: '#/components/schemas/StringMap'
+
+    StartWalletInteractionBody:
+      type: object
+      description: Request body for starting a wallet interaction session.
+      required: [input]
+      properties:
+        input:
+          $ref: '#/components/schemas/WalletInteractionInput'
+
+    DispatchWalletInteractionActionBody:
+      type: object
+      description: |
+        Request body for dispatching a user or client action into an interaction
+        session. The optional expectedRevision turns the dispatch into a
+        conditional write; idempotencyKey names the attempt for the action
+        authority that arbitrates the session.
+      required: [action]
+      example:
+        action:
+          type: continue
+        expectedRevision: 3
+        idempotencyKey: 018f5c1e-9a3b-7c4d-8e2f-3a4b5c6d7e8f
+      properties:
+        action:
+          $ref: '#/components/schemas/WalletInteractionAction'
+        expectedRevision:
+          type: integer
+          format: int64
+          minimum: 0
+          nullable: true
+          description: |
+            The state revision the client decided this action against, normally the
+            revision of the WalletInteractionState it last rendered. When present,
+            the server reads the session state and refuses the dispatch with 409 and
+            a WalletInteractionRevisionConflict unless the session is still at
+            exactly this revision, so an approval decided on a screen the operator is
+            no longer looking at is never applied. When absent the action is applied
+            unconditionally.
+
+            The precondition is evaluated against the state read immediately before
+            the dispatch, so it deterministically refuses a stale-render dispatch but
+            does not by itself serialize two dispatches issued concurrently at the
+            same revision; the action authority of a managed deployment performs the
+            atomic claim.
+          example: 3
+        idempotencyKey:
+          type: string
+          minLength: 1
+          nullable: true
+          description: |
+            Caller-chosen name for this dispatch attempt, repeated verbatim when the
+            same attempt is retried. Passed to the interaction action authority; the
+            managed-wallet authority records a receipt per (app registration,
+            idempotency key), replays the recorded state for a repeat of the same
+            action, and refuses a repeat that carries a different action. A
+            deployment without a managed action authority does not deduplicate, and
+            there it is expectedRevision that keeps a retry of an already applied
+            action from applying twice.
+          example: 018f5c1e-9a3b-7c4d-8e2f-3a4b5c6d7e8f
+
+    WalletInteractionStatus:
+      type: string
+      description: Interaction state machine status. Completed, Cancelled, and Failed are terminal.
+      enum:
+        - ResolvingEntryPoint
+        - ImplementationChoiceRequired
+        - UnsupportedEntryPoint
+        - CounterpartyNotice
+        - TrustReview
+        - CredentialOfferReview
+        - AuthorizationRequired
+        - TxCodeRequired
+        - CredentialPreview
+        - CredentialSelection
+        - DisclosureConsent
+        - SecurityUnlockRequired
+        - DeferredRetrievalPending
+        - Sharing
+        - Completed
+        - Cancelled
+        - Failed
+
+    WalletInteractionActivityType:
+      type: string
+      description: Classification of the user-visible activity an interaction represents.
+      enum: [CREDENTIAL_RECEIVE, CREDENTIAL_PRESENTATION, LOGIN, ATTENDED_PRESENTATION]
+
+    WalletInteractionActivitySummary:
+      type: object
+      description: Summary of the activity the interaction represents, shown in activity views.
+      required: [type]
+      properties:
+        type:
+          $ref: '#/components/schemas/WalletInteractionActivityType'
+        counterparty:
+          $ref: '#/components/schemas/WalletCounterpartySummary'
+        metadata:
+          $ref: '#/components/schemas/StringMap'
+        authorizationDecision:
+          $ref: '#/components/schemas/WalletAuthorizationDecisionProjection'
+
+    WalletDisplayMessage:
+      type: object
+      description: Localizable display message. Keys are dotted lowercase localization keys resolved by the client; arguments fill placeholders.
+      properties:
+        titleKey:
+          type: string
+          nullable: true
+        textKey:
+          type: string
+          nullable: true
+        arguments:
+          $ref: '#/components/schemas/StringMap'
+
+    WalletFailureDisposition:
+      type: string
+      description: |
+        What can still be done with a failed interaction. Three genuinely different outcomes that a
+        boolean cannot express. TERMINAL means the exchange is over and the captured input is spent:
+        offers, pre-authorized codes and nonces are single-use, so re-uploading the same input would
+        fail again for a new reason. REPEATABLE means the failure was incidental to the exchange, a
+        transport error or an upstream timeout, and uploading the SAME captured input again is
+        expected to work. RESUMABLE means the interaction itself survived and can be picked up where
+        it stopped, without re-uploading anything.
+
+        This field is REQUIRED and there is no backward-compatible absence: a Failed interaction
+        projected without a disposition is a contract violation, whatever produced it. Consumers are
+        expected to harden against one anyway, degrading to TERMINAL, because a renderer that threw
+        on a malformed projection would strand a holder mid-exchange with no screen and no way out.
+        That is hardening against a violation, not a shape this contract sanctions.
+
+        Consumers that do not recognise a value must likewise treat it as TERMINAL. That is FORWARD
+        compatibility, a newer engine emitting a value an older consumer has not heard of, and it is
+        deliberately a different question from the absence above. TERMINAL is the safe degradation in
+        both cases: it withholds a Retry that might spend a live single-use artefact.
+
+        Forward compatibility is a property of the CONSUMER, and generated tooling works against it:
+        a strict enum validator rejects the whole projection on an unknown value rather than handing
+        the consumer something to degrade. A consumer that wants it must therefore read this field
+        leniently, checking membership itself and falling back, rather than validating the payload
+        against the generated enum and trusting that to pass. Adding a value here stays a
+        contract change to announce, not a free action.
+      enum: [TERMINAL, REPEATABLE, RESUMABLE]
+
+    WalletInteractionError:
+      type: object
+      description: Interaction-level error surfaced in state.
+      required: [code, disposition]
+      example:
+        code: wallet_interaction_offer_expired
+        disposition: TERMINAL
+        message: This credential offer has expired. Start again with a new offer.
+        messageKey: wallet.interaction.error.offer_expired
+      properties:
+        code:
+          type: string
+          minLength: 1
+          description: |
+            Stable machine-readable failure code. Never rendered to a holder: it is the key a
+            consumer may keep its own message catalogue under, and the value carried in diagnostics.
+        disposition:
+          $ref: '#/components/schemas/WalletFailureDisposition'
+        message:
+          type: string
+          nullable: true
+          description: |
+            The failure stated in language a holder can read, already resolved against the
+            interaction's locale. Absent when no catalogue entry exists for the code, in which case a
+            consumer falls back to its own copy. Never contains a code, a key, a stack frame, an
+            internal identifier or the name of an internal component.
+        messageKey:
+          type: string
+          nullable: true
+          description: |
+            The dotted lowercase localization key `message` was resolved from. Retained for consumers
+            that carry their own catalogue and prefer to resolve it themselves.
+        arguments:
+          $ref: '#/components/schemas/StringMap'
+
+    WalletImplementationChoice:
+      type: object
+      description: A selectable protocol implementation when more than one adapter can handle the entry point.
+      required: [adapterId, protocol, flowKinds, labelKey]
+      properties:
+        adapterId:
+          type: string
+          minLength: 1
+        protocol:
+          $ref: '#/components/schemas/WalletProtocol'
+        flowKinds:
+          type: array
+          items:
+            $ref: '#/components/schemas/WalletInteractionFlowKind'
+        labelKey:
+          type: string
+          description: Dotted lowercase localization key for the choice label.
+        arguments:
+          $ref: '#/components/schemas/StringMap'
+
+    WalletCounterpartyRole:
+      type: string
+      description: Role of the protocol counterparty in this interaction.
+      enum: [ISSUER, VERIFIER, MDOC_READER]
+
+    WalletCounterpartyLocalizedBranding:
+      type: object
+      description: Provider-neutral localized issuer or relying-party branding retained with the wallet Party contact.
+      required: [name]
+      properties:
+        locale:
+          type: string
+          nullable: true
+        name:
+          type: string
+          minLength: 1
+        logoUri:
+          type: string
+          nullable: true
+        logoAltText:
+          type: string
+          nullable: true
+        description:
+          type: string
+          nullable: true
+        backgroundImageUri:
+          type: string
+          nullable: true
+        backgroundColor:
+          type: string
+          nullable: true
+        textColor:
+          type: string
+          nullable: true
+
+    WalletAttributeSourceKind:
+      type: string
+      description: >
+        Where a single displayed fact came from. Not a trust level and not a ranking: these are
+        different KINDS of knowing, and a consumer states the source rather than scoring it.
+        SELF_ASSERTED is the party's own claim about itself, as in OIDC Dynamic Client
+        Registration. SUPERIOR_ATTESTED is asserted about the entity by a named superior, as in an
+        OpenID Federation subordinate statement. SUPERIOR_POLICY_PINNED is fixed by a named
+        superior's metadata policy rather than merely asserted, so the entity cannot vary it.
+        ACCESS_CERTIFICATE is taken from the certificate presented for the exchange.
+        REGISTRAR_REGISTERED is recorded with a named registrar. QUALIFIED_SUPERVISED is issued
+        under supervision by a named body, which in an eIDAS context is the qualified tier.
+
+        Consumers that do not recognise a value must treat the fact as SELF_ASSERTED. That is
+        FORWARD compatibility, and TERMINAL-style promotion in the other direction is forbidden:
+        an unknown kind must never render as attested. A strict enum validator rejects the whole
+        projection on an unknown value rather than handing the consumer something to degrade. A
+        consumer that wants forward compatibility must read this field leniently.
+      enum:
+        - SELF_ASSERTED
+        - SUPERIOR_ATTESTED
+        - SUPERIOR_POLICY_PINNED
+        - ACCESS_CERTIFICATE
+        - REGISTRAR_REGISTERED
+        - QUALIFIED_SUPERVISED
+
+    WalletAttributeSource:
+      type: object
+      description: >
+        The provenance of one displayed fact. authority NAMES the party that is the source, and is
+        required for every kind except SELF_ASSERTED, because an attested fact with no named
+        attester is exactly the unattributed claim this phase exists to remove. OpenAPI cannot
+        express that exception as a schema constraint: a producer MUST omit authority only for
+        SELF_ASSERTED and MUST include it for every other kind. A consumer that receives an
+        attested kind with no authority treats it as SELF_ASSERTED rather than promoting it.
+      required: [kind]
+      properties:
+        kind:
+          $ref: '#/components/schemas/WalletAttributeSourceKind'
+        authority:
+          type: string
+          nullable: true
+          description: >
+            The naming of the source: the superior, the certificate issuer, the registrar, or the
+            supervisory body. Absent only for SELF_ASSERTED, where the party IS the source.
+        authorityIdentifier:
+          type: string
+          nullable: true
+          description: Stable identifier of that authority, where one exists. Never rendered as prose.
+
+    WalletMultiLangString:
+      description: >
+        One localised string, in the ETSI TS 119 602 JSON binding this codebase already uses for
+        trust-list content. Registered purposes are multilingual because the registrant must
+        provide them for every official language of the Member States the intended use is
+        offered in; a wallet picks the holder's language and never invents a translation.
+      type: object
+      required: [lang, value]
+      properties:
+        lang:
+          type: string
+          description: Language code as the registrar recorded it.
+        value:
+          type: string
+
+    WalletRegisteredPurpose:
+      description: >
+        A relying party's REGISTERED intended use, as a registrar recorded it.
+
+        Modelled on the IntendedUse class of the Commission's TS5, Common Formats and API for
+        Relying Party Registration Information: a registrar-assigned identifier together with one
+        or more purposes of the intended data processing under Article 5(1)(b), each localised,
+        bound to the attestations and claim paths that intended use may ask for. The certificate
+        profiles that carry it are ETSI TS 119 475 for relying party registration certificates and
+        ETSI TS 119 411-8 for access certificates; OpenID Federation entity metadata may carry it
+        instead where that is the trust mechanism in play.
+
+        Registered is the whole point. A registrar has checked that this party may ask for these
+        attributes for this purpose, which is a different assurance from a sentence the verifier
+        put in its own request. OpenID4VP carries no purpose of its own, and nothing self-asserted
+        may be presented here: `source.kind` is ACCESS_CERTIFICATE or REGISTRAR_REGISTERED and the
+        naming authority is therefore always present.
+
+        One relying party may register several intended uses, each with its own attribute set,
+        which is why this sits per requirement as well as on the request.
+      type: object
+      required: [intendedUseIdentifier, purpose, source]
+      properties:
+        intendedUseIdentifier:
+          type: string
+          description: >
+            The registrar's unique identifier for this registered intended use. Stable across
+            presentations, so a holder and an auditor can recognise the same intended use again.
+        purpose:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/WalletMultiLangString'
+          description: One or more purposes of the intended data processing, localised.
+        source:
+          allOf:
+            - $ref: '#/components/schemas/WalletAttributeSource'
+          description: >
+            Which certificate or registry this came from, and the authority behind it. Never
+            SELF_ASSERTED.
+
+    WalletAttributedString:
+      type: object
+      description: >
+        One displayed string together with where it came from. The pairing is the point: the same
+        text from two sources is two different assurances, and a consumer must be unable to render
+        them alike. This object carries one value and one source. A field on
+        WalletCounterpartyDetail is at most one of these, so the contract cannot carry the same
+        field twice with disagreeing sources; a producer that knows two sources for one fact
+        selects the one it is showing.
+      required: [value, source]
+      properties:
+        value:
+          type: string
+        source:
+          $ref: '#/components/schemas/WalletAttributeSource'
+
+    WalletCounterpartyDetail:
+      type: object
+      description: >
+        What is known about the counterparty beyond the name on the consent screen, each fact
+        carrying its own source. EVERY field is optional and absence is NORMAL: these products run
+        inside eIDAS, in non-qualified cases, and entirely outside eIDAS, so a consumer states the
+        regime it does have rather than drawing gaps where another regime would have put something.
+      properties:
+        legalName:
+          $ref: '#/components/schemas/WalletAttributedString'
+        registeredAddress:
+          $ref: '#/components/schemas/WalletAttributedString'
+        registrationNumber:
+          $ref: '#/components/schemas/WalletAttributedString'
+        contactEmail:
+          $ref: '#/components/schemas/WalletAttributedString'
+        contactPhone:
+          $ref: '#/components/schemas/WalletAttributedString'
+        websiteUri:
+          $ref: '#/components/schemas/WalletAttributedString'
+        privacyPolicyUri:
+          $ref: '#/components/schemas/WalletAttributedString'
+        jurisdiction:
+          $ref: '#/components/schemas/WalletAttributedString'
+
+    WalletCounterpartySummary:
+      type: object
+      description: >
+        Protocol counterparty summary. displayName and logoUri are the resolved active-locale face;
+        localizedBranding carries the complete protocol-supplied display metadata. displayNameSource
+        says who stands behind displayName, which is the field a holder always sees and the field
+        a hostile counterparty most wants to control. detail is the expandable attributed facts;
+        its absence is the common case and must render as a complete screen, not as a panel of gaps.
+      required: [role, identifier]
+      example:
+        role: ISSUER
+        identifier: https://issuer.example.com
+        displayName: Example Issuer
+        partyId: party-42
+      properties:
+        role:
+          $ref: '#/components/schemas/WalletCounterpartyRole'
+        identifier:
+          type: string
+          minLength: 1
+        displayName:
+          type: string
+          nullable: true
+        logoUri:
+          type: string
+          nullable: true
+        localizedBranding:
+          type: array
+          items:
+            $ref: '#/components/schemas/WalletCounterpartyLocalizedBranding'
+          default: []
+        metadata:
+          $ref: '#/components/schemas/StringMap'
+        partyId:
+          type: string
+          nullable: true
+          description: Stable Party identifier assigned by the wallet Party registry after resolution.
+        displayNameSource:
+          $ref: '#/components/schemas/WalletAttributeSource'
+        detail:
+          $ref: '#/components/schemas/WalletCounterpartyDetail'
+
+    WalletCredentialOfferInfoDescriptor:
+      type: object
+      description: Pre-issuance display name for one offered claim path. Credential values never belong in an offer summary.
+      required: [path, displayName]
+      properties:
+        path:
+          type: array
+          minItems: 1
+          items:
+            type: string
+        displayName:
+          type: string
+          minLength: 1
+
+    WalletCredentialBranding:
+      type: object
+      description: Branding for one offered credential configuration.
+      required: [credentialConfigurationId]
+      properties:
+        credentialConfigurationId:
+          type: string
+        name:
+          type: string
+          nullable: true
+        locale:
+          type: string
+          nullable: true
+        description:
+          type: string
+          nullable: true
+        logoUri:
+          type: string
+          nullable: true
+        backgroundImageUri:
+          type: string
+          nullable: true
+        backgroundColor:
+          type: string
+          nullable: true
+        textColor:
+          type: string
+          nullable: true
+        info:
+          type: array
+          description: Pre-issuance display names only.
+          items:
+            $ref: '#/components/schemas/WalletCredentialOfferInfoDescriptor'
+          default: []
+
+    WalletCredentialOfferSummary:
+      type: object
+      description: Summary of a received credential offer.
+      required: [issuer, credentialConfigurationIds]
+      properties:
+        issuer:
+          $ref: '#/components/schemas/WalletCounterpartySummary'
+        credentialConfigurationIds:
+          type: array
+          items:
+            type: string
+        preAuthorizedCodeAvailable:
+          type: boolean
+          default: false
+        authorizationCodeAvailable:
+          type: boolean
+          default: false
+        txCodeRequired:
+          type: boolean
+          default: false
+        branding:
+          type: array
+          items:
+            $ref: '#/components/schemas/WalletCredentialBranding'
+          default: []
+
+    WalletTxCodeSpec:
+      type: object
+      description: Transaction code entry specification for pre-authorized issuance. The code value itself is registered as sensitive input and never appears in state.
+      properties:
+        inputMode:
+          type: string
+          nullable: true
+        length:
+          type: integer
+          nullable: true
+        descriptionKey:
+          type: string
+          nullable: true
+          description: Dotted lowercase localization key.
+        arguments:
+          $ref: '#/components/schemas/StringMap'
+
+    WalletClaimDescriptor:
+      type: object
+      description: Descriptor for one requested or previewed claim. Path segments are arbitrary JSON values, typically strings or indexes.
+      required: [path]
+      properties:
+        path:
+          type: array
+          items:
+            $ref: '#/components/schemas/JsonValue'
+        labelKey:
+          type: string
+          nullable: true
+          description: Dotted lowercase localization key.
+        intentToRetain:
+          type: boolean
+          nullable: true
+        valueAvailable:
+          type: boolean
+          default: false
+
+    WalletCredentialPreview:
+      type: object
+      description: Preview of a credential involved in the interaction. Branding is the domain-resolved face from the accepted credential record, not renderer fallback data.
+      required: [id]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+          nullable: true
+        format:
+          nullable: true
+          allOf:
+            - $ref: './wallet-credential-components.yml#/components/schemas/CredentialFormat'
+        issuer:
+          $ref: '#/components/schemas/WalletCounterpartySummary'
+        claims:
+          type: array
+          items:
+            $ref: '#/components/schemas/WalletClaimDescriptor'
+          default: []
+        branding:
+          $ref: '#/components/schemas/WalletCredentialBranding'
+
+    WalletRequestedClaim:
+      type: object
+      description: >
+        One claim a verifier is asking for, or one claim a specific candidate would reveal,
+        described so a holder can read it. The path is the only stable identity a claim has;
+        the label is what a screen shows. This shape carries no claim values: at selection
+        time nothing has been disclosed yet. Values belong on the credential the holder
+        already owns, not on this projection.
+      required: [path]
+      properties:
+        path:
+          type: array
+          description: >
+            The claim's position in the credential's claim tree. Machine identity, not
+            display text. Segments are JSON values, typically strings or non-negative
+            integers, matching requiredClaimPaths.
+          items:
+            $ref: '#/components/schemas/JsonValue'
+        label:
+          type: string
+          nullable: true
+          description: >
+            The claim's name in language a holder reads, resolved from the Catalogue of
+            Attributes. Absent when the catalogue has no entry for this path. A producer
+            MUST NOT invent a label from the path, including from the last path segment:
+            that would make the consumer's fallback unreachable and leave a raw dotted key
+            as the permanent display text. The consumer falls back to its own rendering of
+            the path.
+        description:
+          type: string
+          nullable: true
+          description: >
+            What the claim means, where the catalogue carries an explanation worth showing.
+            Absent when the catalogue has no explanation. Not a substitute for label.
+
+    WalletCandidateDisclosure:
+      type: object
+      description: >
+        What choosing this specific candidate would disclose. Distinct from the
+        requirement's claim list, which says what was ASKED for: two candidates
+        satisfying one requirement can reveal very different amounts, and the
+        difference is exactly what a holder is choosing between.
+      required: [credentialId, disclosedClaims]
+      properties:
+        credentialId:
+          type: string
+        disclosedClaims:
+          type: array
+          description: >
+            Which claims this candidate would reveal, so a holder can compare
+            candidates before choosing. Values are not present because nothing has
+            been disclosed at this point in the exchange, not because the contract
+            forbids them elsewhere. An empty array on a present disclosure means this
+            candidate discloses no named claims. That is a different state from a
+            missing disclosure, which means cost was not computed.
+          items:
+            $ref: '#/components/schemas/WalletRequestedClaim'
+        satisfiesFully:
+          type: boolean
+          default: true
+          description: >
+            False when this candidate answers only part of the requirement. A partial
+            candidate is offered rather than hidden so the holder can see why their
+            remaining choice is narrow.
+
+    WalletCredentialRequirement:
+      type: object
+      description: >
+        One credential requirement of a presentation request. multipleAllowed,
+        candidateCredentialIds and requiredClaimPaths are the machine form.
+        requestedClaims and candidateDisclosures are the labelled, per-candidate
+        form a holder can read. They default to empty because an engine that cannot
+        resolve a catalogue or compute a cost must be able to say so.
+      required: [id]
+      properties:
+        id:
+          type: string
+        format:
+          nullable: true
+          allOf:
+            - $ref: './wallet-credential-components.yml#/components/schemas/CredentialFormat'
+        multipleAllowed:
+          type: boolean
+          default: false
+        requiredClaimPaths:
+          type: array
+          items:
+            type: array
+            items:
+              $ref: '#/components/schemas/JsonValue'
+          default: []
+        candidateCredentialIds:
+          type: array
+          items:
+            type: string
+          default: []
+        requestedClaims:
+          type: array
+          description: >
+            The requirement's claims, labelled. Parallel to requiredClaimPaths: when
+            this array is non-empty it has the same length, the same paths, and the
+            same order. Empty means the labelled form was not produced. That is not
+            a claim that the requirement asks for nothing; whether any claims were
+            asked is requiredClaimPaths being empty. A consumer that needs labels
+            and finds this empty falls back to requiredClaimPaths. A catalogue miss
+            on an individual path still emits the item, with label absent.
+          items:
+            $ref: '#/components/schemas/WalletRequestedClaim'
+          default: []
+        purpose:
+          description: >
+            The registered intended use this requirement is asked under. Absent when
+            the relying party's certificate registers none for it, and a wallet MUST
+            NOT present a missing purpose as an empty or assumed one.
+          allOf:
+            - $ref: '#/components/schemas/WalletRegisteredPurpose'
+        candidateDisclosures:
+          type: array
+          description: >
+            Per-candidate cost, keyed to candidateCredentialIds. Empty means the
+            engine did not compute cost for this requirement. A consumer MUST render
+            that as cost unknown, never as discloses nothing: those are different
+            facts, and treating ignorance as a privacy claim would be a lie in the
+            holder's favour. Discloses nothing is a present WalletCandidateDisclosure
+            whose disclosedClaims array is empty. When this array is non-empty, a
+            candidateCredentialId with no matching entry was also not computed.
+          items:
+            $ref: '#/components/schemas/WalletCandidateDisclosure'
+          default: []
+
+    WalletCredentialSetOption:
+      type: object
+      description: One satisfiable combination of requirement ids within a credential set.
+      required: [requirementIds, satisfiable]
+      properties:
+        requirementIds:
+          type: array
+          items:
+            type: string
+        satisfiable:
+          type: boolean
+
+    WalletCredentialSetRequirement:
+      type: object
+      description: A credential set constraint grouping requirement options.
+      required: [id, required, options]
+      properties:
+        id:
+          type: string
+        required:
+          type: boolean
+        options:
+          type: array
+          items:
+            $ref: '#/components/schemas/WalletCredentialSetOption'
+
+    WalletCredentialSelectionRequest:
+      type: object
+      description: Credential selection the user must complete before disclosure.
+      required: [requirements, satisfiable]
+      properties:
+        requirements:
+          type: array
+          items:
+            $ref: '#/components/schemas/WalletCredentialRequirement'
+        satisfiable:
+          type: boolean
+        purpose:
+          description: >
+            The registered intended use the request as a whole is made under, when one
+            covers every requirement in it. Absent otherwise; see
+            WalletCredentialRequirement.purpose.
+          allOf:
+            - $ref: '#/components/schemas/WalletRegisteredPurpose'
+        credentialSets:
+          type: array
+          items:
+            $ref: '#/components/schemas/WalletCredentialSetRequirement'
+          default: []
+
+    WalletCredentialSelection:
+      type: object
+      description: The user's credential selection keyed by requirement id.
+      required: [selectedCredentialIdsByRequirement]
+      properties:
+        selectedCredentialIdsByRequirement:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string
+
+    WalletDisclosureSummary:
+      type: object
+      description: Summary of what will be disclosed to the verifier.
+      properties:
+        verifier:
+          $ref: '#/components/schemas/WalletCounterpartySummary'
+        requestedClaims:
+          type: array
+          items:
+            $ref: '#/components/schemas/WalletClaimDescriptor'
+          default: []
+        selectedCredentialIds:
+          type: array
+          items:
+            type: string
+          default: []
+        claimValuesRevealed:
+          type: boolean
+          default: false
+
+    WalletDeferredRetrievalSummary:
+      type: object
+      description: Progress of a deferred credential retrieval.
+      properties:
+        intervalSeconds:
+          type: integer
+          nullable: true
+        attempt:
+          type: integer
+          nullable: true
+        resumable:
+          type: boolean
+          default: true
+
+    WalletSecurityChallengeKind:
+      type: string
+      description: Kind of security unlock the wallet requires before the interaction can proceed.
+      enum:
+        - PASSKEY
+        - PIN
+        - BIOMETRIC
+        - LOCAL_HSM_UNLOCK
+        - LOCAL_TEE_UNLOCK
+        - REMOTE_HSM_UNLOCK
+        - REMOTE_KEY_AUTHORIZATION
+        - WALLET_UNIT_POLICY
+
+    WalletSecurityAssurance:
+      type: string
+      description: Assurance level attached to a security challenge or grant.
+      enum: [NONE, USER_PRESENT, PASSKEY, PIN, BIOMETRIC, HARDWARE_BACKED, REMOTE_AUTHORIZED]
+
+    WalletSecurityChallenge:
+      type: object
+      description: Outstanding security challenge the user must satisfy. The resulting grant is registered as sensitive input and approved by reference.
+      required: [challengeId, kind, reasonKey]
+      properties:
+        challengeId:
+          type: string
+          minLength: 1
+        kind:
+          $ref: '#/components/schemas/WalletSecurityChallengeKind'
+        reasonKey:
+          type: string
+          description: Dotted lowercase localization key.
+        arguments:
+          $ref: '#/components/schemas/StringMap'
+        requiredAssurance:
+          $ref: '#/components/schemas/WalletSecurityAssurance'
+
+    WalletInteractionSensitiveInputRef:
+      type: object
+      description: Bearer reference to sensitive protocol material held by the session-scoped sensitive-input authority. The referenced value never enters public interaction state and is consumable at most once.
+      required: [value]
+      example:
+        value: si_0a1b2c3d4e5f
+      properties:
+        value:
+          type: string
+          minLength: 1
+
+    WalletInteractionSensitiveInputPurpose:
+      type: string
+      description: Purpose binding for a registered sensitive input. Only OID4VCI_TRANSACTION_CODE, OID4VCI_AUTHORIZATION_CALLBACK, and INTERACTION_SECURITY_GRANT originate at the wallet client and are accepted by the register endpoint; the remaining purposes are registered server side.
+      enum:
+        - OID4VCI_TRANSACTION_CODE
+        - OID4VCI_AUTHORIZATION_HANDOFF
+        - OID4VCI_AUTHORIZATION_CALLBACK
+        - PROTOCOL_COMPLETION_HANDOFF
+        - INTERACTION_SECURITY_GRANT
+
+    RegisterWalletInteractionSensitiveInputRequest:
+      type: object
+      description: Registers client-supplied sensitive protocol input, for example a transaction code, an authorization callback URI, or a security grant token. The value is stored only in the private session store, is never echoed back in any response or interaction state, and is never logged. Only client-supplied purposes are accepted; other purposes are rejected.
+      required: [purpose, value]
+      example:
+        purpose: OID4VCI_TRANSACTION_CODE
+        value: '493536'
+      properties:
+        purpose:
+          $ref: '#/components/schemas/WalletInteractionSensitiveInputPurpose'
+        value:
+          type: string
+          minLength: 1
+          description: The sensitive value. Never returned by any endpoint and never logged.
+
+    RegisterWalletInteractionSensitiveInputResult:
+      type: object
+      description: Reference handle for a registered sensitive input. Pass it in a subsequent action, for example submit_tx_code or approve_security_challenge.
+      required: [ref]
+      properties:
+        ref:
+          $ref: '#/components/schemas/WalletInteractionSensitiveInputRef'
+
+    ConsumeWalletInteractionHandoffRequest:
+      type: object
+      description: |
+        The opaque reference from authorizationHandoffRef. The referenced authorization URL is
+        returned once and then spent.
+      required: [ref]
+      properties:
+        ref:
+          $ref: '#/components/schemas/WalletInteractionSensitiveInputRef'
+
+    ConsumeWalletInteractionHandoffResult:
+      type: object
+      description: |
+        The issuer authorization URL this host should open. Consumable at most once. Never present
+        on public interaction state and never logged.
+      required: [value]
+      properties:
+        value:
+          type: string
+          minLength: 1
+          description: The authorization URL. Open it, then send the return link as auth_callback.
+
+    # The Kotlin sealed subclasses KeepSeparate and AssociateExisting currently lack @SerialName
+    # annotations. The backend phase adds @SerialName("keep_separate") and
+    # @SerialName("associate_existing") to match this contract before the schema freezes.
+    WalletCounterpartyAssociationDecision:
+      description: User decision that resolves a first-contact counterparty encounter, either keeping the counterparty as a separate new Party or associating it with an existing Party. Managed sessions whose execution owner is WALLET_BACKEND reject the association ceremony.
+      oneOf:
+        - $ref: '#/components/schemas/WalletCounterpartyAssociationDecisionKeepSeparate'
+        - $ref: '#/components/schemas/WalletCounterpartyAssociationDecisionAssociateExisting'
+      discriminator:
+        propertyName: type
+        mapping:
+          keep_separate: '#/components/schemas/WalletCounterpartyAssociationDecisionKeepSeparate'
+          associate_existing: '#/components/schemas/WalletCounterpartyAssociationDecisionAssociateExisting'
+
+    WalletCounterpartyAssociationDecisionKeepSeparate:
+      type: object
+      description: Keep the encountered counterparty as its own new Party with the given display name.
+      required: [type, displayName]
+      properties:
+        type:
+          type: string
+          enum: [keep_separate]
+        displayName:
+          type: string
+          minLength: 1
+
+    WalletCounterpartyAssociationDecisionAssociateExisting:
+      type: object
+      description: Associate the encountered counterparty with an existing Party.
+      required: [type, partyId]
+      properties:
+        type:
+          type: string
+          enum: [associate_existing]
+        partyId:
+          type: string
+          minLength: 1
+
+    WalletCounterpartyAssociationCandidate:
+      type: object
+      description: Existing Party the counterparty could be associated with.
+      required: [partyId, displayName, relatedHosts]
+      properties:
+        partyId:
+          type: string
+          minLength: 1
+        displayName:
+          type: string
+          minLength: 1
+        relatedHosts:
+          type: array
+          minItems: 1
+          items:
+            type: string
+
+    WalletCounterpartyEncounterResult:
+      type: object
+      description: Serializable encounter evidence snapshotted into interaction state. previousInteractionCount and lastInteractionAtEpochSeconds describe state before the current encounter, keeping the first-interaction ceremony deterministic.
+      required: [counterparty, resolved, organizationCreated, firstInteraction]
+      example:
+        counterparty:
+          role: ISSUER
+          identifier: https://issuer.example.com
+          displayName: Example Issuer
+          partyId: party-42
+        resolved: true
+        organizationCreated: false
+        firstInteraction: false
+        previousInteractionCount: 3
+        lastInteractionAtEpochSeconds: 1755300000
+      properties:
+        counterparty:
+          $ref: '#/components/schemas/WalletCounterpartySummary'
+        resolved:
+          type: boolean
+          description: True when the counterparty resolved to a stable Party. Unresolved encounters never carry a partyId, counts, or association candidates.
+        organizationCreated:
+          type: boolean
+          description: True only when this encounter created a new Organization Party in the authority.
+        firstInteraction:
+          type: boolean
+        previousInteractionCount:
+          type: integer
+          format: int64
+          minimum: 0
+          default: 0
+        lastInteractionAtEpochSeconds:
+          type: integer
+          format: int64
+          nullable: true
+        associationCandidates:
+          type: array
+          items:
+            $ref: '#/components/schemas/WalletCounterpartyAssociationCandidate'
+          default: []
+
+    WalletTrustSourceType:
+      type: string
+      description: Kind of trust evidence source consulted for a counterparty.
+      enum:
+        - EUDI_TRUSTED_LIST
+        - X509
+        - VICAL
+        - DID
+        - OPENID_FEDERATION
+        - DCQL_TRUSTED_AUTHORITY
+        - REMEMBERED_USER_DECISION
+
+    WalletTrustSource:
+      type: object
+      description: One trust evidence source consulted during counterparty trust resolution.
+      required: [type, identifier]
+      properties:
+        type:
+          $ref: '#/components/schemas/WalletTrustSourceType'
+        identifier:
+          type: string
+        labelKey:
+          type: string
+          nullable: true
+          description: Dotted lowercase localization key.
+
+    WalletTrustStatus:
+      type: string
+      description: Resolved trust status of the counterparty.
+      enum: [TRUSTED, UNKNOWN, WARNING, BLOCKED]
+
+    WalletTrustPolicyAction:
+      type: string
+      description: Policy action derived from the trust status.
+      enum: [ALLOW, WARN, BLOCK, ASK_USER, FIRST_CONTACT_PROMPT]
+
+    WalletTrustChainLinks:
+      type: string
+      description: >
+        Cryptographic status of the links in the trust chain. VERIFIED means each hop attested
+        the next, toward the anchor. BROKEN means a link failed verification. This is not domain
+        admission and not attestation authorisation. A single field so a payload cannot claim
+        both a broken link and a successful verification.
+      enum: [VERIFIED, BROKEN]
+
+    WalletTrustChainHopPosition:
+      type: string
+      description: Position of a hop in the ordered trust chain from leaf to anchor.
+      enum: [LEAF, INTERMEDIATE, ANCHOR]
+
+    WalletTrustChainHop:
+      type: object
+      additionalProperties: false
+      description: >
+        One hop in an ordered trust chain from leaf to anchor. identifier, displayName, position
+        and assertedBy are the fields OpenID Federation, X.509 and ETSI can all populate.
+        metadata_policy and x5c failed that test and are not here.
+      required: [identifier, position]
+      properties:
+        identifier:
+          type: string
+          minLength: 1
+        displayName:
+          type: string
+          nullable: true
+          minLength: 1
+        position:
+          $ref: '#/components/schemas/WalletTrustChainHopPosition'
+        assertedBy:
+          type: string
+          nullable: true
+          minLength: 1
+          description: >
+            Identifier of the hop toward the anchor that attested this hop. Absent on the ANCHOR,
+            where nothing further attests.
+
+    WalletTrustChain:
+      type: object
+      additionalProperties: false
+      description: >
+        Ordered hops from leaf to anchor. Omit this field when the mechanism produced no chain.
+        A present chain with zero hops is not a thing and is refused (minItems 1).
+      required: [hops, links]
+      properties:
+        hops:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/WalletTrustChainHop'
+        links:
+          $ref: '#/components/schemas/WalletTrustChainLinks'
+
+    WalletTrustDomainPosture:
+      type: string
+      description: >
+        Explicit trust-domain posture from the real issuerTrustMode, never inferred from an empty
+        defaults list. FAIL_CLOSED is nothing trusted. TRUST_ALL is explicit UNRESTRICTED.
+        CUSTOM is TRUST_DOMAINS with assigned domains.
+      enum: [FAIL_CLOSED, TRUST_ALL, CUSTOM]
+
+    WalletTrustDomainAdmissionOutcome:
+      type: string
+      description: >
+        Result of asking whether this deployment admits the chain's anchor. ADMITTED_TRUST_ALL
+        must not be rendered as a named authority admitting the anchor. NOT_ADMITTED is local
+        policy, not a broken chain.
+      enum: [ADMITTED_NAMED_DOMAIN, ADMITTED_TRUST_ALL, NOT_ADMITTED, FAIL_CLOSED]
+
+    WalletTrustDomainAdmission:
+      type: object
+      additionalProperties: false
+      description: >
+        Whether the chain's anchor is admitted by the assigned trust domains. Distinct from
+        WalletTrustChain.links. admittingDomain is present only for ADMITTED_NAMED_DOMAIN and
+        must be absent for ADMITTED_TRUST_ALL.
+      required: [posture, outcome]
+      properties:
+        posture:
+          $ref: '#/components/schemas/WalletTrustDomainPosture'
+        outcome:
+          $ref: '#/components/schemas/WalletTrustDomainAdmissionOutcome'
+        admittingDomain:
+          type: string
+          nullable: true
+          minLength: 1
+
+    WalletAttestationAuthorisationOutcome:
+      type: string
+      description: >
+        Whether a trusted party may issue this attestation type. UNKNOWN means the path could not
+        answer. Absence of the whole object is the current honest production state.
+      enum: [AUTHORISED, NOT_AUTHORISED, UNKNOWN]
+
+    WalletAttestationAuthorisation:
+      type: object
+      additionalProperties: false
+      description: >
+        Ecosystem-policy check, distinct from a broken chain link and from an unadmitted anchor.
+        A party being trusted says nothing about which attestation types it may issue.
+      required: [outcome]
+      properties:
+        outcome:
+          $ref: '#/components/schemas/WalletAttestationAuthorisationOutcome'
+        scheme:
+          type: string
+          nullable: true
+          minLength: 1
+
+    WalletCounterpartyTrustSummary:
+      type: object
+      description: >
+        Trust resolution summary for the counterparty of this interaction. trustChain,
+        domainAdmission and attestationAuthorisation are optional and their absence is normal:
+        each is a different question, and a mechanism that cannot answer leaves that field off
+        rather than inventing a value.
+      required: [counterparty, status]
+      properties:
+        counterparty:
+          $ref: '#/components/schemas/WalletCounterpartySummary'
+        status:
+          $ref: '#/components/schemas/WalletTrustStatus'
+        policyAction:
+          $ref: '#/components/schemas/WalletTrustPolicyAction'
+        sources:
+          type: array
+          items:
+            $ref: '#/components/schemas/WalletTrustSource'
+          default: []
+        diagnostics:
+          type: array
+          items:
+            type: string
+          default: []
+        firstContactKey:
+          type: string
+          nullable: true
+        rememberedDecision:
+          type: boolean
+          default: false
+        trustChain:
+          $ref: '#/components/schemas/WalletTrustChain'
+        domainAdmission:
+          $ref: '#/components/schemas/WalletTrustDomainAdmission'
+        attestationAuthorisation:
+          $ref: '#/components/schemas/WalletAttestationAuthorisation'
+
+    WalletInteractionActionType:
+      type: string
+      description: Action kind dispatched into the interaction state machine. Wire values are the snake_case serial names of the Kotlin enum.
+      enum:
+        - resolve_counterparty_contact
+        - continue
+        - decline
+        - submit_tx_code
+        - auth_callback
+        - choose_implementation
+        - select_credentials
+        - reveal_claim_values
+        - approve_security_challenge
+        - retry_deferred_retrieval
+        - resume_deferred_retrieval
+        - cancel
+
+    WalletInteractionAction:
+      type: object
+      description: A user or client action dispatched into the interaction. Field requirements depend on the type. submit_tx_code, auth_callback, and approve_security_challenge require sensitiveInputRef. choose_implementation requires implementationId. select_credentials requires selection. resolve_counterparty_contact requires counterpartyAssociation.
+      required: [type]
+      example:
+        type: submit_tx_code
+        sensitiveInputRef:
+          value: si_0a1b2c3d4e5f
+      properties:
+        type:
+          $ref: '#/components/schemas/WalletInteractionActionType'
+        implementationId:
+          type: string
+          nullable: true
+        selection:
+          $ref: '#/components/schemas/WalletCredentialSelection'
+        sensitiveInputRef:
+          $ref: '#/components/schemas/WalletInteractionSensitiveInputRef'
+        rememberDecision:
+          type: boolean
+          default: false
+        counterpartyAssociation:
+          $ref: '#/components/schemas/WalletCounterpartyAssociationDecision'
+
+    WalletInteractionState:
+      type: object
+      description: |
+        Public interaction state projection. Sensitive protocol material such as transaction codes,
+        authorization URLs, and claim values is never present; it is carried by sensitive-input
+        references only. error is optional even when status is Failed: Failed-with-no-error is
+        expressible for stored sessions that never carried a structured error. Consumers treat that
+        case as disposition TERMINAL with no message.
+      required: [sessionId, walletUnitId, status]
+      example:
+        sessionId: 018f5c1e-9a3b-7c4d-8e2f-3a4b5c6d7e8f
+        walletUnitId: wu-7f9d
+        status: CredentialOfferReview
+        executionOwner: WALLET_APP
+        revision: 3
+        flowKind: CredentialReceive
+        protocol: OID4VCI
+        terminal: false
+      properties:
+        sessionId:
+          $ref: '#/components/schemas/WalletInteractionSessionId'
+        walletUnitId:
+          type: string
+          minLength: 1
+        status:
+          $ref: '#/components/schemas/WalletInteractionStatus'
+        executionOwner:
+          $ref: '#/components/schemas/ProtocolExecutionOwner'
+        revision:
+          type: integer
+          format: int64
+          default: 0
+          description: Monotonic state revision used for event replay and frame reconciliation.
+        flowKind:
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/WalletInteractionFlowKind'
+        activity:
+          $ref: '#/components/schemas/WalletInteractionActivitySummary'
+        protocol:
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/WalletProtocol'
+        adapterId:
+          type: string
+          nullable: true
+        entryPoint:
+          $ref: '#/components/schemas/WalletEntryPointSummary'
+        implementationChoices:
+          type: array
+          items:
+            $ref: '#/components/schemas/WalletImplementationChoice'
+          default: []
+        counterparty:
+          $ref: '#/components/schemas/WalletCounterpartySummary'
+        counterpartyEncounter:
+          $ref: '#/components/schemas/WalletCounterpartyEncounterResult'
+        trust:
+          $ref: '#/components/schemas/WalletCounterpartyTrustSummary'
+        credentialOffer:
+          $ref: '#/components/schemas/WalletCredentialOfferSummary'
+        selectedCredentialConfigurationIds:
+          type: array
+          items:
+            type: string
+          default: []
+        credentialPreview:
+          type: array
+          items:
+            $ref: '#/components/schemas/WalletCredentialPreview'
+          default: []
+        receivedCredentialPreview:
+          type: array
+          description: Credentials actually returned and accepted during this interaction, never offer previews.
+          items:
+            $ref: '#/components/schemas/WalletCredentialPreview'
+          default: []
+        credentialSelection:
+          $ref: '#/components/schemas/WalletCredentialSelectionRequest'
+        disclosure:
+          $ref: '#/components/schemas/WalletDisclosureSummary'
+        securityChallenge:
+          $ref: '#/components/schemas/WalletSecurityChallenge'
+        authorizationHandoffRef:
+          $ref: '#/components/schemas/WalletInteractionSensitiveInputRef'
+        completionHandoffRef:
+          $ref: '#/components/schemas/WalletInteractionSensitiveInputRef'
+        txCode:
+          $ref: '#/components/schemas/WalletTxCodeSpec'
+        deferred:
+          $ref: '#/components/schemas/WalletDeferredRetrievalSummary'
+        message:
+          $ref: '#/components/schemas/WalletDisplayMessage'
+        error:
+          $ref: '#/components/schemas/WalletInteractionError'
+        terminal:
+          type: boolean
+          default: false
+          description: |
+            Whether the state machine has left the live statuses. Completed, Cancelled, and Failed
+            are always terminal. This flag does not decide the holder's next action: that is
+            error.disposition. Resume is legal when disposition is RESUMABLE even though terminal is
+            true, because resume starts a new phase of the same session rather than claiming the
+            failed phase is still live. A renderer that disables every action because terminal is
+            true is misreading this field.
+
+    WalletInteractionSession:
+      type: object
+      description: An interaction session handle with its current state.
+      required: [sessionId, state]
+      properties:
+        sessionId:
+          $ref: '#/components/schemas/WalletInteractionSessionId'
+        state:
+          $ref: '#/components/schemas/WalletInteractionState'
+
+    WalletInteractionSessionEnvelope:
+      type: object
+      description: Envelope carrying an interaction session.
+      required: [session]
+      properties:
+        session:
+          $ref: '#/components/schemas/WalletInteractionSession'
+
+    WalletInteractionStateEnvelope:
+      type: object
+      description: Envelope carrying an interaction state snapshot.
+      required: [state]
+      properties:
+        state:
+          $ref: '#/components/schemas/WalletInteractionState'
+
+    WalletInteractionRevisionConflict:
+      type: object
+      description: |
+        Body of the 409 answer to a dispatch whose expectedRevision does not match
+        the session. Nothing was applied. The current state is included so the client
+        can re-render and let the user decide again without a second round trip.
+      required: [sessionId, expectedRevision, currentRevision, state]
+      example:
+        sessionId: 018f5c1e-9a3b-7c4d-8e2f-3a4b5c6d7e8f
+        expectedRevision: 3
+        currentRevision: 5
+        state:
+          sessionId: 018f5c1e-9a3b-7c4d-8e2f-3a4b5c6d7e8f
+          walletUnitId: wu-7f9d
+          status: DisclosureConsent
+          revision: 5
+      properties:
+        sessionId:
+          $ref: '#/components/schemas/WalletInteractionSessionId'
+        expectedRevision:
+          type: integer
+          format: int64
+          description: The revision the refused request stated.
+        currentRevision:
+          type: integer
+          format: int64
+          description: The revision the session is actually at. Always the revision of the state below.
+        state:
+          $ref: '#/components/schemas/WalletInteractionState'
+
+    CancelWalletInteractionResult:
+      type: object
+      description: Result of cancelling an interaction, carrying the terminal state.
+      required: [sessionId, state]
+      properties:
+        sessionId:
+          $ref: '#/components/schemas/WalletInteractionSessionId'
+        state:
+          $ref: '#/components/schemas/WalletInteractionState'
+
+    WalletInteractionClientFrameType:
+      type: string
+      description: Client frame kind for the request/response frame transport.
+      enum: [RESUME, DISPATCH_ACTION, CANCEL, PING]
+
+    WalletInteractionClientFrame:
+      type: object
+      description: One client frame of the request/response frame transport. The sessionId must equal the sessionId path parameter; a mismatch is rejected. DISPATCH_ACTION requires the action field.
+      required: [type, sessionId]
+      example:
+        type: DISPATCH_ACTION
+        sessionId: 018f5c1e-9a3b-7c4d-8e2f-3a4b5c6d7e8f
+        action:
+          type: continue
+      properties:
+        type:
+          $ref: '#/components/schemas/WalletInteractionClientFrameType'
+        sessionId:
+          $ref: '#/components/schemas/WalletInteractionSessionId'
+        action:
+          $ref: '#/components/schemas/WalletInteractionAction'
+        lastRevision:
+          type: integer
+          format: int64
+          minimum: 0
+          nullable: true
+          description: |
+            The state revision the client decided this frame against. On a
+            DISPATCH_ACTION frame it is the same conditional-write precondition as
+            expectedRevision on the actions endpoint: the frame is refused with 409
+            and an ERROR server frame carrying the current state unless the session
+            is still at exactly this revision. It is ignored on RESUME, CANCEL, and
+            PING frames. A RESUME frame of a Failed session with disposition
+            RESUMABLE starts a new phase and advances revision; GET /state is the
+            re-attach path that does not. Absent means the frame is applied
+            unconditionally.
+          example: 3
+
+    WalletInteractionServerFrameType:
+      type: string
+      description: Server frame kind for the request/response frame transport.
+      enum: [STATE, ACK, ERROR, PONG]
+
+    WalletInteractionServerFrame:
+      type: object
+      description: One server frame of the request/response frame transport. RESUME, DISPATCH_ACTION, and CANCEL frames are answered with a STATE frame; PING is answered with PONG.
+      required: [type, sessionId]
+      example:
+        type: STATE
+        sessionId: 018f5c1e-9a3b-7c4d-8e2f-3a4b5c6d7e8f
+        revision: 4
+        state:
+          sessionId: 018f5c1e-9a3b-7c4d-8e2f-3a4b5c6d7e8f
+          walletUnitId: wu-7f9d
+          status: CredentialPreview
+          revision: 4
+      properties:
+        type:
+          $ref: '#/components/schemas/WalletInteractionServerFrameType'
+        sessionId:
+          $ref: '#/components/schemas/WalletInteractionSessionId'
+        revision:
+          type: integer
+          format: int64
+          nullable: true
+        state:
+          $ref: '#/components/schemas/WalletInteractionState'
+        error:
+          $ref: '#/components/schemas/WalletInteractionError'
+
+    WalletInteractionStateEvent:
+      type: object
+      description: One recorded state event. On the events stream this object is the SSE data payload, the SSE id is the revision, and the SSE event name is wallet-interaction-state.
+      required: [sessionId, revision, state]
+      properties:
+        sessionId:
+          $ref: '#/components/schemas/WalletInteractionSessionId'
+        revision:
+          type: integer
+          format: int64
+        replayable:
+          type: boolean
+          default: true
+        state:
+          $ref: '#/components/schemas/WalletInteractionState'
+
+    WalletInteractionActivityProjection:
+      type: object
+      description: One entry of the per-wallet interaction activity log projection.
+      required: [sequence, recordedAtEpochSeconds, sessionId, walletUnitId, flowKind, status]
+      example:
+        sequence: 12
+        recordedAtEpochSeconds: 1755300000
+        sessionId: 018f5c1e-9a3b-7c4d-8e2f-3a4b5c6d7e8f
+        walletUnitId: wu-7f9d
+        flowKind: CredentialReceive
+        status: Completed
+        credentialRecordIds: [cred-rec-1]
+      properties:
+        sequence:
+          type: integer
+          format: int64
+          description: Monotonic activity sequence used as the paging cursor.
+        recordedAtEpochSeconds:
+          type: integer
+          format: int64
+        sessionId:
+          type: string
+          description: Interaction session the activity was recorded for.
+        walletUnitId:
+          type: string
+        flowKind:
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/WalletInteractionFlowKind'
+        status:
+          $ref: '#/components/schemas/WalletInteractionStatus'
+        counterparty:
+          $ref: '#/components/schemas/WalletCounterpartySummary'
+        credentialRecordIds:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+          default: []
+        authorizationDecision:
+          $ref: '#/components/schemas/WalletAuthorizationDecisionProjection'
+
+    WalletAuthorizationDecisionProjection:
+      type: object
+      additionalProperties: false
+      description: Recipient-safe authorization decision summary attached to an interaction activity entry.
+      required: [decisionId, caseId, tenantId, outcome, action, principal, policy, recordedAt, evidenceCount, availability]
+      properties:
+        decisionId: { type: string, minLength: 1 }
+        caseId: { type: string, minLength: 1 }
+        tenantId: { type: string, minLength: 1 }
+        outcome: { type: string, enum: [PERMIT, DENY, INDETERMINATE] }
+        action: { type: string, minLength: 1 }
+        principal: { type: string, minLength: 1 }
+        representedParty: { type: string }
+        resource: { type: string }
+        policy: { type: string, minLength: 1 }
+        explanation: { type: string }
+        recordedAt: { type: string, format: date-time }
+        evidenceCount: { type: integer, format: int32, minimum: 0 }
+        availability: { type: string, enum: [available, unavailable] }
+        adl: { type: object, additionalProperties: true }
+
+    ListWalletInteractionActivityResult:
+      type: object
+      description: One page of the interaction activity log.
+      required: [entries]
+      properties:
+        entries:
+          type: array
+          items:
+            $ref: '#/components/schemas/WalletInteractionActivityProjection'
+        nextSequence:
+          type: integer
+          format: int64
+          nullable: true
+          description: Sequence of the last returned entry. Pass it as afterSequence to fetch the next page. Null when the page is empty.
+
+    # ------------------------------------------------------------------
+    # Credential hand-off sessions (multi-screen operator, display, conduit)
+    # ------------------------------------------------------------------
+
+    HandoffSessionId:
+      type: string
+      minLength: 1
+      description: Credential hand-off session identifier, serialized as a plain JSON string.
+      example: 0198f5c1-e9a3-7c4d-8e2f-3a4b5c6d7e8f
+
+    HandoffSessionPhase:
+      type: string
+      description: |
+        Phase of a credential hand-off session in its life cycle. waiting means created and not
+        yet picked up by any wallet. connected is the wire value for the phase in which a wallet
+        has retrieved the entry point; consumers map it into their own vocabulary at their port.
+        succeeded, failed, and expired are terminal.
+      enum: [waiting, connected, succeeded, failed, expired]
+
+    HandoffScreenRole:
+      type: string
+      description: |
+        Role a bound screen plays in the session. operator drives the exchange from the business
+        wallet console. display renders the customer-facing stage on shared hardware such as PoS
+        or kiosk. conduit acts for the business wallet unit against the external issuer or relying
+        party from the edge business profile.
+      enum: [operator, display, conduit]
+
+    HandoffChannelKind:
+      type: string
+      description: Delivery channel the session exposes to an eligible role. The exchange URI itself never travels in a projection; copy_link and open_wallet_app resolve through the one-shot consume endpoint.
+      enum: [copy_link, open_wallet_app, send_email]
+
+    HandoffSummaryKind:
+      type: string
+      description: What the stage area of a screen renders for the current phase.
+      enum: [qr, countdown, outcome]
+
+    HandoffNotePosition:
+      type: string
+      description: Where a configured note slot sits relative to the stage content.
+      enum: [above, below]
+
+    HandoffNoteSlot:
+      type: object
+      description: One operator-configured text slot above or below the stage content.
+      required: [position, text]
+      properties:
+        position:
+          $ref: '#/components/schemas/HandoffNotePosition'
+        text:
+          type: string
+          minLength: 1
+
+    HandoffViewSlots:
+      type: object
+      description: View-definition slots a renderer fills for one role. summaryKind is derived server side from the phase; notes are operator-configured text slots above or below the stage content; labels carry stable caption overrides keyed by stable names.
+      required: [summaryKind]
+      example:
+        summaryKind: qr
+        notes:
+          - position: above
+            text: Scan with your wallet app to receive your credential.
+        labels:
+          statusWaiting: Waiting for connection
+      properties:
+        summaryKind:
+          $ref: '#/components/schemas/HandoffSummaryKind'
+        notes:
+          type: array
+          items:
+            $ref: '#/components/schemas/HandoffNoteSlot'
+          default: []
+        labels:
+          $ref: '#/components/schemas/StringMap'
+
+    HandoffRedirectTarget:
+      type: object
+      description: Configured post-success redirect target with its countdown duration. Present only when the host configured a redirect that passed the navigation guard. Safe for every role because it is host configuration, never protocol material.
+      required: [uri]
+      properties:
+        uri:
+          type: string
+          minLength: 1
+        countdownSeconds:
+          type: integer
+          minimum: 1
+          nullable: true
+
+    HandoffOutcomeDetail:
+      type: object
+      description: |
+        Terminal outcome detail. kind and animationKind are safe for every role. code and message
+        are operator-facing resolution detail and are stripped server side from display and conduit
+        projections by omission: those roles receive the object without the fields rather than
+        receiving empty strings. No claim data of any kind appears here at any role.
+      required: [kind, animationKind]
+      properties:
+        kind:
+          type: string
+          description: Terminal classification shared by every role.
+          enum: [completed, failed, cancelled, expired]
+        animationKind:
+          type: string
+          description: Rendering hint a customer-facing screen animates.
+          enum: [success, failure, neutral]
+        code:
+          type: string
+          nullable: true
+          description: Stable machine-readable failure or completion code. Operator projections only.
+        message:
+          type: string
+          nullable: true
+          description: Resolution message in operator-readable language. Operator projections only.
+
+    HandoffPresenceEntry:
+      type: object
+      description: One bound screen's presence. lastSeenAtEpochSeconds updates through presence heartbeats; stale marks a screen whose heartbeat is older than the staleness threshold. Stale screens stay listed so an operator can see them.
+      required: [screenId, role, lastSeenAtEpochSeconds, stale]
+      properties:
+        screenId:
+          type: string
+          minLength: 1
+        label:
+          type: string
+          nullable: true
+        role:
+          $ref: '#/components/schemas/HandoffScreenRole'
+        lastSeenAtEpochSeconds:
+          type: integer
+          format: int64
+        stale:
+          type: boolean
+
+    HandoffScreenProjection:
+      type: object
+      description: |
+        What one role may see and do for the session. Enforcement is server-side by omission:
+        a display projection carries NO link text, NO email action channel, and NO result claim
+        data, and the raw exchange URI appears in no projection at any role. Client hiding is
+        convenience only and is never the boundary.
+      required: [role, enabledChannels, views, presence]
+      properties:
+        role:
+          $ref: '#/components/schemas/HandoffScreenRole'
+        enabledChannels:
+          type: array
+          description: Channels this role may act on. Empty for display by design.
+          items:
+            $ref: '#/components/schemas/HandoffChannelKind'
+        views:
+          $ref: '#/components/schemas/HandoffViewSlots'
+        presence:
+          type: array
+          description: Bound screens other than the viewer, plus the viewer when the caller is an operator.
+          items:
+            $ref: '#/components/schemas/HandoffPresenceEntry'
+          default: []
+
+    HandoffSessionState:
+      type: object
+      description: |
+        Server-owned state of a credential hand-off session. Phases advance only server side.
+        revision is monotonic per session and doubles as the snapshot revision. The raw exchange
+        URI is never present; eligible roles obtain it once through the consume endpoint. On
+        expiry the correlationId is invalidated upstream and regenerate starts a successor
+        session linked through supersedesSessionId and successorSessionId.
+      required: [sessionId, correlationId, phase, revision]
+      example:
+        sessionId: 0198f5c1-e9a3-7c4d-8e2f-3a4b5c6d7e8f
+        correlationId: cor_01j8f5c1e9a3b
+        phase: waiting
+        revision: 2
+        createdAtEpochSeconds: 1755850000
+        expiresAtEpochSeconds: 1755853600
+      properties:
+        sessionId:
+          $ref: '#/components/schemas/HandoffSessionId'
+        correlationId:
+          type: string
+          minLength: 1
+          description: Opaque upstream correlation for the wrapped offer or request run. Invalidated when the session expires or is regenerated.
+        phase:
+          $ref: '#/components/schemas/HandoffSessionPhase'
+        revision:
+          type: integer
+          format: int64
+          minimum: 0
+          default: 0
+          description: Monotonic snapshot revision, incremented exactly once per observable transition.
+        createdAtEpochSeconds:
+          type: integer
+          format: int64
+          nullable: true
+        expiresAtEpochSeconds:
+          type: integer
+          format: int64
+          nullable: true
+          description: Absolute expiry instant backing the single durable expiry timer.
+        redirectTarget:
+          allOf:
+            - $ref: '#/components/schemas/HandoffRedirectTarget'
+          nullable: true
+        outcome:
+          allOf:
+            - $ref: '#/components/schemas/HandoffOutcomeDetail'
+          nullable: true
+          description: Terminal detail once a terminal phase is reached. Role filtering applies to code and message as described on HandoffOutcomeDetail.
+        supersedesSessionId:
+          type: string
+          nullable: true
+          description: Predecessor session when this session was created by regenerate.
+        successorSessionId:
+          type: string
+          nullable: true
+          description: Successor session after regenerate, so bound screens can follow without re-pairing.
+
+    HandoffSessionSnapshot:
+      type: object
+      description: Point-in-time read model served from the session store only, never from workflow memory. viewer is the projection for the caller's role; enforcement by omission applies to everything reachable from this document.
+      required: [state, viewer]
+      properties:
+        state:
+          $ref: '#/components/schemas/HandoffSessionState'
+        viewer:
+          $ref: '#/components/schemas/HandoffScreenProjection'
+
+    StartHandoffSessionRequest:
+      type: object
+      description: Starts a hand-off session wrapping one offer or request run. Protocol execution stays backend owned; clients capture, initiate and drive interaction only.
+      required: [walletUnitId]
+      example:
+        walletUnitId: wu-7f9d
+        ttlSeconds: 3600
+      properties:
+        walletUnitId:
+          type: string
+          minLength: 1
+          description: Business wallet unit whose run this session wraps.
+        interactionSessionId:
+          type: string
+          nullable: true
+          description: Existing wallet interaction session to wrap, when one was already started.
+        ttlSeconds:
+          type: integer
+          minimum: 30
+          nullable: true
+          description: Session lifetime backing the single durable expiry timer. Defaults to the deployment policy when absent.
+        redirectTarget:
+          allOf:
+            - $ref: '#/components/schemas/HandoffRedirectTarget'
+          nullable: true
+        notes:
+          type: array
+          description: Operator-configured note slots shown above or below the stage content.
+          items:
+            $ref: '#/components/schemas/HandoffNoteSlot'
+          default: []
+        labels:
+          $ref: '#/components/schemas/StringMap'
+
+    StartHandoffSessionResult:
+      type: object
+      description: The started session seen through the starting caller's role projection.
+      required: [snapshot]
+      properties:
+        snapshot:
+          $ref: '#/components/schemas/HandoffSessionSnapshot'
+
+    RegenerateHandoffSessionResult:
+      type: object
+      description: Result of regenerating. The previous run is cancelled, its correlation id invalidated upstream, and the returned snapshot belongs to the successor session.
+      required: [snapshot]
+      properties:
+        snapshot:
+          $ref: '#/components/schemas/HandoffSessionSnapshot'
+
+    BindHandoffScreenRequest:
+      type: object
+      description: Binds the authenticated screen to a live session. The caller authenticates with an access token its owning OAuth2 authorization server minted for the hand-off audience; the role claim inside that token decides which projection it receives.
+      required: [sessionId]
+      properties:
+        sessionId:
+          $ref: '#/components/schemas/HandoffSessionId'
+
+    BindHandoffScreenResult:
+      type: object
+      description: The session snapshot for the freshly bound screen's role.
+      required: [snapshot]
+      properties:
+        snapshot:
+          $ref: '#/components/schemas/HandoffSessionSnapshot'
+
+    HeartbeatHandoffScreenRequest:
+      type: object
+      description: Presence heartbeat from an authenticated, already bound screen.
+      required: [sessionId]
+      properties:
+        sessionId:
+          $ref: '#/components/schemas/HandoffSessionId'
+
+    HeartbeatHandoffScreenResult:
+      type: object
+      description: Acknowledged presence. stale reports whether the screen had crossed the staleness threshold before this heartbeat landed.
+      required: [lastSeenAtEpochSeconds, stale]
+      properties:
+        lastSeenAtEpochSeconds:
+          type: integer
+          format: int64
+        stale:
+          type: boolean
+
+    ConsumeHandoffExchangeUriRequest:
+      type: object
+      description: Empty request. The target session is carried by the path and the caller by the hand-off audience access token minted by its owning authorization server.
+      additionalProperties: false
+
+    ConsumeHandoffExchangeUriResult:
+      type: object
+      description: |
+        The guarded exchange URI for this session, consumable only by roles permitted the
+        encoder and clipboard paths. One-shot per screen per phase where policy requires it.
+        Never present on any projection or event and never logged.
+      required: [uri]
+      properties:
+        uri:
+          type: string
+          minLength: 1
+          description: The exchange URI. Feed it to the QR encoder or clipboard path only.
+
+    HandoffSessionEventType:
+      type: string
+      description: Recorded hand-off session event kinds replayed on the events stream.
+      enum: [phase_changed, screen_joined, screen_left, expiry_imminent, terminal_reached]
+
+    HandoffSessionEvent:
+      type: object
+      description: |
+        One recorded hand-off session event. On the events stream this object is the SSE data
+        payload, the SSE id field carries sequence, and the event name is handoff-session-event.
+        Reconnection replays events with sequence greater than the Last-Event-ID value. Served
+        from the session store only.
+      required: [sequence, type, occurredAtEpochSeconds, sessionId]
+      properties:
+        sequence:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Monotonic per-session sequence used as the replay cursor.
+        type:
+          $ref: '#/components/schemas/HandoffSessionEventType'
+        occurredAtEpochSeconds:
+          type: integer
+          format: int64
+        sessionId:
+          $ref: '#/components/schemas/HandoffSessionId'
+        phase:
+          allOf:
+            - $ref: '#/components/schemas/HandoffSessionPhase'
+          nullable: true
+          description: New phase after a phase_changed or terminal_reached event.
+        screen:
+          allOf:
+            - $ref: '#/components/schemas/HandoffPresenceEntry'
+          nullable: true
+          description: Affected screen on screen_joined and screen_left events.
+        state:
+          allOf:
+            - $ref: '#/components/schemas/HandoffSessionState'
+          nullable: true
+          description: Full state after the transition on phase_changed and terminal_reached events.
+        successorSessionId:
+          type: string
+          nullable: true
+          description: Set on terminal_reached when a successor session exists after regenerate.

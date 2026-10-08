@@ -1,0 +1,244 @@
+openapi: 3.0.4
+info:
+  title: OID4VP DCQL Query Configuration Admin API (Platform)
+  version: 0.1.0
+  description: >
+    Platform (VDX) administration layer for stored DCQL (Digital Credentials Query
+    Language) query configurations used by the OpenID4VP 1.0 verifier. This layer reuses
+    the full EDK enterprise surface (base CRUD plus authoring and version history) and adds
+    the multi-verifier binding surface: binding a DCQL query configuration to a verifier
+    instance, pinning a version, toggling and aliasing bindings, scheduling future
+    activations, and reverse-looking-up the verifier bindings that reference a configuration.
+  license:
+    name: Apache-2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0
+
+servers:
+  - url: /api/dcql/v1
+    description: DCQL query configuration API base path.
+
+security:
+  - bearer: []
+
+tags:
+  - name: Queries
+    description: DCQL query configuration administration
+  - name: Bindings
+    description: Verifier-to-DCQL-query binding administration
+
+paths:
+  # -- EDK enterprise surface (which itself reuses the IDK base), reused by path-item reference --
+  /queries:
+    $ref: './dcql-edk-openapi.yml#/paths/~1queries'
+  /queries/{queryId}:
+    $ref: './dcql-edk-openapi.yml#/paths/~1queries~1{queryId}'
+  /queries/preview:
+    $ref: './dcql-edk-openapi.yml#/paths/~1queries~1preview'
+  /queries/authored:
+    $ref: './dcql-edk-openapi.yml#/paths/~1queries~1authored'
+  /queries/{queryId}/versions:
+    $ref: './dcql-edk-openapi.yml#/paths/~1queries~1{queryId}~1versions'
+  /queries/{queryId}/versions/{version}:
+    $ref: './dcql-edk-openapi.yml#/paths/~1queries~1{queryId}~1versions~1{version}'
+  /queries/{queryId}/versions/{version}/restore:
+    $ref: './dcql-edk-openapi.yml#/paths/~1queries~1{queryId}~1versions~1{version}~1restore'
+
+  # -- VDX verifier-binding surface --
+  /queries/{queryId}/verifiers:
+    parameters:
+      - $ref: './dcql-components.yml#/components/parameters/QueryId'
+    get:
+      tags: [Bindings]
+      operationId: listDcqlBoundVerifiers
+      summary: List verifier bindings that reference a DCQL query configuration
+      description: >
+        Reverse lookup of the verifier bindings that reference the given configuration.
+        Returns an empty array in single-verifier deployments.
+      responses:
+        '200':
+          description: The verifier bindings referencing the configuration.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: './dcql-components.yml#/components/schemas/VerifierDcqlBinding'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+
+  /verifiers/{verifierId}/bindings:
+    parameters:
+      - $ref: './dcql-components.yml#/components/parameters/VerifierId'
+    get:
+      tags: [Bindings]
+      operationId: listVerifierDcqlBindings
+      summary: List a verifier's DCQL bindings
+      description: Lists the DCQL bindings for the given verifier.
+      responses:
+        '200':
+          description: The verifier's current bindings.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: './dcql-components.yml#/components/schemas/VerifierDcqlBinding'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+    post:
+      tags: [Bindings]
+      operationId: bindVerifierDcql
+      summary: Bind a DCQL query to a verifier
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './dcql-components.yml#/components/schemas/BindVerifierDcqlRequest'
+      responses:
+        '201':
+          description: The created binding.
+          content:
+            application/json:
+              schema:
+                $ref: './dcql-components.yml#/components/schemas/VerifierDcqlBinding'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+
+  /verifiers/{verifierId}/bindings/{queryId}:
+    parameters:
+      - $ref: './dcql-components.yml#/components/parameters/VerifierId'
+      - $ref: './dcql-components.yml#/components/parameters/QueryId'
+    get:
+      tags: [Bindings]
+      operationId: getVerifierDcqlBinding
+      summary: Read a verifier's binding for a DCQL query
+      responses:
+        '200':
+          description: The binding.
+          content:
+            application/json:
+              schema:
+                $ref: './dcql-components.yml#/components/schemas/VerifierDcqlBinding'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+    patch:
+      tags: [Bindings]
+      operationId: updateVerifierDcqlBinding
+      summary: Advance/roll back the pinned version, toggle enabled, or set the alias
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './dcql-components.yml#/components/schemas/UpdateVerifierDcqlBindingRequest'
+      responses:
+        '200':
+          description: The updated binding.
+          content:
+            application/json:
+              schema:
+                $ref: './dcql-components.yml#/components/schemas/VerifierDcqlBinding'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+    delete:
+      tags: [Bindings]
+      operationId: unbindVerifierDcql
+      summary: Unbind a DCQL query from a verifier
+      responses:
+        '200':
+          description: The binding that was removed.
+          content:
+            application/json:
+              schema:
+                $ref: './dcql-components.yml#/components/schemas/VerifierDcqlBinding'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+
+  /verifiers/{verifierId}/bindings/{queryId}/activations:
+    parameters:
+      - $ref: './dcql-components.yml#/components/parameters/VerifierId'
+      - $ref: './dcql-components.yml#/components/parameters/QueryId'
+    get:
+      tags: [Bindings]
+      operationId: listVerifierDcqlBindingActivations
+      summary: List the activations for a verifier's DCQL binding
+      responses:
+        '200':
+          description: The activations for the binding.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: './dcql-components.yml#/components/schemas/VerifierDcqlBindingActivation'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+    post:
+      tags: [Bindings]
+      operationId: activateVerifierDcqlBinding
+      summary: Activate a verifier's DCQL binding
+      description: Creates an activation that makes the binding effective for the verifier.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: './dcql-components.yml#/components/schemas/ActivateVerifierDcqlBindingRequest'
+      responses:
+        '201':
+          description: The created activation.
+          content:
+            application/json:
+              schema:
+                $ref: './dcql-components.yml#/components/schemas/VerifierDcqlBindingActivation'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+
+  /verifiers/{verifierId}/bindings/{queryId}/activations/{activationId}:
+    parameters:
+      - $ref: './dcql-components.yml#/components/parameters/VerifierId'
+      - $ref: './dcql-components.yml#/components/parameters/QueryId'
+      - $ref: './dcql-components.yml#/components/parameters/ActivationId'
+    delete:
+      tags: [Bindings]
+      operationId: deactivateVerifierDcqlBinding
+      summary: Deactivate a verifier's DCQL binding
+      responses:
+        '200':
+          description: The activation that was cancelled, with status CANCELLED.
+          content:
+            application/json:
+              schema:
+                $ref: './dcql-components.yml#/components/schemas/VerifierDcqlBindingActivation'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+
+components:
+  securitySchemes:
+    bearer:
+      $ref: './common-components.yml#/components/securitySchemes/bearer'

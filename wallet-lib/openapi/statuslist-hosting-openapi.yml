@@ -1,0 +1,99 @@
+openapi: 3.0.4
+info:
+  title: Credential Status List Hosting API
+  version: 0.1.0
+  description: |
+    Public, cacheable endpoint a verifier resolves to fetch a signed
+    credential status-list token and decide whether a credential has been revoked or suspended.
+    It serves both supported specifications: the IETF Token Status List
+    (`draft-ietf-oauth-status-list`) and the W3C Bitstring Status List v1.0. The list URL is the
+    one an issuer embeds into every credential it mints (the IETF `status.status_list.uri` claim or
+    the W3C `credentialStatus.statusListCredential` field), so each credential carries the address
+    of its own status list.
+
+    Each endpoint returns the raw signed token and nothing else. The response `Content-Type` is the
+    token's own media type (`application/statuslist+jwt` or `application/vc+jwt` for the textual JWS
+    forms, `application/statuslist+cwt` for the binary COSE form) and the body is the bare token, not
+    a JSON envelope. A `Cache-Control` header is derived from the token's time-to-live so verifiers
+    and intermediary caches can hold the token for its valid lifetime; when the token carries no TTL
+    hint, the default is `public, max-age=300`.
+
+    A list is addressed by its stable business `{correlationId}` at `GET /{correlationId}`. This is the
+    externally referenced address that issued credentials embed (the issuer derives it as
+    `<externalBaseUrl>/public/statuslists/<correlationId>`), because the correlation id is
+    operator-chosen and does not change across platform upgrades.
+
+    The URL is public and the body carries only the published, already-signed list, which exposes no
+    private data: a status read reveals
+    only the status bit (valid, revoked, or suspended) for an index, and the list is padded so an
+    unallocated index is indistinguishable from a valid one. Authenticated management of status lists
+    (creating lists, allocating entries, revoking credentials) lives in a separate API, so a
+    deployment can serve these public tokens without exposing any management endpoints.
+servers:
+  - url: /public/statuslists
+    description: Public status-list hosting base path.
+paths:
+  /{correlationId}:
+    get:
+      tags: [Status List Hosting]
+      summary: Resolve the signed status-list token by correlation id
+      operationId: getStatusListTokenByCorrelationId
+      security: []
+      description: |
+        Returns the raw signed status-list token for the list with business correlation id
+        `{correlationId}`. This is the stable, externally referenced address that issued credentials
+        embed, since the correlation id is operator-chosen and does not change across upgrades. The
+        body is the bare signed token with the token's own `Content-Type` and a
+        `Cache-Control: public, max-age=<ttl>`
+        header (falling back to `public, max-age=300`). Returns `404` when no list has this correlation
+        id.
+      parameters:
+        - name: correlationId
+          in: path
+          required: true
+          description: |
+            Business correlation id of the status list, chosen by the operator when the list is
+            created. This is the value embedded into issued credentials, so the resolved URL stays
+            stable across platform upgrades.
+          schema:
+            type: string
+            example: e2e-token
+      responses:
+        '200':
+          description: |
+            The signed status-list token, served verbatim with the token's own media type and a
+            cache directive derived from its TTL.
+          headers:
+            Cache-Control:
+              description: |
+                Cache directive derived from the token TTL (`public, max-age=<ttlSeconds>`), falling
+                back to `public, max-age=300` when the token carries no TTL hint.
+              schema:
+                type: string
+                example: public, max-age=3600
+          content:
+            application/statuslist+jwt:
+              schema:
+                $ref: '#/components/schemas/StatusListTokenBody'
+              example: eyJhbGciOiJFUzI1NiIsInR5cCI6InN0YXR1c2xpc3Qrand0Iiwia2lkIjoia2V5LTEifQ.eyJpc3MiOiJkaWQ6ZXhhbXBsZTppc3N1ZXIiLCJzdWIiOiJodHRwczovL2lzc3Vlci5leGFtcGxlL3N0YXR1c2xpc3RzL2UyZS10b2tlbiIsImlhdCI6MTcwMDAwMDAwMCwiZXhwIjoxNzAwMDAzNjAwLCJzdGF0dXNfbGlzdCI6eyJiaXRzIjoxLCJsc3QiOiJlTnBqWUJnRm93Q2pBQUEifX0.ZXhhbXBsZS1zaWduYXR1cmU
+            application/statuslist+cwt:
+              schema:
+                type: string
+                format: binary
+                description: |
+                  Binary COSE_Sign1 (CWT) status-list token. Served as raw bytes, not base64. The
+                  protected header carries `typ` = `application/statuslist+cwt` and the signing `alg`.
+            application/vc+jwt:
+              schema:
+                $ref: '#/components/schemas/StatusListTokenBody'
+              example: eyJhbGciOiJFUzI1NiIsInR5cCI6InZjK2p3dCIsImtpZCI6ImtleS0xIn0.eyJpc3MiOiJkaWQ6ZXhhbXBsZTppc3N1ZXIiLCJzdWIiOiJodHRwczovL2lzc3Vlci5leGFtcGxlL3N0YXR1c2xpc3RzL2UyZS1iaXRzdHJpbmciLCJ2YyI6eyJ0eXBlIjpbIlZlcmlmaWFibGVDcmVkZW50aWFsIiwiQml0c3RyaW5nU3RhdHVzTGlzdENyZWRlbnRpYWwiXX19.ZXhhbXBsZS1zaWduYXR1cmU
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+components:
+  schemas:
+    # -- Re-exported entity schemas from statuslist-hosting-components.yml --
+    StatusListTokenBody:
+      $ref: './statuslist-hosting-components.yml#/components/schemas/StatusListTokenBody'

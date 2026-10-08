@@ -27,6 +27,7 @@ import io.ktor.http.Parameters
 import io.ktor.http.isSuccess
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -165,6 +166,19 @@ class OidfOpHappyPathBasicE2ETest {
                 "expires_in must be positive",
             )
 
+            val accessAudience = decodeJwsPayload(accessToken)["aud"]
+            val accessAudiences =
+                if (accessAudience is JsonArray) {
+                    accessAudience.map { it.jsonPrimitive.content }
+                } else {
+                    listOfNotNull(accessAudience?.jsonPrimitive?.content)
+                }
+            assertEquals(
+                listOf("https://downstream.example.com/api"),
+                accessAudiences,
+                "access-token audience must equal the explicitly registered fixture resource",
+            )
+
             // Step 5: decode id_token claims and validate against expectations.
             val payload = decodeJwsPayload(idToken)
             assertEquals(fixture.baseUrl, payload["iss"]?.jsonPrimitive?.content, "iss must equal harness base URL")
@@ -210,7 +224,7 @@ class OidfOpHappyPathBasicE2ETest {
 
     private fun extractQueryParam(
         url: String,
-        key: String
+        key: String,
     ): String? {
         val q = url.substringAfter('?', missingDelimiterValue = "")
         return q
@@ -238,6 +252,6 @@ private class SimplePkceFixture {
             .encodeToString(
                 java.security.MessageDigest
                     .getInstance("SHA-256")
-                    .digest(verifier.encodeToByteArray())
+                    .digest(verifier.encodeToByteArray()),
             )
 }

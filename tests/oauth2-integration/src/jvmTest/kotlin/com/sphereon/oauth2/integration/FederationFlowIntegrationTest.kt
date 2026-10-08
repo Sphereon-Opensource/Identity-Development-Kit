@@ -30,10 +30,12 @@ import com.sphereon.oauth2.client.client.OAuth2Client
 import com.sphereon.oauth2.client.client.OidcLoginApi
 import com.sphereon.oauth2.client.client.OidcLoginInitiation
 import com.sphereon.oauth2.client.command.AuthorizationResponseSource
+import com.sphereon.oauth2.client.command.CreatePkceArgs
 import com.sphereon.oauth2.client.command.FetchUserInfoResult
 import com.sphereon.oauth2.client.command.OidcLoginResult
 import com.sphereon.oauth2.client.impl.client.OAuth2ClientImpl
 import com.sphereon.oauth2.client.model.PkceData
+import com.sphereon.oauth2.client.service.PkceService
 import com.sphereon.oauth2.common.model.AuthorizationResponse
 import com.sphereon.oauth2.common.model.AuthorizationServerMetadata
 import com.sphereon.oauth2.common.model.ClientAuthenticationConfig
@@ -65,12 +67,17 @@ import com.sphereon.oauth2.server.authorization.impl.config.DirectFederationMeta
 import com.sphereon.oauth2.server.authorization.impl.http.OAuth2FederationHttpAdapter
 import com.sphereon.oauth2.server.authorization.impl.provider.AbstractFederatedUserAuthenticationProvider
 import com.sphereon.oauth2.server.authorization.impl.provider.DefaultEmptyFederationProviderRuntimeResolver
+import com.sphereon.oauth2.server.authorization.model.AuthorizationSession
 import com.sphereon.oauth2.server.authorization.provider.AuthenticatedUser
 import com.sphereon.oauth2.server.authorization.provider.AuthenticationError
 import com.sphereon.oauth2.server.authorization.provider.AuthenticationMethod
 import com.sphereon.oauth2.server.authorization.provider.FederationProviderRuntimeResolver
 import com.sphereon.oauth2.server.authorization.provider.UserAuthenticationProvider
 import com.sphereon.oauth2.server.authorization.provider.UserInfo
+import com.sphereon.oauth2.server.authorization.routing.AuthenticationRoute
+import com.sphereon.oauth2.server.authorization.routing.AuthenticationRouteBinding
+import com.sphereon.oauth2.server.authorization.routing.AuthenticationRouteDecision
+import com.sphereon.oauth2.server.authorization.storage.PendingAuthorizationSessionStore
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.ContributesTo
 import dev.zacsweers.metro.Inject
@@ -80,7 +87,11 @@ import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
+import kotlin.test.assertSame
 import kotlin.test.assertTrue
+import kotlin.time.Clock
+import kotlin.time.Duration.Companion.minutes
 
 /**
  * Session-scoped graph view that exposes the [HttpAdapter] multibinding. The federation flow
@@ -90,6 +101,7 @@ import kotlin.test.assertTrue
 @ContributesTo(SessionScope::class)
 interface FederationFlowAdaptersGraph {
     val httpAdapters: Map<String, Lazy<HttpAdapter>>
+    val pendingAuthorizationSessionStore: PendingAuthorizationSessionStore
 }
 
 /**
@@ -128,9 +140,16 @@ class FederationFlowIntegrationTest {
             )
 
     @Test
+    fun capturingClientSharesTheSessionOAuth2ClientBinding() {
+        val graph = ctx.session.graph as CapturingOAuth2ClientGraph
+        assertSame<Any>(graph.oauth2Client, graph.capturingOAuth2Client)
+    }
+
+    @Test
     fun reconciliationAuthorizeHonoursForwardedProtoAndHost() =
         runTest {
             capturingClient.reset()
+            storeDownstreamTransaction()
 
             // Clear `issuer` so the OAuth2 AS HTTP adapter's `resolveBaseUrl()` helper falls
             // back to the X-Forwarded-Proto + Host headers rather than short-circuiting to a
@@ -154,6 +173,7 @@ class FederationFlowIntegrationTest {
                     queryParameters =
                         mapOf(
                             "oid4vp_session" to "oid4vp-xyz",
+                            "session_id" to "oauth-downstream",
                             "provider" to FederationTestFixtures.PROVIDER_ID,
                         ),
                     headers =
@@ -164,8 +184,9 @@ class FederationFlowIntegrationTest {
                 )
 
             val selection = routeSelector.select(request.method, request.path)
-            val route = (selection as? HttpAdapterRouteSelection.Selected)?.match
-                ?: error("Expected selected federation route for ${request.method} ${request.path}, got $selection")
+            val route =
+                (selection as? HttpAdapterRouteSelection.Selected)?.match
+                    ?: error("Expected selected federation route for ${request.method} ${request.path}, got $selection")
             assertEquals(adapter.id, route.adapterId)
             val response = dispatcher.dispatch(request, route)
 
@@ -183,6 +204,107 @@ class FederationFlowIntegrationTest {
                 capturedRedirect,
                 "redirectUri threaded into upstream authorization MUST honour X-Forwarded-Proto + Host",
             )
+        }
+
+    private suspend fun storeDownstreamTransaction(
+        selectedBindingId: String? = FederationTestFixtures.PROVIDER_ID,
+        expired: Boolean = false,
+    ) {
+        val now = Clock.System.now()
+        val downstream =
+            (ctx.session.graph as FederationFlowAdaptersGraph).pendingAuthorizationSessionStore.create(
+                AuthorizationSession(
+                    sessionId = "oauth-downstream",
+                    clientId = "downstream-client",
+                    state = "downstream-state",
+                    nonce = "downstream-nonce",
+                    responseType = "code",
+                    redirectUri = "https://rp.test/callback",
+                    createdAt = now,
+                    expiresAt = if (expired) now - 1.minutes else now + 5.minutes,
+                    authenticationRoute =
+                        AuthenticationRouteDecision(
+                            route = if (selectedBindingId == null) AuthenticationRoute.CHOOSER else AuthenticationRoute.UPSTREAM_REDIRECT,
+                            hostedAuthorizationServerId = "22222222-2222-4222-8222-222222222222",
+                            hostedAuthorizationServerRevision = 1,
+                            localLoginAllowed = false,
+                            selectedBindingId = selectedBindingId,
+                            eligibleBindings =
+                                listOf(
+                                    AuthenticationRouteBinding(
+                                        bindingId = FederationTestFixtures.PROVIDER_ID,
+                                        upstreamResourceId = "33333333-3333-4333-8333-333333333333",
+                                        displayName = "Fixture upstream",
+                                        upstreamIssuer = FederationTestFixtures.ISSUER_URL,
+                                        bindingRevision = 1,
+                                        upstreamResourceRevision = 1,
+                                        claimsMapping = emptyMap(),
+                                    ),
+                                ),
+                        ),
+                ),
+            )
+        assertTrue(downstream.isOk, "Downstream authorization transaction must be stored")
+    }
+
+    private fun reconciliationRequest(
+        sessionId: String?,
+        providerId: String = FederationTestFixtures.PROVIDER_ID,
+    ) = GenericHttpRequest(
+        method = "GET",
+        path = "/reconciliation/authorize",
+        queryParameters =
+            buildMap {
+                put("oid4vp_session", "oid4vp-xyz")
+                put("provider", providerId)
+                sessionId?.let { put("session_id", it) }
+            },
+    )
+
+    @Test
+    fun reconciliationRejectsMissingOAuthSession() =
+        runTest {
+            capturingClient.reset()
+            val request = reconciliationRequest(null)
+            val selected = routeSelector.select(request.method, request.path) as HttpAdapterRouteSelection.Selected
+            val response = dispatcher.dispatch(request, selected.match)
+            assertEquals(400, response.statusCode)
+            assertNull(capturingClient.capturedRedirectUri)
+        }
+
+    @Test
+    fun reconciliationRejectsUnknownOAuthSession() =
+        runTest {
+            capturingClient.reset()
+            val request = reconciliationRequest("unknown-oauth-session")
+            val selected = routeSelector.select(request.method, request.path) as HttpAdapterRouteSelection.Selected
+            val response = dispatcher.dispatch(request, selected.match)
+            assertEquals(400, response.statusCode)
+            assertNull(capturingClient.capturedRedirectUri)
+        }
+
+    @Test
+    fun reconciliationRejectsExpiredOAuthSession() =
+        runTest {
+            capturingClient.reset()
+            storeDownstreamTransaction(expired = true)
+            val request = reconciliationRequest("oauth-downstream")
+            val selected = routeSelector.select(request.method, request.path) as HttpAdapterRouteSelection.Selected
+            val response = dispatcher.dispatch(request, selected.match)
+            assertEquals(409, response.statusCode)
+            assertNull(capturingClient.capturedRedirectUri)
+        }
+
+    @Test
+    fun reconciliationRejectsIneligibleProvider() =
+        runTest {
+            capturingClient.reset()
+            storeDownstreamTransaction(selectedBindingId = null)
+            val request = reconciliationRequest("oauth-downstream", "99999999-9999-4999-8999-999999999999")
+            val selected = routeSelector.select(request.method, request.path) as HttpAdapterRouteSelection.Selected
+            val response = dispatcher.dispatch(request, selected.match)
+            assertEquals(400, response.statusCode)
+            assertNull(capturingClient.capturedRedirectUri)
         }
 
     @Test
@@ -518,11 +640,12 @@ class TestFederationProviderRuntimeResolver : FederationProviderRuntimeResolver 
         FederationTestFixtures.providerConfig.takeIf { it.id == bindingId }?.let(::Ok)
             ?: Err(AuthenticationError.Generic(description = "not found"))
 
-    override suspend fun listEnabled(): IdkResult<List<FederationProviderConfig>, AuthenticationError> =
-        Ok(listOf(FederationTestFixtures.providerConfig))
+    override suspend fun listEnabled(): IdkResult<List<FederationProviderConfig>, AuthenticationError> = Ok(listOf(FederationTestFixtures.providerConfig))
 
-    override suspend fun clientAuthentication(bindingId: String, audience: String): IdkResult<ClientAuthenticationConfig, AuthenticationError> =
-        Ok(ClientAuthenticationConfig.None(FederationTestFixtures.providerConfig.clientId))
+    override suspend fun clientAuthentication(
+        bindingId: String,
+        audience: String,
+    ): IdkResult<ClientAuthenticationConfig, AuthenticationError> = Ok(ClientAuthenticationConfig.None(FederationTestFixtures.providerConfig.clientId))
 }
 
 @Inject
@@ -533,11 +656,17 @@ class TestFederationProviderRuntimeResolver : FederationProviderRuntimeResolver 
     replaces = [DirectFederationMetadataResolver::class],
 )
 class TestFederationMetadataResolver : FederationMetadataResolver {
-    override suspend fun resolve(providerConfig: FederationProviderConfig,): IdkResult<AuthorizationServerMetadata, IdkError> = Ok(FederationTestFixtures.metadata)
+    override suspend fun resolve(providerConfig: FederationProviderConfig): IdkResult<AuthorizationServerMetadata, IdkError> = Ok(FederationTestFixtures.metadata)
 
     override suspend fun invalidate(providerConfig: FederationProviderConfig) = Unit
 
     override suspend fun findByIssuer(issuer: String): ResolvedFederationProvider? = null
+}
+
+interface CapturedOAuth2Authorization {
+    val capturedRedirectUri: String?
+
+    fun reset()
 }
 
 /**
@@ -552,13 +681,17 @@ class TestFederationMetadataResolver : FederationMetadataResolver {
     binding = binding<OAuth2Client>(),
     replaces = [OAuth2ClientImpl::class],
 )
-class CapturingOAuth2Client : OAuth2Client {
+@ContributesBinding(SessionScope::class, binding = binding<CapturedOAuth2Authorization>())
+class CapturingOAuth2Client(
+    private val pkceService: PkceService,
+) : OAuth2Client,
+    CapturedOAuth2Authorization {
     @Volatile
     private var redirectUri: String? = null
 
-    val capturedRedirectUri: String? get() = redirectUri
+    override val capturedRedirectUri: String? get() = redirectUri
 
-    fun reset() {
+    override fun reset() {
         redirectUri = null
     }
 
@@ -581,10 +714,12 @@ class CapturingOAuth2Client : OAuth2Client {
         additionalParameters: Map<String, String>,
     ): IdkResult<AuthorizationResult, IdkError> {
         this.redirectUri = redirectUri
+        val pkce = pkceService.createPkce(CreatePkceArgs())
+        if (pkce.isErr) return Err(pkce.error)
         return Ok(
             AuthorizationResult(
                 authorizationUrl = "${FederationTestFixtures.ISSUER_URL}/authorize?redirect_uri=$redirectUri&state=$state",
-                pkceData = null,
+                pkceData = pkce.value,
                 state = state,
             ),
         )
@@ -604,8 +739,7 @@ class CapturingOAuth2Client : OAuth2Client {
         ownerHandleDigest: String?,
         grantBinding: String?,
         clientCorrelation: String?,
-    ): IdkResult<OidcLoginInitiation, IdkError> =
-        error("CapturingOAuth2Client.initiateOidcLogin: not used in federation flow test")
+    ): IdkResult<OidcLoginInitiation, IdkError> = error("CapturingOAuth2Client.initiateOidcLogin: not used in federation flow test")
 
     override suspend fun initiateOidcLogin(
         authorizationServerMetadata: AuthorizationServerMetadata,
@@ -621,8 +755,7 @@ class CapturingOAuth2Client : OAuth2Client {
         ownerHandleDigest: String?,
         grantBinding: String?,
         clientCorrelation: String?,
-    ): IdkResult<OidcLoginInitiation, IdkError> =
-        error("CapturingOAuth2Client.initiateOidcLogin(metadata): not used in federation flow test")
+    ): IdkResult<OidcLoginInitiation, IdkError> = error("CapturingOAuth2Client.initiateOidcLogin(metadata): not used in federation flow test")
 
     override suspend fun parseAuthorizationResponse(redirectUrl: String): IdkResult<AuthorizationResponse, IdkError> =
         error("CapturingOAuth2Client.parseAuthorizationResponse: not used in federation flow test")
@@ -636,8 +769,7 @@ class CapturingOAuth2Client : OAuth2Client {
         resource: List<String>?,
         dpopContext: DpopContext?,
         audience: List<String>?,
-    ): IdkResult<TokenResponse, IdkError> =
-        error("CapturingOAuth2Client.exchangeAuthorizationCode: not used in federation flow test")
+    ): IdkResult<TokenResponse, IdkError> = error("CapturingOAuth2Client.exchangeAuthorizationCode: not used in federation flow test")
 
     override suspend fun exchangePreAuthorizedCode(
         authorizationServerMetadata: AuthorizationServerMetadata,
@@ -646,8 +778,7 @@ class CapturingOAuth2Client : OAuth2Client {
         txCode: String?,
         resource: List<String>?,
         dpopContext: DpopContext?,
-    ): IdkResult<TokenResponse, IdkError> =
-        error("CapturingOAuth2Client.exchangePreAuthorizedCode: not used in federation flow test")
+    ): IdkResult<TokenResponse, IdkError> = error("CapturingOAuth2Client.exchangePreAuthorizedCode: not used in federation flow test")
 
     override suspend fun refreshAccessToken(
         authorizationServerMetadata: AuthorizationServerMetadata,
@@ -657,31 +788,28 @@ class CapturingOAuth2Client : OAuth2Client {
         resource: List<String>?,
         dpopContext: DpopContext?,
         audience: List<String>?,
-    ): IdkResult<TokenResponse, IdkError> =
-        error("CapturingOAuth2Client.refreshAccessToken: not used in federation flow test")
+    ): IdkResult<TokenResponse, IdkError> = error("CapturingOAuth2Client.refreshAccessToken: not used in federation flow test")
 
     override suspend fun introspectToken(
         authorizationServerMetadata: AuthorizationServerMetadata,
         clientAuthentication: ClientAuthenticationConfig,
         token: String,
         tokenTypeHint: String?,
-    ): IdkResult<TokenIntrospectionResponse, IdkError> =
-        error("CapturingOAuth2Client.introspectToken: not used in federation flow test")
+    ): IdkResult<TokenIntrospectionResponse, IdkError> = error("CapturingOAuth2Client.introspectToken: not used in federation flow test")
 
     override suspend fun validateIdToken(
         idToken: String,
         options: IdTokenValidationOptions,
-    ): IdkResult<ValidatedIdToken, IdkError> =
-        error("CapturingOAuth2Client.validateIdToken: not used in federation flow test")
+    ): IdkResult<ValidatedIdToken, IdkError> = error("CapturingOAuth2Client.validateIdToken: not used in federation flow test")
 
     override suspend fun fetchUserInfo(
         accessToken: String,
         metadata: AuthorizationServerMetadata,
-    ): IdkResult<FetchUserInfoResult, IdkError> =
-        error("CapturingOAuth2Client.fetchUserInfo: not used in federation flow test")
+    ): IdkResult<FetchUserInfoResult, IdkError> = error("CapturingOAuth2Client.fetchUserInfo: not used in federation flow test")
 }
 
 @ContributesTo(SessionScope::class)
 interface CapturingOAuth2ClientGraph {
-    val capturingOAuth2Client: CapturingOAuth2Client
+    val capturingOAuth2Client: CapturedOAuth2Authorization
+    val oauth2Client: OAuth2Client
 }

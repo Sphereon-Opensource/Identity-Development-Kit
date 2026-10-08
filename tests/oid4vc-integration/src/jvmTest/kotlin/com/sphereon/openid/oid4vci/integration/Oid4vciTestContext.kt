@@ -16,8 +16,8 @@ import com.sphereon.di.session.SessionScope
 import com.sphereon.oauth2.server.authorization.storage.OAuth2SigningKey
 import com.sphereon.oauth2.server.authorization.storage.OAuth2SigningKeyState
 import com.sphereon.oauth2.server.authorization.storage.SigningKeyStore
-import com.sphereon.openid.oid4vci.issuer.config.Oid4vciIssuerProtocolConfig
 import com.sphereon.openid.oid4vci.issuer.config.MutableOid4vciIssuerInstanceIdProvider
+import com.sphereon.openid.oid4vci.issuer.config.Oid4vciIssuerProtocolConfig
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesTo
 import kotlin.time.Clock
@@ -30,6 +30,7 @@ const val OID4VCI_TEST_ISSUER_INSTANCE_ID = "00000000-0000-4000-8000-00000000000
 class Oid4vciTestContext(
     testInstance: Any,
     protocolBasePath: String = "",
+    credentialConfigurationIds: List<String> = listOf("UniversityDegree"),
 ) {
     init {
         // The OID4VCI integration tests run a single hosted AS that issues access tokens for
@@ -57,14 +58,44 @@ class Oid4vciTestContext(
             "${com.sphereon.oauth2.common.config.OAuth2ServerInstanceConfig.CONFIG_PREFIX}.default.internal-clients.issuer.client-secret",
             "issuer-secret",
         )
-        // The OID4VCI Issuer adapter's `descriptorFor(configProvider.issuerIdentifier)` is
-        // evaluated during DI graph construction (constructor arg of HttpEndpointCommandAdapter),
-        // so the identifier MUST be present before any session graph touches the issuer
-        // metadata command — otherwise graph construction throws.
-        DefaultPrincipalMapPropertySource.addProperty(
-            "oid4vci.issuer.identifier",
-            OID4VCI_TEST_ISSUER_URL,
-        )
+        // The real registry-backed issuer requires an explicitly owned resource namespace.
+        val issuerRoot = "oid4vci.issuers.$OID4VCI_TEST_ISSUER_INSTANCE_ID"
+        val authorizationServerId = "00000000-0000-4000-8000-000000000002"
+        val authorizationServerRoot = "$issuerRoot.authorizationServers.$authorizationServerId"
+        val issuerProperties =
+            mapOf(
+                "oid4vci.routing.issuerResourceId" to OID4VCI_TEST_ISSUER_INSTANCE_ID,
+                "$issuerRoot.identifier" to OID4VCI_TEST_ISSUER_URL,
+                "$issuerRoot.credentialConfigurationIds" to credentialConfigurationIds.joinToString(","),
+                "$issuerRoot.issuerCapabilityId" to "00000000-0000-4000-8000-000000000003",
+                "$issuerRoot.authorizationServerIds" to authorizationServerId,
+                "$issuerRoot.profile" to "OID4VCI_1_0_FINAL",
+                "$issuerRoot.profileRevision" to "7",
+                "$authorizationServerRoot.tenantId" to OID4VCI_TEST_TENANT_ID,
+                "$authorizationServerRoot.issuerIdentifier" to OID4VCI_TEST_ISSUER_URL,
+                "$authorizationServerRoot.enabled" to "true",
+                "$authorizationServerRoot.default" to "true",
+                "$authorizationServerRoot.lifecycle" to "ACTIVE",
+                "$authorizationServerRoot.deployment" to "HOSTED",
+                "$authorizationServerRoot.credentialIssuancePurpose" to "true",
+                "$authorizationServerRoot.allowedGrants" to "PRE_AUTHORIZED_CODE",
+                "$authorizationServerRoot.revision" to "11",
+                "$authorizationServerRoot.runtimeServerKey" to "default",
+                "$authorizationServerRoot.jwksUri" to "$OID4VCI_TEST_ISSUER_URL/.well-known/jwks.json",
+                "$authorizationServerRoot.tokenEndpoint" to "$OID4VCI_TEST_ISSUER_URL/token",
+                "$authorizationServerRoot.discoveryCurrent" to "true",
+                "$authorizationServerRoot.bindingRevision" to "13",
+                "$issuerRoot.credentials.[UniversityDegree].format" to "jwt_vc_json",
+                "$issuerRoot.credentials.[UniversityDegree].scope" to "degree",
+                "$issuerRoot.credentials.[UniversityDegree].bindingMethods" to "did:key,did:jwk,jwk",
+                "$issuerRoot.credentials.[UniversityDegree].signingAlgorithms" to "ES256",
+                "$issuerRoot.credentials.[UniversityDegree].proofTypes.jwt.signingAlgorithms" to "ES256",
+                "$issuerRoot.credentials.[UniversityDegree].signingKeyMode" to "jwk-thumbprint",
+                "$issuerRoot.credentials.[UniversityDegree].credentialDefinition.types" to "VerifiableCredential,UniversityDegreeCredential",
+                "oauth2.servers.default.internal-clients.issuer.default-access-token-audience" to OID4VCI_TEST_ISSUER_URL,
+                "oauth2.servers.default.internal-clients.issuer.allowed-access-token-audiences" to OID4VCI_TEST_ISSUER_URL,
+            )
+        issuerProperties.forEach { (key, value) -> DefaultPrincipalMapPropertySource.addProperty(key, value) }
         // Credential requests execute against the app-scoped configuration. Keep the integration
         // issuer explicit about its ordinary business-authorization decision; production remains
         // fail-closed when this policy is not configured.
@@ -79,7 +110,22 @@ class Oid4vciTestContext(
     }
 
     val app: AppGraph = createOid4vciTestAppGraph(application = testInstance)
-    val context = app.userContextManager.getAnonymous()
+    val context =
+        app.userContextManager.createOrGet(
+            tenantAware =
+                object : com.sphereon.di.context.TenantAware {
+                    override val tenant =
+                        object : com.sphereon.di.context.TenantContextData {
+                            override val tenantId = OID4VCI_TEST_TENANT_ID
+                        }
+                },
+            principalAware =
+                object : com.sphereon.di.context.PrincipalAware {
+                    override val principal = "oid4vci-integration-test-user"
+                },
+            principalType = com.sphereon.di.context.PrincipalType.USER,
+            makeActive = false,
+        )
     val session: SessionInstance = context.sessionContextManager.createOrGetFromId("oid4vci-e2e-test", principalType = com.sphereon.di.context.PrincipalType.USER)
     val execution = session.asCoreApiServiceGraph().serviceExecution
     val signingKeyStore: SigningKeyStore = (app as Oid4vciSigningKeyStoreGraph).signingKeyStore

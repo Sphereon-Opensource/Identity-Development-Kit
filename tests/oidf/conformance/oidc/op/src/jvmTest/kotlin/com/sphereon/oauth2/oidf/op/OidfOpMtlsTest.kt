@@ -63,7 +63,7 @@ import kotlin.test.fail
  *     `cnf.x5t#S256 = base64url(SHA256(clientCertDer))`.
  *  3. [tokenGrantRejectsMtlsCertNotMatchingClientJwks] — same flow, but the test client presents
  *     a TLS cert whose public key is NOT in the registered `oidf-op-mtls.jwks` list. AS MUST
- *     respond `401 invalid_client`.
+ *     respond `400 invalid_client` without Authorization-header authentication.
  *  4. [userInfoRequiresMatchingTlsCertWhenAccessTokenIsCertBound] — issue a cert-bound token,
  *     then call `/userinfo` with the matching cert (expect 200), with a different cert (expect
  *     401), and without any client cert (expect 401 from TLS handshake refusal because the
@@ -195,12 +195,12 @@ class OidfOpMtlsTest {
 
             val response = flow.postToken(code, pkce)
             // RFC 8705 §2.2: the AS rejects the request because the presented TLS cert's public
-            // key is not in the client's registered JWKS. RFC 6749 §5.2 maps this to 401 +
-            // invalid_client.
+            // key is not in the client's registered JWKS. No Authorization header was used;
+            // RFC 6749 §5.2 therefore uses the default 400 invalid_client response.
             assertEquals(
-                HttpStatusCode.Unauthorized,
+                HttpStatusCode.BadRequest,
                 response.status,
-                "self_signed_tls_client_auth with an unregistered cert MUST return 401, got ${response.status}",
+                "self_signed_tls_client_auth with an unregistered cert MUST return 400, got ${response.status}",
             )
             val body = json.parseToJsonElement(response.bodyAsText()).jsonObject
             assertEquals(
@@ -295,6 +295,7 @@ class OidfOpMtlsTest {
                 "token-endpoint-auth-method" to "self_signed_tls_client_auth",
                 "tls-client-certificate-bound-access-tokens" to "true",
                 "allowed-scopes" to "openid",
+                "default-access-token-audience" to "https://downstream.example.com/api",
                 "redirect-uris.0" to "http://localhost:8080/test-callback",
                 "redirect-uris.1" to "https://www.certification.openid.net/test/a/oidf-op-mtls/callback",
                 "require-pkce" to "true",

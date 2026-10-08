@@ -55,6 +55,8 @@ import kotlin.time.Clock
  *
  * Conformance clients (`oidf-op-basic`, `oidf-op-public`) come from `application.properties`
  * via `OAuth2ClientsConfigBinder` directly, so no runtime client registration is needed here.
+ * Confidential client credentials require the host's opaque `client-secret-id` and resolver;
+ * this bootstrap never installs plaintext client-secret configuration or a secret fallback.
  *
  * The fixture pepper and seeded passwords are conformance constants, not production secrets, and
  * must never be reused outside this harness.

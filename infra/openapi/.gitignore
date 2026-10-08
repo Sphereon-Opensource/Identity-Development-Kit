@@ -1,0 +1,10 @@
+# IDE
+.idea/
+*.iml
+
+# Tooling
+node_modules/
+.DS_Store
+
+# Local-only convention-divergence report (kept on disk, not distributed)
+INVENTORY.md

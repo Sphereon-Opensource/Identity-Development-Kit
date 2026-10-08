@@ -32,15 +32,15 @@ import com.sphereon.ktor.http.client.provider.HttpClientEngineType
 import com.sphereon.ktor.http.client.provider.HttpClientFactory
 import com.sphereon.ktor.http.client.provider.HttpClientOptions
 import com.sphereon.ktor.http.client.provider.HttpClientProviderImpl
+import com.sphereon.oauth2.client.impl.clientauth.ApplyClientAuthenticationCommandImpl
+import com.sphereon.oauth2.client.impl.token.ExchangeTokenCommandImpl
+import com.sphereon.oauth2.client.impl.token.OAuth2TokenEndpointTransportImpl
 import com.sphereon.oauth2.server.authorization.command.CreateAccessTokenArgs
 import com.sphereon.openid.oid4vci.common.model.CredentialConfigurationSupported
 import com.sphereon.openid.oid4vci.common.model.CredentialDefinition
 import com.sphereon.openid.oid4vci.common.model.ProofTypeSupported
 import com.sphereon.openid.oid4vci.common.model.stringValues
 import com.sphereon.openid.oid4vci.holder.ExchangePreAuthorizedCodeArgs
-import com.sphereon.oauth2.client.impl.clientauth.ApplyClientAuthenticationCommandImpl
-import com.sphereon.oauth2.client.impl.token.ExchangeTokenCommandImpl
-import com.sphereon.oauth2.client.impl.token.OAuth2TokenEndpointTransportImpl
 import com.sphereon.openid.oid4vci.holder.Oid4vciHolderConfig
 import com.sphereon.openid.oid4vci.holder.RequestCredentialArgs
 import com.sphereon.openid.oid4vci.holder.RequestNonceArgs
@@ -74,8 +74,8 @@ import io.ktor.http.content.OutgoingContent
 import io.ktor.http.contentType
 import io.ktor.http.headersOf
 import kotlinx.coroutines.test.runTest
-import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -505,6 +505,7 @@ class WalletClientE2ETest {
                         subject = consumed.sessionId,
                         clientId = "wallet-client-e2e",
                         scope = "degree",
+                        audience = listOf(issuerUrl),
                         expiresInSeconds = 3600,
                     ),
                 )

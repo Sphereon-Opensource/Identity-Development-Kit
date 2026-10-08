@@ -1,0 +1,262 @@
+openapi: 3.0.4
+info:
+  title: User Manager API Components
+  version: 0.1.0
+  description: Entity schemas, enums, and path parameters for the User Manager REST Server API.
+paths: {}
+components:
+  parameters:
+    UserId:
+      name: userId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: User ID.
+    GroupId:
+      name: groupId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: Group ID.
+    RoleId:
+      name: roleId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: Role ID.
+    TargetTenantId:
+      name: tenantId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: Target tenant ID for access grant/revoke.
+    TenantPathId:
+      name: tenantId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: Unique identifier of the tenant.
+
+  schemas:
+    # Enums
+    UserType:
+      type: string
+      enum: [INTERNAL, EXTERNAL]
+      description: Type of user account.
+
+    TenantUserStatus:
+      type: string
+      enum: [ACTIVE, SUSPENDED, PENDING_APPROVAL]
+      description: Status of user's access to a tenant.
+
+    # User schemas
+    User:
+      type: object
+      required:
+        - userId
+        - username
+        - enabled
+        - userType
+      properties:
+        userId:
+          type: string
+          format: uuid
+        username:
+          type: string
+        email:
+          type: string
+          format: email
+        enabled:
+          type: boolean
+        userType:
+          $ref: '#/components/schemas/UserType'
+        displayName:
+          type: string
+        naturalPersonId:
+          type: string
+          format: uuid
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    UserDetail:
+      type: object
+      required:
+        - user
+      properties:
+        user:
+          $ref: '#/components/schemas/User'
+        roles:
+          type: array
+          items:
+            $ref: '#/components/schemas/Role'
+        groups:
+          type: array
+          items:
+            $ref: '#/components/schemas/Group'
+        tenants:
+          type: array
+          items:
+            $ref: '#/components/schemas/TenantAccess'
+
+    # Group schemas
+    Group:
+      type: object
+      required:
+        - groupId
+        - name
+        - tenantId
+      properties:
+        groupId:
+          type: string
+          format: uuid
+        tenantId:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+        displayName:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    GroupDetail:
+      type: object
+      required:
+        - group
+      properties:
+        group:
+          $ref: '#/components/schemas/Group'
+        members:
+          type: array
+          items:
+            $ref: '#/components/schemas/User'
+        roles:
+          type: array
+          items:
+            $ref: '#/components/schemas/Role'
+
+    # Role schemas
+    Role:
+      type: object
+      required:
+        - roleId
+        - name
+      properties:
+        roleId:
+          type: string
+          format: uuid
+        tenantId:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    # Tenant schemas (formerly in tenant-manager-components.yml; inlined here on merge)
+    TenantType:
+      type: string
+      description: Classification of the tenant.
+      enum:
+        - PLATFORM
+        - ENTERPRISE
+        - PARTNER
+        - SANDBOX
+
+    Tenant:
+      type: object
+      description: Root organizational boundary for multi-tenancy.
+      required:
+        - id
+        - tenantType
+        - name
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenantType:
+          $ref: '#/components/schemas/TenantType'
+        name:
+          type: string
+          description: Human-readable tenant name.
+        description:
+          type: string
+        organizationPartyId:
+          type: string
+          format: uuid
+          description: |
+            Reference to the Party (organization) representing this tenant.
+            Provides access to branding via party.brandingProfileId and
+            legal info via the organization extension table.
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        deletedAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    TenantDetail:
+      type: object
+      description: Tenant with resolved organization and branding information.
+      required:
+        - tenant
+      properties:
+        tenant:
+          $ref: '#/components/schemas/Tenant'
+        organization:
+          $ref: './party-manager-components.yml#/components/schemas/Organization'
+
+    # Tenant Access schemas
+    TenantAccess:
+      type: object
+      required:
+        - tenantId
+        - userId
+        - status
+      properties:
+        tenantId:
+          type: string
+          format: uuid
+        userId:
+          type: string
+          format: uuid
+        status:
+          $ref: '#/components/schemas/TenantUserStatus'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time

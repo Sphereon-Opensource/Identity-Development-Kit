@@ -35,11 +35,16 @@ source "${SCRIPT_DIR}/lib/resolve-profile.sh"
 resolve_external_base_url "${1:-}"
 resolve_profile "${2:-}"
 
-# Version resolution: env var > IDK gradle.properties (if present) > "latest"
+# Version resolution: env var > platform-version.properties > gradle.properties version= > "latest"
 if [ -z "${IDK_VERSION:-}" ]; then
-    GP="../../../gradle.properties"
-    if [ -f "$GP" ]; then
-        IDK_VERSION="$(grep '^version=' "$GP" | cut -d= -f2)"
+    IDK_ROOT_CANDIDATE="../../.."
+    PLATFORM_FILE="${IDK_ROOT_CANDIDATE}/platform-version.properties"
+    GP="${IDK_ROOT_CANDIDATE}/gradle.properties"
+    if [ -f "$PLATFORM_FILE" ]; then
+        IDK_VERSION="$(grep -E '^platformVersion=' "$PLATFORM_FILE" | cut -d= -f2- | tr -d '\r')"
+        echo "IDK_VERSION=${IDK_VERSION} (resolved from ${PLATFORM_FILE})"
+    elif [ -f "$GP" ] && grep -qE '^version=' "$GP"; then
+        IDK_VERSION="$(grep -E '^version=' "$GP" | cut -d= -f2- | tr -d '\r')"
         echo "IDK_VERSION=${IDK_VERSION} (resolved from ${GP})"
     else
         IDK_VERSION=latest

@@ -1,0 +1,190 @@
+openapi: 3.0.4
+info:
+  title: Account Action API
+  version: 0.1.0
+  x-products: [vdx]
+  description: >-
+    Public resolve and completion surface for single-use identity activation and
+    password-change actions. Tokens are submitted in request bodies after the
+    frontend removes the URL fragment from browser history; they are never path
+    or query parameters.
+  license:
+    name: Apache 2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0
+servers:
+  - url: https://api.example.com/api/account-actions/v1
+  - url: http://localhost:8080/api/account-actions/v1
+security: []
+tags:
+  - name: AccountActions
+paths:
+  /password-change:
+    post:
+      tags: [AccountActions]
+      summary: Request a password-change email
+      description: >-
+        Always returns the same accepted response. Only an eligible identity
+        with a verified primary email and an existing password credential is
+        sent a message.
+      operationId: initiatePasswordChange
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PasswordChangeInitiationRequest'
+      responses:
+        '200':
+          description: Request accepted regardless of account existence or delivery availability.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PasswordChangeInitiationAccepted'
+  /password-change/self:
+    post:
+      tags: [AccountActions]
+      summary: Send a password-change email to the authenticated identity
+      operationId: initiateSelfPasswordChange
+      security:
+        - bearer: []
+      responses:
+        '200':
+          description: Request accepted for the current authenticated identity.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PasswordChangeInitiationAccepted'
+  /resolve:
+    post:
+      tags: [AccountActions]
+      summary: Resolve an account action without consuming it
+      operationId: resolveAccountAction
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResolveAccountActionRequest'
+      responses:
+        '200':
+          description: Safe action metadata; bound tenant and identity data remain server-side.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResolveAccountActionResponse'
+        '400':
+          description: Invalid, expired, revoked, or already-used action.
+          content:
+            application/json:
+              schema:
+                $ref: './common-components.yml#/components/schemas/ApiError'
+  /complete:
+    post:
+      tags: [AccountActions]
+      summary: Complete and consume an account action
+      operationId: completeAccountAction
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CompleteAccountActionRequest'
+      responses:
+        '200':
+          description: Action completed and the single-use token was claimed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CompleteAccountActionResponse'
+        '400':
+          description: Invalid/expired action or password-policy validation failure.
+          content:
+            application/json:
+              schema:
+                $ref: './common-components.yml#/components/schemas/ApiError'
+components:
+  securitySchemes:
+    bearer:
+      $ref: './common-components.yml#/components/securitySchemes/bearer'
+  schemas:
+    PasswordChangeInitiationRequest:
+      type: object
+      required: [email]
+      properties:
+        email:
+          type: string
+          format: email
+    PasswordChangeInitiationAccepted:
+      type: object
+      required: [accepted]
+      properties:
+        accepted:
+          type: boolean
+          enum: [true]
+    ResolveAccountActionRequest:
+      type: object
+      required: [token]
+      properties:
+        token:
+          type: string
+          minLength: 1
+          writeOnly: true
+    ResolveAccountActionResponse:
+      type: object
+      required: [action]
+      properties:
+        action:
+          $ref: '#/components/schemas/ResolvedAccountAction'
+    ResolvedAccountAction:
+      type: object
+      required: [invitationId, action, expiresAt, requiresPassword]
+      properties:
+        invitationId:
+          type: string
+        action:
+          type: string
+          enum: [tenant.onboarding, identity.activation, identity.password-change]
+        expiresAt:
+          type: string
+          format: date-time
+        requiresPassword:
+          type: boolean
+    CompleteAccountActionRequest:
+      type: object
+      required: [token]
+      properties:
+        token:
+          type: string
+          minLength: 1
+          writeOnly: true
+        password:
+          type: string
+          minLength: 12
+          writeOnly: true
+          nullable: true
+    CompleteAccountActionResponse:
+      type: object
+      required: [action]
+      properties:
+        action:
+          $ref: '#/components/schemas/CompletedAccountAction'
+    CompletedAccountAction:
+      type: object
+      required: [invitationId, action, outcomeRef]
+      properties:
+        invitationId:
+          type: string
+        action:
+          type: string
+        outcomeRef:
+          type: object
+          required: [type, id]
+          properties:
+            type:
+              type: string
+            id:
+              type: string
+            attributes:
+              type: object
+              nullable: true
+              additionalProperties: true

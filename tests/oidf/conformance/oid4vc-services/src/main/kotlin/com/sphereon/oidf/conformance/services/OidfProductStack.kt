@@ -10,6 +10,11 @@ import com.sphereon.oidf.conformance.OidfSuiteConfigPreprocessor
 import com.sphereon.oidf.conformance.OidfSuiteEnvironment
 import com.sphereon.oidf.conformance.OidfSuiteLock
 import com.sphereon.oidf.conformance.OidfSuitePorts
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
 import java.net.URI
 import java.net.URLEncoder
 import java.net.http.HttpClient
@@ -28,11 +33,6 @@ import java.util.Base64
 import javax.net.ssl.SSLContext
 import kotlin.io.path.Path
 import kotlin.io.path.isRegularFile
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
-import kotlinx.serialization.json.put
 
 enum class OidfProductProfile {
     FINAL,
@@ -158,14 +158,16 @@ class OidfProductStack private constructor(
             val verifierSanDns = enterpriseContext.verifierSanDns
             val operatorUsername = credentials.operatorUsername
             val operatorPassword = credentials.operatorPassword
-            val suitePorts = readSuitePorts(suiteContextPath).also {
-                require(it.all.distinct().size == it.all.size) {
-                    "OIDF suite context ports must be distinct: ${it.all}"
+            val suitePorts =
+                readSuitePorts(suiteContextPath).also {
+                    require(it.all.distinct().size == it.all.size) {
+                        "OIDF suite context ports must be distinct: ${it.all}"
+                    }
                 }
-            }
-            val deploymentLease = OidfDeploymentLease.acquire(
-                infraWorkspace.resolve("deploy/edk/e2e/build/oidf-conformance/.production-deployment.lock"),
-            )
+            val deploymentLease =
+                OidfDeploymentLease.acquire(
+                    infraWorkspace.resolve("deploy/edk/e2e/build/oidf-conformance/.production-deployment.lock"),
+                )
 
             var suite: OidfSuiteEnvironment? = null
             var deploymentProfile: OidfEnterpriseDeploymentProfile? = null
@@ -366,6 +368,7 @@ class OidfProductStack private constructor(
             require(root["schemaVersion"]?.jsonPrimitive?.content == "2") {
                 "Unsupported REST-resolved OIDF enterprise context schema in $path"
             }
+
             fun required(name: String): String =
                 root[name]
                     ?.jsonPrimitive
@@ -379,7 +382,11 @@ class OidfProductStack private constructor(
                 "OIDF enterprise context deployment must be enterprise-compose or enterprise-helm, got '$deployment'"
             }
             val composeIngress =
-                root["composeIngress"]?.jsonPrimitive?.content?.trim()?.takeIf(String::isNotEmpty)
+                root["composeIngress"]
+                    ?.jsonPrimitive
+                    ?.content
+                    ?.trim()
+                    ?.takeIf(String::isNotEmpty)
             val helm =
                 root["helm"]?.jsonObject?.let { document ->
                     fun requiredHelm(name: String): String =
@@ -428,7 +435,11 @@ class OidfProductStack private constructor(
             require(root["schemaVersion"]?.jsonPrimitive?.content == "1") {
                 "Unsupported OIDF credentials schema in $path"
             }
-            fun required(section: String, name: String): String =
+
+            fun required(
+                section: String,
+                name: String
+            ): String =
                 root[section]
                     ?.jsonObject
                     ?.get(name)
@@ -451,6 +462,7 @@ class OidfProductStack private constructor(
                 "Unsupported OIDF suite context schema in $path"
             }
             val ports = root["ports"]?.jsonObject ?: error("OIDF suite context $path has no ports")
+
             fun requiredPort(name: String): Int {
                 val value = ports[name]?.jsonPrimitive?.content?.toIntOrNull()
                 return value?.takeIf { it in 1024..65535 }
@@ -567,17 +579,19 @@ internal class OidfDeploymentLease private constructor(
     companion object {
         fun acquire(path: Path): OidfDeploymentLease {
             Files.createDirectories(path.parent)
-            val channel = FileChannel.open(
-                path,
-                StandardOpenOption.CREATE,
-                StandardOpenOption.READ,
-                StandardOpenOption.WRITE,
-            )
-            val lock = try {
-                channel.tryLock()
-            } catch (_: OverlappingFileLockException) {
-                null
-            }
+            val channel =
+                FileChannel.open(
+                    path,
+                    StandardOpenOption.CREATE,
+                    StandardOpenOption.READ,
+                    StandardOpenOption.WRITE,
+                )
+            val lock =
+                try {
+                    channel.tryLock()
+                } catch (_: OverlappingFileLockException) {
+                    null
+                }
             if (lock == null) {
                 channel.close()
                 error(

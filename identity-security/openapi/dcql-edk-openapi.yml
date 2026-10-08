@@ -1,0 +1,183 @@
+openapi: 3.0.4
+info:
+  title: OID4VP DCQL Query Configuration Admin API (Enterprise)
+  version: 0.1.0
+  description: >
+    Enterprise (EDK) administration layer for stored DCQL (Digital Credentials Query
+    Language) query configurations used by the OpenID4VP 1.0 verifier. This layer reuses
+    the IDK base CRUD surface (`/queries`, `/queries/{queryId}`) and adds authoring and
+    version-history capabilities: previewing an authored query, creating a configuration
+    from an authoring request, listing and reading the immutable version history, and
+    restoring a previous version.
+
+  license:
+    name: Apache-2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0
+
+servers:
+  - url: /api/dcql/v1
+    description: DCQL query configuration API base path.
+
+security:
+  - bearer: []
+
+tags:
+  - name: Queries
+    description: DCQL query configuration administration
+
+paths:
+  # -- IDK base CRUD surface, reused by path-item reference --
+  /queries:
+    $ref: './dcql-openapi.yml#/paths/~1queries'
+  /queries/{queryId}:
+    $ref: './dcql-openapi.yml#/paths/~1queries~1{queryId}'
+
+  # -- EDK authoring / versioning surface --
+  /queries/preview:
+    post:
+      tags: [Queries]
+      operationId: previewDcqlQuery
+      x-products: [edk, vdx]
+      x-license-required: semantic-modeling.v1
+      summary: Preview a DCQL query derived from verifiable-credential channels, without persisting it
+      description: >
+        Derives a multi-credential DCQL query from the referenced, version-pinned
+        verifiable-credential channels and returns it together with per-credential-query
+        provenance. Nothing is created or modified. Each channel reference contributes
+        exactly one credential query. Requires the `semantic-modeling.v1` feature; without
+        it the request fails with `403`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './dcql-components.yml#/components/schemas/PreviewDcqlQueryRequest'
+      responses:
+        '200':
+          description: The derived DCQL query plus provenance and warnings.
+          content:
+            application/json:
+              schema:
+                $ref: './dcql-components.yml#/components/schemas/PreviewDcqlQueryResult'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+
+  /queries/authored:
+    post:
+      tags: [Queries]
+      operationId: createAuthoredDcqlQuery
+      x-products: [edk, vdx]
+      x-license-required: semantic-modeling.v1
+      summary: Author a DCQL query from verifiable-credential channels and persist it
+      description: >
+        Derives a multi-credential DCQL query from the referenced, version-pinned
+        verifiable-credential channels, persists it to the versioned DCQL store under
+        the caller-chosen `queryId`, and records REQUEST-role business-term usage
+        lineage. Authoring an existing `queryId` appends a new version (the version in the
+        response advances monotonically). Requires the `semantic-modeling.v1` feature;
+        without it the request fails with `403` and nothing is persisted.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './dcql-components.yml#/components/schemas/AuthorDcqlQueryRequest'
+      responses:
+        '201':
+          description: The persisted DCQL query with its id, version, provenance and warnings.
+          content:
+            application/json:
+              schema:
+                $ref: './dcql-components.yml#/components/schemas/AuthoredDcqlQueryResult'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+
+  /queries/{queryId}/versions:
+    parameters:
+      - $ref: './dcql-components.yml#/components/parameters/QueryId'
+    get:
+      tags: [Queries]
+      operationId: listDcqlQueryVersions
+      x-products: [edk, vdx]
+      summary: List versions of a DCQL query configuration
+      responses:
+        '200':
+          description: The version history of the configuration, most recent first.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: './dcql-components.yml#/components/schemas/DcqlQueryVersionSummary'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+
+  /queries/{queryId}/versions/{version}:
+    parameters:
+      - $ref: './dcql-components.yml#/components/parameters/QueryId'
+      - $ref: './dcql-components.yml#/components/parameters/Version'
+    get:
+      tags: [Queries]
+      operationId: getDcqlQueryVersion
+      x-products: [edk, vdx]
+      summary: Get a single version of a DCQL query configuration
+      responses:
+        '200':
+          description: The requested version record.
+          content:
+            application/json:
+              schema:
+                $ref: './dcql-components.yml#/components/schemas/DcqlQueryVersionRecord'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+
+  /queries/{queryId}/versions/{version}/restore:
+    parameters:
+      - $ref: './dcql-components.yml#/components/parameters/QueryId'
+      - $ref: './dcql-components.yml#/components/parameters/Version'
+    post:
+      tags: [Queries]
+      operationId: restoreDcqlQueryVersion
+      x-products: [edk, vdx]
+      summary: Restore a previous version of a DCQL query configuration
+      description: >
+        Restores the configuration to the supplied version, creating a new current
+        version with the restored content. Returns the resulting configuration.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: './dcql-components.yml#/components/schemas/RestoreDcqlQueryVersionRequest'
+      responses:
+        '200':
+          description: The configuration after restoring the requested version.
+          content:
+            application/json:
+              schema:
+                $ref: './dcql-components.yml#/components/schemas/DcqlQueryConfiguration'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+
+components:
+  securitySchemes:
+    bearer:
+      $ref: './common-components.yml#/components/securitySchemes/bearer'

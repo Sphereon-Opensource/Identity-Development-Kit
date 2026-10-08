@@ -1,0 +1,383 @@
+openapi: 3.0.4
+info:
+  title: Catalog API
+  version: 0.1.0
+  x-products: [edk, vdx]
+  description: |
+    Management API for TS 11 catalogs (WHAT types exist).
+
+    Trust domains remain the WHO-may-issue surface. A SchemaMeta has no issuers.
+    Catalog membership never grants issuer trust. Public wallet-facing reads live
+    only under `/public/catalogs/{slug}/api/v1/` and are not part of this
+    authenticated management mount.
+
+    OID4VP verification mode (`DISCOVERY` | `TYPE_MUST_EXIST` | `TYPE_AND_TRUSTED_AUTHORITIES`)
+    is persisted on the trust-domain OID4VP selection, not on this API.
+  contact:
+    name: Product Engineering
+    email: support@example.com
+    url: https://example.com
+  license:
+    name: Apache 2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0
+servers:
+  - url: https://api.example.com/api/catalog/v1
+    description: Production server.
+  - url: http://localhost:8080/api/catalog/v1
+    description: Local development server.
+security:
+  - bearer: []
+tags:
+  - name: Catalogs
+    description: Create, publish, disable, and list catalogs.
+  - name: Schemas
+    description: Author, link, and list SchemaMeta entries.
+  - name: Imports
+    description: Import a remote TS 11 catalog or a rulebook-catalog tree.
+paths:
+  /catalogs:
+    get:
+      operationId: listCatalogs
+      tags: [Catalogs]
+      summary: List catalogs
+      parameters:
+        - $ref: 'catalog-components.yml#/components/parameters/CatalogStatusFilter'
+        - $ref: 'catalog-components.yml#/components/parameters/CatalogVerificationEnabledFilter'
+      responses:
+        '200':
+          description: Catalog list
+          content:
+            application/json:
+              schema:
+                $ref: 'catalog-components.yml#/components/schemas/AttestationCatalogList'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: 'catalog-components.yml#/components/schemas/ErrorEnvelope'
+    post:
+      operationId: createCatalog
+      tags: [Catalogs]
+      summary: Create a catalog
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: 'catalog-components.yml#/components/schemas/CreateCatalogRequest'
+      responses:
+        '201':
+          description: Created catalog
+          content:
+            application/json:
+              schema:
+                $ref: 'catalog-components.yml#/components/schemas/AttestationCatalog'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: 'catalog-components.yml#/components/schemas/ErrorEnvelope'
+  /catalogs/{catalogId}:
+    get:
+      operationId: getCatalog
+      tags: [Catalogs]
+      summary: Get a catalog
+      parameters:
+        - $ref: '#/components/parameters/CatalogId'
+      responses:
+        '200':
+          description: Catalog
+          content:
+            application/json:
+              schema:
+                $ref: 'catalog-components.yml#/components/schemas/AttestationCatalog'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: 'catalog-components.yml#/components/schemas/ErrorEnvelope'
+    put:
+      operationId: updateCatalog
+      tags: [Catalogs]
+      summary: Update a catalog
+      parameters:
+        - $ref: '#/components/parameters/CatalogId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: 'catalog-components.yml#/components/schemas/UpdateCatalogRequest'
+      responses:
+        '200':
+          description: Updated catalog
+          content:
+            application/json:
+              schema:
+                $ref: 'catalog-components.yml#/components/schemas/AttestationCatalog'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: 'catalog-components.yml#/components/schemas/ErrorEnvelope'
+  /catalogs/{catalogId}/publish:
+    post:
+      operationId: publishCatalog
+      tags: [Catalogs]
+      summary: Publish a catalog
+      parameters:
+        - $ref: '#/components/parameters/CatalogId'
+      responses:
+        '200':
+          description: Published catalog
+          content:
+            application/json:
+              schema:
+                $ref: 'catalog-components.yml#/components/schemas/AttestationCatalog'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: 'catalog-components.yml#/components/schemas/ErrorEnvelope'
+  /catalogs/{catalogId}/disable:
+    post:
+      operationId: disableCatalog
+      tags: [Catalogs]
+      summary: Disable a catalog
+      parameters:
+        - $ref: '#/components/parameters/CatalogId'
+      responses:
+        '200':
+          description: Disabled catalog
+          content:
+            application/json:
+              schema:
+                $ref: 'catalog-components.yml#/components/schemas/AttestationCatalog'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: 'catalog-components.yml#/components/schemas/ErrorEnvelope'
+  /catalogs/{catalogId}/schemas:
+    get:
+      operationId: listSchemas
+      tags: [Schemas]
+      summary: List SchemaMeta entries in a catalog
+      parameters:
+        - $ref: '#/components/parameters/CatalogId'
+        - $ref: 'catalog-components.yml#/components/parameters/SchemaIdFilter'
+        - $ref: 'catalog-components.yml#/components/parameters/SupportedFormatsFilter'
+        - $ref: 'catalog-components.yml#/components/parameters/AttestationLoSFilter'
+        - $ref: 'catalog-components.yml#/components/parameters/BindingTypeFilter'
+        - $ref: 'catalog-components.yml#/components/parameters/TrustedAuthoritiesFrameworkTypeFilter'
+        - $ref: 'catalog-components.yml#/components/parameters/TrustedAuthoritiesValueFilter'
+        - $ref: 'catalog-components.yml#/components/parameters/SchemaUriFilter'
+        - $ref: 'catalog-components.yml#/components/parameters/RulebookUriFilter'
+        - $ref: 'catalog-components.yml#/components/parameters/LinkedDesignIdFilter'
+        - $ref: 'catalog-components.yml#/components/parameters/LinkedVctIdFilter'
+        - $ref: './common-components.yml#/components/parameters/Limit'
+        - $ref: './common-components.yml#/components/parameters/Offset'
+        - $ref: './common-components.yml#/components/parameters/Page'
+        - $ref: './common-components.yml#/components/parameters/Size'
+      responses:
+        '200':
+          description: Paginated SchemaMeta list
+          content:
+            application/json:
+              schema:
+                $ref: 'catalog-components.yml#/components/schemas/PaginatedSchemaList'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: 'catalog-components.yml#/components/schemas/ErrorEnvelope'
+    post:
+      operationId: createSchema
+      tags: [Schemas]
+      summary: Author a SchemaMeta
+      parameters:
+        - $ref: '#/components/parameters/CatalogId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: 'catalog-components.yml#/components/schemas/CreateSchemaRequest'
+      responses:
+        '201':
+          description: Created SchemaMeta
+          content:
+            application/json:
+              schema:
+                $ref: 'catalog-components.yml#/components/schemas/SchemaMeta'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: 'catalog-components.yml#/components/schemas/ErrorEnvelope'
+  /catalogs/{catalogId}/schemas/{schemaId}:
+    get:
+      operationId: getSchema
+      tags: [Schemas]
+      summary: Get SchemaMeta
+      parameters:
+        - $ref: '#/components/parameters/CatalogId'
+        - $ref: '#/components/parameters/SchemaId'
+      responses:
+        '200':
+          description: SchemaMeta
+          content:
+            application/json:
+              schema:
+                $ref: 'catalog-components.yml#/components/schemas/SchemaMeta'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: 'catalog-components.yml#/components/schemas/ErrorEnvelope'
+    put:
+      operationId: updateSchema
+      tags: [Schemas]
+      summary: Update a SchemaMeta
+      parameters:
+        - $ref: '#/components/parameters/CatalogId'
+        - $ref: '#/components/parameters/SchemaId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: 'catalog-components.yml#/components/schemas/UpdateSchemaRequest'
+      responses:
+        '200':
+          description: Updated SchemaMeta
+          content:
+            application/json:
+              schema:
+                $ref: 'catalog-components.yml#/components/schemas/SchemaMeta'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: 'catalog-components.yml#/components/schemas/ErrorEnvelope'
+    delete:
+      operationId: deleteSchema
+      tags: [Schemas]
+      summary: Delete a SchemaMeta
+      parameters:
+        - $ref: '#/components/parameters/CatalogId'
+        - $ref: '#/components/parameters/SchemaId'
+      responses:
+        '204':
+          description: Deleted
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: 'catalog-components.yml#/components/schemas/ErrorEnvelope'
+  /catalogs/{catalogId}/schemas/link:
+    post:
+      operationId: linkSchema
+      tags: [Schemas]
+      summary: Link a hosted VCT or credential design
+      parameters:
+        - $ref: '#/components/parameters/CatalogId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: 'catalog-components.yml#/components/schemas/LinkSchemaRequest'
+      responses:
+        '201':
+          description: Linked SchemaMeta
+          content:
+            application/json:
+              schema:
+                $ref: 'catalog-components.yml#/components/schemas/SchemaMeta'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: 'catalog-components.yml#/components/schemas/ErrorEnvelope'
+  /catalogs/{catalogId}/imports/remote:
+    post:
+      operationId: importRemoteCatalog
+      tags: [Imports]
+      summary: Import a remote TS 11 catalog
+      parameters:
+        - $ref: '#/components/parameters/CatalogId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: 'catalog-components.yml#/components/schemas/ImportRemoteRequest'
+      responses:
+        '200':
+          description: Import report
+          content:
+            application/json:
+              schema:
+                $ref: 'catalog-components.yml#/components/schemas/CatalogImportReport'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: 'catalog-components.yml#/components/schemas/ErrorEnvelope'
+  /catalogs/{catalogId}/imports/rulebooks:
+    post:
+      operationId: importRulebooks
+      tags: [Imports]
+      summary: Import a rulebook-catalog tree
+      parameters:
+        - $ref: '#/components/parameters/CatalogId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: 'catalog-components.yml#/components/schemas/ImportRulebooksRequest'
+      responses:
+        '200':
+          description: Import report
+          content:
+            application/json:
+              schema:
+                $ref: 'catalog-components.yml#/components/schemas/CatalogImportReport'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: 'catalog-components.yml#/components/schemas/ErrorEnvelope'
+components:
+  parameters:
+    CatalogId:
+      name: catalogId
+      in: path
+      required: true
+      schema:
+        type: string
+    SchemaId:
+      name: schemaId
+      in: path
+      required: true
+      schema:
+        type: string
+  securitySchemes:
+    bearer:
+      $ref: 'catalog-components.yml#/components/securitySchemes/bearer'

@@ -1,0 +1,19 @@
+openapi: 3.0.4
+info:
+  title: Credential Status List Hosting API Components
+  version: 0.1.0
+  description: Entity schemas for the Credential Status List Hosting API.
+paths: {}
+components:
+  schemas:
+    StatusListTokenBody:
+      type: string
+      description: |
+        The compact, signed status-list token, served verbatim as the response body (never wrapped in
+        a JSON object). For `application/statuslist+jwt` (IETF Token Status List) and
+        `application/vc+jwt` (W3C Bitstring Status List Credential) this is a compact JWS of the form
+        `header.payload.signature` (three base64url segments separated by dots). The decoded payload
+        carries the issuer (`iss`), the list's own URI (`sub`), issuance/expiry timestamps, and the
+        compressed status bitstring (IETF `status_list.lst` / W3C `encodedList`). The binary CWT form
+        (`application/statuslist+cwt`) is served as raw COSE_Sign1 bytes instead of this string.
+      example: eyJhbGciOiJFUzI1NiIsInR5cCI6InN0YXR1c2xpc3Qrand0Iiwia2lkIjoia2V5LTEifQ.eyJpc3MiOiJkaWQ6ZXhhbXBsZTppc3N1ZXIiLCJzdWIiOiJodHRwczovL2lzc3Vlci5leGFtcGxlL3N0YXR1c2xpc3RzL2UyZS10b2tlbiIsImlhdCI6MTcwMDAwMDAwMCwiZXhwIjoxNzAwMDAzNjAwLCJzdGF0dXNfbGlzdCI6eyJiaXRzIjoxLCJsc3QiOiJlTnBqWUJnRm93Q2pBQUEifX0.ZXhhbXBsZS1zaWduYXR1cmU

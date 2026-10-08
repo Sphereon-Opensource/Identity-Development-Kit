@@ -1,0 +1,297 @@
+openapi: 3.0.4
+info:
+  title: OID4VCI Issuer Session API
+  version: 0.1.0
+  description: |
+    Backend (server-to-server) API for an OpenID for Verifiable Credential Issuance (OID4VCI)
+    issuer to create a Credential Offer together with a tracked issuance session, follow that
+    session through the issuance lifecycle, and remove it when it is no longer needed.
+
+    A single create call does two things at once: it produces the wallet-facing offer (the offer
+    URI, and optionally a QR code and a transaction code) and it opens a server-side session keyed
+    by a correlation id. The session lets the issuer backend observe progress as the holder's
+    wallet drives the protocol, moving through:
+
+    - `credential_offer_created` - the offer and session exist, nothing has been fetched yet
+    - `credential_offer_retrieved` - the wallet fetched the offer
+    - `token_requested` - the wallet requested an access token
+    - `credential_requested` - the wallet requested the credential
+    - `credential_issued` - the credential was issued (issuance result data is then available)
+    - `error` - the session failed (error details are then available)
+
+    The status endpoint reports the current state and, once issuance completes, the resulting
+    credential configuration and credential identifiers. The delete endpoint removes all session
+    state, for cleanup after completion, after a timeout, or to cancel an offer.
+
+    This is a backend integration surface for confidential issuer systems, not a browser or wallet
+    API. The wallet-facing OID4VCI protocol endpoints (offer retrieval, token, credential) are a
+    separate surface and are not described here.
+  license:
+    name: Apache-2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0
+
+servers:
+  - description: OID4VCI Issuer Session API base path.
+    url: /api/oid4vci/v1
+
+security:
+  - oAuth2: []
+  - bearer: []
+
+tags:
+  - name: Backend
+    description: Issuer backend credential-offer session management endpoints.
+
+paths:
+  /backend/credential/offers:
+    post:
+      summary: Create a credential offer and its issuance session
+      description: |
+        Creates a new OID4VCI Credential Offer for the supplied credential configuration ids and
+        opens a tracked issuance session for it. The response carries everything needed to start
+        the wallet flow and to follow the session afterwards: the offer URI, an optional QR code
+        data URI (returned only when `qr_code` options were supplied), the transaction code (when a
+        pre-authorized grant requested one), a `status_uri` for polling, and the `correlation_id`
+        that keys the session.
+
+        Grant selection follows the request `grants`. When neither a pre-authorized nor an
+        authorization code grant is given, a pre-authorized code grant is used by default. Supply a
+        `correlation_id` to use your own business key, otherwise the server generates one. This
+        endpoint is meant to be called from the issuer backend, not from a browser or wallet.
+      tags:
+        - Backend
+      operationId: createCredentialOffer
+      x-products: [idk, edk, vdx]
+      requestBody:
+        description: Configuration for the credential offer and its session.
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCredentialOfferInput'
+            examples:
+              createSdJwtVcOffer:
+                summary: Create a SD-JWT VC credential offer
+                description: Use the registered issuer and credential configuration from the matching guide. Retain the returned correlation_id and status_uri to track issuance; wallet protocol steps run outside the Developer Console.
+                value:
+                  issuer_id: issuer-main
+                  credential_configuration_ids: [EuPid]
+                  grants:
+                    pre_authorized_code: {}
+                  ttl_seconds: 600
+                  uri_lifecycle: SINGLE_USE
+              createMdocOffer:
+                summary: Create a ISO mdoc credential offer
+                description: Use the registered issuer and credential configuration from the matching guide. Retain the returned correlation_id and status_uri to track issuance; wallet protocol steps run outside the Developer Console.
+                value:
+                  issuer_id: issuer-main
+                  credential_configuration_ids: [Mdl]
+                  grants:
+                    pre_authorized_code: {}
+                  ttl_seconds: 600
+                  uri_lifecycle: SINGLE_USE
+              createVcdm11JwtOffer:
+                summary: Create a W3C VCDM 1.1 JWT credential offer
+                description: Use the registered issuer and credential configuration from the matching guide. Retain the returned correlation_id and status_uri to track issuance; wallet protocol steps run outside the Developer Console.
+                value:
+                  issuer_id: issuer-main
+                  credential_configuration_ids: [Vcdm11Jwt]
+                  grants:
+                    pre_authorized_code: {}
+                  ttl_seconds: 600
+                  uri_lifecycle: SINGLE_USE
+              createVcdm20JwtLdOffer:
+                summary: Create a W3C VCDM 2.0 JWT-JSON-LD credential offer
+                description: Use the registered issuer and credential configuration from the matching guide. Retain the returned correlation_id and status_uri to track issuance; wallet protocol steps run outside the Developer Console.
+                value:
+                  issuer_id: issuer-main
+                  credential_configuration_ids: [Vcdm20JwtLd]
+                  grants:
+                    pre_authorized_code: {}
+                  ttl_seconds: 600
+                  uri_lifecycle: SINGLE_USE
+      responses:
+        '201':
+          description: Credential offer created successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateCredentialOfferOutput'
+              example:
+                correlation_id: order-2026-000931
+                session_id: 123e4567-e89b-12d3-a456-426614174000
+                offer_uri: 'openid-credential-offer://?credential_offer_uri=https://issuer.example.com/api/oid4vci/v1/credentials/offers/abc123'
+                status_uri: 'https://issuer.example.com/api/oid4vci/v1/backend/credential/offers/order-2026-000931'
+                qr_uri: data:image/png;base64,iVBORw0KGgoAAAANSUhEUg...
+                tx_code: '492817'
+        '401':
+          description: Missing or invalid bearer credentials.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Issuer, credential configuration, or other referenced parameter not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Error creating the credential offer.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /backend/credential/offers/{correlation_id}:
+    parameters:
+      - $ref: '#/components/parameters/CorrelationId'
+    get:
+      summary: Get credential offer session status
+      operationId: getCredentialOfferStatus
+      x-products: [idk, edk, vdx]
+      description: |
+        Returns the current status of a credential-offer session identified by its
+        `correlation_id`. The response always carries the status and a `last_updated` timestamp.
+        When the session has reached `credential_issued`, the response also includes
+        `issuance_data` (the issued credential configuration ids and credential identifiers). When
+        the session has reached `error`, the response includes an `error` object with a code and
+        message. Poll this endpoint to follow the session across the issuance lifecycle.
+      tags:
+        - Backend
+      responses:
+        '200':
+          description: Credential offer session status retrieved successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GetCredentialOfferStatusOutput'
+              examples:
+                offerCreated:
+                  summary: Session created, wallet has not acted yet
+                  value:
+                    correlation_id: order-2026-000931
+                    status: credential_offer_created
+                    last_updated: 1706515200000
+                credentialIssued:
+                  summary: Credential issued, issuance data available
+                  value:
+                    correlation_id: order-2026-000931
+                    status: credential_issued
+                    last_updated: 1706515320000
+                    issuance_data:
+                      credential_configuration_ids:
+                        - EuPid
+                      credential_identifiers:
+                        - urn:credential:8f2a1c4e-0b77-4f3a-9d21-2a6f5b9c0e10
+        '401':
+          description: Missing or invalid bearer credentials.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Credential offer session not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Error retrieving the credential offer session status.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    delete:
+      summary: Delete a credential offer session
+      operationId: deleteCredentialOffer
+      x-products: [idk, edk, vdx]
+      description: |
+        Removes all state associated with the credential-offer session identified by its
+        `correlation_id`. Use it to clean up after the session completes, after it times out, or to
+        cancel an outstanding offer. Returns `204 No Content` on success.
+      tags:
+        - Backend
+      responses:
+        '204':
+          description: Credential offer session state removed successfully.
+        '401':
+          description: Missing or invalid bearer credentials.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Credential offer session not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Error removing the credential offer session.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+components:
+  securitySchemes:
+    bearer:
+      $ref: './common-components.yml#/components/securitySchemes/bearer'
+    oAuth2:
+      type: oauth2
+      flows:
+        clientCredentials:
+          tokenUrl: http://localhost:8082/realms/oid4vci/protocol/openid-connect/token
+          refreshUrl: http://localhost:8082/realms/oid4vci/protocol/openid-connect/token
+          scopes: {}
+
+  parameters:
+    CorrelationId:
+      $ref: './oid4vci-issuer-session-components.yml#/components/parameters/CorrelationId'
+
+  schemas:
+    CreateCredentialOfferInput:
+      $ref: './oid4vci-issuer-session-components.yml#/components/schemas/CreateCredentialOfferInput'
+
+    CreateCredentialOfferOutput:
+      $ref: './oid4vci-issuer-session-components.yml#/components/schemas/CreateCredentialOfferOutput'
+
+    GetCredentialOfferStatusOutput:
+      $ref: './oid4vci-issuer-session-components.yml#/components/schemas/GetCredentialOfferStatusOutput'
+
+    CredentialOfferGrantsInput:
+      $ref: './oid4vci-issuer-session-components.yml#/components/schemas/CredentialOfferGrantsInput'
+
+    PreAuthorizedCodeGrantInput:
+      $ref: './oid4vci-issuer-session-components.yml#/components/schemas/PreAuthorizedCodeGrantInput'
+
+    TxCodeInput:
+      $ref: './oid4vci-issuer-session-components.yml#/components/schemas/TxCodeInput'
+
+    AuthorizationCodeGrantInput:
+      $ref: './oid4vci-issuer-session-components.yml#/components/schemas/AuthorizationCodeGrantInput'
+
+    IssuanceCallbackConfig:
+      $ref: './oid4vci-issuer-session-components.yml#/components/schemas/IssuanceCallbackConfig'
+
+    QrCodeOptions:
+      $ref: './oid4vci-issuer-session-components.yml#/components/schemas/QrCodeOptions'
+
+    OfferUriLifecycle:
+      $ref: './oid4vci-issuer-session-components.yml#/components/schemas/OfferUriLifecycle'
+
+    OfferRateLimit:
+      $ref: './oid4vci-issuer-session-components.yml#/components/schemas/OfferRateLimit'
+
+    CredentialOfferSessionStatus:
+      $ref: './oid4vci-issuer-session-components.yml#/components/schemas/CredentialOfferSessionStatus'
+
+    IssuanceData:
+      $ref: './oid4vci-issuer-session-components.yml#/components/schemas/IssuanceData'
+
+    SessionError:
+      $ref: './oid4vci-issuer-session-components.yml#/components/schemas/SessionError'
+
+    Error:
+      $ref: './oid4vci-issuer-session-components.yml#/components/schemas/Error'

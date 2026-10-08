@@ -1,0 +1,718 @@
+openapi: 3.0.3
+info:
+  title: Sphereon Developer Console Runtime API
+  version: 1.0.0
+  license:
+    name: AGPL-3.0
+    url: https://www.gnu.org/licenses/agpl-3.0.html
+  x-products: [edk, vdx]
+  x-service-owner: services-application-rest
+  x-host-scope: platform
+servers:
+  - url: https://platform.sphereon.com
+paths:
+  /api/developer-console/v1/bootstrap:
+    get:
+      operationId: getDeveloperConsoleBootstrap
+      summary: Get safe Developer Console bootstrap metadata.
+      security: []
+      responses:
+        '200':
+          description: Safe bootstrap metadata filtered for the caller's authentication state.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DeveloperConsoleBootstrap' }
+        '404': { $ref: '#/components/responses/DeveloperConsoleNotFound' }
+        '503': { $ref: '#/components/responses/DeveloperConsoleServiceUnavailable' }
+  /api/developer-console/v1/catalog:
+    get:
+      operationId: getDeveloperConsoleCatalog
+      summary: Get the policy-filtered mounted API catalog.
+      security: []
+      responses:
+        '200':
+          description: Policy-filtered mounted API catalog.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/DeveloperConsoleToolMetadata' }
+        '404': { $ref: '#/components/responses/DeveloperConsoleNotFound' }
+        '503': { $ref: '#/components/responses/DeveloperConsoleServiceUnavailable' }
+  /api/developer-console/v1/specs/{specId}:
+    get:
+      operationId: getDeveloperConsoleSpec
+      summary: Get one policy-filtered mounted OpenAPI document.
+      security: []
+      parameters: [{name: specId, in: path, required: true, schema: {type: string}}]
+      responses:
+        '200':
+          description: Policy-filtered mounted OpenAPI document.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DeveloperConsoleSpecEnvelope' }
+        '400': { $ref: '#/components/responses/DeveloperConsoleInvalidRequest' }
+        '404': { $ref: '#/components/responses/DeveloperConsoleNotFound' }
+        '503': { $ref: '#/components/responses/DeveloperConsoleServiceUnavailable' }
+  /api/developer-console/v1/artifacts/postman/collection:
+    get:
+      operationId: getDeveloperConsolePostmanCollection
+      summary: Get the policy-filtered Postman collection.
+      security: []
+      responses:
+        '200':
+          description: Policy-filtered deterministic Postman collection.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DeveloperConsolePostmanCollection' }
+        '404': { $ref: '#/components/responses/DeveloperConsoleNotFound' }
+        '503': { $ref: '#/components/responses/DeveloperConsoleServiceUnavailable' }
+  /api/developer-console/v1/artifacts/postman/environment:
+    get:
+      operationId: getDeveloperConsolePostmanEnvironment
+      summary: Get the secret-free Postman environment.
+      security: []
+      responses:
+        '200':
+          description: Context-bound, secret-free Postman environment.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DeveloperConsolePostmanEnvironment' }
+        '404': { $ref: '#/components/responses/DeveloperConsoleNotFound' }
+        '503': { $ref: '#/components/responses/DeveloperConsoleServiceUnavailable' }
+  /api/developer-console/v1/related-surfaces:
+    get:
+      operationId: getDeveloperConsoleRelatedSurfaces
+      summary: Get enabled related testing surfaces.
+      security: []
+      responses:
+        '200':
+          description: Enabled, licensed related surfaces filtered for the caller.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/RelatedSurfaceDescriptor' }
+        '404': { $ref: '#/components/responses/DeveloperConsoleNotFound' }
+        '503': { $ref: '#/components/responses/DeveloperConsoleServiceUnavailable' }
+  /api/developer-console/v1/bff/session/start:
+    post:
+      operationId: startDeveloperConsoleBffSession
+      security:
+        - developerConsoleCaller: []
+      tags: [Developer Console, BFF]
+      summary: Start a server-held Developer Console OAuth session.
+      description: >-
+        Starts an authorization-code session for an allowlisted mounted route. The
+        server owns the downstream authority, resource, audience, scopes, and opaque
+        session state; the protected host authenticates the caller. This operation creates
+        the downstream owner cookie, so that cookie cannot be the caller-authentication
+        requirement for start.
+      parameters:
+        - $ref: '#/components/parameters/DeveloperConsoleCsrfHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DeveloperConsoleBffSessionStartRequest' }
+      responses:
+        '200':
+          description: Authorization URL and expiry. Two separate HttpOnly/CSRF cookies are also set.
+          headers:
+            X-Developer-Console-CSRF: { $ref: '#/components/headers/DeveloperConsoleCsrf' }
+            Cache-Control: { $ref: '#/components/headers/DeveloperConsoleNoStore' }
+            Pragma: { $ref: '#/components/headers/DeveloperConsoleNoCache' }
+            Set-Cookie: { $ref: '#/components/headers/DeveloperConsoleSetCookie' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DeveloperConsoleBffSessionStartResponse' }
+        '400': { $ref: '#/components/responses/DeveloperConsoleInvalidRequest' }
+        '401': { $ref: '#/components/responses/DeveloperConsoleUnauthorized' }
+        '404': { $ref: '#/components/responses/DeveloperConsoleNotFound' }
+        '503': { $ref: '#/components/responses/DeveloperConsoleServiceUnavailable' }
+  /api/developer-console/v1/bff/session/complete:
+    post:
+      operationId: completeDeveloperConsoleBffSession
+      security:
+        - developerConsoleCaller: []
+      tags: [Developer Console, BFF]
+      summary: Complete and rotate a server-held Developer Console OAuth session.
+      description: >-
+        Completes the allowlisted authorization callback and rotates the opaque server
+        session cookies. Callback data is bounded form data; it never contains caller
+        credentials supplied by this API. The owner cookie is downstream session state
+        from start and is sent automatically when present; it is not a substitute for
+        protected caller authentication.
+      parameters:
+        - $ref: '#/components/parameters/DeveloperConsoleCsrfHeader'
+        - $ref: '#/components/parameters/DeveloperConsoleOwnerCookie'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DeveloperConsoleBffSessionCompleteRequest' }
+      responses:
+        '200':
+          description: Grant metadata and two newly rotated cookies. The grant contains no access token.
+          headers:
+            X-Developer-Console-CSRF: { $ref: '#/components/headers/DeveloperConsoleCsrf' }
+            Cache-Control: { $ref: '#/components/headers/DeveloperConsoleNoStore' }
+            Pragma: { $ref: '#/components/headers/DeveloperConsoleNoCache' }
+            Set-Cookie: { $ref: '#/components/headers/DeveloperConsoleSetCookie' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DeveloperConsoleBffSessionCompleteResponse' }
+        '400': { $ref: '#/components/responses/DeveloperConsoleInvalidRequest' }
+        '401': { $ref: '#/components/responses/DeveloperConsoleUnauthorized' }
+        '404': { $ref: '#/components/responses/DeveloperConsoleNotFound' }
+        '503': { $ref: '#/components/responses/DeveloperConsoleServiceUnavailable' }
+  /api/developer-console/v1/bff/forward:
+    post:
+      operationId: forwardDeveloperConsoleRequest
+      security:
+        - developerConsoleCaller: []
+      tags: [Developer Console, BFF]
+      summary: Forward one allowlisted same-origin Developer Console request.
+      description: >-
+        Resolves route identity and target authority server-side, then forwards only
+        approved request headers and the server-held downstream credential. A prior owner
+        cookie is used when a browser grant session is available; read-only bearer fallback
+        remains host-protected, while mutating calls require the cookie-backed CSRF session.
+        The response is the
+        upstream status/body with a safe response-header allowlist; upstream cookies,
+        redirects, authorization headers, and other hop-by-hop headers are not exposed.
+      parameters:
+        - $ref: '#/components/parameters/DeveloperConsoleCsrfHeader'
+        - $ref: '#/components/parameters/DeveloperConsoleOwnerCookie'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DeveloperConsoleBffForwardRequest' }
+      responses:
+        default:
+          description: >-
+            Upstream response body. The HTTP status is preserved for any upstream status;
+            only safe response headers are preserved. The current adapter decodes the bounded
+            upstream bytes as UTF-8 text before returning them.
+          headers:
+            Content-Type: { $ref: '#/components/headers/DeveloperConsoleContentType' }
+            Cache-Control: { $ref: '#/components/headers/DeveloperConsoleNoStore' }
+            ETag: { $ref: '#/components/headers/DeveloperConsoleEtag' }
+            Last-Modified: { $ref: '#/components/headers/DeveloperConsoleLastModified' }
+            Allow: { $ref: '#/components/headers/DeveloperConsoleAllow' }
+            Retry-After: { $ref: '#/components/headers/DeveloperConsoleRetryAfter' }
+          content:
+            '*/*':
+              schema: { type: string }
+        '400': { $ref: '#/components/responses/DeveloperConsoleForwardBadRequest' }
+        '401': { $ref: '#/components/responses/DeveloperConsoleForwardUnauthorized' }
+        '403': { $ref: '#/components/responses/DeveloperConsoleForwardForbidden' }
+        '404': { $ref: '#/components/responses/DeveloperConsoleForwardNotFound' }
+        '503': { $ref: '#/components/responses/DeveloperConsoleForwardServiceUnavailable' }
+components:
+  parameters:
+    DeveloperConsoleCsrfHeader:
+      name: X-Developer-Console-CSRF
+      in: header
+      required: false
+      schema: { type: string, minLength: 1, maxLength: 512 }
+      description: >-
+        Double-submit CSRF value. The browser may send this value, but cannot read the
+        HttpOnly session cookie or Set-Cookie response fields.
+    DeveloperConsoleOwnerCookie:
+      name: developer_console_oauth_owner
+      in: cookie
+      required: false
+      schema: { type: string, minLength: 1, maxLength: 512 }
+      description: >-
+        Browser-managed opaque downstream OAuth-owner state from start. It is sent
+        automatically when present and is never caller-authored or caller authentication.
+  headers:
+    DeveloperConsoleCsrf:
+      description: CSRF metadata mirrored for the browser; this is not an access token.
+      schema: { type: string, minLength: 1, maxLength: 512 }
+    DeveloperConsoleNoStore:
+      description: Session and grant responses are never cacheable.
+      schema: { type: string, enum: [no-store] }
+    DeveloperConsoleNoCache:
+      description: Legacy cache directive emitted alongside no-store.
+      schema: { type: string, enum: [no-cache] }
+    DeveloperConsoleSetCookie:
+      description: >-
+        Exactly two separate Set-Cookie field lines (opaque HttpOnly owner cookie and
+        readable CSRF cookie). Browsers apply these fields automatically; JavaScript
+        cannot read them. Never combine the lines with a comma.
+      schema:
+        type: array
+        minItems: 2
+        maxItems: 2
+        items: { type: string }
+      x-repeated: true
+    DeveloperConsoleContentType: { description: Preserved upstream media type., schema: { type: string } }
+    DeveloperConsoleEtag: { description: Preserved upstream entity tag., schema: { type: string } }
+    DeveloperConsoleLastModified: { description: Preserved upstream modification time., schema: { type: string } }
+    DeveloperConsoleAllow: { description: Preserved upstream Allow value., schema: { type: string } }
+    DeveloperConsoleRetryAfter: { description: Preserved upstream retry hint., schema: { type: string } }
+  responses:
+    DeveloperConsoleInvalidRequest:
+      description: The request does not match the allowlisted Developer Console route contract.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/DeveloperConsoleErrorResponse' }
+    DeveloperConsoleNotFound:
+      description: The requested console resource is disabled, unknown, or inaccessible to this caller.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/DeveloperConsoleErrorResponse' }
+    DeveloperConsoleServiceUnavailable:
+      description: A tenant configuration, catalog, or artifact dependency is temporarily unavailable.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/DeveloperConsoleErrorResponse' }
+    DeveloperConsoleUnauthorized:
+      description: The caller is not authenticated for the protected BFF session.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/DeveloperConsoleErrorResponse' }
+    DeveloperConsoleForwardBadRequest:
+      description: >-
+        Either the BFF rejected the request with its JSON error envelope, or the upstream
+        target returned this status with its UTF-8 response body.
+      headers:
+        Content-Type: { $ref: '#/components/headers/DeveloperConsoleContentType' }
+        Cache-Control: { $ref: '#/components/headers/DeveloperConsoleNoStore' }
+        ETag: { $ref: '#/components/headers/DeveloperConsoleEtag' }
+        Last-Modified: { $ref: '#/components/headers/DeveloperConsoleLastModified' }
+        Allow: { $ref: '#/components/headers/DeveloperConsoleAllow' }
+        Retry-After: { $ref: '#/components/headers/DeveloperConsoleRetryAfter' }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/DeveloperConsoleJsonValue' }
+        '*/*':
+          schema: { type: string }
+    DeveloperConsoleForwardUnauthorized:
+      description: >-
+        Either the BFF rejected the request with its JSON error envelope, or the upstream
+        target returned this status with its UTF-8 response body.
+      headers:
+        Content-Type: { $ref: '#/components/headers/DeveloperConsoleContentType' }
+        Cache-Control: { $ref: '#/components/headers/DeveloperConsoleNoStore' }
+        ETag: { $ref: '#/components/headers/DeveloperConsoleEtag' }
+        Last-Modified: { $ref: '#/components/headers/DeveloperConsoleLastModified' }
+        Allow: { $ref: '#/components/headers/DeveloperConsoleAllow' }
+        Retry-After: { $ref: '#/components/headers/DeveloperConsoleRetryAfter' }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/DeveloperConsoleJsonValue' }
+        '*/*':
+          schema: { type: string }
+    DeveloperConsoleForwardForbidden:
+      description: >-
+        Either the BFF rejected the request with its JSON error envelope, or the upstream
+        target returned this status with its UTF-8 response body.
+      headers:
+        Content-Type: { $ref: '#/components/headers/DeveloperConsoleContentType' }
+        Cache-Control: { $ref: '#/components/headers/DeveloperConsoleNoStore' }
+        ETag: { $ref: '#/components/headers/DeveloperConsoleEtag' }
+        Last-Modified: { $ref: '#/components/headers/DeveloperConsoleLastModified' }
+        Allow: { $ref: '#/components/headers/DeveloperConsoleAllow' }
+        Retry-After: { $ref: '#/components/headers/DeveloperConsoleRetryAfter' }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/DeveloperConsoleJsonValue' }
+        '*/*':
+          schema: { type: string }
+    DeveloperConsoleForwardNotFound:
+      description: >-
+        Either the BFF rejected the request with its JSON error envelope, or the upstream
+        target returned this status with its UTF-8 response body.
+      headers:
+        Content-Type: { $ref: '#/components/headers/DeveloperConsoleContentType' }
+        Cache-Control: { $ref: '#/components/headers/DeveloperConsoleNoStore' }
+        ETag: { $ref: '#/components/headers/DeveloperConsoleEtag' }
+        Last-Modified: { $ref: '#/components/headers/DeveloperConsoleLastModified' }
+        Allow: { $ref: '#/components/headers/DeveloperConsoleAllow' }
+        Retry-After: { $ref: '#/components/headers/DeveloperConsoleRetryAfter' }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/DeveloperConsoleJsonValue' }
+        '*/*':
+          schema: { type: string }
+    DeveloperConsoleForwardServiceUnavailable:
+      description: >-
+        Either the BFF rejected the request with its JSON error envelope, or the upstream
+        target returned this status with its UTF-8 response body.
+      headers:
+        Content-Type: { $ref: '#/components/headers/DeveloperConsoleContentType' }
+        Cache-Control: { $ref: '#/components/headers/DeveloperConsoleNoStore' }
+        ETag: { $ref: '#/components/headers/DeveloperConsoleEtag' }
+        Last-Modified: { $ref: '#/components/headers/DeveloperConsoleLastModified' }
+        Allow: { $ref: '#/components/headers/DeveloperConsoleAllow' }
+        Retry-After: { $ref: '#/components/headers/DeveloperConsoleRetryAfter' }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/DeveloperConsoleJsonValue' }
+        '*/*':
+          schema: { type: string }
+  securitySchemes:
+    developerConsoleCaller:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Host-protected caller authentication for the mounted Developer Console API.
+  schemas:
+    DeveloperConsoleErrorResponse:
+      type: object
+      additionalProperties: false
+      required: [error]
+      properties:
+        error:
+          type: string
+          enum: [invalid_request, method_not_allowed, request_too_large, body_too_large, path_parameters_invalid, query_invalid, unauthorized, forbidden, csrf_failed, not_found, service_unavailable]
+    DeveloperConsoleJsonValue:
+      description: A JSON value for an upstream application/json body, including a local BFF error envelope.
+      oneOf:
+        - type: string
+          nullable: true
+        - type: number
+          nullable: true
+        - type: boolean
+          nullable: true
+        - type: array
+          nullable: true
+          items: { $ref: '#/components/schemas/DeveloperConsoleJsonValue' }
+        - type: object
+          nullable: true
+          additionalProperties: { $ref: '#/components/schemas/DeveloperConsoleJsonValue' }
+    DeveloperConsoleBffForwardRequest:
+      type: object
+      additionalProperties: false
+      required: [routeId]
+      properties:
+        routeId: { type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$' }
+        method: { type: string, default: GET, enum: [GET, HEAD, OPTIONS, POST, PUT, PATCH, DELETE] }
+        pathParameters:
+          type: object
+          maxProperties: 32
+          additionalProperties: { type: string, maxLength: 512 }
+        queryParameters:
+          type: object
+          maxProperties: 32
+          additionalProperties: { type: string, nullable: true, maxLength: 512 }
+        headers:
+          type: object
+          maxProperties: 32
+          additionalProperties: { type: string, maxLength: 4096 }
+        body: { type: string, nullable: true, maxLength: 262144 }
+    DeveloperConsoleBffSessionStartRequest:
+      type: object
+      additionalProperties: false
+      required: [routeId, redirectUri, responseMode]
+      properties:
+        routeId: { type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$' }
+        pathParameters:
+          type: object
+          maxProperties: 32
+          additionalProperties: { type: string, maxLength: 512 }
+        redirectUri: { type: string, format: uri, maxLength: 2048 }
+        responseMode: { type: string, enum: [QUERY, FORM_POST] }
+    DeveloperConsoleBffSessionCompleteRequest:
+      type: object
+      additionalProperties: false
+      required: [routeId, callbackUrl]
+      properties:
+        routeId: { type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$' }
+        pathParameters:
+          type: object
+          maxProperties: 32
+          additionalProperties: { type: string, maxLength: 512 }
+        callbackUrl: { type: string, format: uri, maxLength: 4096 }
+        callbackFormBody: { type: string, nullable: true, maxLength: 262144 }
+    DeveloperConsoleBffSessionStartResponse:
+      type: object
+      additionalProperties: false
+      required: [authorizationUrl, expiresAt]
+      properties:
+        authorizationUrl: { type: string, format: uri }
+        expiresAt: { type: string, format: date-time }
+    DeveloperConsoleBffSessionCompleteResponse:
+      type: object
+      additionalProperties: false
+      required: [grant]
+      properties:
+        grant: { $ref: '#/components/schemas/DeveloperConsoleBffGrantStatus' }
+    DeveloperConsoleBffGrantStatus:
+      type: object
+      additionalProperties: false
+      required: [resourceKind, instanceId, issuer, scopes, expiresAt]
+      properties:
+        resourceKind: { type: string, enum: [ISSUER, VERIFIER] }
+        instanceId: { type: string, minLength: 1 }
+        issuer: { type: string, format: uri }
+        scopes: { type: array, uniqueItems: true, items: { type: string, minLength: 1 } }
+        expiresAt: { type: string, format: date-time }
+    DeveloperConsoleThemeMetadata:
+      type: object
+      additionalProperties: false
+      required: [variant, contrast]
+      properties:
+        variant: { type: string, enum: [light, dark] }
+        contrast: { type: string, enum: [normal, high] }
+    RelatedSurfaceDescriptor:
+      type: object
+      additionalProperties: false
+      required: [kind, surfaceId, instanceId, title, href, access, capabilities]
+      properties:
+        kind:
+          type: string
+          enum: [DEVELOPER_CONSOLE, OID4VCI_TESTING, OID4VP_TESTING]
+        surfaceId:
+          type: string
+          enum: [developer_console, oid4vci_testing, oid4vp_testing]
+        instanceId: { type: string }
+        title: { type: string }
+        href:
+          type: string
+          format: uri
+          pattern: '^https://'
+          description: Tenant-authoritative HTTPS URL; never derived from caller slugs or query parameters.
+        access: { type: string, enum: [PUBLIC, AS_PROTECTED] }
+        capabilities:
+          type: array
+          uniqueItems: true
+          items: { type: string }
+    DeveloperConsoleBootstrap:
+      type: object
+      additionalProperties: false
+      required: [enabled, exposureMode, theme, relatedSurfaces]
+      properties:
+        enabled: { type: boolean }
+        exposureMode: { type: string, enum: [PUBLIC, AS_PROTECTED] }
+        theme: { $ref: '#/components/schemas/DeveloperConsoleThemeMetadata' }
+        relatedSurfaces:
+          type: array
+          description: >-
+            Other enabled, licensed surfaces of the same tenant. The Developer Console's
+            exact kind/default instance is excluded. Anonymous callers see PUBLIC only.
+          items: { $ref: '#/components/schemas/RelatedSurfaceDescriptor' }
+    DeveloperConsoleToolMetadata:
+      type: object
+      additionalProperties: false
+      required:
+        - toolId
+        - specId
+        - operationId
+        - title
+        - method
+        - path
+        - serviceOwner
+        - hostScope
+        - scopes
+        - safetyClass
+        - access
+        - publicCapable
+        - renderer
+        - operationSecurity
+        - documentationSubjects
+        - storyReferences
+        - product
+        - guide
+        - story
+        - order
+      properties:
+        toolId: { type: string, minLength: 1 }
+        specId: { type: string, minLength: 1 }
+        operationId:
+          type: string
+          minLength: 1
+          description: Canonical OpenAPI operation identity; operation IDs may repeat across specifications.
+        title: { type: string, minLength: 1 }
+        description:
+          type: string
+          description: Optional mounted-operation description. Absent when the route catalog supplies only a title/summary.
+        method: { type: string, minLength: 1 }
+        path: { type: string, pattern: '^/' }
+        serviceOwner: { type: string, minLength: 1 }
+        hostScope: { type: string, minLength: 1 }
+        capability: { type: string, minLength: 1 }
+        audience:
+          type: string
+          minLength: 1
+          description: Optional downstream token-exchange audience when the mounted catalog declares one.
+        scopes:
+          type: array
+          uniqueItems: true
+          description: Downstream scopes declared by the mounted catalog; empty when no scope authority is present.
+          items: { type: string, minLength: 1 }
+        safetyClass:
+          type: string
+          enum: [STATIC, BROWSER_LOCAL, TENANT_READ, TENANT_EXECUTE, TENANT_MUTATE]
+        access: { type: string, enum: [PUBLIC, AS_PROTECTED] }
+        publicCapable: { type: boolean }
+        renderer:
+          type: string
+          enum: [OPENAPI]
+          description: Renderer-neutral adapter identity; Scalar is one consumer of the OpenAPI document.
+        operationSecurity: { type: string, minLength: 1 }
+        documentationSubjects:
+          type: array
+          uniqueItems: true
+          items: { type: string }
+        storyReferences:
+          type: array
+          uniqueItems: true
+          items: { type: string }
+        product: { type: string }
+        guide: { type: string }
+        story: { type: string }
+        order: { type: integer }
+        bffRouteId:
+          type: string
+          minLength: 1
+          description: Legacy server-owned BFF route identity; direct REST execution does not require this field.
+    DeveloperConsoleSpecRendererMetadata:
+      type: object
+      additionalProperties: false
+      required: [format, source, tryItEnabled]
+      properties:
+        format: { type: string, enum: [yaml] }
+        source: { type: string, enum: [same-origin] }
+        tryItEnabled: { type: boolean }
+    DeveloperConsoleSpecEnvelope:
+      type: object
+      additionalProperties: false
+      description: One allowlisted bundled OpenAPI document. Operation metadata is deliberately not duplicated in this envelope.
+      required: [specId, title, version, rawDocument, renderer]
+      properties:
+        specId: { type: string, minLength: 1 }
+        title: { type: string, minLength: 1 }
+        version: { type: string }
+        rawDocument: { type: string, minLength: 1 }
+        renderer: { $ref: '#/components/schemas/DeveloperConsoleSpecRendererMetadata' }
+    DeveloperConsolePostmanInfo:
+      type: object
+      additionalProperties: false
+      required: [name, _postman_id, schema]
+      properties:
+        name: { type: string }
+        _postman_id: { type: string }
+        schema: { type: string, format: uri }
+    DeveloperConsolePostmanVariable:
+      type: object
+      additionalProperties: false
+      required: [key, value, type, enabled]
+      properties:
+        key: { type: string }
+        value:
+          type: string
+          description: Context placeholder only; runtime artifacts never contain tokens, credentials, or internal URLs.
+        type: { type: string, enum: [default] }
+        enabled: { type: boolean }
+    DeveloperConsolePostmanAuthValue:
+      type: object
+      additionalProperties: false
+      required: [key, value, type]
+      properties:
+        key: { type: string }
+        value: { type: string }
+        type: { type: string, enum: [string] }
+    DeveloperConsolePostmanAuth:
+      type: object
+      additionalProperties: false
+      required: [type]
+      properties:
+        type: { type: string, enum: [bearer, noauth] }
+        bearer:
+          type: array
+          items: { $ref: '#/components/schemas/DeveloperConsolePostmanAuthValue' }
+    DeveloperConsolePostmanRequestHeader:
+      type: object
+      additionalProperties: false
+      required: [key, value, type]
+      properties:
+        key: { type: string }
+        value: { type: string }
+        type: { type: string, enum: [text] }
+    DeveloperConsolePostmanRequestBody:
+      type: object
+      additionalProperties: false
+      required: [mode, raw]
+      properties:
+        mode: { type: string, enum: [raw] }
+        raw:
+          type: string
+          description: REST request body from the operation contract, when available; never a BFF envelope or captured credential.
+    DeveloperConsolePostmanRequest:
+      type: object
+      additionalProperties: false
+      required: [method, header, url]
+      properties:
+        method: { type: string }
+        header:
+          type: array
+          items: { $ref: '#/components/schemas/DeveloperConsolePostmanRequestHeader' }
+        url: { type: string }
+        body: { $ref: '#/components/schemas/DeveloperConsolePostmanRequestBody' }
+        auth: { $ref: '#/components/schemas/DeveloperConsolePostmanAuth' }
+    DeveloperConsolePostmanRequestItem:
+      type: object
+      additionalProperties: false
+      required: [name, request]
+      properties:
+        name: { type: string }
+        disabled:
+          type: boolean
+          description: Legacy optional flag; direct REST exports do not disable protected requests.
+        request: { $ref: '#/components/schemas/DeveloperConsolePostmanRequest' }
+    DeveloperConsolePostmanStoryItem:
+      type: object
+      additionalProperties: false
+      required: [name, item]
+      properties:
+        name: { type: string }
+        item:
+          type: array
+          items: { $ref: '#/components/schemas/DeveloperConsolePostmanRequestItem' }
+    DeveloperConsolePostmanGuideItem:
+      type: object
+      additionalProperties: false
+      required: [name, item]
+      properties:
+        name: { type: string }
+        item:
+          type: array
+          items: { $ref: '#/components/schemas/DeveloperConsolePostmanStoryItem' }
+    DeveloperConsolePostmanProductItem:
+      type: object
+      additionalProperties: false
+      required: [name, item]
+      properties:
+        name: { type: string }
+        item:
+          type: array
+          items: { $ref: '#/components/schemas/DeveloperConsolePostmanGuideItem' }
+    DeveloperConsolePostmanCollection:
+      type: object
+      additionalProperties: false
+      required: [info, item, variable]
+      properties:
+        info: { $ref: '#/components/schemas/DeveloperConsolePostmanInfo' }
+        item:
+          type: array
+          items: { $ref: '#/components/schemas/DeveloperConsolePostmanProductItem' }
+        variable:
+          type: array
+          items: { $ref: '#/components/schemas/DeveloperConsolePostmanVariable' }
+        auth: { $ref: '#/components/schemas/DeveloperConsolePostmanAuth' }
+    DeveloperConsolePostmanEnvironment:
+      type: object
+      additionalProperties: false
+      required: [name, values, _postman_variable_scope, _postman_exported_using]
+      properties:
+        name: { type: string }
+        values:
+          type: array
+          items: { $ref: '#/components/schemas/DeveloperConsolePostmanVariable' }
+        _postman_variable_scope: { type: string, enum: [environment] }
+        _postman_exported_using: { type: string, enum: [Sphereon Developer Console] }

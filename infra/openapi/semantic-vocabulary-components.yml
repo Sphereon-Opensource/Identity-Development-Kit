@@ -1,0 +1,263 @@
+openapi: 3.0.4
+info:
+  title: Semantic Vocabulary API Components
+  version: 0.1.0
+  description: Entity schemas, enums, and path parameters for the Semantic Vocabulary API.
+paths: {}
+components:
+  parameters:
+    VocabId:
+      name: vocabId
+      in: path
+      required: true
+      description: Identifier of the vocabulary.
+      schema:
+        type: string
+        format: uuid
+
+  schemas:
+    SemanticVocabulary:
+      type: object
+      example:
+        id: "9f2c1b3e-7a44-4c1e-8b0a-2d6f5e9c1a77"
+        tenantId: "acme"
+        name: "Schema.org Person (subset)"
+        version: "1.0.0"
+        namespace: "https://schema.org/"
+        description: "Person attributes drawn from schema.org for credential interoperability"
+        sourceUri: "https://schema.org/version/latest/schemaorg-current-https.jsonld"
+        sourceFormat: JSON_LD
+        termCount: 12
+        createdAt: "2026-01-15T09:30:00Z"
+        updatedAt: "2026-01-15T09:30:00Z"
+      description: |
+        A registered semantic vocabulary that provides canonical term definitions for credential
+        attributes. Vocabularies are imported from external sources (JSON-LD, SKOS, RDF, etc.)
+        and contain [SemanticVocabularyTerm] entries that Data Domain business terms can reference for
+        interoperability.
+      required:
+        - id
+        - tenantId
+        - name
+        - version
+        - namespace
+        - sourceFormat
+        - termCount
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenantId:
+          type: string
+        name:
+          type: string
+        version:
+          type: string
+        namespace:
+          type: string
+          description: URI namespace that prefixes all term URIs in this vocabulary (e.g. `https://schema.org/`).
+        description:
+          type: string
+          nullable: true
+        sourceUri:
+          type: string
+          nullable: true
+          description: Original URI from which this vocabulary was imported, if applicable.
+        sourceFormat:
+          $ref: '#/components/schemas/SemanticVocabularySourceFormat'
+        termCount:
+          type: integer
+          minimum: 0
+          description: Number of terms contained in this vocabulary.
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        deletedAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    SemanticVocabularyTerm:
+      type: object
+      example:
+        id: "3a2b1c0d-9e8f-4a7b-8c6d-5e4f3a2b1c0d"
+        semanticVocabularyId: "9f2c1b3e-7a44-4c1e-8b0a-2d6f5e9c1a77"
+        tenantId: "acme"
+        termUri: "https://schema.org/givenName"
+        labels:
+          en: "Given Name"
+          nl: "Voornaam"
+        descriptions:
+          en: "The first name of a person."
+        dataType: "xsd:string"
+        formatPattern: null
+        mandatory: true
+        parentTermUri: null
+        relatedTermUris:
+          - "https://schema.org/additionalName"
+        properties: {}
+      description: A canonical term within a [SemanticVocabulary].
+      required:
+        - id
+        - semanticVocabularyId
+        - tenantId
+        - termUri
+        - labels
+        - descriptions
+        - relatedTermUris
+        - properties
+      properties:
+        id:
+          type: string
+          format: uuid
+        semanticVocabularyId:
+          type: string
+          format: uuid
+        tenantId:
+          type: string
+        termUri:
+          type: string
+          description: Canonical URI uniquely identifying this term (e.g. `https://schema.org/givenName`).
+        labels:
+          type: object
+          additionalProperties:
+            type: string
+          description: Locale-keyed display labels.
+          example:
+            en: Given Name
+            nl: Voornaam
+        descriptions:
+          type: object
+          additionalProperties:
+            type: string
+          description: Locale-keyed descriptions.
+        dataType:
+          type: string
+          nullable: true
+          description: Expected data type for values of this term (e.g. `xsd:string`, `xsd:date`).
+        formatPattern:
+          type: string
+          nullable: true
+          description: Optional regex or format pattern that values must match.
+        mandatory:
+          type: boolean
+          default: false
+          description: Whether attributes referencing this term should be required by default.
+        parentTermUri:
+          type: string
+          nullable: true
+          description: URI of the broader/parent term in a hierarchical vocabulary.
+        relatedTermUris:
+          type: array
+          items:
+            type: string
+          description: URIs of terms that are semantically related to this one.
+        properties:
+          type: object
+          additionalProperties:
+            type: string
+          description: Additional key-value metadata associated with this term.
+
+    SkosConceptScheme:
+      type: object
+      example:
+        id: "7c1d2e3f-4a5b-4c6d-8e9f-0a1b2c3d4e5f"
+        semanticVocabularyId: "9f2c1b3e-7a44-4c1e-8b0a-2d6f5e9c1a77"
+        tenantId: "acme"
+        schemeUri: "https://example.org/schemes/country"
+        name: "ISO 3166-1 countries"
+        labels:
+          en: "Countries"
+        concepts:
+          - uri: "https://example.org/country/NL"
+            code: "NL"
+            labels:
+              en: "Netherlands"
+              nl: "Nederland"
+            broader: null
+            narrower: []
+      description: |
+        A SKOS (Simple Knowledge Organization System) concept scheme belonging to a vocabulary.
+        Groups related concepts into a coherent controlled vocabulary that attribute entry codes
+        can reference.
+      required:
+        - id
+        - semanticVocabularyId
+        - tenantId
+        - schemeUri
+        - name
+        - labels
+        - concepts
+      properties:
+        id:
+          type: string
+          format: uuid
+        semanticVocabularyId:
+          type: string
+          format: uuid
+        tenantId:
+          type: string
+        schemeUri:
+          type: string
+          description: Canonical URI identifying this concept scheme.
+        name:
+          type: string
+        labels:
+          type: object
+          additionalProperties:
+            type: string
+          description: Locale-keyed display labels for the scheme.
+        concepts:
+          type: array
+          items:
+            $ref: '#/components/schemas/SkosConcept'
+
+    SkosConcept:
+      type: object
+      example:
+        uri: "https://example.org/country/NL"
+        code: "NL"
+        labels:
+          en: "Netherlands"
+          nl: "Nederland"
+        broader: "https://example.org/region/EU"
+        narrower: []
+      description: A concept within a [SkosConceptScheme]. May form hierarchies via `broader`/`narrower` relationships.
+      required: [uri, code, labels, narrower]
+      properties:
+        uri:
+          type: string
+          description: Canonical URI identifying this concept.
+        code:
+          type: string
+          description: Short code or notation for this concept (e.g. an ISO country code).
+        labels:
+          type: object
+          additionalProperties:
+            type: string
+          description: Locale-keyed preferred labels for this concept.
+        broader:
+          type: string
+          nullable: true
+          description: URI of the parent (broader) concept, or null for top-level concepts.
+        narrower:
+          type: array
+          items:
+            type: string
+          description: URIs of child (narrower) concepts in the hierarchy.
+
+    SemanticVocabularySourceFormat:
+      type: string
+      description: Serialization format of the source from which a vocabulary was imported.
+      enum:
+        - JSON_LD
+        - RDF_XML
+        - TURTLE
+        - SKOS
+        - OCA
+        - CUSTOM

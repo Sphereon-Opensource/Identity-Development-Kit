@@ -16,17 +16,23 @@ kotlin {
     jvmToolchain(17)
 }
 
+// The root settings loads the canonical published platform version before build scripts.
+val idkArtifactVersion = rootProject.extra["platformVersion"].toString()
+
 dependencies {
     implementation(projects.testsOidfConformanceOid4vc)
-    implementation(projects.walletRunner)
-    implementation(projects.walletAppPublic)
-    implementation(projects.libWalletPublic)
-    implementation(projects.libWalletInteractionPublic)
-    implementation(projects.libWalletInteractionProtocolOid4vci)
-    implementation(projects.libWalletInteractionProtocolOid4vp)
+    // Product publications are owned by the standalone wallet repository; SDK libraries
+    // below are owned by the IDK wallet-lib pack. Both retain their published IDK coordinates.
+    implementation("com.sphereon.idk:wallet-runner:$idkArtifactVersion")
+    implementation("com.sphereon.idk:wallet-app-public:$idkArtifactVersion")
+    implementation("com.sphereon.idk:lib-wallet-public:$idkArtifactVersion")
+    implementation("com.sphereon.idk:lib-wallet-interaction-public:$idkArtifactVersion")
+    implementation("com.sphereon.idk:lib-wallet-interaction-protocol-oid4vci:$idkArtifactVersion")
+    implementation("com.sphereon.idk:lib-wallet-interaction-protocol-oid4vp:$idkArtifactVersion")
     implementation(sphereonlib.org.jetbrains.kotlinx.coroutines.core)
     implementation(sphereonlib.org.jetbrains.kotlinx.serialization.json)
 
+    testImplementation("com.sphereon.idk:wallet-app-impl:$idkArtifactVersion")
     testImplementation(kotlin("test"))
     testImplementation(sphereonlib.org.jetbrains.kotlinx.coroutines.test)
     testImplementation(sphereonlib.org.junit.jupiter.junit.jupiter.engine)
@@ -39,7 +45,10 @@ tasks.withType<Test>().configureEach {
     val evidenceDirectory =
         System.getProperty("oidf.evidence.dir")
             ?: providers.gradleProperty("oidf.evidence.dir").orNull
-            ?: layout.buildDirectory.dir("oidf-evidence").get().asFile.absolutePath
+            ?: layout.buildDirectory
+                .dir("oidf-evidence")
+                .get()
+                .asFile.absolutePath
     systemProperty("oidf.evidence.dir", evidenceDirectory)
     listOf(
         "oidf.suite.baseUrl",

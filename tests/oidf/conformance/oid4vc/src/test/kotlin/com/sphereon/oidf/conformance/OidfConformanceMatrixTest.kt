@@ -20,7 +20,13 @@ class OidfConformanceMatrixTest {
     @Test
     fun `matrix covers final and HAIP plans for issuer verifier and both wallet protocols`() {
         assertEquals(8, OidfConformanceMatrix.requiredPlans.size)
-        assertEquals(8, OidfConformanceMatrix.requiredPlans.map { it.planName }.toSet().size)
+        assertEquals(
+            8,
+            OidfConformanceMatrix.requiredPlans
+                .map { it.planName }
+                .toSet()
+                .size
+        )
 
         assertEquals(
             setOf(OidfProfile.FINAL_1_0, OidfProfile.HAIP_1_0),
@@ -197,7 +203,12 @@ class OidfConformanceMatrixTest {
                                 )
                             },
                     )
-            val credential = Json.parseToJsonElement(config).jsonObject.getValue("credential").jsonObject
+            val credential =
+                Json
+                    .parseToJsonElement(config)
+                    .jsonObject
+                    .getValue("credential")
+                    .jsonObject
 
             assertEquals(certificate, credential.getValue("trust_anchor_pem").jsonPrimitive.content)
             assertEquals(certificate, credential.getValue("status_list_trust_anchor_pem").jsonPrimitive.content)

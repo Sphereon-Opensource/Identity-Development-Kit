@@ -1,0 +1,135 @@
+openapi: 3.0.4
+info:
+  title: DID Hosting API
+  version: 0.1.0
+  description: |
+    Public, cacheable surface that hosts did:web and did:webvh
+    DID documents at the locations a wallet or resolver fetches them from:
+    `https://<host>/.well-known/did.json` when the DID has no path, or
+    `https://<host>/<path>/did.json` when it does. The path is encoded in the DID
+    as colon-delimited segments, so `did:web:example.com:tenants:acme` is served at
+    `https://example.com/tenants/acme/did.json`.
+
+    The surface is method-agnostic. A location backed by a did:web DID returns the
+    stored document verbatim. A location backed by a did:webvh DID returns the
+    did:web companion translation of its latest state (SCID stripped, identifiers
+    rewritten, plus an `alsoKnownAs` pointing back to the did:webvh) so that a plain
+    did:web resolver transparently interoperates. A host+path is managed by at most
+    one DID (did:web and did:webvh can never both manage the same location).
+
+    Responses carry `Content-Type: application/did+json` and a `Cache-Control`
+    header derived from the method's cache TTL. In multi-tenant deployments, the
+    tenant is resolved from the request host upstream.
+    Requesting a location with no hosted DID returns 404; a deactivated DID returns
+    410. The did:webvh verifiable log (`did.jsonl`) and witness file are served by a
+    separate, later surface.
+
+servers:
+  - url: /
+    description: Host root. did:web requires the document at the host's well-known location.
+
+tags:
+  - name: DID Hosting
+    description: Serve hosted did:web / did:webvh documents.
+
+paths:
+  /.well-known/did.json:
+    get:
+      tags: [DID Hosting]
+      operationId: getDidDocument
+      security: []
+      summary: Resolve the hosted DID document for a path-less DID.
+      description: |
+        Returns the `did.json` for the DID whose web location is the request host
+        with no path (`did:web:<host>` or the did:web companion of
+        `did:webvh:<scid>:<host>`).
+      responses:
+        '200':
+          $ref: '#/components/responses/DidDocument'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '410':
+          $ref: '#/components/responses/Gone'
+
+  /{path}/did.json:
+    get:
+      tags: [DID Hosting]
+      operationId: getDidDocumentAtPath
+      security: []
+      summary: Resolve the hosted DID document for a DID with a path.
+      description: |
+        Returns the `did.json` for the DID whose web location is the request host
+        plus a path. `path` is one or more URL segments (the colon-delimited DID
+        path segments rendered with slashes), up to the configured maximum depth.
+        For example `did:web:example.com:tenants:acme` is served at
+        `/tenants/acme/did.json`.
+      parameters:
+        - name: path
+          in: path
+          required: true
+          description: One or more path segments (slash-separated) preceding `did.json`.
+          schema:
+            type: string
+          example: tenants/acme
+      responses:
+        '200':
+          $ref: '#/components/responses/DidDocument'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '410':
+          $ref: '#/components/responses/Gone'
+
+components:
+  responses:
+    DidDocument:
+      description: The hosted DID document.
+      headers:
+        Cache-Control:
+          description: Cache directive derived from the DID method's resolution TTL.
+          schema:
+            type: string
+          example: public, max-age=300
+      content:
+        application/did+json:
+          schema:
+            type: object
+            description: A W3C DID document.
+          examples:
+            didWeb:
+              summary: A did:web document served verbatim.
+              value:
+                '@context': https://www.w3.org/ns/did/v1
+                id: did:web:example.com:tenants:acme
+            didWebvhCompanion:
+              summary: The did:web companion of a did:webvh DID, with alsoKnownAs.
+              value:
+                '@context': https://www.w3.org/ns/did/v1
+                id: did:web:example.com
+                alsoKnownAs:
+                  - did:webvh:QmScid123:example.com
+    NotFound:
+      description: No DID document is hosted at this location.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Gone:
+      description: The DID hosted at this location has been deactivated.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+          required: [code, message]
+      required: [error]

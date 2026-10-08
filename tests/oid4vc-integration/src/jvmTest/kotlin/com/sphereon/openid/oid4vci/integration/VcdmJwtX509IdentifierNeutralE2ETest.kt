@@ -7,12 +7,13 @@
 
 package com.sphereon.openid.oid4vci.integration
 
-import com.sphereon.core.api.decodeFromBase64Url
 import com.sphereon.core.api.IdkResult
-import com.sphereon.core.compat.Uuid
+import com.sphereon.core.api.decodeFromBase64Url
+import com.sphereon.core.api.model.Origin
 import com.sphereon.core.api.session.asCoreApiServiceGraph
-import com.sphereon.crypto.core.KeyVisibility
+import com.sphereon.core.compat.Uuid
 import com.sphereon.crypto.core.KeyInfo
+import com.sphereon.crypto.core.KeyVisibility
 import com.sphereon.crypto.core.ManagedKeyInfoType
 import com.sphereon.crypto.core.ResourceControlMode
 import com.sphereon.crypto.core.generic.SignatureAlgorithm
@@ -21,28 +22,27 @@ import com.sphereon.crypto.core.jose.JwkUse
 import com.sphereon.crypto.core.kms.asKeyManagerServiceGraph
 import com.sphereon.crypto.key.persistence.KeyReferenceRecord
 import com.sphereon.crypto.key.persistence.KeyReferenceStore
-import com.sphereon.core.api.model.Origin
 import com.sphereon.crypto.kms.provider.software.SoftwareKmsProviderConfig
 import com.sphereon.crypto.kms.provider.software.SoftwareKmsProviderFactoryImpl
 import com.sphereon.crypto.resolution.IdentifierService
 import com.sphereon.crypto.resolution.extern.ExternalIdentifierResult
 import com.sphereon.crypto.resolution.extern.ExternalIdentifierX5cOpts
 import com.sphereon.di.session.SessionScope
+import com.sphereon.oauth2.common.model.AuthorizationRequest
+import com.sphereon.oauth2.common.model.AuthorizationResponse
 import com.sphereon.openid.oid4vc.common.CredentialFormat
 import com.sphereon.openid.oid4vci.common.model.CredentialConfigurationSupported
 import com.sphereon.openid.oid4vci.common.model.CredentialDefinition
 import com.sphereon.openid.oid4vci.common.model.CredentialRequest
+import com.sphereon.openid.oid4vci.issuer.format.CredentialFormatHandler
 import com.sphereon.openid.oid4vci.issuer.format.IssuanceContext
 import com.sphereon.openid.oid4vci.issuer.format.SigningKeyMode
-import com.sphereon.openid.oid4vci.issuer.format.CredentialFormatHandler
-import com.sphereon.openid.oid4vci.issuer.impl.format.JwtVcJsonFormatHandler
-import com.sphereon.openid.oid4vci.issuer.impl.format.VcLdJsonJwtFormatHandler
 import com.sphereon.openid.oid4vp.common.ClientIdScheme
 import com.sphereon.openid.oid4vp.common.ClientMetadata
 import com.sphereon.openid.oid4vp.common.ResponseMode
 import com.sphereon.openid.oid4vp.common.VpToken
-import com.sphereon.openid.oid4vp.common.vpToken
 import com.sphereon.openid.oid4vp.common.jwtVcFormatInfo
+import com.sphereon.openid.oid4vp.common.vpToken
 import com.sphereon.openid.oid4vp.dcql.DcqlCredentialQuery
 import com.sphereon.openid.oid4vp.dcql.DcqlQuery
 import com.sphereon.openid.oid4vp.dcql.w3cVcMeta
@@ -51,15 +51,13 @@ import com.sphereon.openid.oid4vp.holder.HolderJwtVpSigningIdentifier
 import com.sphereon.openid.oid4vp.holder.Oid4vpHolder
 import com.sphereon.openid.oid4vp.holder.ResolvedOid4vpRequest
 import com.sphereon.openid.oid4vp.holder.SelectedCredential
+import com.sphereon.openid.oid4vp.holder.VerifierInfo
 import com.sphereon.openid.oid4vp.verifier.CreateAuthorizationRequestArgs
 import com.sphereon.openid.oid4vp.verifier.Oid4vpVerifierService
 import com.sphereon.openid.oid4vp.verifier.ParseAuthorizationResponseArgs
-import com.sphereon.openid.oid4vp.verifier.TrustedAuthenticationResolution
 import com.sphereon.openid.oid4vp.verifier.TrustedAuthenticationPurpose
+import com.sphereon.openid.oid4vp.verifier.TrustedAuthenticationResolution
 import com.sphereon.openid.oid4vp.verifier.ValidateAuthorizationResponseArgs
-import com.sphereon.openid.oid4vp.holder.VerifierInfo
-import com.sphereon.oauth2.common.model.AuthorizationRequest
-import com.sphereon.oauth2.common.model.AuthorizationResponse
 import com.sphereon.wallet.unit.SecureComponentUsage
 import dev.zacsweers.metro.ContributesTo
 import kotlinx.coroutines.test.runTest
@@ -82,11 +80,15 @@ import kotlin.time.Clock
 /** Production commands and the canonical external identifier resolver used by this E2E. */
 @ContributesTo(SessionScope::class)
 interface VcdmJwtX509TestGraph {
-    val jwtVcJsonFormatHandler: JwtVcJsonFormatHandler
-    val vcLdJsonJwtFormatHandler: VcLdJsonJwtFormatHandler
+    val credentialFormatHandlers: Set<CredentialFormatHandler>
+    val jwtVcJsonFormatHandler: CredentialFormatHandler
+        get() = credentialFormatHandlers.single { it.supportedFormat == CredentialFormat.JWT_VC_JSON.value }
+    val vcLdJsonJwtFormatHandler: CredentialFormatHandler
+        get() = credentialFormatHandlers.single { it.supportedFormat == CredentialFormat.JWT_VC_JSON_LD.value }
     val oid4vpHolder: Oid4vpHolder
     val oid4vpVerifierService: Oid4vpVerifierService
     val identifierService: IdentifierService
+
     /** Existing KMS key-reference authority used by SoftwareWscd's fail-closed owner check. */
     val keyReferenceStore: KeyReferenceStore
 }
@@ -112,35 +114,46 @@ class VcdmJwtX509IdentifierNeutralE2ETest {
     fun x509Vcdm11AndVcdm20JwtIssuePresentAndVerifyUsesOneCredentialPerVp() =
         runTest {
             for (version in JwtVersion.entries) {
-            val flow = createFlow("x509-vcdm-valid-${version.name.lowercase()}", version)
-            val issuerResolution = resolve(flow.issuerChain, flow.issuerChain)
-            val holderResolution = resolve(flow.holderChain, flow.holderChain)
+                val flow = createFlow("x509-vcdm-valid-${version.name.lowercase()}", version)
+                val issuerResolution = resolve(flow.issuerChain, flow.issuerChain)
+                val holderResolution = resolve(flow.holderChain, flow.holderChain)
 
-            assertTrustedResolution(issuerResolution, assertIs<Jwk>(flow.issuerKey.toManagedPublicKeyInfo().key))
-            assertTrustedResolution(holderResolution, flow.holderKey.publicJwk)
+                assertTrustedResolution(issuerResolution, assertIs<Jwk>(flow.issuerKey.toManagedPublicKeyInfo().key))
+                assertTrustedResolution(holderResolution, flow.holderKey.publicJwk)
 
-            val validation = validate(flow, trusted(issuer, flow.issuerChain, purpose = TrustedAuthenticationPurpose.CREDENTIAL_ISSUER), trusted(holder, flow.holderChain))
-            assertTrue(
-                validation.isOk,
-                "production verifier must return a structured result: ${if (validation.isErr) validation.error else ""}",
-            )
-            assertTrue(validation.value.valid, "issuer and holder X.509 signatures must verify: ${validation.value.errors}")
-            assertEquals(1, flow.response.value.vpToken!!.presentationCount)
-            assertEquals(1, flow.response.value.vpToken!!.getPresentation(QUERY_ID)!!.size)
+                val validation = validate(flow, trusted(issuer, flow.issuerChain, purpose = TrustedAuthenticationPurpose.CREDENTIAL_ISSUER), trusted(holder, flow.holderChain))
+                assertTrue(
+                    validation.isOk,
+                    "production verifier must return a structured result: ${if (validation.isErr) validation.error else ""}",
+                )
+                assertTrue(validation.value.valid, "issuer and holder X.509 signatures must verify: ${validation.value.errors}")
+                assertEquals(
+                    1,
+                    flow.response.value.vpToken!!
+                        .presentationCount
+                )
+                assertEquals(
+                    1,
+                    flow.response.value.vpToken!!
+                        .getPresentation(QUERY_ID)!!
+                        .size
+                )
 
-            val vp = flow.response.value.vpToken!!.getSinglePresentation(QUERY_ID)!!
-            val vpHeader = jwtHeader(vp)
-            assertEquals(flow.holderChain, vpHeader["x5c"]?.let { (it as JsonArray).map { item -> item.jsonPrimitive.content } })
-            assertTrue(vpHeader["kid"] == null, "X.509 holder proof must not carry a kid")
-            assertVpShape(vp, version)
+                val vp =
+                    flow.response.value.vpToken!!
+                        .getSinglePresentation(QUERY_ID)!!
+                val vpHeader = jwtHeader(vp)
+                assertEquals(flow.holderChain, vpHeader["x5c"]?.let { (it as JsonArray).map { item -> item.jsonPrimitive.content } })
+                assertTrue(vpHeader["kid"] == null, "X.509 holder proof must not carry a kid")
+                assertVpShape(vp, version)
 
-            val credentialHeader = jwtHeader(flow.credential)
-            assertEquals(flow.issuerChain, credentialHeader["x5c"]?.let { (it as JsonArray).map { item -> item.jsonPrimitive.content } })
-            assertTrue(credentialHeader["kid"] == null, "X.509 issuer proof must not carry a kid")
-            assertCredentialShape(flow.credential, version)
-            val vpPayload = jwtPayload(vp)
-            val credentials = (if (version == JwtVersion.V11) vpPayload["vp"]!!.jsonObject else vpPayload)["verifiableCredential"] as JsonArray
-            assertEquals(1, credentials.size, "each VP must contain exactly one credential")
+                val credentialHeader = jwtHeader(flow.credential)
+                assertEquals(flow.issuerChain, credentialHeader["x5c"]?.let { (it as JsonArray).map { item -> item.jsonPrimitive.content } })
+                assertTrue(credentialHeader["kid"] == null, "X.509 issuer proof must not carry a kid")
+                assertCredentialShape(flow.credential, version)
+                val vpPayload = jwtPayload(vp)
+                val credentials = (if (version == JwtVersion.V11) vpPayload["vp"]!!.jsonObject else vpPayload)["verifiableCredential"] as JsonArray
+                assertEquals(1, credentials.size, "each VP must contain exactly one credential")
             }
         }
 
@@ -188,7 +201,7 @@ class VcdmJwtX509IdentifierNeutralE2ETest {
     @Test
     fun invalidAndUntrustedX509ChainsAreRejectedByProductionResolverAndVerifier() =
         runTest {
-            val flow = createFlow("x509-vcdm-negative")
+            var flow = createFlow("x509-vcdm-negative-malformed")
             val malformed = listOf(Base64.Default.encode("not-an-x509-certificate".encodeToByteArray()))
             val malformedResolution = runCatching { identifierService().resolve(ExternalIdentifierX5cOpts(malformed, verify = true)) }.getOrNull()
             val malformedResult = malformedResolution?.takeIf { it.isOk }?.value
@@ -207,6 +220,7 @@ class VcdmJwtX509IdentifierNeutralE2ETest {
 
             val unrelated = createKey("x509-vcdm-unrelated")
             val unrelatedChain = certificateChain(unrelated)
+            flow = createFlow("x509-vcdm-negative-untrusted")
             val untrustedResolution = resolve(flow.issuerChain, unrelatedChain)
             assertTrue(
                 untrustedResolution.isOk,
@@ -245,7 +259,10 @@ class VcdmJwtX509IdentifierNeutralE2ETest {
             )
         }
 
-    private suspend fun createFlow(aliasPrefix: String, version: JwtVersion = JwtVersion.V20): Flow {
+    private suspend fun createFlow(
+        aliasPrefix: String,
+        version: JwtVersion = JwtVersion.V20
+    ): Flow {
         val issuerKey = createKey("$aliasPrefix-issuer")
         val holderKey = provisionHolder("$aliasPrefix-holder")
         val issuerChain = certificateChain(issuerKey)
@@ -253,20 +270,21 @@ class VcdmJwtX509IdentifierNeutralE2ETest {
         val credential = issue(issuerKey.alias, version)
         val query = DcqlQuery(credentials = listOf(query(version)))
         val request =
-            verifierService().createAuthorizationRequest(
-                CreateAuthorizationRequestArgs(
-                    instanceId = "x509-vcdm-verifier",
-                    dcqlQuery = query,
-                    clientId = verifier,
-                    responseUri = "$verifier/response",
-                    responseMode = ResponseMode.DIRECT_POST,
-                    nonce = NONCE,
-                    state = "x509-vcdm-state",
-                    clientMetadata = ClientMetadata(vpFormatsSupported = mapOf(version.format.value to jwtVcFormatInfo(listOf("ES256")))),
-                ),
-            ).also {
-                assertTrue(it.isOk, "production X.509 verifier request must be created: ${if (it.isErr) it.error else ""}")
-            }.value
+            verifierService()
+                .createAuthorizationRequest(
+                    CreateAuthorizationRequestArgs(
+                        instanceId = "x509-vcdm-verifier",
+                        dcqlQuery = query,
+                        clientId = verifier,
+                        responseUri = "$verifier/response",
+                        responseMode = ResponseMode.DIRECT_POST,
+                        nonce = NONCE,
+                        state = "x509-vcdm-state-$aliasPrefix-${version.name.lowercase()}",
+                        clientMetadata = ClientMetadata(vpFormatsSupported = mapOf(version.format.value to jwtVcFormatInfo(listOf("ES256")))),
+                    ),
+                ).also {
+                    assertTrue(it.isOk, "production X.509 verifier request must be created: ${if (it.isErr) it.error else ""}")
+                }.value
         val resolved =
             ResolvedOid4vpRequest(
                 request = request.request,
@@ -303,7 +321,10 @@ class VcdmJwtX509IdentifierNeutralE2ETest {
         return Flow(version, issuerKey, holderKey, issuerChain, holderChain, credential, query, request.request, response)
     }
 
-    private suspend fun issue(alias: String, version: JwtVersion = JwtVersion.V20): String {
+    private suspend fun issue(
+        alias: String,
+        version: JwtVersion = JwtVersion.V20
+    ): String {
         ctx.registerIssuerSigningKey(alias)
         val configuration =
             CredentialConfigurationSupported(
@@ -312,7 +333,8 @@ class VcdmJwtX509IdentifierNeutralE2ETest {
             )
         val graph = ctx.session.graph as VcdmJwtX509TestGraph
         val handler: CredentialFormatHandler = if (version == JwtVersion.V11) graph.jwtVcJsonFormatHandler else graph.vcLdJsonJwtFormatHandler
-        val result = handler.issueCredential(
+        val result =
+            handler.issueCredential(
                 CredentialRequest(format = version.format.value),
                 IssuanceContext(
                     subject = "$holder/subject",
@@ -336,7 +358,10 @@ class VcdmJwtX509IdentifierNeutralE2ETest {
     }
 
     private suspend fun createKey(alias: String): ManagedKeyInfoType<*> {
-        val kms = ctx.session.graph.asKeyManagerServiceGraph().keyManagerService
+        val kms =
+            ctx.session.graph
+                .asKeyManagerServiceGraph()
+                .keyManagerService
         registerAutoCertificateProvider(alias)
         val generated = kms.generateKeyResult(alias = alias, use = JwkUse.sig, alg = SignatureAlgorithm.ECDSA_SHA256)
         assertTrue(generated.isOk, "software KMS key generation must succeed: ${if (generated.isErr) generated.error else ""}")
@@ -390,7 +415,10 @@ class VcdmJwtX509IdentifierNeutralE2ETest {
         // the provider id returned by that resolution. The provider id carried by an older WSCA
         // fixture handle can be stale after another auto-certificate provider is registered, so
         // index the exact provider that the production rehydration path will use.
-        val kms = ctx.session.graph.asKeyManagerServiceGraph().keyManagerService
+        val kms =
+            ctx.session.graph
+                .asKeyManagerServiceGraph()
+                .keyManagerService
         val resolved =
             kms
                 .getKeyResult(KeyInfo<Nothing>(alias = alias, keyVisibility = KeyVisibility.PRIVATE))
@@ -402,7 +430,10 @@ class VcdmJwtX509IdentifierNeutralE2ETest {
         val providerId = assertNotNull(resolved.providerId, "resolved holder key provider reference is missing")
         // Match the production KMS registration path exactly: its generated-key index and
         // ManagedKeyStoreSelector both scope references to the immutable session tenant.
-        val tenantId = ctx.session.asCoreApiServiceGraph().serviceExecution.sessionContext.context.tenant.tenantId
+        val tenantId =
+            ctx.session
+                .asCoreApiServiceGraph()
+                .serviceExecution.sessionContext.context.tenant.tenantId
         val store = (ctx.session.graph as VcdmJwtX509TestGraph).keyReferenceStore
         val now = Clock.System.now()
         val existing =
@@ -443,7 +474,10 @@ class VcdmJwtX509IdentifierNeutralE2ETest {
     }
 
     private suspend fun registerAutoCertificateProvider(alias: String) {
-        val kms = ctx.session.graph.asKeyManagerServiceGraph().keyManagerService
+        val kms =
+            ctx.session.graph
+                .asKeyManagerServiceGraph()
+                .keyManagerService
         val factory = (ctx.app as SoftwareKmsProviderFactoryImpl.Graph).softwareKmsProvider
         val provider =
             factory.create(
@@ -455,10 +489,15 @@ class VcdmJwtX509IdentifierNeutralE2ETest {
 
     private fun certificateChain(key: ManagedKeyInfoType<*>): List<String> = assertNotNull(key.x5c).toList()
 
-    private suspend fun resolve(chain: List<String>, anchors: List<String>) =
-        identifierService().resolve(ExternalIdentifierX5cOpts(chain, verify = true, trustAnchors = anchors))
+    private suspend fun resolve(
+        chain: List<String>,
+        anchors: List<String>
+    ) = identifierService().resolve(ExternalIdentifierX5cOpts(chain, verify = true, trustAnchors = anchors))
 
-    private fun assertTrustedResolution(resolution: com.sphereon.core.api.IdkResult<*, *>, key: Jwk) {
+    private fun assertTrustedResolution(
+        resolution: com.sphereon.core.api.IdkResult<*, *>,
+        key: Jwk
+    ) {
         assertTrue(resolution.isOk, "production X.509 identifier resolution must succeed: ${if (resolution.isErr) resolution.error else ""}")
         val result = assertIs<ExternalIdentifierResult.X5c>(resolution.value)
         assertFalse(result.verificationResult.error, "trusted certificate path must not report an error: ${result.verificationResult}")
@@ -468,22 +507,35 @@ class VcdmJwtX509IdentifierNeutralE2ETest {
         assertEquals(key.y, resolvedJwk.y, "certificate public key must match WSCA public material")
     }
 
-    private fun trusted(controller: String, chain: List<String>, anchors: List<String> = chain, purpose: TrustedAuthenticationPurpose = TrustedAuthenticationPurpose.HOLDER) =
-        TrustedAuthenticationResolution(
-            controller = controller,
-            purpose = purpose,
-            identifier = ExternalIdentifierX5cOpts(chain, verify = true, trustAnchors = anchors),
-        )
+    private fun trusted(
+        controller: String,
+        chain: List<String>,
+        anchors: List<String> = chain,
+        purpose: TrustedAuthenticationPurpose = TrustedAuthenticationPurpose.HOLDER
+    ) = TrustedAuthenticationResolution(
+        controller = controller,
+        purpose = purpose,
+        identifier = ExternalIdentifierX5cOpts(chain, verify = true, trustAnchors = anchors),
+    )
 
-    private suspend fun validate(flow: Flow, issuerTrust: TrustedAuthenticationResolution, holderTrust: TrustedAuthenticationResolution) =
-        verifierService().let { service ->
-            val response = flow.response.value
-            val parsed =
-                service.parseAuthorizationResponse(
+    private suspend fun validate(
+        flow: Flow,
+        issuerTrust: TrustedAuthenticationResolution,
+        holderTrust: TrustedAuthenticationResolution
+    ) = verifierService().let { service ->
+        val response = flow.response.value
+        val parsed =
+            service
+                .parseAuthorizationResponse(
                     ParseAuthorizationResponseArgs(
                         responseParams =
                             mapOf(
-                                "vp_token" to json.encodeToString(kotlinx.serialization.json.JsonElement.serializer(), VpToken.run { response.vpToken!!.toJson() }),
+                                "vp_token" to
+                                    json.encodeToString(
+                                        kotlinx.serialization.json.JsonElement
+                                            .serializer(),
+                                        VpToken.run { response.vpToken!!.toJson() }
+                                    ),
                                 "state" to assertNotNull(response.state),
                             ),
                         originalRequest = flow.request,
@@ -491,16 +543,16 @@ class VcdmJwtX509IdentifierNeutralE2ETest {
                 ).also {
                     assertTrue(it.isOk, "production X.509 response parser must accept holder output: ${if (it.isErr) it.error else ""}")
                 }
-            service.validateAuthorizationResponse(
-                ValidateAuthorizationResponseArgs(
-                    parsedResponse = parsed.value,
-                    originalRequest = flow.request,
-                    dcqlQuery = flow.query,
-                    expectedNonce = NONCE,
-                    trustedAuthentications = listOf(issuerTrust, holderTrust),
-                ),
-            )
-        }
+        service.validateAuthorizationResponse(
+            ValidateAuthorizationResponseArgs(
+                parsedResponse = parsed.value,
+                originalRequest = flow.request,
+                dcqlQuery = flow.query,
+                expectedNonce = NONCE,
+                trustedAuthentications = listOf(issuerTrust, holderTrust),
+            ),
+        )
+    }
 
     private fun verifierService(): Oid4vpVerifierService = (ctx.session.graph as VcdmJwtX509TestGraph).oid4vpVerifierService
 
@@ -513,13 +565,14 @@ class VcdmJwtX509IdentifierNeutralE2ETest {
             meta = w3cVcMeta(listOf("VerifiableCredential", version.credentialType)),
         )
 
-    private fun jwtHeader(jwt: String) =
-        json.parseToJsonElement(jwt.substringBefore('.').decodeFromBase64Url().decodeToString()).jsonObject
+    private fun jwtHeader(jwt: String) = json.parseToJsonElement(jwt.substringBefore('.').decodeFromBase64Url().decodeToString()).jsonObject
 
-    private fun jwtPayload(jwt: String) =
-        json.parseToJsonElement(jwt.split('.')[1].decodeFromBase64Url().decodeToString()).jsonObject
+    private fun jwtPayload(jwt: String) = json.parseToJsonElement(jwt.split('.')[1].decodeFromBase64Url().decodeToString()).jsonObject
 
-    private fun assertCredentialShape(jwt: String, version: JwtVersion) {
+    private fun assertCredentialShape(
+        jwt: String,
+        version: JwtVersion
+    ) {
         val header = jwtHeader(jwt)
         val payload = jwtPayload(jwt)
         assertEquals(version.credentialTyp, header["typ"]?.jsonPrimitive?.content)
@@ -545,7 +598,10 @@ class VcdmJwtX509IdentifierNeutralE2ETest {
         assertFalse(anonymousSubject.containsKey("id"), "credential subject must remain anonymous")
     }
 
-    private fun assertVpShape(jwt: String, version: JwtVersion) {
+    private fun assertVpShape(
+        jwt: String,
+        version: JwtVersion
+    ) {
         val header = jwtHeader(jwt)
         if (version == JwtVersion.V11) {
             assertEquals("JWT", header["typ"]?.jsonPrimitive?.content)

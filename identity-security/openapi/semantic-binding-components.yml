@@ -1,0 +1,476 @@
+openapi: 3.0.4
+info:
+  title: Semantic Binding API Components
+  version: 0.1.0
+  description: Entity schemas, enums, value objects, and path parameters for the Semantic Binding API.
+paths: {}
+components:
+  parameters:
+    BindingId:
+      name: id
+      in: path
+      required: true
+      description: Identifier of the binding record.
+      schema:
+        type: string
+        format: uuid
+
+  schemas:
+    # ---- Shared reference value objects ----------------------------------
+    SemanticConceptRefKind:
+      type: string
+      description: Which kind of semantic concept a [SemanticConceptRef] points at.
+      enum:
+        - CATALOG_ATTRIBUTE
+        - PROFILE_ROLE
+        - PROFILE
+
+    SemanticConceptRef:
+      type: object
+      example:
+        kind: CATALOG_ATTRIBUTE
+        catalogId: "9f2c1b3e-7a44-4c1e-8b0a-2d6f5e9c1a77"
+        attributePath: "address.postalCode"
+        profileId: null
+        roleId: null
+      description: |
+        A reference from a live binding into a concept in the semantic model, held by id (and
+        optional business-term path or object role). Discriminated by `kind`; which fields are
+        populated depends on it:
+          - `CATALOG_ATTRIBUTE`: `catalogId` (plus optional `attributePath`).
+          - `PROFILE_ROLE`: `profileId` and `roleId`.
+          - `PROFILE`: `profileId`.
+      required: [kind]
+      properties:
+        kind:
+          $ref: '#/components/schemas/SemanticConceptRefKind'
+        catalogId:
+          type: string
+          format: uuid
+          nullable: true
+          description: The data-domain id used by this binding's current wire contract.
+        attributePath:
+          type: string
+          nullable: true
+          description: |
+            Dot-separated business-term path within the referenced data-domain object type
+            (e.g. `address.postal_code`), supporting compound/nested concepts.
+        profileId:
+          type: string
+          format: uuid
+          nullable: true
+          description: The object-model id used by this binding's current wire contract.
+        roleId:
+          type: string
+          nullable: true
+          description: The object role id within the referenced object model.
+
+    ProfileRelationRef:
+      type: object
+      example:
+        profileId: "c4d5e6f7-8a9b-4c0d-8e1f-2a3b4c5d6e7f"
+        subjectRole: "employee"
+        objectRole: "employer"
+        relationType: "employed-by"
+      description: |
+        A reference into the object-model relationship a [SemanticRelationshipBinding] realizes,
+        held by object-model id plus the subject/object role ids and the relationship type.
+      required: [profileId, subjectRole, objectRole, relationType]
+      properties:
+        profileId:
+          type: string
+          format: uuid
+          description: The object-model id declaring the relationship.
+        subjectRole:
+          type: string
+          description: The object-model-local subject ObjectRole.id.
+        objectRole:
+          type: string
+          description: The object-model-local object ObjectRole.id.
+        relationType:
+          type: string
+          description: The directed relationship id, matching the object-model relationship's relationType.
+
+    # ---- Party-type binding ----------------------------------------------
+    SemanticPartyTypeBinding:
+      type: object
+      example:
+        id: "1b2c3d4e-5f60-4a71-8b92-0c1d2e3f4a5b"
+        tenantId: "acme"
+        partyType: "natural_person"
+        partySubtype: "employee"
+        semanticConceptRef:
+          kind: CATALOG_ATTRIBUTE
+          catalogId: "9f2c1b3e-7a44-4c1e-8b0a-2d6f5e9c1a77"
+        createdAt: "2026-01-15T09:30:00Z"
+        updatedAt: "2026-01-15T09:30:00Z"
+      description: |
+        Binds a party type (or subtype string) to a data-domain or object-model concept,
+        so records of that type carry meaning defined by the semantic model.
+      required: [id, tenantId, partyType, semanticConceptRef, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenantId:
+          type: string
+        partyType:
+          type: string
+          description: The party type this binding applies to (e.g. `organization`, `natural_person`).
+        partySubtype:
+          type: string
+          nullable: true
+          description: Optional non-blank CTI subtype string refining `partyType` (e.g. `department`).
+        semanticConceptRef:
+          $ref: '#/components/schemas/SemanticConceptRef'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    # ---- Party attribute value -------------------------------------------
+    SemanticPartyAttributeValue:
+      type: object
+      example:
+        id: "2c3d4e5f-6071-4b82-9ca3-1d2e3f4a5b6c"
+        tenantId: "acme"
+        partyId: "3a2b1c0d-9e8f-4a7b-8c6d-5e4f3a2b1c0d"
+        conceptRef:
+          kind: CATALOG_ATTRIBUTE
+          catalogId: "9f2c1b3e-7a44-4c1e-8b0a-2d6f5e9c1a77"
+          attributePath: "address.postalCode"
+        attributePath: "address.postalCode"
+        value: "1011AB"
+        createdAt: "2026-01-15T09:30:00Z"
+        updatedAt: "2026-01-15T09:30:00Z"
+      description: |
+        A semantically keyed value attached to a specific party record, addressed by a data-domain or
+        object-model business-term path so the value preserves its meaning. The value may be a scalar, an
+        array, or a nested object.
+      required: [id, tenantId, partyId, conceptRef, attributePath, value, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenantId:
+          type: string
+        partyId:
+          type: string
+          format: uuid
+          description: The party record this value belongs to.
+        conceptRef:
+          $ref: '#/components/schemas/SemanticConceptRef'
+        attributePath:
+          type: string
+          description: |
+            Dot-separated business-term path the value populates (e.g.
+            `address.postal_code`); supports nested compound attributes.
+        value:
+          description: The attribute value as arbitrary JSON (scalar, array, or nested object).
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    # ---- Relationship binding --------------------------------------------
+    SemanticRelationshipBinding:
+      type: object
+      example:
+        id: "4e5f6071-8293-4ca4-9db5-2e3f4a5b6c7d"
+        tenantId: "acme"
+        relationshipInstanceId: null
+        subjectPartyId: "3a2b1c0d-9e8f-4a7b-8c6d-5e4f3a2b1c0d"
+        objectPartyId: "7c1d2e3f-4a5b-4c6d-8e9f-0a1b2c3d4e5f"
+        relationType: "employed-by"
+        profileRelationRef:
+          profileId: "c4d5e6f7-8a9b-4c0d-8e1f-2a3b4c5d6e7f"
+          subjectRole: "employee"
+          objectRole: "employer"
+          relationType: "employed-by"
+        createdAt: "2026-01-15T09:30:00Z"
+        updatedAt: "2026-01-15T09:30:00Z"
+      description: |
+        Binds a relationship between two party records (a subject and an object, of a governed
+        relationship type) to an object-model relationship, so a relationship between actual parties carries its
+        use-case semantics. The same subject party may appear in several bindings with different
+        governed relation types (multi-role by construction).
+      required: [id, tenantId, subjectPartyId, objectPartyId, relationType, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenantId:
+          type: string
+        relationshipInstanceId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Optional id of the underlying relationship record the binding annotates.
+        subjectPartyId:
+          type: string
+          format: uuid
+          description: The live subject party (the relation's subject endpoint).
+        objectPartyId:
+          type: string
+          format: uuid
+          description: The live object party (the relation's object endpoint).
+        relationType:
+          type: string
+          description: The governed directed relation id from the relationship-type registry.
+        profileRelationRef:
+          allOf:
+            - $ref: '#/components/schemas/ProfileRelationRef'
+          type: object
+          nullable: true
+          description: Optional reference to the object-model relationship this instance realizes.
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    # ---- Service capability ----------------------------------------------
+    SemanticServiceCapability:
+      type: object
+      example:
+        id: "5f607182-93a4-4db5-8ec6-3f4a5b6c7d8e"
+        tenantId: "acme"
+        serviceId: "issuer-employee-badge"
+        supportedProfileIds:
+          - "c4d5e6f7-8a9b-4c0d-8e1f-2a3b4c5d6e7f"
+        supportedSetIds: []
+        supportedChannelIds: []
+        supportedConcepts:
+          - kind: PROFILE
+            profileId: "c4d5e6f7-8a9b-4c0d-8e1f-2a3b4c5d6e7f"
+        createdAt: "2026-01-15T09:30:00Z"
+        updatedAt: "2026-01-15T09:30:00Z"
+      description: |
+        Declares which semantic concepts, object models, data products, and channels a service can operate
+        on, so a portal/form/API/issuer/verifier can advertise its semantic surface.
+      required:
+        - id
+        - tenantId
+        - serviceId
+        - supportedProfileIds
+        - supportedSetIds
+        - supportedChannelIds
+        - supportedConcepts
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenantId:
+          type: string
+        serviceId:
+          type: string
+          description: The service the capability belongs to (e.g. an issuer or verifier service identifier).
+        supportedProfileIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+          description: Object-model ids the service can operate on.
+        supportedSetIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+          description: Data-product ids the service can operate on.
+        supportedChannelIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+          description: Channel ids the service can operate on.
+        supportedConcepts:
+          type: array
+          items:
+            $ref: '#/components/schemas/SemanticConceptRef'
+          description: Data-domain and object-model concepts the service understands.
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    # ---- Source binding --------------------------------------------------
+    MaterializationPolicy:
+      type: string
+      description: |
+        Whether a bound source's values are stored or only referenced for governance overlay.
+          - `REFERENCE_ONLY`: the source's values are NOT stored; the binding only projects the
+            data domain's governance overlays onto the externally hosted data (a data map or RoPA over a
+            system that is never copied).
+          - `STORE`: resolved values are persisted into the party-attribute-value store keyed by the
+            bound business term (an explicit opt-in, since it stores potentially personal data).
+      enum:
+        - REFERENCE_ONLY
+        - STORE
+
+    DataDomainRef:
+      type: object
+      example:
+        dataDomainId: "9f2c1b3e-7a44-4c1e-8b0a-2d6f5e9c1a77"
+        dataDomainVersion: 3
+      description: A version-pinned reference to a specific published snapshot of another data domain.
+      required: [dataDomainId, dataDomainVersion]
+      properties:
+        dataDomainId:
+          type: string
+          format: uuid
+        dataDomainVersion:
+          type: integer
+          format: int64
+          minimum: 1
+
+    AttributeTransformKind:
+      type: string
+      description: The kind of value transform a [AttributeTransform] describes.
+      enum:
+        - NONE
+        - RENAME_ONLY
+        - FORMAT
+        - CODE_MAP
+
+    AttributeTransform:
+      type: object
+      example:
+        kind: RENAME_ONLY
+        expression: null
+        codeMap: {}
+        unitConversion: null
+      description: An optional value transform applied along a source field mapping (reuses the schema-relationship transform type).
+      properties:
+        kind:
+          allOf:
+            - $ref: '#/components/schemas/AttributeTransformKind'
+          default: NONE
+        expression:
+          type: string
+          nullable: true
+          description: Optional transform expression, for computed transforms.
+        codeMap:
+          type: object
+          description: Optional code/value mapping, for code-list translation.
+          additionalProperties:
+            type: string
+        unitConversion:
+          type: string
+          nullable: true
+
+    SourceFieldMapping:
+      type: object
+      example:
+        sourceField: "emp_given_name"
+        attributePath: "givenName"
+        transform: null
+      description: |
+        Maps one source-native field onto one data-domain business term. The `sourceField` is the source's own
+        opaque key (a DB column, JSON key, IAM claim); the `attributePath` is the clean segment path of
+        the business term it feeds, so the source's data inherits that term's governance
+        overlays without necessarily storing the value.
+      required: [sourceField, attributePath]
+      properties:
+        sourceField:
+          type: string
+          description: The source-native field key; non-blank. Never a semantic path.
+        attributePath:
+          type: string
+          description: The business-term path (dot-separated clean segments) this field feeds (e.g. `address.postalCode`).
+        transform:
+          allOf:
+            - $ref: '#/components/schemas/AttributeTransform'
+          type: object
+          nullable: true
+
+    SourceEntityBinding:
+      type: object
+      example:
+        entity: "Employee"
+        fieldMappings:
+          - sourceField: "emp_given_name"
+            attributePath: "givenName"
+            transform: null
+      description: One object type's field bindings, mapping a source's native fields onto the business terms of one data-domain object type.
+      required: [entity]
+      properties:
+        entity:
+          type: string
+          description: The object-type name whose business terms the `fieldMappings` target; non-blank.
+        fieldMappings:
+          type: array
+          default: []
+          items:
+            $ref: '#/components/schemas/SourceFieldMapping'
+
+    SemanticSourceBinding:
+      type: object
+      example:
+        id: "60718293-a4b5-4ec6-9fd7-4a5b6c7d8e9f"
+        tenantId: "acme"
+        name: "HR system - employee attributes"
+        sourcePartyId: "6d9c2a1b-3e44-4f12-9a0b-1c2d3e4f5a6b"
+        capabilityId: "b1e2c3d4-5f60-4a71-8b92-0c1d2e3f4a5b"
+        catalogRef:
+          dataDomainId: "9f2c1b3e-7a44-4c1e-8b0a-2d6f5e9c1a77"
+          dataDomainVersion: 3
+        entityBindings:
+          - entity: "Employee"
+            fieldMappings:
+              - sourceField: "emp_given_name"
+                attributePath: "givenName"
+                transform: null
+        materialization: REFERENCE_ONLY
+        createdAt: "2026-01-15T09:30:00Z"
+        updatedAt: "2026-01-15T09:30:00Z"
+      description: |
+        Binds a registered connector/software party carrying a `CONNECTOR`
+        capability to business terms in a version-pinned data domain, so the connector's native fields map onto
+        governed terms and inherit their overlays (classification, processing, residency, assurance,
+        and data-domain jurisdictions). Complementary to the static
+        `DomainSchemaBinding` (declarative schema equivalence): this binds a LIVE source. Governance is
+        never restated here; it is inherited from the bound business term, so a derived data map can
+        enumerate the data domain's governance posture per source and field even for a `REFERENCE_ONLY` source
+        is never stored.
+      required: [id, tenantId, name, sourcePartyId, capabilityId, catalogRef, materialization, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenantId:
+          type: string
+        name:
+          type: string
+          description: Human-readable binding name; non-blank.
+        sourcePartyId:
+          type: string
+          format: uuid
+          description: The software/server party that carries the `CONNECTOR` capability.
+        capabilityId:
+          type: string
+          format: uuid
+          description: The `CONNECTOR` capability id on that party.
+        catalogRef:
+          $ref: '#/components/schemas/DataDomainRef'
+        entityBindings:
+          type: array
+          default: []
+          items:
+            $ref: '#/components/schemas/SourceEntityBinding'
+        materialization:
+          $ref: '#/components/schemas/MaterializationPolicy'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time

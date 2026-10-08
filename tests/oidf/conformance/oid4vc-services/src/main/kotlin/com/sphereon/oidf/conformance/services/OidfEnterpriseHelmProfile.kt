@@ -9,19 +9,19 @@ package com.sphereon.oidf.conformance.services
 
 import com.sphereon.oidf.conformance.OidfSuiteConfigPreprocessor
 import com.sphereon.oidf.conformance.OidfSuiteEnvironment
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+import java.net.ServerSocket
+import java.net.Socket
 import java.net.URI
 import java.nio.file.Files
 import java.nio.file.Path
-import java.net.ServerSocket
-import java.net.Socket
 import java.security.MessageDigest
 import java.security.SecureRandom
 import java.time.Duration
 import java.util.Base64
 import java.util.concurrent.TimeUnit
 import kotlin.io.path.isRegularFile
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
 
 /** Applies the OIDF trust profile to an existing release of the production enterprise Helm chart. */
 internal class OidfEnterpriseHelmProfile(
@@ -317,7 +317,14 @@ internal class OidfEnterpriseHelmProfile(
         val imageDigests = linkedMapOf<String, String>()
         val runtimeImageIds = linkedMapOf<String, String>()
         for ((component, imageName) in componentImages) {
-            val image = "nexus.sphereon.com/edk-docker/$imageName:0.25.0-SNAPSHOT"
+            val imageTag =
+                System.getProperty("platformVersion")
+                    ?: System.getenv("IDK_VERSION")
+                    ?: error(
+                        "Set -DplatformVersion=… (Gradle test task) or IDK_VERSION to the product version " +
+                            "from platform-version.properties",
+                    )
+            val image = "nexus.sphereon.com/edk-docker/$imageName:$imageTag"
             val localDigest =
                 runCapture(
                     listOf("docker", "image", "inspect", image, "--format={{.Id}}"),
@@ -328,8 +335,13 @@ internal class OidfEnterpriseHelmProfile(
                     listOf("docker", "exec", node, "ctr", "-n", "k8s.io", "images", "inspect", image),
                     Duration.ofMinutes(1),
                 )
-            val nodeDigest = Regex("@(?:sha256:)?([0-9a-f]{64})").find(nodeInspect)?.groupValues?.get(1)?.let { "sha256:$it" }
-                ?: error("Could not resolve containerd target digest for $image on Kubernetes node $node")
+            val nodeDigest =
+                Regex("@(?:sha256:)?([0-9a-f]{64})")
+                    .find(nodeInspect)
+                    ?.groupValues
+                    ?.get(1)
+                    ?.let { "sha256:$it" }
+                    ?: error("Could not resolve containerd target digest for $image on Kubernetes node $node")
             require(nodeDigest == localDigest) {
                 "Kubernetes node $node has stale $image ($nodeDigest); local tag is $localDigest. " +
                     "Load the local image into the node before starting Helm conformance."
@@ -554,7 +566,8 @@ internal class OidfEnterpriseHelmProfile(
                     addAll(listOf("--cacert", productTlsCaPath.toString(), probeUrl))
                 }
             val process =
-                ProcessBuilder(command).directory(infraWorkspace.toFile())
+                ProcessBuilder(command)
+                    .directory(infraWorkspace.toFile())
                     .redirectErrorStream(true)
                     .start()
             val completed = process.waitFor(10, TimeUnit.SECONDS)
@@ -746,7 +759,7 @@ internal fun oidfEnterpriseHelmRuntimeValues(
                   items:
                     - key: $clientSecretKey
                       path: $clientSecretProjectedPath
-    """.trimIndent() + "\n"
+        """.trimIndent() + "\n"
 }
 
 internal fun oidfPlatformBaseDomain(platformUrl: String): String {
@@ -754,10 +767,11 @@ internal fun oidfPlatformBaseDomain(platformUrl: String): String {
     require(uri.scheme == "https" && uri.userInfo == null && uri.query == null && uri.fragment == null) {
         "Helm platform URL must be an HTTPS origin"
     }
-    val labels = requireNotNull(uri.host) { "Helm platform URL must contain a DNS host" }
-        .trimEnd('.')
-        .lowercase()
-        .split('.')
+    val labels =
+        requireNotNull(uri.host) { "Helm platform URL must contain a DNS host" }
+            .trimEnd('.')
+            .lowercase()
+            .split('.')
     require(labels.size >= 3 && labels.all { it.matches(Regex("[a-z0-9](?:[-a-z0-9]*[a-z0-9])?")) }) {
         "Helm platform URL host must contain an operator label and a valid base domain"
     }

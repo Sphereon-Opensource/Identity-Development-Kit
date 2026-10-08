@@ -1,0 +1,429 @@
+openapi: 3.0.4
+info:
+  title: Platform Bootstrap API
+  version: 0.1.0
+  x-products: [edk, vdx]
+  description: |
+    Runtime bootstrap API for platform-hosted applications and internal
+    services.
+
+    The browser runtime endpoint exposes only deployment runtime wiring:
+    platform URLs, OAuth browser client metadata, audience values, service API
+    base URLs, license capability flags, and cache revision metadata.
+    By default it derives the browser-facing platform origin from the incoming
+    request host and forwarded headers. Tenant API roots are tenant-owned URLs
+    and are resolved only from tenant selectors or explicit tenant public-base
+    configuration.
+
+    The internal consumer endpoint exposes east-west service discovery for
+    satellites, workload services, and platform-side operators. It may include
+    Kubernetes or Docker network addresses and must not be exposed as browser
+    configuration.
+
+    This surface is intentionally separate from platform-admin and
+    platform-config. Platform-admin owns tenant and platform lifecycle
+    administration. Platform-config owns tenant/service runtime settings.
+    Business artifacts such as credential designs, issuer/verifier designs,
+    DCQL queries, render variants, status-list entries, credential definitions,
+    and any secrets remain in their dedicated APIs and stores.
+    Standards metadata documents such as OAuth/OIDC, OID4VCI, OID4VP, DID, and
+    other `.well-known` responses are separate from this bootstrap surface and
+    must continue to advertise their canonical public issuers and service URLs.
+servers:
+  - url: https://platform.example.com/api/platform/bootstrap/v1
+    description: Production server.
+  - url: http://localhost:8080/api/platform/bootstrap/v1
+    description: Local development server.
+tags:
+  - name: PlatformBootstrap
+    description: Runtime bootstrap for platform-hosted applications and internal services.
+paths:
+  /runtime-config/{applicationId}:
+    get:
+      tags: [PlatformBootstrap]
+      operationId: getApplicationRuntimeConfig
+      security: []
+      summary: Get browser-safe application runtime configuration
+      description: |
+        Returns the sanitized runtime configuration response for a known
+        platform-hosted browser application.
+
+        Known application ids include `admin-console`, `platform-onboarding`,
+        and `license-portal`. Unknown application ids are rejected. The response
+        is safe to expose to browser JavaScript and does not include internal
+        Kubernetes or Docker addresses, raw secrets, business-authored credential
+        artifacts, DCQL query bodies, issuer or verifier designs, or service
+        configuration bodies.
+
+        The response may use the inbound request origin as the platform base URL.
+        That behavior is for browser runtime wiring only; `.well-known` protocol
+        metadata continues to use the canonical public endpoint binding for the
+        resolved tenant/service.
+
+        Typed KMS administration is exposed only by the platform-config API.
+        Browser runtime configuration never projects a tenant-KMS service or
+        generic KMS provider, key, or credential endpoint.
+      parameters:
+        - name: applicationId
+          in: path
+          required: true
+          description: Platform-hosted application id requesting runtime configuration.
+          schema:
+            type: string
+          examples:
+            adminConsole:
+              value: admin-console
+            platformOnboarding:
+              value: platform-onboarding
+            licensePortal:
+              value: license-portal
+        - name: tenantId
+          in: query
+          required: false
+          description: Optional tenant selector used to resolve tenant-specific browser wiring.
+          schema:
+            type: string
+        - name: tenantSlug
+          in: query
+          required: false
+          description: Optional tenant slug used to derive tenant subdomain API roots.
+          schema:
+            type: string
+        - name: knownRevision
+          in: query
+          required: false
+          description: Last runtime-config revision known by the caller.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Runtime configuration response.
+          headers:
+            ETag:
+              description: Runtime configuration revision.
+              schema:
+                type: string
+            Cache-Control:
+              description: Cache policy using the returned metadata TTL.
+              schema:
+                type: string
+              example: public, max-age=300
+          content:
+            application/json:
+              schema:
+                $ref: './platform-bootstrap-components.yml#/components/schemas/ApplicationRuntimeConfigResponse'
+              example:
+                metadata:
+                  applicationId: admin-console
+                  tenantId: 7b3c2d9e-1f4a-4c8b-9e2d-5a6f7c8b9d01
+                  tenantSlug: acme
+                  revision: v1:admin-console:7b3c2d9e:acme:8f4c
+                  generatedAtEpochMs: 1782478560000
+                  ttlSeconds: 300
+                  unchanged: false
+                  sourceId: platform-runtime-config
+                  warnings: []
+                data:
+                  platform:
+                    publicBaseUrl: https://platform.nk.example.com
+                    issuer: https://platform.nk.example.com
+                    authorizationUrl: https://platform.nk.example.com/oauth2/authorize
+                    tokenUrl: https://platform.nk.example.com/oauth2/token
+                    jwksUri: https://platform.nk.example.com/.well-known/jwks.json
+                    endSessionUrl: https://platform.nk.example.com/oauth2/logout
+                  oauth:
+                    clientId: admin-console
+                    scope: openid profile email platform.operator
+                    redirectPath: /admin-console/operator/callback
+                    postLogoutRedirectPath: /admin-console
+                  services:
+                    platform:
+                      serviceId: platform
+                      baseUrl: https://platform.nk.example.com
+                      audience: enterprise-platform
+                      endpoints:
+                        bootstrapApi:
+                          path: /api/platform/bootstrap/v1
+                          description: Browser and service bootstrap API root
+                        authorization:
+                          path: /authorize
+                          description: Platform authorization endpoint
+                        token:
+                          path: /token
+                          description: Platform token endpoint
+                        jwks:
+                          path: /.well-known/jwks.json
+                          description: Platform JSON Web Key Set
+                    platformAdmin:
+                      serviceId: platform
+                      baseUrl: https://platform.nk.example.com
+                      audience: enterprise-platform
+                      endpoints:
+                        api:
+                          path: /api/platform/admin/v1
+                          description: Platform administration API root
+                        tenants:
+                          path: /api/platform/admin/v1/tenants
+                          description: Tenant administration collection
+                        features:
+                          path: /api/platform/admin/v1/features
+                          description: Platform feature catalog
+                    platformConfig:
+                      serviceId: platform
+                      baseUrl: https://platform.nk.example.com
+                      audience: enterprise-platform
+                      endpoints:
+                        api:
+                          path: /api/platform/config/v1
+                          description: Platform service configuration API root
+                    bffOAuthClient:
+                      serviceId: application-bff-oauth-client
+                      baseUrl: https://platform.nk.example.com
+                      audience: application-bff-oauth-client
+                      scopes: [bff.oauth]
+                      endpoints:
+                        api:
+                          path: /api/platform/internal/v1/bff/oauth-client
+                          description: Workload-protected BFF OAuth client API root
+                    tenantDid:
+                      serviceId: service-data
+                      baseUrl: https://acme.nk.example.com
+                      audience: enterprise-tenant-did
+                      endpoints:
+                        api:
+                          path: /api/did/v1
+                          description: Tenant DID API root
+                        identifiers:
+                          path: /api/did/v1/identifiers
+                          description: Tenant DID identifiers
+                        didWeb:
+                          path: /.well-known/did.json
+                          description: Tenant DID Web document
+                    issuer:
+                      serviceId: issuer
+                      baseUrl: https://acme.nk.example.com
+                      audience: enterprise-issuer
+                      endpoints:
+                        metadata:
+                          path: /.well-known/openid-credential-issuer
+                          description: OID4VCI issuer metadata
+                        api:
+                          path: /api/oid4vci/v1
+                          description: OID4VCI management API root
+                        credentialDesigns:
+                          path: /api/credential-design/v1
+                          description: Credential design API root
+                    verifier:
+                      serviceId: verifier
+                      baseUrl: https://acme.nk.example.com
+                      audience: enterprise-verifier
+                      endpoints:
+                        protocol:
+                          path: /oid4vp
+                          description: OID4VP protocol root
+                        dcqlApi:
+                          path: /api/dcql/v1
+                          description: DCQL query API root
+                    licensePortal:
+                      serviceId: license-portal
+                      baseUrl: https://platform.nk.example.com
+                      audience: enterprise-platform
+                      endpoints:
+                        app:
+                          path: /license-portal
+                          description: License portal application root
+                        api:
+                          path: /license-portal/api/license-portal/v1
+                          description: License portal API root
+                  capabilities:
+                    licensePortalEnabled: 'true'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '404':
+          description: Unknown application id or runtime bootstrap surface unavailable.
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /admin-console-context:
+    get:
+      tags: [PlatformBootstrap]
+      operationId: getAdminConsoleContext
+      security: []
+      summary: Resolve the tenant admin-console context for the exact public host
+      description: |
+        Returns the browser-safe tenant administration context bound to the
+        exact public origin supplied by the trusted reverse proxy. The service
+        reads `X-Forwarded-Host`, `X-Forwarded-Proto`, and
+        `X-Forwarded-Prefix`; it does not accept a tenant id or slug selector.
+
+        Resolution succeeds only when the host is a non-deleted verified tenant
+        domain, the owning tenant is ACTIVE, and an active OAuth2 authorization
+        server endpoint for the same tenant is registered on that exact host.
+        Unknown, unverified, inactive, cross-tenant, and host-mismatched
+        requests all return 404. The response contains no client secret,
+        internal network address, credential, or token.
+      responses:
+        '200':
+          description: Tenant admin-console context bound to the forwarded public origin.
+          headers:
+            Cache-Control:
+              description: Short-lived private cache policy.
+              schema:
+                type: string
+              example: private, max-age=30
+          content:
+            application/json:
+              schema:
+                $ref: './platform-bootstrap-components.yml#/components/schemas/AdminConsoleContextResponse'
+        '404':
+          description: The public host is not a verified active tenant admin-console host.
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /wallet-context/{slug}:
+    get:
+      tags: [PlatformBootstrap]
+      operationId: getBusinessWalletContext
+      x-products: [vdx]
+      security: []
+      summary: Resolve the business-wallet context for the exact public host
+      description: |
+        Returns the browser-safe business-wallet context bound to the exact
+        public origin supplied by the trusted reverse proxy. The service reads
+        `X-Forwarded-Host`, `X-Forwarded-Proto`, and `X-Forwarded-Prefix`; it
+        does not accept a tenant id or slug selector.
+
+        Resolution succeeds only when the host is a non-deleted verified tenant
+        domain, the owning tenant is ACTIVE, an enabled `BUSINESS_WALLET` public
+        endpoint for the requested slug is registered on that exact host, the
+        wallet capability is ACTIVE and enabled, the effective license of the
+        owning tenant grants `business-wallet.standard.v1`, and at least one
+        enabled authorization-server binding exists for the wallet. Unknown,
+        unverified, inactive, cross-tenant, unlicensed, and host-mismatched
+        requests all return 404. The response contains no client secret,
+        internal network address, credential, or token.
+      parameters:
+        - $ref: './platform-bootstrap-components.yml#/components/parameters/BusinessWalletSlug'
+      responses:
+        '200':
+          description: Business-wallet context bound to the forwarded public origin.
+          headers:
+            Cache-Control:
+              description: Short-lived private cache policy.
+              schema:
+                type: string
+              example: private, max-age=30
+          content:
+            application/json:
+              schema:
+                $ref: './platform-bootstrap-components.yml#/components/schemas/BusinessWalletContextResponse'
+        '404':
+          description: The public host is not a verified active business-wallet host for the requested slug.
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /consumer-config/{consumerId}:
+    get:
+      tags: [PlatformBootstrap]
+      operationId: getPlatformBootstrapConfig
+      security:
+        - bearer: []
+      summary: Get internal platform bootstrap configuration
+      description: |
+        Returns the platform-authoritative bootstrap projection for an internal
+        consumer such as a satellite, workload service, frontend server, or
+        operator tool.
+
+        The response may include internal Kubernetes or Docker network
+        addresses. It is not browser-safe and must be protected by service or
+        operator authentication.
+
+        `services.tenantKms` is internal service discovery for the tenant-KMS
+        gRPC command receiver and its HTTP health endpoint. It never advertises
+        a public or generic KMS REST API. KMS resource administration remains on
+        the typed platform-config surface.
+      parameters:
+        - name: consumerId
+          in: path
+          required: true
+          description: Internal consumer id, service id, or client id requesting bootstrap wiring.
+          schema:
+            type: string
+          examples:
+            tenantKms:
+              value: tenant-kms
+            issuer:
+              value: issuer
+        - name: consumerType
+          in: query
+          required: false
+          description: Consumer category used for policy and diagnostics.
+          schema:
+            $ref: './platform-bootstrap-components.yml#/components/schemas/PlatformBootstrapConsumerType'
+            default: SATELLITE
+        - name: tenantId
+          in: query
+          required: false
+          description: Optional tenant selector for tenant-specific workload cluster routing.
+          schema:
+            type: string
+        - name: workloadInstanceId
+          in: query
+          required: false
+          description: Optional workload instance selector for workload-cluster-specific routing.
+          schema:
+            type: string
+        - name: deploymentSiteId
+          in: query
+          required: false
+          description: Optional deployment site selector for site-specific routing.
+          schema:
+            type: string
+        - name: requestedDomains
+          in: query
+          required: false
+          description: Optional comma-separated config domains requested by the consumer.
+          style: form
+          explode: false
+          schema:
+            type: array
+            items:
+              type: string
+          example: [kms.default-resource-handle, crypto.kms.roles, oauth2.servers]
+        - name: knownRevision
+          in: query
+          required: false
+          description: Last bootstrap revision known by the caller.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Internal bootstrap configuration response.
+          headers:
+            ETag:
+              description: Bootstrap configuration revision.
+              schema:
+                type: string
+            Cache-Control:
+              description: Private cache policy using the returned metadata TTL.
+              schema:
+                type: string
+              example: private, max-age=300
+          content:
+            application/json:
+              schema:
+                $ref: './platform-bootstrap-components.yml#/components/schemas/PlatformBootstrapConfigResponse'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          description: Unknown consumer id or bootstrap surface unavailable.
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+components:
+  securitySchemes:
+    bearer:
+      $ref: './common-components.yml#/components/securitySchemes/bearer'

@@ -87,7 +87,12 @@ APP_BASE_NAME=${0##*/}
 APP_HOME=$( cd "${APP_HOME:-./}" && pwd -P ) || exit
 
 # Local coordinator policy; clean CI/other checkouts need no Python.
-vdx_coordinator_root="$APP_HOME/../../.."
+vdx_coordinator_root="$APP_HOME"
+while [ ! -f "$vdx_coordinator_root/.vdx-build-required.json" ] && [ ! -f "$vdx_coordinator_root/tooling/build-coordinator/cli.py" ]; do
+    vdx_coordinator_parent=$(dirname "$vdx_coordinator_root")
+    [ "$vdx_coordinator_parent" != "$vdx_coordinator_root" ] || break
+    vdx_coordinator_root="$vdx_coordinator_parent"
+done
 if [ -f "$vdx_coordinator_root/.vdx-build-required.json" ] || [ -n "${VDX_BUILD_STATE:-}" ]; then
     if command -v python3 >/dev/null 2>&1; then
         vdx_coordinator_python=python3

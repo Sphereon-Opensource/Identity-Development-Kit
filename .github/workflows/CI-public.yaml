@@ -1,13 +1,9 @@
 name: Public CI
 
-# Runs on the public IDK repo only — single-job multiplatform build that, on
-# pushes to develop/main, also publishes to npm/Nexus in the same Gradle
-# invocation.
-#
-# Why one job: Gradle's `publish` task pulls in compile/assemble for every
-# target, so multiplatform-build and publish are the same work. Splitting them
-# into separate jobs forces a fresh runner, cold Gradle daemon, KSP/Metro
-# re-init, and dependency re-resolution per job (≈5–10 min lost per boundary).
+# Runs on the public IDK repo only. One job builds pack production artifacts,
+# runs multiplatform checks and publishes after main/develop pushes or authorized dispatch
+# or an explicit approved owning-repository dispatch.
+# Pack builds share job-private Maven prerequisites and Gradle compilation caches.
 # JVM tests already passed on the private repo before mirror, so we skip them
 # here entirely.
 #
@@ -19,6 +15,12 @@ on:
     branches: [main, develop]
   pull_request:
   workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish verified pack artifacts from an authorized branch
+        type: boolean
+        required: true
+        default: false
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -27,9 +29,7 @@ concurrency:
 env:
   GRADLE_OPTS: "-Dkotlin.native.ignoreDisabledTargets=true -Dfile.encoding=UTF-8"
 
-# Pipeline:
-#   PR / push develop / push main → jvm → multiplatform
-#   push develop / push main      → ... → publish
+# Pipeline: pack Maven prerequisites → multiplatform checks → authorized publication.
 
 jobs:
   build:
@@ -39,8 +39,6 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
-        with:
-          submodules: recursive
       - run: chmod +x ./gradlew
 
       # Kotlin/Native LinuxX64 linking (ld.lld) resolves -lunistring against the
@@ -65,13 +63,15 @@ jobs:
             notifications
             build-cache-1
 
-      # Generate TOML version catalogs from gradle-build-support source so the
-      # main settings.gradle.kts can resolve sphereonlib.* / sphereonplug.*
-      # accessors against current entries (e.g. com.doist.x:normalize) instead
-      # of falling back to the stale published library-bom artifact.
-      - name: Generate Sphereon TOML catalogs
-        working-directory: gradle-build-support
-        run: ./gradlew generateTomlCatalog --build-cache
+      # GBS plugins and catalogs resolve from published Maven artifacts.
+      # This workflow runs from the standalone product checkout.
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+
+      - name: Verify pack CI plan
+        run: python3 -B -m unittest discover -s .github/scripts -p test_pack_ci.py -v
 
       # ── Android SDK ──
       - name: Cache Android SDK
@@ -97,7 +97,12 @@ jobs:
         shell: bash
 
       - name: Set Android SDK location
-        run: echo "sdk.dir=$HOME/android-sdk" > local.properties
+        # Each pack has its own Gradle root; share the installed SDK through the
+        # environment as well as the root example build's local.properties.
+        run: |
+          echo "sdk.dir=$HOME/android-sdk" > local.properties
+          echo "ANDROID_HOME=$HOME/android-sdk" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$HOME/android-sdk" >> "$GITHUB_ENV"
 
       # ── JS / wasmJs caches ──
       - name: Cache Kotlin/JS store
@@ -105,31 +110,23 @@ jobs:
         with:
           path: |
             kotlin-js-store
+            core/kotlin-js-store
+            infra/kotlin-js-store
+            identity-security/kotlin-js-store
+            protocols/kotlin-js-store
+            platform/kotlin-js-store
+            wallet-lib/kotlin-js-store
             ~/.npm
-          key: kotlin-js-${{ runner.os }}-${{ hashFiles('kotlin-js-store/package-lock.json', 'kotlin-js-store/wasm/package-lock.json') }}
+          key: kotlin-js-${{ runner.os }}-${{ hashFiles('**/kotlin-js-store/package-lock.json', '**/kotlin-js-store/wasm/package-lock.json') }}
           restore-keys: kotlin-js-${{ runner.os }}-
 
-      - name: Upgrade JS/wasmJs lock files
-        run: ./gradlew kotlinUpgradePackageLock kotlinWasmUpgradePackageLock --stacktrace
-
-      # ── Single Gradle invocation: build + non-JVM tests + (on push) publish ──
-      # `check` runs every target's tests; we exclude JVM-side tests because
-      # they already passed on the private repo, but JS / wasmJs / Android / native
-      # tests run here — they exercise target-specific codegen and runtime
-      # behavior that the JVM tests can't cover.
-      # `publish` reaches every multiplatform `publishXxxPublicationToYyy` task
-      # and depends on assemble; combining `check` and `publish` in one command
-      # reuses the same Gradle daemon for compile, test, and publish.
-      - name: ${{ github.event_name == 'push' && 'Build, test & publish' || 'Build & test' }} (all targets, excl. jvmTest)
+      # Pack production builds populate a job-private Maven repository first.
+      # Checks run after every pack is available, including reverse test edges.
+      # Main/develop pushes or the explicit default-false dispatch enable publication.
+      - name: ${{ (github.event_name == 'push' || inputs.publish) && 'Build, test & publish' || 'Build & test' }} (all targets, excl. jvmTest)
         run: >-
-          ./gradlew check
-          ${{ github.event_name == 'push' && 'publish' || '' }}
-          --build-cache
-          -Dkmp.targets=all
-          -x jvmTest
-          -x koverVerify
-          -x :lib-crypto-kms-provider-aws:kotest
-          -x :lib-crypto-kms-provider-azure:kotest
+          python3 -B .github/scripts/pack_ci.py --mode public
+          ${{ (github.event_name == 'push' || inputs.publish) && '--publish' || '' }}
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
           GH_TOKEN: ${{ secrets.GH_TOKEN }}

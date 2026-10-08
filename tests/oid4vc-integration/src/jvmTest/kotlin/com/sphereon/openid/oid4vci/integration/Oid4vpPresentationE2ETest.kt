@@ -18,21 +18,21 @@ package com.sphereon.openid.oid4vci.integration
 
 import com.sphereon.di.session.SessionScope
 import com.sphereon.openid.oid4vp.common.ResponseMode
-import com.sphereon.openid.oid4vp.dcql.DcqlClaimQuery
 import com.sphereon.openid.oid4vp.dcql.ClaimsPathPointer
-import com.sphereon.openid.oid4vp.dcql.claimsPathPointer
+import com.sphereon.openid.oid4vp.dcql.DcqlClaimQuery
 import com.sphereon.openid.oid4vp.dcql.DcqlCredentialQuery
 import com.sphereon.openid.oid4vp.dcql.DcqlQuery
+import com.sphereon.openid.oid4vp.dcql.claimsPathPointer
 import com.sphereon.openid.oid4vp.dcql.sdJwtVcMeta
 import com.sphereon.openid.oid4vp.dcql.w3cVcMeta
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
 import com.sphereon.openid.oid4vp.holder.Oid4vpHolder
 import com.sphereon.openid.oid4vp.verifier.BuildAuthorizationRequestUriArgs
 import com.sphereon.openid.oid4vp.verifier.CreateAuthorizationRequestArgs
 import com.sphereon.openid.oid4vp.verifier.Oid4vpVerifierService
 import dev.zacsweers.metro.ContributesTo
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull

@@ -1,0 +1,2920 @@
+openapi: 3.0.4
+info:
+  title: Digidentity Documentation
+  description: "This page contains documentation for Digidentity's REST APIs.\n\n#### Environments and access\n\nEndpoints provided in this documentation are based on Digidentity's pre-production environment. Access to this environment can be arranged via our Sales department. For contact details, please visit [https://www.digidentity.eu/get-in-touch](https://www.digidentity.eu/get-in-touch)\n\nEndpoints in the production environment follow the same URL scheme as provided on this page, but under the `digidentity.eu` domain.\n\n#### IP-whitelisting\n\nShould your application require incoming traffic to be whitelisted, this can be achieved for both pre-production and production environments using the following IP addresses:\n\n- 34.251.16.238\n    \n- 52.31.177.93\n    \n- 52.51.147.59\n    \n\n**Please note**: IP addresses listed above are subject to change without express notice.\n\n#### Further resources\n\n- [Digidentity's well-known configuration](https://auth.digidentity.eu/.well-known/openid-configuration)\n    \n- [OAuth2 specification](https://datatracker.ietf.org/doc/html/rfc6749)\n    \n- [OpenID Connect specification](https://openid.net/specs/openid-connect-core-1_0.html)\n    \n- [Cloud Signature Consortium specification](https://cloudsignatureconsortium.org/resources/download-api-specifications/)"
+  contact: { }
+  version: '1.0'
+servers:
+  - url: https://auth.{hostname}/oauth2
+    variables:
+      hostname:
+        default: digidentity-preproduction.eu
+  - url: https://gate.{hostname}
+    variables:
+      hostname:
+        default: digidentity-preproduction.eu
+  - url: https://esign.{hostname}
+    variables:
+      hostname:
+        default: digidentity-preproduction.eu
+  - url: https://api.{hostname}
+    variables:
+      hostname:
+        default: digidentity-preproduction.eu
+paths:
+  /authorize:
+    get:
+      tags:
+        - Web login
+      summary: Request authorisation
+      description: >-
+        After adjusting the required query params, this URL can be embedded in the client application as a hyperlink to redirect users to the Digidentity web page.
+      operationId: Requestauthorisation
+      parameters:
+        - name: response_type
+          in: query
+          description: MUST be set to "code"
+          required: true
+          schema:
+            type: string
+            example: code
+        - name: scope
+          in: query
+          description: MUST contain at least one of the 'product scopes' provided by Digidentity during onboarding. Multiple scopes MAY be specified
+          required: true
+          schema:
+            type: string
+            example: 1e78xm7pls3c9p1e
+        - name: client_id
+          in: query
+          description: MUST contain the client_id provided by Digidentity during onboarding
+          required: true
+          schema:
+            type: string
+            example: example_client
+        - name: redirect_uri
+          in: query
+          description: MUST contain the callback endpoint of the client application
+          required: true
+          schema:
+            type: string
+            example: https://client.example.com/cb
+      responses:
+        '200':
+          description: Successful redirection.
+  /token:
+    post:
+      tags:
+        - Web login
+        - Passwordless login
+        - Refresh token
+      summary: Retrieve access token
+      description: >-
+        This endpoint is used to exchange an authorization code or a refresh token for an access token.
+      operationId: RetrieveAccessToken
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                grant_type:
+                  type: string
+                  description: MUST be 'authorization_code' or 'refresh_token'.
+                redirect_uri:
+                  type: string
+                  description: MUST match the redirect_uri specified in the authorisation request (if grant_type is 'authorization_code').
+                code:
+                  type: string
+                  description: MUST contain the code from the callback (if grant_type is 'authorization_code').
+                refresh_token:
+                  type: string
+                  description: MUST contain the refresh_token (if grant_type is 'refresh_token').
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/WebLoginAccessToken'
+                  - $ref: '#/components/schemas/WebLoginAccessTokenOIDC'
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvalidGrantError'
+  /authorize.json:
+    get:
+      tags:
+        - Passwordless login
+      summary: Retrieve QR code URI
+      description: >-
+        When a user requires access to the client application, this request can be sent via the client backend to retrieve a QR code URI.
+      operationId: RetrieveQRcodeURI
+      parameters:
+        - name: client_id
+          in: query
+          description: MUST contain the client_id provided by Digidentity during onboarding
+          required: true
+          schema:
+            type: string
+        - name: scope
+          in: query
+          description: MUST contain at least one of the 'product scopes' provided by Digidentity during onboarding.
+          required: true
+          schema:
+            type: string
+        - name: response_type
+          in: query
+          description: MUST be set to "code"
+          required: true
+          schema:
+            type: string
+            example: code
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PasswordlessQRCodeResponse'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvalidClientOrScopeError'
+  /token.json:
+    post:
+      tags:
+        - Client credentials
+      summary: Retrieve application token
+      description: >-
+        When accessing an API where user authorisation is not required, this request can be sent to directly retrieve an application token.
+      operationId: RetrieveApplicationToken
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              required:
+                - grant_type
+              type: object
+              properties:
+                grant_type:
+                  type: string
+                  description: MUST be set to "client_credentials"
+                  example: client_credentials
+                scope:
+                  type: string
+                  description: MAY contain one or more of the 'product scopes' provided by Digidentity.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClientCredentialsToken'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvalidClientError'
+  /user_info.json:
+    get:
+      tags:
+        - OIDC user info
+      summary: Retrieve user info
+      description: >-
+        Once an access token has been retrieved for a user logging into the client application, this request can be used to retrieve their basic personal information.
+      operationId: RetrieveUserInfo
+      parameters:
+        - name: Authorization
+          in: header
+          description: MUST contain an access token retrieved via the [authorization_code] grant.
+          required: true
+          schema:
+            type: string
+            example: Bearer {{access_token}}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/UserInfoFullResponse'
+                  - $ref: '#/components/schemas/UserInfoCompanyResponse'
+                  - $ref: '#/components/schemas/UserInfoMinimalResponse'
+        '400':
+          description: Bad Request (e.g., missing openid scope)
+  /api/v1/reports.json:
+    get:
+      tags:
+        - Identity verification report
+      summary: Retrieve report
+      description: >-
+        Once an application token and a user's pseudonym have been retrieved, this request can be used to generate a detailed identity verification report for the user.
+      operationId: RetrieveReport
+      parameters:
+        - name: pseudonym
+          in: query
+          description: MUST contain the user's account pseudonym (UUID retrieved from the 'sub' value when decoding the user's access token).
+          required: true
+          schema:
+            type: string
+        - name: Authorization
+          in: header
+          description: MUST contain an application token retrieved via the [client_credentials] grant.
+          required: true
+          schema:
+            type: string
+            example: Bearer {{application_token}}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  oneOf:
+                    - $ref: '#/components/schemas/VerificationReport'
+                    - $ref: '#/components/schemas/VerificationReportPending'
+                    - $ref: '#/components/schemas/VerificationReportRejected'
+        '422':
+          description: Unprocessable Entity
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MissingPseudonymError'
+  /api/esign/tokens:
+    post:
+      tags:
+        - CSC API
+        - eSeal autosigner
+      summary: Retrieve CSC token
+      description: >-
+        Exchanges an existing access token for one compliant with the CSC specification.
+      operationId: RetrieveCSCToken
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              required:
+                - access_token
+              type: object
+              properties:
+                access_token:
+                  type: string
+                  description: MUST contain an access token retrieved via the authorization_code grant.
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CSCTokenResponse'
+        '422':
+          description: Unprocessable Entity
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvalidUpstreamTokenError'
+  /csc/v1/credentials/list:
+    post:
+      tags:
+        - CSC API
+      summary: Retrieve credential IDs
+      description: >-
+        This request is used to retrieve the IDs associated with each of the user's certificates.
+      operationId: RetrieveCredentialIDs
+      parameters:
+        - name: Authorization
+          in: header
+          description: MUST contain a CSC token.
+          required: true
+          schema:
+            type: string
+            example: Bearer {{csc_token}}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CredentialListResponse'
+  /csc/v1/credentials/info:
+    post:
+      tags:
+        - CSC API
+      summary: Retrieve identity information
+      description: >-
+        Once `credentialIDs` have been retrieved, this request is used to retrieve certificate details.
+      operationId: RetrieveIdentityInformation
+      parameters:
+        - name: Authorization
+          in: header
+          description: MUST contain a CSC token.
+          required: true
+          schema:
+            type: string
+            example: Bearer {{csc_token}}
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CredentialInfoRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/CredentialInfoResponse'
+                  - $ref: '#/components/schemas/CredentialInfoChainResponse'
+                  - $ref: '#/components/schemas/CredentialInfoNoCertsResponse'
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvalidCredentialIDError'
+  /csc/v1/credentials/authorize:
+    post:
+      tags:
+        - CSC API
+      summary: Request sign authorisation
+      description: >-
+        This request is sent to prompt the user for authorisation of the signature.
+      operationId: RequestSignAuthorisation
+      parameters:
+        - name: Authorization
+          in: header
+          description: MUST contain a CSC token.
+          required: true
+          schema:
+            type: string
+            example: Bearer {{csc_token}}
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SignAuthorizeRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SignAuthorizeResponse'
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MissingCredentialIDError'
+  /csc/v1/signatures/signHash:
+    post:
+      tags:
+        - CSC API
+      summary: Sign hash
+      description: >-
+        Once the `SAD` (signature activation data) has been retrieved, this request is used to retrieve the remote digital signature.
+      operationId: CscSignHash
+      parameters:
+        - name: Authorization
+          in: header
+          description: MUST contain a CSC token.
+          required: true
+          schema:
+            type: string
+            example: Bearer {{csc_token}}
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CSCSignHashRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CSCSignHashResponse'
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvalidSADError'
+  /csc/v1/signatures/timestamp:
+    post:
+      tags:
+        - CSC API
+        - eSeal autosigner
+      summary: Timestamp hash
+      description: >-
+        Generates a timestamp token for the input `hash` value.
+      operationId: TimestampHash
+      parameters:
+        - name: Authorization
+          in: header
+          description: MUST contain a CSC token.
+          required: true
+          schema:
+            type: string
+            example: Bearer {{csc_token}}
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TimestampRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TimestampResponse'
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvalidBase64HashError'
+  /v1/auto_signers/{autosigner_id}/sign:
+    post:
+      tags:
+        - eSeal autosigner
+      summary: Sign hash
+      description: >-
+        Once an application token has been retrieved, this request can be used to sign a single hash.
+      operationId: ESealSignHash
+      parameters:
+        - name: Authorization
+          in: header
+          description: MUST contain an application token retrieved via the [client_credentials] grant.
+          required: true
+          schema:
+            type: string
+            example: Bearer {{application_token}}
+        - name: Api-Key
+          in: header
+          description: MUST contain the API key provided by Digidentity during onboarding.
+          required: true
+          schema:
+            type: string
+        - name: autosigner_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/vnd.api+json:
+            schema:
+              $ref: '#/components/schemas/ESealSignHashRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ESealSignHashResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ESealInvalidAuthError'
+  /api/v1/anonymous_onboarding:
+    post:
+      tags:
+        - One-time verification
+      summary: Retrieve QR code
+      description: >-
+        Once an application access token has been retrieved, this request can be sent to retrieve a QR code URL to display to the user.
+      operationId: OtvRetrieveQRCode
+      parameters:
+        - name: Authorization
+          in: header
+          description: MUST contain an application token retrieved via the [client_credentials] grant.
+          required: true
+          schema:
+            type: string
+            example: Bearer {{application_token}}
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OtvQRCodeResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OtvUnauthorizedError'
+  /sermi/io:
+    post:
+      tags:
+        - IO and RSS
+      summary: 'IO: Create'
+      description: >-
+        Once an application access token has been retrieved, this request can be sent to create an Independent Operator.
+      operationId: SermiIoCreate
+      parameters:
+        - name: Authorization
+          in: header
+          description: MUST contain an application token.
+          required: true
+          schema:
+            type: string
+        - name: Api-Key
+          in: header
+          description: MUST contain the API key provided by Digidentity.
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SermiIoCreateRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SermiIoResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SermiForbiddenError'
+        '422':
+          description: Unprocessable Entity
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SermiInvalidIoUidError'
+  /sermi/io/delete:
+    post:
+      tags:
+        - IO and RSS
+      summary: 'IO: Delete'
+      description: >-
+        This request can be sent to delete an existing Independent Operator.
+      operationId: SermiIoDelete
+      parameters:
+        - name: Authorization
+          in: header
+          description: MUST contain an application token.
+          required: true
+          schema:
+            type: string
+        - name: Api-Key
+          in: header
+          description: MUST contain the API key provided by Digidentity.
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SermiIoDeleteRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SermiIoDeleteResponse'
+        '422':
+          description: Unprocessable Content
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/SermiIoNotFoundError'
+                  - $ref: '#/components/schemas/SermiCabMismatchError'
+  /sermi/rss:
+    post:
+      tags:
+        - IO and RSS
+      summary: 'RSS: Create'
+      description: >-
+        Once an application access token has been retrieved, this request can be sent to create a Remote Service Supplier.
+      operationId: SermiRssCreate
+      parameters:
+        - name: Authorization
+          in: header
+          description: MUST contain an application token.
+          required: true
+          schema:
+            type: string
+        - name: Api-Key
+          in: header
+          description: MUST contain the API key provided by Digidentity.
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SermiRssCreateRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SermiRssResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SermiForbiddenError'
+        '422':
+          description: Unprocessable Entity
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SermiInvalidRssUidError'
+  /sermi/rss/delete:
+    post:
+      tags:
+        - IO and RSS
+      summary: 'RSS: Delete'
+      description: >-
+        This request can be sent to delete an existing Remote Service Supplier.
+      operationId: SermiRssDelete
+      parameters:
+        - name: Authorization
+          in: header
+          description: MUST contain an application token.
+          required: true
+          schema:
+            type: string
+        - name: Api-Key
+          in: header
+          description: MUST contain the API key provided by Digidentity.
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SermiRssDeleteRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SermiRssDeleteResponse'
+        '422':
+          description: Unprocessable Content
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/SermiRssNotFoundError'
+                  - $ref: '#/components/schemas/SermiCabMismatchError'
+  /sermi/io_pa:
+    post:
+      tags:
+        - IO and RSS
+      summary: 'IO Public Authority: Create'
+      description: >-
+        Once an application access token has been retrieved, this request can be sent to create an IO Public Authority.
+      operationId: SermiIoPaCreate
+      parameters:
+        - name: Api-Key
+          in: header
+          required: true
+          schema:
+            type: string
+        - name: Authorization
+          in: header
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SermiIoPaCreateRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SermiIoPaResponse'
+        '422':
+          description: Unprocessable Content
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SermiIoPaVatError'
+  /sermi/ioe:
+    post:
+      tags:
+        - IOE
+      summary: 'IOE: Create'
+      description: >-
+        Once an application access token has been retrieved, this request can be sent to create an employee under an existing Independent Operator.
+      operationId: SermiIoeCreate
+      parameters:
+        - name: Authorization
+          in: header
+          required: true
+          schema:
+            type: string
+        - name: Api-Key
+          in: header
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SermiIoeCreateRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SermiIoeCreateResponse'
+        '422':
+          description: Unprocessable Entity
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SermiIoNotFoundForIoeError'
+  /sermi/ioe/authorization:
+    post:
+      tags:
+        - IOE
+      summary: 'IOE: Authorize/Revoke'
+      description: >-
+        This request can be sent to authorise or revoke an existing Independent Operator Employee.
+      operationId: SermiIoeAuthorizeRevoke
+      parameters:
+        - name: Authorization
+          in: header
+          required: true
+          schema:
+            type: string
+        - name: Api-Key
+          in: header
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SermiIoeAuthRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/SermiIoeAuthResponse'
+                  - $ref: '#/components/schemas/SermiIoeRevokeResponse'
+        '422':
+          description: Unprocessable Entity
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SermiIoeNotFoundError'
+  /sermi/ioe/reset_certificate:
+    post:
+      tags:
+        - IOE
+      summary: 'IOE: Reset certificate'
+      description: >-
+        This request can be sent to reset the certificate of an existing Independent Operator Employee.
+      operationId: SermiIoeResetCertificate
+      parameters:
+        - name: Authorization
+          in: header
+          required: true
+          schema:
+            type: string
+        - name: Api-Key
+          in: header
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SermiIoeResetCertRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SermiIoeResetCertResponse'
+        '422':
+          description: Unprocessable Entity
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SermiEmployeeCompanyMismatchError'
+  /sermi/ioe/renew:
+    post:
+      tags:
+        - IOE
+      summary: 'IOE: Renew certificate'
+      description: >-
+        This request can be sent to renew the certificate of an existing Independent Operator Employee.
+      operationId: SermiIoeRenewCertificate
+      parameters:
+        - name: Authorization
+          in: header
+          required: true
+          schema:
+            type: string
+        - name: Api-Key
+          in: header
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SermiIoeRenewCertRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SermiIoeRenewCertResponse'
+        '422':
+          description: Unprocessable Entity
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SermiNotReadyForRenewalError'
+  /sermi/ioe/logins:
+    get:
+      tags:
+        - IOE
+      summary: 'IOE: Logins'
+      description: >-
+        This request can be used to retrieve IOE login activity.
+      operationId: SermiIoeLogins
+      parameters:
+        - name: Authorization
+          in: header
+          required: true
+          schema:
+            type: string
+        - name: Api-Key
+          in: header
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/SermiIoeLoginsResponse'
+                  - $ref: '#/components/schemas/SermiIoLoginsResponse'
+  /sermi/rsse:
+    post:
+      tags:
+        - RSSE
+      summary: 'RSSE: Create'
+      description: >-
+        This request can be sent to create an employee under an existing Remote Service Supplier.
+      operationId: SermiRsseCreate
+      parameters:
+        - name: Authorization
+          in: header
+          required: true
+          schema:
+            type: string
+        - name: Api-Key
+          in: header
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SermiRsseCreateRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SermiRsseCreateResponse'
+        '422':
+          description: Unprocessable Entity
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SermiRssNotFoundError'
+  /sermi/rsse/authorization:
+    post:
+      tags:
+        - RSSE
+      summary: 'RSSE: Authorize/Revoke'
+      description: >-
+        This request can be sent to authorise or revoke an existing Remote Service Supplier Employee.
+      operationId: SermiRsseAuthorizeRevoke
+      parameters:
+        - name: Authorization
+          in: header
+          required: true
+          schema:
+            type: string
+        - name: Api-Key
+          in: header
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SermiRsseAuthRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/SermiRsseAuthResponse'
+                  - $ref: '#/components/schemas/SermiRsseRevokeResponse'
+        '422':
+          description: Unprocessable Entity
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SermiRsseNotFoundError'
+  /sermi/rsse/reset_certificate:
+    post:
+      tags:
+        - RSSE
+      summary: 'RSSE: Reset certificate'
+      description: >-
+        This request can be sent to reset the certificate of an existing Remote Service Supplier Employee.
+      operationId: SermiRsseResetCertificate
+      parameters:
+        - name: Authorization
+          in: header
+          required: true
+          schema:
+            type: string
+        - name: Api-Key
+          in: header
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SermiRsseResetCertRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SermiRsseResetCertResponse'
+        '422':
+          description: Unprocessable Entity
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SermiCabMismatchError'
+  /sermi/rsse/renew:
+    post:
+      tags:
+        - RSSE
+      summary: 'RSSE: Renew certificate'
+      description: >-
+        This request can be sent to renew the certificate of an existing Remote Service Supplier Employee.
+      operationId: SermiRsseRenewCertificate
+      parameters:
+        - name: Authorization
+          in: header
+          required: true
+          schema:
+            type: string
+        - name: Api-Key
+          in: header
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SermiRsseRenewCertRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SermiRsseRenewCertResponse'
+        '422':
+          description: Unprocessable Entity
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SermiNotReadyForRenewalError'
+  /sermi/rsse/logins:
+    get:
+      tags:
+        - RSSE
+      summary: 'RSSE: Logins'
+      description: >-
+        This request can be used to retrieve RSSE login activity.
+      operationId: SermiRsseLogins
+      parameters:
+        - name: Authorization
+          in: header
+          required: true
+          schema:
+            type: string
+        - name: Api-Key
+          in: header
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/SermiRsseLoginsResponse'
+                  - $ref: '#/components/schemas/SermiRssLoginsResponse'
+  /api/v2/scim/Users:
+    post:
+      tags:
+        - Users
+      summary: Create user
+      description: >-
+        This request creates a user under the associated company and sends an email invitation for the user to create a Digidentity account.
+      operationId: ScimCreateUser
+      parameters:
+        - name: Authorization
+          in: header
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ScimCreateUserRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/scim+json:
+              schema:
+                $ref: '#/components/schemas/ScimUserResponse'
+        '409':
+          description: Conflict
+          content:
+            application/scim+json:
+              schema:
+                $ref: '#/components/schemas/ScimUserExistsError'
+        '422':
+          description: Unprocessable Content
+    get:
+      tags:
+        - Users
+      summary: Get users
+      description: This request retrieves a paginated list of all users registered to the configured company.
+      operationId: ScimGetUsers
+      parameters:
+        - name: Authorization
+          in: header
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/scim+json:
+              schema:
+                $ref: '#/components/schemas/ScimUserListResponse'
+        '422':
+          description: Unprocessable Content
+  /api/v2/scim/Users/{pseudonym}:
+    get:
+      tags:
+        - Users
+      summary: Get user by ID
+      description: This request retrieves the details of a specific user ID.
+      operationId: ScimGetUserByID
+      parameters:
+        - name: Authorization
+          in: header
+          required: true
+          schema:
+            type: string
+        - name: pseudonym
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/scim+json:
+              schema:
+                $ref: '#/components/schemas/ScimUserResource'
+        '404':
+          description: Not Found
+    patch:
+      tags:
+        - Users
+        - User roles
+      summary: Disable/Re-enable user or Modify Roles
+      description: >-
+        This request is used to disable a user, immediately revoking their authorisations and scheduling their account for deletion. It can also be used to add, replace, or remove user roles.
+      operationId: ScimPatchUser
+      parameters:
+        - name: Authorization
+          in: header
+          required: true
+          schema:
+            type: string
+        - name: pseudonym
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - $ref: '#/components/schemas/ScimPatchRequest'
+                - $ref: '#/components/schemas/ScimUserRolesPatchRequest'
+                - $ref: '#/components/schemas/ScimRemoveUserRoleRequest'
+      responses:
+        '204':
+          description: No Content
+        '422':
+          description: Unprocessable Content
+  /api/v2/scim/Schemas:
+    get:
+      tags:
+        - Discovery
+      summary: Schemas
+      description: This request is used to retrieve information on the SCIM resource schemas supported by Digidentity.
+      operationId: ScimGetSchemas
+      parameters:
+        - name: Authorization
+          in: header
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/scim+json:
+              schema:
+                $ref: '#/components/schemas/ScimSchemasResponse'
+  /api/v2/scim/ServiceProviderConfig:
+    get:
+      tags:
+        - Discovery
+      summary: Service provider config
+      description: This request is used to describe the SCIM specification features supported by Digidentity.
+      operationId: ScimGetServiceProviderConfig
+      parameters:
+        - name: Authorization
+          in: header
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/scim+json:
+              schema:
+                $ref: '#/components/schemas/ScimServiceProviderConfigResponse'
+components:
+  schemas:
+    WebLoginAccessToken:
+      title: WebLoginAccessToken
+      type: object
+      properties:
+        access_token:
+          type: string
+        refresh_token:
+          type: string
+        token_type:
+          type: string
+        expires_in:
+          type: integer
+        scope:
+          type: string
+    WebLoginAccessTokenOIDC:
+      title: WebLoginAccessTokenOIDC
+      type: object
+      properties:
+        access_token:
+          type: string
+        refresh_token:
+          type: string
+        token_type:
+          type: string
+        expires_in:
+          type: integer
+        scope:
+          type: string
+        id_token:
+          type: string
+    InvalidGrantError:
+      title: InvalidGrantError
+      type: object
+      properties:
+        error:
+          type: string
+          example: invalid_grant
+        error_description:
+          type: string
+    PasswordlessQRCodeResponse:
+      title: PasswordlessQRCodeResponse
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            id:
+              type: string
+            type:
+              type: string
+            attributes:
+              type: object
+              properties:
+                type:
+                  type: string
+                qr_code_uri:
+                  type: string
+    InvalidClientOrScopeError:
+      title: InvalidClientOrScopeError
+      type: object
+      properties:
+        error:
+          type: string
+          example: 500 Internal Server Error
+    ClientCredentialsToken:
+      title: ClientCredentialsToken
+      type: object
+      properties:
+        access_token:
+          type: string
+        token_type:
+          type: string
+        expires_in:
+          type: integer
+        scope:
+          type: string
+    InvalidClientError:
+      title: InvalidClientError
+      type: object
+      properties:
+        error:
+          type: string
+          example: invalid_client
+        error_description:
+          type: string
+    RefreshTokenNotFoundError:
+      title: RefreshTokenNotFoundError
+      type: object
+      properties:
+        error:
+          type: string
+          example: invalid_grant
+        error_description:
+          type: string
+          example: refresh_token_not_found
+    UserInfoFullResponse:
+      title: UserInfoFullResponse
+      type: object
+      properties:
+        sub:
+          type: string
+        given_name:
+          type: string
+        family_name:
+          type: string
+        preferred_username:
+          type: string
+        email:
+          type: string
+        email_verified:
+          type: boolean
+        gender:
+          type: string
+        birthdate:
+          type: string
+        phone_number:
+          type: string
+        phone_number_verified:
+          type: boolean
+        address:
+          type: object
+          properties:
+            street_address:
+              type: string
+            postal_code:
+              type: string
+            country:
+              type: string
+    UserInfoCompanyResponse:
+      title: UserInfoCompanyResponse
+      type: object
+      properties:
+        sub:
+          type: string
+        given_name:
+          type: string
+        family_name:
+          type: string
+        preferred_username:
+          type: string
+        email:
+          type: string
+        email_verified:
+          type: boolean
+        gender:
+          type: string
+        birthdate:
+          type: string
+        company_id:
+          type: string
+        company_name:
+          type: string
+        company_vat_number:
+          type: string
+        company_country_name:
+          type: string
+        company_invoice_address:
+          type: string
+        company_postal_address:
+          type: string
+        total_available_signs:
+          type: string
+        total_used_signs:
+          type: string
+    UserInfoMinimalResponse:
+      title: UserInfoMinimalResponse
+      type: object
+      properties:
+        sub:
+          type: string
+    VerificationReport:
+      title: VerificationReport
+      type: object
+      properties:
+        id:
+          type: string
+        data:
+          $ref: '#/components/schemas/VerificationReportData'
+    VerificationReportData:
+      title: VerificationReportData
+      type: object
+      properties:
+        pseudonym:
+          type: string
+        product_name:
+          type: string
+        status:
+          type: string
+        # ... and all other fields from the example
+    VerificationReportPending:
+      title: VerificationReportPending
+      type: object
+      properties:
+        id:
+          type: string
+        data:
+          $ref: '#/components/schemas/VerificationReportPendingData'
+    VerificationReportPendingData:
+      title: VerificationReportPendingData
+      type: object
+      properties:
+        pseudonym:
+          type: string
+        product_name:
+          type: string
+        status:
+          type: string
+        purchase_start_date:
+          type: string
+        purchase_completed_date:
+          type: string
+          nullable: true
+    VerificationReportRejected:
+      title: VerificationReportRejected
+      type: object
+      properties:
+        id:
+          type: string
+        data:
+          $ref: '#/components/schemas/VerificationReportRejectedData'
+    VerificationReportRejectedData:
+      title: VerificationReportRejectedData
+      type: object
+      properties:
+        pseudonym:
+          type: string
+        product_name:
+          type: string
+        status:
+          type: string
+        rejection_reason:
+          type: string
+        # ... and all other fields from the example
+    MissingPseudonymError:
+      title: MissingPseudonymError
+      type: object
+      properties:
+        errors:
+          type: array
+          items:
+            type: string
+    CSCTokenResponse:
+      title: CSCTokenResponse
+      type: object
+      properties:
+        access_token:
+          type: string
+    InvalidUpstreamTokenError:
+      title: InvalidUpstreamTokenError
+      type: object
+      properties:
+        error:
+          type: string
+        validations:
+          type: object
+          properties:
+            original:
+              type: array
+              items:
+                type: string
+    CredentialListResponse:
+      title: CredentialListResponse
+      type: object
+      properties:
+        credentialIDs:
+          type: array
+          items:
+            type: string
+    CredentialInfoRequest:
+      title: CredentialInfoRequest
+      type: object
+      properties:
+        credentialID:
+          type: string
+        certificates:
+          type: string
+          enum: [ single, chain, none ]
+        certInfo:
+          type: boolean
+        authInfo:
+          type: boolean
+    CredentialInfoResponse:
+      title: CredentialInfoResponse
+      type: object
+      properties:
+        key:
+          $ref: '#/components/schemas/CredentialKeyInfo'
+        cert:
+          $ref: '#/components/schemas/CredentialCertInfo'
+        authMode:
+          type: string
+        multisign:
+          type: integer
+        lang:
+          type: string
+        SCAL:
+          type: string
+    CredentialInfoChainResponse:
+      title: CredentialInfoChainResponse
+      # Same as CredentialInfoResponse, but the `certificates` array will have multiple items
+      type: object
+      properties:
+        key:
+          $ref: '#/components/schemas/CredentialKeyInfo'
+        cert:
+          $ref: '#/components/schemas/CredentialCertInfo'
+        authMode:
+          type: string
+        multisign:
+          type: integer
+        lang:
+          type: string
+        SCAL:
+          type: string
+    CredentialInfoNoCertsResponse:
+      title: CredentialInfoNoCertsResponse
+      type: object
+      properties:
+        key:
+          $ref: '#/components/schemas/CredentialKeyInfo'
+        cert:
+          $ref: '#/components/schemas/CredentialCertInfoNoCerts'
+        authMode:
+          type: string
+        multisign:
+          type: integer
+        lang:
+          type: string
+        SCAL:
+          type: string
+    CredentialKeyInfo:
+      title: CredentialKeyInfo
+      type: object
+      properties:
+        status:
+          type: string
+        algo:
+          type: array
+          items:
+            type: string
+        len:
+          type: integer
+    CredentialCertInfo:
+      title: CredentialCertInfo
+      type: object
+      properties:
+        status:
+          type: string
+        certificates:
+          type: array
+          items:
+            type: string
+        issuerDN:
+          type: string
+        serialNumber:
+          type: string
+        subjectDN:
+          type: string
+        validFrom:
+          type: string
+        validTo:
+          type: string
+    CredentialCertInfoNoCerts:
+      title: CredentialCertInfoNoCerts
+      type: object
+      properties:
+        status:
+          type: string
+        certificates:
+          type: array
+          items:
+            type: string
+          nullable: true
+        issuerDN:
+          type: string
+        serialNumber:
+          type: string
+        subjectDN:
+          type: string
+        validFrom:
+          type: string
+        validTo:
+          type: string
+    InvalidCredentialIDError:
+      title: InvalidCredentialIDError
+      type: object
+      properties:
+        error:
+          type: string
+        error_description:
+          type: string
+    SignAuthorizeRequest:
+      title: SignAuthorizeRequest
+      type: object
+      properties:
+        credentialID:
+          type: string
+        numSignatures:
+          type: integer
+        hash:
+          type: array
+          items:
+            type: string
+        clientData:
+          type: string
+    SignAuthorizeResponse:
+      title: SignAuthorizeResponse
+      type: object
+      properties:
+        SAD:
+          type: string
+    MissingCredentialIDError:
+      title: MissingCredentialIDError
+      type: object
+      properties:
+        error:
+          type: string
+        error_description:
+          type: string
+    CSCSignHashRequest:
+      title: CSCSignHashRequest
+      type: object
+      properties:
+        SAD:
+          type: string
+        hash:
+          type: array
+          items:
+            type: string
+        hashAlgo:
+          type: string
+        signAlgo:
+          type: string
+    CSCSignHashResponse:
+      title: CSCSignHashResponse
+      type: object
+      properties:
+        signatures:
+          type: array
+          items:
+            type: string
+    InvalidSADError:
+      title: InvalidSADError
+      type: object
+      properties:
+        error:
+          type: string
+        error_description:
+          type: string
+    TimestampRequest:
+      title: TimestampRequest
+      type: object
+      properties:
+        hash:
+          type: string
+        hashAlgo:
+          type: string
+    TimestampResponse:
+      title: TimestampResponse
+      type: object
+      properties:
+        timestamp:
+          type: string
+    InvalidBase64HashError:
+      title: InvalidBase64HashError
+      type: object
+      properties:
+        error:
+          type: string
+        error_description:
+          type: string
+    ESealSignHashRequest:
+      title: ESealSignHashRequest
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            type:
+              type: string
+            attributes:
+              type: object
+              properties:
+                hash_to_sign:
+                  type: string
+    ESealSignHashResponse:
+      title: ESealSignHashResponse
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            id:
+              type: string
+            type:
+              type: string
+            attributes:
+              type: object
+              properties:
+                signature:
+                  type: string
+                certificate:
+                  type: string
+                hash_to_sign:
+                  type: string
+    ESealInvalidAuthError:
+      title: ESealInvalidAuthError
+      type: object
+      properties:
+        message:
+          type: string
+    OtvQRCodeResponse:
+      title: OtvQRCodeResponse
+      type: object
+      properties:
+        qr_code_url:
+          type: string
+        pseudonym:
+          type: string
+    OtvUnauthorizedError:
+      title: OtvUnauthorizedError
+      type: object
+      properties:
+        status:
+          type: string
+    SermiForbiddenError:
+      title: SermiForbiddenError
+      type: object
+      properties:
+        status:
+          type: string
+          example: "403 - Forbidden"
+    SermiIoCreateRequest:
+      title: SermiIoCreateRequest
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            type:
+              type: string
+              example: independent_operator
+            attributes:
+              $ref: '#/components/schemas/SermiIoAttributes'
+    SermiIoAttributes:
+      title: SermiIoAttributes
+      type: object
+      properties:
+        cab_uid:
+          type: string
+        io_uid:
+          type: string
+        organization_name:
+          type: string
+        street:
+          type: string
+        house_number:
+          type: string
+        house_number_addition:
+          type: string
+        postcode:
+          type: string
+        city:
+          type: string
+        country_code:
+          type: string
+        vat_number:
+          type: string
+    SermiIoResponse:
+      title: SermiIoResponse
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            id:
+              type: string
+            type:
+              type: string
+            attributes:
+              $ref: '#/components/schemas/SermiIoAttributes'
+    SermiInvalidIoUidError:
+      title: SermiInvalidIoUidError
+      type: object
+      properties:
+        errors:
+          type: array
+          items:
+            $ref: '#/components/schemas/SermiErrorObject'
+    SermiErrorObject:
+      title: SermiErrorObject
+      type: object
+      properties:
+        source:
+          type: object
+          properties:
+            pointer:
+              type: string
+        code:
+          type: string
+        detail:
+          type: string
+    SermiIoDeleteRequest:
+      title: SermiIoDeleteRequest
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            type:
+              type: string
+            attributes:
+              type: object
+              properties:
+                cab_uid:
+                  type: string
+                io_uid:
+                  type: string
+    SermiIoDeleteResponse:
+      title: SermiIoDeleteResponse
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            id:
+              type: string
+            type:
+              type: string
+            attributes:
+              type: object
+              properties:
+                cab_uid:
+                  type: string
+                io_uid:
+                  type: string
+    SermiIoNotFoundError:
+      title: SermiIoNotFoundError
+      type: object
+      properties:
+        errors:
+          type: array
+          items:
+            $ref: '#/components/schemas/SermiErrorObject'
+    SermiCabMismatchError:
+      title: SermiCabMismatchError
+      type: object
+      properties:
+        errors:
+          type: array
+          items:
+            $ref: '#/components/schemas/SermiErrorObject'
+    SermiRssCreateRequest:
+      title: SermiRssCreateRequest
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            type:
+              type: string
+            attributes:
+              $ref: '#/components/schemas/SermiRssAttributes'
+    SermiRssAttributes:
+      title: SermiRssAttributes
+      type: object
+      properties:
+        cab_uid:
+          type: string
+        rss_uid:
+          type: string
+        organization_name:
+          type: string
+        street:
+          type: string
+        house_number:
+          type: string
+        house_number_addition:
+          type: string
+        postcode:
+          type: string
+        city:
+          type: string
+        country_code:
+          type: string
+        vat_number:
+          type: string
+    SermiRssResponse:
+      title: SermiRssResponse
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            id:
+              type: string
+            type:
+              type: string
+            attributes:
+              $ref: '#/components/schemas/SermiRssAttributes'
+    SermiInvalidRssUidError:
+      title: SermiInvalidRssUidError
+      type: object
+      properties:
+        errors:
+          type: array
+          items:
+            $ref: '#/components/schemas/SermiErrorObject'
+    SermiRssDeleteRequest:
+      title: SermiRssDeleteRequest
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            type:
+              type: string
+            attributes:
+              type: object
+              properties:
+                cab_uid:
+                  type: string
+                rss_uid:
+                  type: string
+    SermiRssDeleteResponse:
+      title: SermiRssDeleteResponse
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            id:
+              type: string
+            type:
+              type: string
+            attributes:
+              type: object
+              properties:
+                cab_uid:
+                  type: string
+                rss_uid:
+                  type: string
+    SermiRssNotFoundError:
+      title: SermiRssNotFoundError
+      type: object
+      properties:
+        errors:
+          type: array
+          items:
+            $ref: '#/components/schemas/SermiErrorObject'
+    SermiIoPaCreateRequest:
+      title: SermiIoPaCreateRequest
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            type:
+              type: string
+            attributes:
+              $ref: '#/components/schemas/SermiIoPaAttributes'
+    SermiIoPaAttributes:
+      title: SermiIoPaAttributes
+      type: object
+      properties:
+        cab_uid:
+          type: string
+        io_uid:
+          type: string
+        organization_name:
+          type: string
+        street:
+          type: string
+        house_number:
+          type: string
+        house_number_addition:
+          type: string
+        postcode:
+          type: string
+        city:
+          type: string
+        country_code:
+          type: string
+    SermiIoPaResponse:
+      title: SermiIoPaResponse
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            id:
+              type: string
+            type:
+              type: string
+            attributes:
+              $ref: '#/components/schemas/SermiIoPaAttributes'
+    SermiIoPaVatError:
+      title: SermiIoPaVatError
+      type: object
+      properties:
+        errors:
+          type: array
+          items:
+            $ref: '#/components/schemas/SermiErrorObject'
+    SermiIoeCreateRequest:
+      title: SermiIoeCreateRequest
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            type:
+              type: string
+            attributes:
+              $ref: '#/components/schemas/SermiIoeAttributes'
+    SermiIoeAttributes:
+      title: SermiIoeAttributes
+      type: object
+      properties:
+        cab_uid:
+          type: string
+        io_uid:
+          type: string
+        ioe_uid:
+          type: string
+        terms_and_conditions_accepted:
+          type: boolean
+    SermiIoeCreateResponse:
+      title: SermiIoeCreateResponse
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            id:
+              type: string
+            type:
+              type: string
+            attributes:
+              type: object
+              properties:
+                cab_uid:
+                  type: string
+                io_uid:
+                  type: string
+                ioe_uid:
+                  type: string
+                email:
+                  type: string
+                terms_and_conditions_accepted:
+                  type: boolean
+                idk_payload:
+                  type: string
+    SermiIoNotFoundForIoeError:
+      title: SermiIoNotFoundForIoeError
+      type: object
+      properties:
+        errors:
+          type: array
+          items:
+            $ref: '#/components/schemas/SermiErrorObject'
+    SermiIoeAuthRequest:
+      title: SermiIoeAuthRequest
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            type:
+              type: string
+            attributes:
+              type: object
+              properties:
+                cab_uid:
+                  type: string
+                io_uid:
+                  type: string
+                ioe_uid:
+                  type: string
+                action:
+                  type: string
+                  enum: [ approve, revoke ]
+                reason:
+                  type: string
+    SermiIoeAuthResponse:
+      title: SermiIoeAuthResponse
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            id:
+              type: string
+            type:
+              type: string
+            attributes:
+              type: object
+              properties:
+                cab_uid:
+                  type: string
+                io_uid:
+                  type: string
+                ioe_uid:
+                  type: string
+                state:
+                  type: string
+                  example: approved
+    SermiIoeRevokeResponse:
+      title: SermiIoeRevokeResponse
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            id:
+              type: string
+            type:
+              type: string
+            attributes:
+              type: object
+              properties:
+                cab_uid:
+                  type: string
+                io_uid:
+                  type: string
+                ioe_uid:
+                  type: string
+                state:
+                  type: string
+                  example: revoked
+    SermiIoeNotFoundError:
+      title: SermiIoeNotFoundError
+      type: object
+      properties:
+        errors:
+          type: array
+          items:
+            $ref: '#/components/schemas/SermiErrorObject'
+    SermiIoeResetCertRequest:
+      title: SermiIoeResetCertRequest
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            type:
+              type: string
+            attributes:
+              type: object
+              properties:
+                cab_uid:
+                  type: string
+                io_uid:
+                  type: string
+                ioe_uid:
+                  type: string
+    SermiIoeResetCertResponse:
+      title: SermiIoeResetCertResponse
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            id:
+              type: string
+            type:
+              type: string
+            attributes:
+              type: object
+              properties:
+                cab_uid:
+                  type: string
+                io_uid:
+                  type: string
+                ioe_uid:
+                  type: string
+                idk_payload:
+                  type: string
+    SermiEmployeeCompanyMismatchError:
+      title: SermiEmployeeCompanyMismatchError
+      type: object
+      properties:
+        errors:
+          type: array
+          items:
+            $ref: '#/components/schemas/SermiErrorObject'
+    SermiIoeRenewCertRequest:
+      title: SermiIoeRenewCertRequest
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            type:
+              type: string
+            attributes:
+              type: object
+              properties:
+                cab_uid:
+                  type: string
+                io_uid:
+                  type: string
+                ioe_uid:
+                  type: string
+    SermiIoeRenewCertResponse:
+      title: SermiIoeRenewCertResponse
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            id:
+              type: string
+            type:
+              type: string
+            attributes:
+              type: object
+              properties:
+                cab_uid:
+                  type: string
+                io_uid:
+                  type: string
+                ioe_uid:
+                  type: string
+    SermiNotReadyForRenewalError:
+      title: SermiNotReadyForRenewalError
+      type: object
+      properties:
+        errors:
+          type: array
+          items:
+            $ref: '#/components/schemas/SermiErrorObject'
+    SermiIoeLoginsResponse:
+      title: SermiIoeLoginsResponse
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            id:
+              type: string
+            type:
+              type: string
+            attributes:
+              type: object
+              properties:
+                cab_uid:
+                  type: string
+                io_uid:
+                  type: string
+                ioe_uid:
+                  type: string
+                logins:
+                  $ref: '#/components/schemas/SermiLoginList'
+    SermiLoginList:
+      title: SermiLoginList
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/SermiLoginEntry'
+        meta:
+          $ref: '#/components/schemas/SermiPaginationMeta'
+    SermiLoginEntry:
+      title: SermiLoginEntry
+      type: object
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+        attributes:
+          type: object
+          properties:
+            date:
+              type: string
+            time:
+              type: string
+            success:
+              type: boolean
+            provider:
+              type: string
+    SermiPaginationMeta:
+      title: SermiPaginationMeta
+      type: object
+      properties:
+        per_page:
+          type: integer
+        page:
+          type: integer
+        total:
+          type: integer
+    SermiIoLoginsResponse:
+      title: SermiIoLoginsResponse
+      # Similar to SermiIoeLoginsResponse but for an entire IO
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            id:
+              type: string
+            type:
+              type: string
+            attributes:
+              type: object
+              properties:
+                cab_uid:
+                  type: string
+                io_uid:
+                  type: string
+                start_date:
+                  type: string
+                end_date:
+                  type: string
+                logins:
+                  $ref: '#/components/schemas/SermiLoginList'
+    SermiRsseCreateRequest:
+      title: SermiRsseCreateRequest
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            type:
+              type: string
+            attributes:
+              $ref: '#/components/schemas/SermiRsseAttributes'
+    SermiRsseAttributes:
+      title: SermiRsseAttributes
+      type: object
+      properties:
+        cab_uid:
+          type: string
+        rss_uid:
+          type: string
+        rsse_uid:
+          type: string
+        terms_and_conditions_accepted:
+          type: boolean
+    SermiRsseCreateResponse:
+      title: SermiRsseCreateResponse
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            id:
+              type: string
+            type:
+              type: string
+            attributes:
+              type: object
+              properties:
+                cab_uid:
+                  type: string
+                rss_uid:
+                  type: string
+                rsse_uid:
+                  type: string
+                email:
+                  type: string
+                terms_and_conditions_accepted:
+                  type: boolean
+                idk_payload:
+                  type: string
+    SermiRsseAuthRequest:
+      title: SermiRsseAuthRequest
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            type:
+              type: string
+            attributes:
+              type: object
+              properties:
+                cab_uid:
+                  type: string
+                rss_uid:
+                  type: string
+                rsse_uid:
+                  type: string
+                action:
+                  type: string
+                  enum: [ approve, revoke ]
+                reason:
+                  type: string
+    SermiRsseAuthResponse:
+      title: SermiRsseAuthResponse
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            id:
+              type: string
+            type:
+              type: string
+            attributes:
+              type: object
+              properties:
+                cab_uid:
+                  type: string
+                rss_uid:
+                  type: string
+                rsse_uid:
+                  type: string
+                state:
+                  type: string
+                  example: approved
+    SermiRsseRevokeResponse:
+      title: SermiRsseRevokeResponse
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            id:
+              type: string
+            type:
+              type: string
+            attributes:
+              type: object
+              properties:
+                cab_uid:
+                  type: string
+                rss_uid:
+                  type: string
+                rsse_uid:
+                  type: string
+                state:
+                  type: string
+                  example: revoked
+    SermiRsseNotFoundError:
+      title: SermiRsseNotFoundError
+      type: object
+      properties:
+        errors:
+          type: array
+          items:
+            $ref: '#/components/schemas/SermiErrorObject'
+    SermiRsseResetCertRequest:
+      title: SermiRsseResetCertRequest
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            type:
+              type: string
+            attributes:
+              type: object
+              properties:
+                cab_uid:
+                  type: string
+                rss_uid:
+                  type: string
+                rsse_uid:
+                  type: string
+    SermiRsseResetCertResponse:
+      title: SermiRsseResetCertResponse
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            id:
+              type: string
+            type:
+              type: string
+            attributes:
+              type: object
+              properties:
+                cab_uid:
+                  type: string
+                rss_uid:
+                  type: string
+                rsse_uid:
+                  type: string
+                idk_payload:
+                  type: string
+    SermiRsseRenewCertRequest:
+      title: SermiRsseRenewCertRequest
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            type:
+              type: string
+            attributes:
+              type: object
+              properties:
+                cab_uid:
+                  type: string
+                rss_uid:
+                  type: string
+                rsse_uid:
+                  type: string
+    SermiRsseRenewCertResponse:
+      title: SermiRsseRenewCertResponse
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            id:
+              type: string
+            type:
+              type: string
+            attributes:
+              type: object
+              properties:
+                cab_uid:
+                  type: string
+                rss_uid:
+                  type: string
+                rsse_uid:
+                  type: string
+    SermiRsseLoginsResponse:
+      title: SermiRsseLoginsResponse
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            id:
+              type: string
+            type:
+              type: string
+            attributes:
+              type: object
+              properties:
+                cab_uid:
+                  type: string
+                rss_uid:
+                  type: string
+                rsse_uid:
+                  type: string
+                logins:
+                  $ref: '#/components/schemas/SermiLoginList'
+    SermiRssLoginsResponse:
+      title: SermiRssLoginsResponse
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            id:
+              type: string
+            type:
+              type: string
+            attributes:
+              type: object
+              properties:
+                cab_uid:
+                  type: string
+                rss_uid:
+                  type: string
+                start_date:
+                  type: string
+                end_date:
+                  type: string
+                logins:
+                  $ref: '#/components/schemas/SermiLoginList'
+    ScimCreateUserRequest:
+      title: ScimCreateUserRequest
+      type: object
+      properties:
+        schemas:
+          type: array
+          items:
+            type: string
+        userName:
+          type: string
+        active:
+          type: boolean
+        roles:
+          type: array
+          items:
+            $ref: '#/components/schemas/ScimRole'
+    ScimRole:
+      title: ScimRole
+      type: object
+      properties:
+        primary:
+          type: boolean
+        value:
+          type: string
+    ScimUserResponse:
+      title: ScimUserResponse
+      type: object
+      properties:
+        schemas:
+          type: array
+          items:
+            type: string
+        id:
+          type: string
+        userName:
+          type: string
+        roles:
+          type: array
+          items:
+            $ref: '#/components/schemas/ScimRoleResponse'
+        active:
+          type: boolean
+    ScimRoleResponse:
+      title: ScimRoleResponse
+      type: object
+      properties:
+        value:
+          type: string
+        primary:
+          type: boolean
+        display:
+          type: string
+        type:
+          type: string
+    ScimUserExistsError:
+      title: ScimUserExistsError
+      type: object
+      properties:
+        status:
+          type: integer
+        scimType:
+          type: string
+        detail:
+          type: string
+    ScimUserListResponse:
+      title: ScimUserListResponse
+      type: object
+      properties:
+        schemas:
+          type: array
+          items:
+            type: string
+        totalResults:
+          type: integer
+        startIndex:
+          type: integer
+        itemsPerPage:
+          type: integer
+        Resources:
+          type: array
+          items:
+            $ref: '#/components/schemas/ScimUserResource'
+    ScimUserResource:
+      title: ScimUserResource
+      type: object
+      properties:
+        schemas:
+          type: array
+          items:
+            type: string
+        id:
+          type: string
+        userName:
+          type: string
+        roles:
+          type: array
+          items:
+            $ref: '#/components/schemas/ScimRoleResponse'
+        active:
+          type: boolean
+    ScimPatchRequest:
+      title: ScimPatchRequest
+      type: object
+      properties:
+        schemas:
+          type: array
+          items:
+            type: string
+        Operations:
+          type: array
+          items:
+            type: object
+            properties:
+              op:
+                type: string
+              path:
+                type: string
+              value:
+                type: boolean
+    ScimUserRolesPatchRequest:
+      title: ScimUserRolesPatchRequest
+      type: object
+      properties:
+        schemas:
+          type: array
+          items:
+            type: string
+        Operations:
+          type: array
+          items:
+            type: object
+            properties:
+              op:
+                type: string
+              path:
+                type: string
+              value:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ScimRole'
+    ScimRemoveUserRoleRequest:
+      title: ScimRemoveUserRoleRequest
+      type: object
+      properties:
+        schemas:
+          type: array
+          items:
+            type: string
+        Operations:
+          type: array
+          items:
+            type: object
+            properties:
+              op:
+                type: string
+              path:
+                type: string
+    ScimSchemasResponse:
+      title: ScimSchemasResponse
+      type: object
+      properties:
+        schemas:
+          type: array
+          items:
+            type: string
+        totalResults:
+          type: integer
+        startIndex:
+          type: integer
+        itemsPerPage:
+          type: integer
+        Resources:
+          type: array
+          items:
+            $ref: '#/components/schemas/ScimSchemaResource'
+    ScimSchemaResource:
+      title: ScimSchemaResource
+      type: object
+      properties:
+        name:
+          type: string
+        id:
+          type: string
+        description:
+          type: string
+        schemas:
+          type: array
+          items:
+            type: string
+        meta:
+          type: object
+          properties:
+            resourceType:
+              type: string
+        attributes:
+          type: array
+          items:
+            $ref: '#/components/schemas/ScimAttribute'
+    ScimAttribute:
+      title: ScimAttribute
+      type: object
+      properties:
+        multiValued:
+          type: boolean
+        required:
+          type: boolean
+        caseExact:
+          type: boolean
+        mutability:
+          type: string
+        uniqueness:
+          type: string
+        returned:
+          type: string
+        canonicalValues:
+          type: array
+          items: { }
+        name:
+          type: string
+        type:
+          type: string
+        subAttributes:
+          type: array
+          items:
+            $ref: '#/components/schemas/ScimSubAttribute'
+    ScimSubAttribute:
+      title: ScimSubAttribute
+      type: object
+      properties:
+        multiValued:
+          type: boolean
+        required:
+          type: boolean
+        caseExact:
+          type: boolean
+        mutability:
+          type: string
+        uniqueness:
+          type: string
+        returned:
+          type: string
+        canonicalValues:
+          type: array
+          items: { }
+        name:
+          type: string
+        type:
+          type: string
+    ScimServiceProviderConfigResponse:
+      title: ScimServiceProviderConfigResponse
+      type: object
+      properties:
+        bulk:
+          type: object
+          properties:
+            supported:
+              type: boolean
+        changePassword:
+          type: object
+          properties:
+            supported:
+              type: boolean
+        sort:
+          type: object
+          properties:
+            supported:
+              type: boolean
+        etag:
+          type: object
+          properties:
+            supported:
+              type: boolean
+        filter:
+          type: object
+          properties:
+            supported:
+              type: boolean
+        patch:
+          type: object
+          properties:
+            supported:
+              type: boolean
+        schemas:
+          type: array
+          items:
+            type: string
+  securitySchemes:
+    httpBasic:
+      type: http
+      scheme: basic
+security:
+  - httpBasic: [ ]
+tags:
+  - name: Web login
+  - name: Passwordless login
+  - name: Client credentials
+  - name: Refresh token
+  - name: OIDC user info
+  - name: Identity verification report
+  - name: CSC API
+  - name: eSeal autosigner
+  - name: One-time verification
+  - name: IO and RSS
+  - name: IOE
+  - name: RSSE
+  - name: Users
+  - name: User roles
+  - name: Discovery

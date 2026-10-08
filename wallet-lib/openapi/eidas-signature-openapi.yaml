@@ -1,0 +1,1014 @@
+openapi: 3.0.4
+info:
+  version: "1.0.0"
+  title: "eIDAS Signature REST API"
+  description: |
+    REST API for creating and validating eIDAS-compliant electronic signatures.
+
+    Supports CAdES, PAdES, JAdES, and XAdES signature formats with all baseline levels (B, T, LT, LTA).
+
+    Key management (providers, keys, certificates) is handled by the KMS REST API separately.
+    This API focuses on signature operations and configuration.
+
+    ## Signing Workflows
+
+    ### One-Step Signing
+    Use `/signatures/sign` to create a complete signature in a single API call.
+
+    ### Two-Step External Signing
+    For scenarios where the signature computation happens externally (HSM, smartcard, remote signing):
+    1. POST `/signatures/digest` - Get the digest to sign externally
+    2. POST `/signatures/complete` - Complete with the external signature value
+
+    ## Configuration Support
+    Create reusable signature configurations via `/configs` endpoints.
+    Individual parameters can be overridden per-request.
+  contact:
+    name: "Example Organization"
+    url: "https://example.com"
+    email: "support@example.com"
+  license:
+    name: "Apache License 2.0"
+    url: "https://www.apache.org/licenses/LICENSE-2.0"
+
+servers:
+  - url: "http://localhost:8080/api/eidas/signatures/v1"
+    description: "Development"
+  - url: "https://gw.api.example.com/eidas/signatures/v1"
+    description: "VDX Platform"
+
+tags:
+  - name: Signing
+    description: Digital signature creation operations
+  - name: Validation
+    description: Signature validation operations
+  - name: Timestamp
+    description: Timestamp operations
+  - name: SignatureConfig
+    description: Signature configuration management
+  - name: EzDocSeal
+    description: Simple document sealing and signature APIs
+
+paths:
+  # ==================== SIGNING ENDPOINTS ====================
+
+  '/signatures/sign':
+    post:
+      tags:
+        - Signing
+      security:
+        - oauth2:
+            - sign:eidas
+        - openIdConnect: []
+        - bearer: []
+      summary: Sign a document (one-step)
+      operationId: signDocument
+      description: |
+        Signs a document in a single step - determines input, creates digest, signs, and merges in one call.
+
+        For scenarios where the signature must be computed externally (HSM, smartcard, remote signing service),
+        use the two-step workflow with `/signatures/digest` and `/signatures/complete`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SignDocumentRequest'
+      responses:
+        '200':
+          description: Document signed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SignDocumentResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  '/signatures/digest':
+    post:
+      tags:
+        - Signing
+      security:
+        - oauth2:
+            - sign:eidas
+        - openIdConnect: []
+        - bearer: []
+      summary: Create digest for external signing (step 1 of 2)
+      operationId: createDigest
+      description: |
+        Creates a digest/hash of the document that can be signed externally (e.g., by HSM, smartcard, or remote signing service).
+
+        Returns a session ID and the digest bytes. The digest should be signed using the external system,
+        then the signature should be submitted via `/signatures/complete`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateDigestRequest'
+      responses:
+        '200':
+          description: Digest created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateDigestResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  '/signatures/complete':
+    post:
+      tags:
+        - Signing
+      security:
+        - oauth2:
+            - sign:eidas
+        - openIdConnect: []
+        - bearer: []
+      summary: Complete signature with external value (step 2 of 2)
+      operationId: completeSignature
+      description: |
+        Completes a signature using an externally computed signature value.
+        Use the session ID from the `/signatures/digest` response.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CompleteSignatureRequest'
+      responses:
+        '200':
+          description: Signature completed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SignDocumentResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          description: Session not found or expired
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  # ==================== VALIDATION ENDPOINTS ====================
+
+  '/signatures/validate':
+    post:
+      tags:
+        - Validation
+      security:
+        - oauth2:
+            - read:eidas
+        - openIdConnect: []
+        - bearer: []
+      summary: Validate a signed document
+      operationId: validateSignature
+      description: |
+        Validates the signatures in a signed document against EU Trusted Lists.
+        Supports CAdES, PAdES, JAdES, and XAdES signed documents.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ValidateSignatureRequest'
+      responses:
+        '200':
+          description: Validation completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  '/signatures/validate-raw':
+    post:
+      tags:
+        - Validation
+      security:
+        - oauth2:
+            - read:eidas
+        - openIdConnect: []
+        - bearer: []
+      summary: Validate a raw signature
+      operationId: validateRawSignature
+      description: |
+        Validates a raw cryptographic signature against the original input data.
+        Uses the referenced key from the KMS to verify the signature.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ValidateRawSignatureRequest'
+      responses:
+        '200':
+          description: Validation completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidateRawSignatureResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  # ==================== TIMESTAMP ENDPOINTS ====================
+
+  '/signatures/timestamp':
+    post:
+      tags:
+        - Timestamp
+      security:
+        - oauth2:
+            - sign:eidas
+        - openIdConnect: []
+        - bearer: []
+      summary: Request a timestamp
+      operationId: requestTimestamp
+      description: |
+        Requests an RFC 3161 timestamp from a Time Stamp Authority (TSA).
+        Can be used standalone or as part of a signing workflow.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TimestampRequest'
+      responses:
+        '200':
+          description: Timestamp created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TimestampResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  # ==================== CONFIGURATION ENDPOINTS ====================
+
+  '/configs':
+    post:
+      tags:
+        - SignatureConfig
+      security:
+        - oauth2:
+            - admin:eidas_config
+        - openIdConnect: []
+        - bearer: []
+      summary: Create a signature configuration
+      operationId: createConfig
+      description: |
+        Creates a reusable signature configuration that can be referenced when signing.
+        Configurations define signature level, format parameters, timestamp settings, etc.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSignatureConfigRequest'
+      responses:
+        '201':
+          description: Configuration created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SignatureConfigResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+    get:
+      tags:
+        - SignatureConfig
+      security:
+        - oauth2:
+            - read:eidas_config
+        - openIdConnect: []
+        - bearer: []
+      summary: List signature configurations
+      operationId: listConfigs
+      responses:
+        '200':
+          description: Configurations retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListSignatureConfigsResponse'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  '/configs/{configId}':
+    parameters:
+      - $ref: '#/components/parameters/ConfigId'
+    get:
+      tags:
+        - SignatureConfig
+      security:
+        - oauth2:
+            - read:eidas_config
+        - openIdConnect: []
+        - bearer: []
+      summary: Get a signature configuration
+      operationId: getConfig
+      responses:
+        '200':
+          description: Configuration retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SignatureConfigResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+    put:
+      tags:
+        - SignatureConfig
+      security:
+        - oauth2:
+            - admin:eidas_config
+        - openIdConnect: []
+        - bearer: []
+      summary: Update a signature configuration
+      operationId: updateConfig
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateSignatureConfigRequest'
+      responses:
+        '200':
+          description: Configuration updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SignatureConfigResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+    delete:
+      tags:
+        - SignatureConfig
+      security:
+        - oauth2:
+            - admin:eidas_config
+        - openIdConnect: []
+        - bearer: []
+      summary: Delete a signature configuration
+      operationId: deleteConfig
+      responses:
+        '204':
+          description: Configuration deleted successfully
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  # ==================== EZDOCSEAL ENDPOINTS ====================
+
+  '/ezdocseal/sign':
+    post:
+      tags:
+        - EzDocSeal
+      security:
+        - oauth2:
+            - sign:eidas
+        - openIdConnect: []
+        - bearer: []
+      summary: Simple PDF signing with visual signature
+      operationId: ezDocSealSign
+      description: |
+        Signs a PDF document with a simple visual signature (blue bar style).
+        This is a convenience endpoint for quick PDF signing with sensible defaults.
+
+        Supports both JSON (Base64 content) and multipart form data uploads.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EzDocSealJsonRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/EzDocSealMultipartRequest'
+      responses:
+        '200':
+          description: Signed PDF document
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SignDocumentResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '422':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+components:
+  securitySchemes:
+    oauth2:
+      type: oauth2
+      flows:
+        clientCredentials:
+          tokenUrl: https://auth.example.com/oauth/token
+          scopes:
+            sign:eidas: Sign documents using eIDAS signatures
+            read:eidas: Read and validate signed documents
+            admin:eidas_config: Manage signature configurations
+        authorizationCode:
+          authorizationUrl: https://auth.example.com/oauth/authorize
+          tokenUrl: https://auth.example.com/oauth/token
+          scopes:
+            sign:eidas: Sign documents using eIDAS signatures
+            read:eidas: Read and validate signed documents
+            admin:eidas_config: Manage signature configurations
+
+    openIdConnect:
+      type: openIdConnect
+      openIdConnectUrl: https://auth.example.com/.well-known/openid-configuration
+
+    bearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    # -- Re-exported path/header parameters from eidas-signature-components.yml --
+    ConfigId:
+      $ref: './eidas-signature-components.yml#/components/parameters/ConfigId'
+
+  responses:
+    BadRequest:
+      description: Bad request due to invalid input
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+    InternalServerError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+  schemas:
+    # ==================== REQUEST/RESPONSE SCHEMAS ====================
+
+    SignDocumentRequest:
+      type: object
+      description: |
+        Request to sign a document.
+        Use `configId` to reference a stored configuration for signature parameters.
+        Use `parametersOverride` to selectively override specific parameters from the config.
+      required:
+        - input
+        - keyInfo
+        - configId
+      properties:
+        input:
+          $ref: '#/components/schemas/SignInput'
+        keyInfo:
+          $ref: '#/components/schemas/KeyInfo'
+        configId:
+          type: string
+          description: Reference to a stored signature configuration that provides signature parameters
+          example: "5d9f2462-13c8-45b6-8e0e-8971cbe412b5"
+        parametersOverride:
+          $ref: '#/components/schemas/SignatureParametersOverride'
+        timestampParametersOverride:
+          $ref: '#/components/schemas/TimestampParametersOverride'
+
+    SignDocumentResponse:
+      type: object
+      description: Response containing the signed document
+      required:
+        - signedData
+        - signatureLevel
+        - signingTime
+      properties:
+        signedData:
+          type: string
+          format: byte
+          description: The signed document in Base64
+        signatureLevel:
+          $ref: '#/components/schemas/SignatureLevel'
+        signingTime:
+          type: string
+          format: date-time
+          description: The signing timestamp
+        signatureId:
+          type: string
+          description: Unique identifier for this signature
+        certificateInfo:
+          $ref: '#/components/schemas/CertificateInfo'
+        timestampInfo:
+          $ref: '#/components/schemas/TimestampInfo'
+        name:
+          type: string
+          description: Output document name
+        mimeType:
+          type: string
+          description: Output MIME type
+
+    CreateDigestRequest:
+      type: object
+      description: |
+        Request to create a digest for external signing.
+        Use `configId` to reference a stored configuration for signature parameters.
+        Use `parametersOverride` to selectively override specific parameters from the config.
+      required:
+        - input
+        - keyInfo
+        - configId
+      properties:
+        input:
+          $ref: '#/components/schemas/SignInput'
+        keyInfo:
+          $ref: '#/components/schemas/KeyInfo'
+        configId:
+          type: string
+          description: Reference to a stored signature configuration that provides signature parameters
+          example: "5d9f2462-13c8-45b6-8e0e-8971cbe412b5"
+        parametersOverride:
+          $ref: '#/components/schemas/SignatureParametersOverride'
+
+    CreateDigestResponse:
+      type: object
+      description: |
+        Response containing all data needed to complete the signature.
+
+        The developer only needs to:
+        1. Extract `digestToSign` and sign it externally
+        2. Pass the entire response back to `/signatures/complete` with the `signatureValue` added
+
+        All required fields for completing the signature are included in this response,
+        so no need to store or re-send the original request data.
+      required:
+        - sessionId
+        - digestToSign
+        - signatureDocumentBytes
+        - signingDate
+        - keyInfo
+        - parameters
+      properties:
+        sessionId:
+          type: string
+          description: Session identifier for completing the signature
+          example: "pades:a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+        digestToSign:
+          type: string
+          format: byte
+          description: The digest that should be signed by the external system (Base64)
+        signatureDocumentBytes:
+          type: string
+          format: byte
+          description: Intermediate signature document state (Base64). Pass back to completeSignature.
+        documentName:
+          type: string
+          description: Original document name (required for PAdES deterministic ID). Pass back to completeSignature.
+          example: "contract.pdf"
+        signatureAlgorithm:
+          $ref: '#/components/schemas/SignatureAlgorithm'
+        signingDate:
+          type: string
+          format: date-time
+          description: The signing date locked at digest creation. Already included in parameters.
+        keyInfo:
+          $ref: '#/components/schemas/KeyInfo'
+          description: Key information (preserved from request). Pass back to completeSignature.
+        parameters:
+          $ref: '#/components/schemas/SignatureParameters'
+          description: Signature parameters with signingDate already set. Pass back to completeSignature.
+
+    CompleteSignatureRequest:
+      type: object
+      description: |
+        Request to complete a signature with an external signature value.
+
+        Simply pass the `CreateDigestResponse` fields along with the computed `signatureValue`.
+        The response from `/signatures/digest` contains all required data.
+      required:
+        - sessionId
+        - signatureValue
+        - signatureDocumentBytes
+        - keyInfo
+        - parameters
+      properties:
+        sessionId:
+          type: string
+          description: Session ID from createDigest response
+          example: "pades:a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+        signatureValue:
+          type: string
+          format: byte
+          description: The signature value computed externally (Base64)
+        signatureDocumentBytes:
+          type: string
+          format: byte
+          description: The intermediate signature document state from createDigest response (Base64)
+        documentName:
+          type: string
+          description: Document name from createDigest response (required for PAdES)
+        keyInfo:
+          $ref: '#/components/schemas/KeyInfo'
+          description: Key information from createDigest response
+        parameters:
+          $ref: '#/components/schemas/SignatureParameters'
+          description: Signature parameters from createDigest response (already has signingDate set)
+
+    ValidateSignatureRequest:
+      type: object
+      description: Request to validate a signed document
+      required:
+        - signedDocument
+      properties:
+        signedDocument:
+          type: string
+          format: byte
+          description: The signed document to validate (Base64)
+        originalDocument:
+          type: string
+          format: byte
+          description: Original document for detached signatures (Base64)
+        signatureForm:
+          $ref: '#/components/schemas/SignatureForm'
+        validationTime:
+          type: string
+          format: date-time
+          description: Time at which to validate (defaults to now)
+        checkCertificateRevocation:
+          type: boolean
+          default: true
+          description: Whether to check certificate revocation status
+
+    ValidateRawSignatureRequest:
+      type: object
+      description: Request to validate a raw cryptographic signature
+      required:
+        - input
+        - signature
+        - keyInfo
+      properties:
+        input:
+          $ref: '#/components/schemas/SignInput'
+          description: The original data that was signed
+        signature:
+          type: string
+          format: byte
+          description: The signature bytes to verify (Base64)
+        keyInfo:
+          $ref: '#/components/schemas/KeyInfo'
+          description: Key information for verification
+
+    ValidateRawSignatureResponse:
+      type: object
+      description: Raw signature validation result
+      required:
+        - isValid
+      properties:
+        isValid:
+          type: boolean
+          description: Whether the signature is valid
+
+    ValidationResponse:
+      type: object
+      description: Signature validation result
+      required:
+        - isValid
+        - signatures
+      properties:
+        isValid:
+          type: boolean
+          description: Overall validation result
+        signatures:
+          type: array
+          items:
+            $ref: '#/components/schemas/SignatureValidation'
+        validationTime:
+          type: string
+          format: date-time
+
+    SignatureValidation:
+      type: object
+      description: Validation result for a single signature
+      required:
+        - indication
+      properties:
+        signatureId:
+          type: string
+        indication:
+          $ref: '#/components/schemas/ValidationIndication'
+        subIndication:
+          type: string
+          description: More specific indication when not PASSED
+        signatureLevel:
+          $ref: '#/components/schemas/SignatureLevel'
+        signingTime:
+          type: string
+          format: date-time
+        certificateInfo:
+          $ref: '#/components/schemas/CertificateInfo'
+        timestampInfo:
+          $ref: '#/components/schemas/TimestampInfo'
+        errors:
+          type: array
+          items:
+            type: string
+        warnings:
+          type: array
+          items:
+            type: string
+
+    TimestampRequest:
+      type: object
+      description: Request for a timestamp
+      required:
+        - data
+      properties:
+        data:
+          type: string
+          format: byte
+          description: Data to timestamp (typically a hash, Base64)
+        timestampParameters:
+          $ref: '#/components/schemas/TimestampParameters'
+
+    TimestampResponse:
+      type: object
+      description: Timestamp response
+      required:
+        - timestampToken
+      properties:
+        timestampToken:
+          type: string
+          format: byte
+          description: RFC 3161 timestamp token (Base64)
+        timestampInfo:
+          $ref: '#/components/schemas/TimestampInfo'
+
+    # ==================== CONFIGURATION SCHEMAS ====================
+
+    CreateSignatureConfigRequest:
+      type: object
+      description: |
+        Request to create a signature configuration.
+        The configuration stores signature parameters that can be reused across signing requests.
+        Individual parameters can be overridden per-request using `parametersOverride`.
+      required:
+        - name
+        - parameters
+      properties:
+        name:
+          type: string
+          description: Human-readable configuration name
+          example: "Production PAdES Config"
+        description:
+          type: string
+          description: Configuration description
+        parameters:
+          $ref: '#/components/schemas/SignatureParameters'
+        timestampParameters:
+          $ref: '#/components/schemas/TimestampParameters'
+        defaultKeyInfo:
+          $ref: '#/components/schemas/KeyInfo'
+
+    UpdateSignatureConfigRequest:
+      type: object
+      description: |
+        Request to update a signature configuration.
+        Only provided fields will be updated; null/omitted fields remain unchanged.
+      properties:
+        name:
+          type: string
+          description: Human-readable configuration name
+        description:
+          type: string
+          description: Configuration description
+        parameters:
+          $ref: '#/components/schemas/SignatureParameters'
+        timestampParameters:
+          $ref: '#/components/schemas/TimestampParameters'
+        defaultKeyInfo:
+          $ref: '#/components/schemas/KeyInfo'
+
+    SignatureConfigResponse:
+      type: object
+      description: Signature configuration with stored parameters
+      required:
+        - configId
+        - name
+        - parameters
+        - createdAt
+      properties:
+        configId:
+          type: string
+          description: Unique configuration identifier
+          readOnly: true
+        name:
+          type: string
+          description: Human-readable configuration name
+        description:
+          type: string
+          description: Configuration description
+        parameters:
+          $ref: '#/components/schemas/SignatureParameters'
+        timestampParameters:
+          $ref: '#/components/schemas/TimestampParameters'
+        defaultKeyInfo:
+          $ref: '#/components/schemas/KeyInfo'
+        createdAt:
+          type: string
+          format: date-time
+          readOnly: true
+        updatedAt:
+          type: string
+          format: date-time
+          readOnly: true
+
+    ListSignatureConfigsResponse:
+      type: object
+      required:
+        - configs
+      properties:
+        configs:
+          type: array
+          items:
+            $ref: '#/components/schemas/SignatureConfigResponse'
+
+    # ==================== EZDOCSEAL SCHEMAS ====================
+
+    EzDocSealJsonRequest:
+      type: object
+      description: |
+        JSON request for simple PDF signing.
+        Uses a stored configuration for signature parameters, with optional overrides for signer data.
+      required:
+        - content
+        - keyInfo
+        - configId
+      properties:
+        content:
+          type: string
+          format: byte
+          description: PDF document content (Base64)
+        keyInfo:
+          $ref: '#/components/schemas/KeyInfo'
+        configId:
+          type: string
+          description: Reference to a signature configuration that provides signature parameters
+          example: "5d9f2462-13c8-45b6-8e0e-8971cbe412b5"
+        signData:
+          $ref: '#/components/schemas/SignerData'
+
+    EzDocSealMultipartRequest:
+      type: object
+      description: |
+        Multipart request for simple PDF signing.
+        Uses a stored configuration for signature parameters, with optional overrides for signer data.
+      required:
+        - content
+        - keyInfo
+        - configId
+      properties:
+        content:
+          type: string
+          format: binary
+          description: PDF document file
+        keyInfo:
+          type: string
+          description: KeyInfo as JSON string
+        configId:
+          type: string
+          description: Reference to a signature configuration
+        signData:
+          type: string
+          description: SignerData as JSON string (optional overrides)
+
+    # -- Re-exported entity schemas and enums from eidas-signature-components.yml --
+    SignerData:
+      $ref: './eidas-signature-components.yml#/components/schemas/SignerData'
+    SignInput:
+      $ref: './eidas-signature-components.yml#/components/schemas/SignInput'
+    SignMode:
+      $ref: './eidas-signature-components.yml#/components/schemas/SignMode'
+    SignatureParameters:
+      $ref: './eidas-signature-components.yml#/components/schemas/SignatureParameters'
+    SignatureParametersOverride:
+      $ref: './eidas-signature-components.yml#/components/schemas/SignatureParametersOverride'
+    CAdESParameters:
+      $ref: './eidas-signature-components.yml#/components/schemas/CAdESParameters'
+    PAdESParameters:
+      $ref: './eidas-signature-components.yml#/components/schemas/PAdESParameters'
+    JAdESParameters:
+      $ref: './eidas-signature-components.yml#/components/schemas/JAdESParameters'
+    XAdESParameters:
+      $ref: './eidas-signature-components.yml#/components/schemas/XAdESParameters'
+    VisualSignatureParameters:
+      $ref: './eidas-signature-components.yml#/components/schemas/VisualSignatureParameters'
+    SignatureFieldParameters:
+      $ref: './eidas-signature-components.yml#/components/schemas/SignatureFieldParameters'
+    SignatureImageParameters:
+      $ref: './eidas-signature-components.yml#/components/schemas/SignatureImageParameters'
+    SignatureTextParameters:
+      $ref: './eidas-signature-components.yml#/components/schemas/SignatureTextParameters'
+    TimestampParameters:
+      $ref: './eidas-signature-components.yml#/components/schemas/TimestampParameters'
+    TimestampParametersOverride:
+      $ref: './eidas-signature-components.yml#/components/schemas/TimestampParametersOverride'
+    KeyInfo:
+      $ref: './eidas-signature-components.yml#/components/schemas/KeyInfo'
+    CertificateInfo:
+      $ref: './eidas-signature-components.yml#/components/schemas/CertificateInfo'
+    TimestampInfo:
+      $ref: './eidas-signature-components.yml#/components/schemas/TimestampInfo'
+    SignatureLevel:
+      $ref: './eidas-signature-components.yml#/components/schemas/SignatureLevel'
+    SignatureForm:
+      $ref: './eidas-signature-components.yml#/components/schemas/SignatureForm'
+    SignaturePackaging:
+      $ref: './eidas-signature-components.yml#/components/schemas/SignaturePackaging'
+    DigestAlgorithm:
+      $ref: './eidas-signature-components.yml#/components/schemas/DigestAlgorithm'
+    SignatureAlgorithm:
+      $ref: './eidas-signature-components.yml#/components/schemas/SignatureAlgorithm'
+    PdfPermission:
+      $ref: './eidas-signature-components.yml#/components/schemas/PdfPermission'
+    PdfSignatureMode:
+      $ref: './eidas-signature-components.yml#/components/schemas/PdfSignatureMode'
+    JwsSerializationType:
+      $ref: './eidas-signature-components.yml#/components/schemas/JwsSerializationType'
+    CanonicalizationMethod:
+      $ref: './eidas-signature-components.yml#/components/schemas/CanonicalizationMethod'
+    VisualSignatureRotation:
+      $ref: './eidas-signature-components.yml#/components/schemas/VisualSignatureRotation'
+    AlignmentHorizontal:
+      $ref: './eidas-signature-components.yml#/components/schemas/AlignmentHorizontal'
+    AlignmentVertical:
+      $ref: './eidas-signature-components.yml#/components/schemas/AlignmentVertical'
+    ImageScaling:
+      $ref: './eidas-signature-components.yml#/components/schemas/ImageScaling'
+    SignerTextPosition:
+      $ref: './eidas-signature-components.yml#/components/schemas/SignerTextPosition'
+    TextWrapping:
+      $ref: './eidas-signature-components.yml#/components/schemas/TextWrapping'
+    ValidationIndication:
+      $ref: './eidas-signature-components.yml#/components/schemas/ValidationIndication'
+
+    # ==================== ERROR RESPONSE ====================
+
+    ErrorResponse:
+      type: object
+      description: Error response
+      properties:
+        timestamp:
+          type: string
+          format: date-time
+        path:
+          type: string
+        status:
+          type: integer
+        error:
+          type: string
+        message:
+          type: string
+        requestId:
+          type: string

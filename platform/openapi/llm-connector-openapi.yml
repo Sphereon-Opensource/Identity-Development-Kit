@@ -1,0 +1,613 @@
+openapi: 3.0.4
+info:
+  title: LLM Connector Runtime API
+  version: 0.2.0
+  x-profile: llm
+  x-audience: external-partner
+  x-contract-version: v1
+  x-contract-stability: stable
+  x-products: [vdx]
+  description: |
+    Canonical AI-specific OpenAPI profile for the standalone LLM connector runtime,
+    mounted at `/api/llm-connector/v1`. Owned by the LLM integration family.
+
+    Resource-style control plane and typed inference facade. Chat/stream also runs on
+    the generic connector invocation substrate (`ConnectorInvocationEvent` / runs / events)
+    so integration clients share one interaction pattern with other connectors.
+
+    Secrets never appear in this contract: only opaque handles (`cfg_...` / `sec_...`).
+    Tenant identity always comes from the authenticated session.
+  contact:
+    name: Product Engineering
+    email: support@sphereon.com
+    url: https://sphereon.com
+  license:
+    name: Apache 2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0
+servers:
+  - url: /
+paths:
+  /connectors:
+    get:
+      operationId: listLlmConnectors
+      tags: [LlmConnectors]
+      summary: List LLM connector instances
+      responses:
+        '200':
+          description: The tenant's LLM connector instances
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/LlmConnectorSummary'
+    post:
+      operationId: provisionLlmConnector
+      tags: [LlmConnectors]
+      summary: Provision an LLM connector instance (opaque handles only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProvisionLlmConnectorRequest'
+      responses:
+        '201':
+          description: Connector provisioned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LlmConnectorSummary'
+  /connectors/{connectorId}:
+    get:
+      operationId: getLlmConnector
+      tags: [LlmConnectors]
+      summary: Get an LLM connector instance
+      parameters:
+        - $ref: '#/components/parameters/ConnectorId'
+      responses:
+        '200':
+          description: The connector instance
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LlmConnectorSummary'
+  /connectors/{connectorId}/probes:
+    post:
+      operationId: createLlmConnectorProbe
+      tags: [LlmConnectors]
+      summary: Create a reachability probe for a connector (no inference)
+      parameters:
+        - $ref: '#/components/parameters/ConnectorId'
+      responses:
+        '201':
+          description: Probe completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LlmConnectorProbe'
+  /connectors/{connectorId}/model-discoveries:
+    post:
+      operationId: createLlmModelDiscovery
+      tags: [LlmModelSnapshots]
+      summary: Discover provider models into pending snapshots
+      parameters:
+        - $ref: '#/components/parameters/ConnectorId'
+      responses:
+        '201':
+          description: Discovery accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LlmModelDiscovery'
+  /model-snapshots:
+    get:
+      operationId: listLlmModelSnapshots
+      tags: [LlmModelSnapshots]
+      summary: List model snapshots
+      responses:
+        '200':
+          description: Model snapshots
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ModelSnapshot'
+    post:
+      operationId: createLlmModelSnapshot
+      tags: [LlmModelSnapshots]
+      summary: Persist a discovered model snapshot (immutable, pending approval)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateModelSnapshotRequest'
+      responses:
+        '201':
+          description: Snapshot stored
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelSnapshot'
+  /model-snapshots/{snapshotId}:
+    get:
+      operationId: getLlmModelSnapshot
+      tags: [LlmModelSnapshots]
+      summary: Get a model snapshot
+      parameters:
+        - $ref: '#/components/parameters/SnapshotId'
+      responses:
+        '200':
+          description: The snapshot
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelSnapshot'
+  /model-snapshots/{snapshotId}/approvals:
+    post:
+      operationId: createLlmModelSnapshotApproval
+      tags: [LlmModelSnapshots]
+      summary: Approve a model snapshot for inference eligibility
+      parameters:
+        - $ref: '#/components/parameters/SnapshotId'
+      responses:
+        '201':
+          description: Approval recorded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LlmModelSnapshotApproval'
+  /inferences:
+    post:
+      operationId: createLlmInference
+      tags: [LlmInferences]
+      summary: Create a direct inference (JSON completion or SSE stream)
+      description: |
+        Default representation is application/json (completed Inference).
+        Prefer Accept: text/event-stream for SSE of typed inference.* events.
+        Body stream=true is an accepted alias for SSE (OpenAI client familiarity).
+        Same execution substrate as generic connector SERVER_STREAM invocations.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateInferenceRequest'
+      responses:
+        '200':
+          description: Completed inference or SSE stream of inference.* events
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Inference'
+            text/event-stream:
+              schema:
+                type: string
+                description: SSE frames with event inference.* and JSON data bodies
+  /inferences/{inferenceId}:
+    get:
+      operationId: getLlmInference
+      tags: [LlmInferences]
+      summary: Get inference metadata
+      parameters:
+        - $ref: '#/components/parameters/InferenceId'
+      responses:
+        '200':
+          description: Inference resource
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Inference'
+  /inferences/{inferenceId}/events:
+    get:
+      operationId: listLlmInferenceEvents
+      tags: [LlmInferences]
+      summary: Follow or replay inference stream events (SSE)
+      parameters:
+        - $ref: '#/components/parameters/InferenceId'
+      responses:
+        '200':
+          description: SSE event stream
+          content:
+            text/event-stream:
+              schema:
+                type: string
+  /inferences/{inferenceId}/cancellations:
+    post:
+      operationId: createLlmInferenceCancellation
+      tags: [LlmInferences]
+      summary: Request cancellation of an in-flight inference
+      parameters:
+        - $ref: '#/components/parameters/InferenceId'
+      responses:
+        '201':
+          description: Cancellation outcome
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InferenceCancellation'
+  /embeddings:
+    post:
+      operationId: createLlmEmbedding
+      tags: [LlmEmbeddings]
+      summary: Create embeddings for one or more input strings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateEmbeddingRequest'
+      responses:
+        '200':
+          description: Embedding vectors
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmbeddingResult'
+  /moderations:
+    post:
+      operationId: createLlmModeration
+      tags: [LlmModerations]
+      summary: Moderate text against an approved model snapshot
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateModerationRequest'
+      responses:
+        '200':
+          description: Moderation result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModerationResult'
+components:
+  parameters:
+    ConnectorId:
+      name: connectorId
+      in: path
+      required: true
+      schema:
+        type: string
+    SnapshotId:
+      name: snapshotId
+      in: path
+      required: true
+      schema:
+        type: string
+    InferenceId:
+      name: inferenceId
+      in: path
+      required: true
+      schema:
+        type: string
+  schemas:
+    LlmConnectorTypeId:
+      type: string
+      enum:
+        - ai.llm.openai
+        - ai.llm.anthropic
+        - ai.llm.xai
+        - ai.llm.openai-compatible
+        - ai.llm.ollama
+        - ai.llm.quonai
+    LlmOperation:
+      type: string
+      enum:
+        - GENERATION
+        - INCREMENTAL_STREAMING
+        - MULTIMODAL_CONTENT
+        - STRUCTURED_OUTPUT
+        - MULTIPLE_CANDIDATES
+        - TOOLS
+        - REASONING
+        - EMBEDDINGS
+        - MODERATION
+        - PROMPT_CACHING
+        - USAGE_REPORTING
+    LlmCapabilities:
+      type: object
+      description: Provider-neutral capability declaration; unsupported operations fail before network I/O.
+      properties:
+        generation:
+          type: boolean
+        incrementalStreaming:
+          type: boolean
+        multimodalContent:
+          type: boolean
+        structuredOutput:
+          type: boolean
+        multipleCandidates:
+          type: boolean
+        tools:
+          type: boolean
+        reasoning:
+          type: boolean
+        embeddings:
+          type: boolean
+        moderation:
+          type: boolean
+        promptCaching:
+          type: boolean
+        usageReporting:
+          type: boolean
+    ModelSnapshotStatus:
+      type: string
+      enum: [PENDING_APPROVAL, APPROVED, REVOKED]
+    ModelSnapshot:
+      type: object
+      description: Immutable model snapshot; callers cannot submit arbitrary model IDs.
+      required: [snapshotId, connectorTypeId, providerModelId, descriptorHash, capabilities, status]
+      properties:
+        snapshotId:
+          type: string
+        connectorTypeId:
+          $ref: '#/components/schemas/LlmConnectorTypeId'
+        providerModelId:
+          type: string
+        descriptorHash:
+          type: string
+        capabilities:
+          $ref: '#/components/schemas/LlmCapabilities'
+        status:
+          $ref: '#/components/schemas/ModelSnapshotStatus'
+    LlmConnectorSummary:
+      type: object
+      description: Display-safe connector projection; secrets are opaque handles only.
+      required: [connectorId, connectorTypeId, displayName, baseUrl, lifecycleStatus]
+      properties:
+        connectorId:
+          type: string
+        tenantId:
+          type: string
+        connectorTypeId:
+          $ref: '#/components/schemas/LlmConnectorTypeId'
+        displayName:
+          type: string
+        configHandle:
+          type: string
+          description: Opaque runtime configuration handle (`cfg_...`).
+        secretHandle:
+          type: string
+          description: Opaque credential handle (`sec_...`). Never contains secret material.
+        baseUrl:
+          type: string
+          description: Administrator-controlled, egress-allowlisted base URL; caller-immutable.
+        lifecycleStatus:
+          type: string
+          enum: [ACTIVE, STALE, RETIRED]
+    ProvisionLlmConnectorRequest:
+      type: object
+      required: [connectorTypeId, displayName, baseUrl]
+      properties:
+        connectorTypeId:
+          $ref: '#/components/schemas/LlmConnectorTypeId'
+        displayName:
+          type: string
+        baseUrl:
+          type: string
+        configHandle:
+          type: string
+        secretHandle:
+          type: string
+    CreateModelSnapshotRequest:
+      type: object
+      required: [connectorId, snapshot]
+      properties:
+        connectorId:
+          type: string
+        snapshot:
+          $ref: '#/components/schemas/ModelSnapshot'
+    LlmConnectorProbe:
+      type: object
+      required: [probeId, connectorId, status, checkedAt]
+      properties:
+        probeId:
+          type: string
+        connectorId:
+          type: string
+        status:
+          type: string
+          enum: [reachable, unreachable]
+        checkedAt:
+          type: string
+          format: date-time
+        detail:
+          type: string
+          nullable: true
+        problemCode:
+          type: string
+          nullable: true
+    LlmModelDiscovery:
+      type: object
+      required: [discoveryId, connectorId, pendingSnapshotIds, createdAt]
+      properties:
+        discoveryId:
+          type: string
+        connectorId:
+          type: string
+        pendingSnapshotIds:
+          type: array
+          items:
+            type: string
+        createdAt:
+          type: string
+          format: date-time
+    LlmModelSnapshotApproval:
+      type: object
+      required: [approvalId, snapshotId, approvedAt]
+      properties:
+        approvalId:
+          type: string
+        snapshotId:
+          type: string
+        approvedAt:
+          type: string
+          format: date-time
+    InferenceMessage:
+      type: object
+      required: [role, content]
+      properties:
+        role:
+          type: string
+        content:
+          type: string
+    CreateInferenceRequest:
+      type: object
+      required: [connectorId, modelSnapshotId, messages]
+      properties:
+        connectorId:
+          type: string
+        modelSnapshotId:
+          type: string
+        messages:
+          type: array
+          items:
+            $ref: '#/components/schemas/InferenceMessage'
+        stream:
+          type: boolean
+          default: false
+        idempotencyKey:
+          type: string
+    InferenceStatus:
+      type: string
+      enum: [COMPLETED, FAILED, CANCELLED, IN_PROGRESS]
+    InferenceUsage:
+      type: object
+      properties:
+        inputTokens:
+          type: integer
+          format: int64
+        outputTokens:
+          type: integer
+          format: int64
+    Inference:
+      type: object
+      required: [inferenceId, status]
+      properties:
+        inferenceId:
+          type: string
+        invocationId:
+          type: string
+          description: Correlates with ConnectorInvocationId on the generic connector surface
+        status:
+          $ref: '#/components/schemas/InferenceStatus'
+        output:
+          type: array
+          items:
+            $ref: '#/components/schemas/InferenceMessage'
+        usage:
+          $ref: '#/components/schemas/InferenceUsage'
+        problemCode:
+          type: string
+          nullable: true
+    InferenceCancellation:
+      type: object
+      required: [inferenceId, outcome]
+      properties:
+        inferenceId:
+          type: string
+        outcome:
+          type: string
+          enum: [CANCELLED, ALREADY_TERMINAL, NOT_FOUND]
+    InferenceStreamEventType:
+      type: string
+      enum:
+        - inference.created
+        - inference.output_item.added
+        - inference.output_text.delta
+        - inference.output_text.done
+        - inference.tool_call.delta
+        - inference.tool_call.done
+        - inference.reasoning.delta
+        - inference.completed
+        - inference.failed
+        - inference.interrupted
+    InferenceStreamEvent:
+      type: object
+      description: |
+        Typed SSE data envelope for inference.* frames. Wire uses event: <type>
+        and data: this object (plus monotonic id: sequence).
+      required: [type, inferenceId, sequence, data]
+      properties:
+        type:
+          $ref: '#/components/schemas/InferenceStreamEventType'
+        inferenceId:
+          type: string
+        sequence:
+          type: integer
+          format: int64
+        data:
+          type: object
+          additionalProperties: true
+    CreateEmbeddingRequest:
+      type: object
+      required: [connectorId, modelSnapshotId, input]
+      properties:
+        connectorId:
+          type: string
+        modelSnapshotId:
+          type: string
+        input:
+          type: array
+          items:
+            type: string
+          minItems: 1
+    EmbeddingVector:
+      type: object
+      required: [index, embedding]
+      properties:
+        index:
+          type: integer
+        embedding:
+          type: array
+          items:
+            type: number
+            format: double
+    EmbeddingResult:
+      type: object
+      required: [embeddingId, modelSnapshotId, vectors]
+      properties:
+        embeddingId:
+          type: string
+        modelSnapshotId:
+          type: string
+        vectors:
+          type: array
+          items:
+            $ref: '#/components/schemas/EmbeddingVector'
+    CreateModerationRequest:
+      type: object
+      required: [connectorId, modelSnapshotId, input]
+      properties:
+        connectorId:
+          type: string
+        modelSnapshotId:
+          type: string
+        input:
+          type: string
+    ModerationCategoryFlag:
+      type: object
+      required: [category, flagged]
+      properties:
+        category:
+          type: string
+        flagged:
+          type: boolean
+    ModerationResult:
+      type: object
+      required: [moderationId, modelSnapshotId, flagged]
+      properties:
+        moderationId:
+          type: string
+        modelSnapshotId:
+          type: string
+        flagged:
+          type: boolean
+        categories:
+          type: array
+          items:
+            $ref: '#/components/schemas/ModerationCategoryFlag'

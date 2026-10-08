@@ -1,0 +1,1783 @@
+openapi: 3.0.4
+info:
+  title: Connector Registry API
+  version: 0.1.0
+  x-contract-version: v1
+  x-contract-stability: stable
+  x-products: [vdx]
+  description: |
+    Register and operate connector instances that can act as sources, destinations, or both.
+    The API is mounted as a singular product API at `/api/connector/v1`; resources inside the API
+    use plural REST paths.
+
+    The connector REST contract is v1-stable. Compatible additions may appear, but existing
+    response fields, path names, operation ids, and request shapes are governed as public
+    integration and SDK-facing contract surface.
+
+    The model deliberately separates transport from data:
+
+      - `AccessProtocol` describes how a connector reaches a system, such as HTTPS, JDBC, S3,
+        Kafka, OIDC, or vault access.
+      - `ResourceKind` describes the logical resource being accessed, such as tabular data,
+        documents, claim sets, event streams, files, secrets, credentials, or presentations.
+      - `RepresentationKind` describes the serialization or data representation, such as JSON,
+        JSON-LD, CSV, JWT, RDF, Parquet, text, or binary.
+      - `ContractKind` describes the schema or contract source, such as OpenAPI, JSON Schema,
+        SQL schema, RDF shape, OIDC discovery, or CSV profile.
+
+    A connector instance is represented as a Party and can be assigned Identities. Identifiers are
+    always nested under Identity, matching the existing Party -> Identity -> Identifier model. This
+    allows external systems, technical accounts, issuers, relying parties, APIs, and LOB systems to
+    have durable identities without flattening identifiers directly onto connectors.
+
+    Routes compose source and destination operation bindings with optional transformations. This
+    supports current issuance use cases, CSV import/export, vault/blob materialization, HTTP/OpenAPI
+    connector runtimes, SQL connector runtimes, OIDC claim sources, forms, workflows, and future governance
+    controls without coupling the API to one credential or form pipeline.
+  contact:
+    name: Product Engineering
+    email: support@example.com
+    url: https://example.com
+  license:
+    name: Apache 2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0
+
+servers:
+  - url: https://api.example.com/api/connector/v1
+    description: Production server.
+  - url: http://localhost:8080/api/connector/v1
+    description: Local development server.
+
+security:
+  - bearer: []
+
+tags:
+  - name: ConnectorTypes
+    description: Discover immutable descriptors for connector runtimes installed in this service.
+  - name: Connectors
+    description: Register connector instances as durable Party-backed integration endpoints.
+  - name: ConnectorIdentities
+    description: Read Party identities and nested identifiers assigned to a connector's backing Party through the Party APIs.
+  - name: ConnectorResources
+    description: Attach described resources to connector instances.
+  - name: ResourceDescriptors
+    description: Describe data shapes, contracts, fields, and semantic meaning independent of transport.
+  - name: OperationBindings
+    description: Bind connector operations to resources, protocols, transformations, and delivery policies.
+  - name: SemanticBindings
+    description: Bind resource fields and connector resources to semantic model references.
+  - name: ConnectorInvocationBindings
+    description: Bind product and protocol invocation stages to persisted connector routes, operations, logical context, and governance defaults.
+  - name: LogicalConnectionBindings
+    description: Scope physical connector instances to tenant, organization, brand, channel, and caller-specific logical usage contexts.
+  - name: RouteExposures
+    description: Describe externally callable route capabilities and their authorization, schema, subset, rate, and audit constraints.
+  - name: ConnectorDataProducts
+    description: Describe connector-exposed data products, catalog offers, transfer types, and governance scope without implementing DSP/DCAT wire behavior.
+  - name: Transformations
+    description: Define reusable transformations between resource descriptors.
+  - name: Routes
+    description: Compose source and destination operation bindings with optional transformation and trigger policy.
+  - name: Runs
+    description: Observe connector route and operation executions.
+
+paths:
+  /connector-types:
+    get:
+      operationId: listConnectorTypeDescriptors
+      summary: List installed connector type descriptors
+      description: |
+        Lists immutable descriptors contributed by connector runtimes installed in this service.
+        Persisted remote runtime registrations are not advertised by this catalog.
+      tags: [ConnectorTypes]
+      parameters:
+        - $ref: './connector-components.yml#/components/parameters/ConnectorType'
+        - $ref: './common-components.yml#/components/parameters/Page'
+        - $ref: './common-components.yml#/components/parameters/Size'
+      responses:
+        '200':
+          description: Paged installed connector type descriptors.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConnectorTypeDescriptorPage'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+
+  /connectors:
+    get:
+      operationId: listConnectorInstances
+      summary: List connector instances
+      description: |
+        Lists connector instances registered for the tenant. Use this endpoint to find durable
+        integration endpoints by connector family, data-flow role, or logical operation support.
+        A connector instance is not itself a resource shape; resource descriptors and operation
+        bindings describe what the connector can read or write.
+      tags: [Connectors]
+      parameters:
+        - $ref: './connector-components.yml#/components/parameters/ConnectorType'
+        - $ref: './connector-components.yml#/components/parameters/Role'
+        - $ref: './connector-components.yml#/components/parameters/OperationKind'
+        - $ref: './common-components.yml#/components/parameters/Page'
+        - $ref: './common-components.yml#/components/parameters/Size'
+      responses:
+        '200':
+          description: Paged connector instances.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConnectorInstancePage'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+    post:
+      operationId: createConnectorInstance
+      summary: Create a connector instance
+      description: |
+        Creates the connector instance. The create body carries no identity assignments;
+        connector Party identities are managed separately through the connector identity
+        endpoints and the Party APIs.
+      tags: [Connectors]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConnectorInstanceCreateRequest'
+      responses:
+        '201':
+          description: Connector instance created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConnectorInstance'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+
+  /connectors/{connectorInstanceId}:
+    get:
+      operationId: getConnectorInstance
+      summary: Get a connector instance
+      description: |
+        Reads one connector instance, including its backing Party id, assigned identities,
+        endpoint references, credential references, settings bindings, and default policies.
+        Secret values are never returned.
+      tags: [Connectors]
+      parameters:
+        - $ref: './connector-components.yml#/components/parameters/ConnectorInstanceId'
+      responses:
+        '200':
+          description: Connector instance.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConnectorInstance'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+    patch:
+      operationId: updateConnectorInstance
+      summary: Update a connector instance
+      description: |
+        Updates connector instance metadata, lifecycle state, supported operations, and default
+        policies. Use lifecycleStatus=SUSPENDED to stop new route runs without deleting durable
+        configuration or Party identity information.
+      tags: [Connectors]
+      parameters:
+        - $ref: './connector-components.yml#/components/parameters/ConnectorInstanceId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConnectorInstanceUpdateRequest'
+      responses:
+        '200':
+          description: Connector instance updated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConnectorInstance'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+    delete:
+      operationId: deleteConnectorInstance
+      summary: Delete a connector instance
+      description: |
+        Deletes or tombstones the connector registration according to the runtime implementation.
+        This removes the connector registry entry, but implementations should treat Party,
+        Identity, Identifier, audit, and historical run data according to their own retention rules.
+      tags: [Connectors]
+      parameters:
+        - $ref: './connector-components.yml#/components/parameters/ConnectorInstanceId'
+      responses:
+        '204':
+          description: Connector instance deleted.
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+
+  /connectors/{connectorInstanceId}/identities:
+    get:
+      operationId: listConnectorIdentities
+      summary: List connector identities
+      description: |
+        Lists identities assigned to the connector's backing Party. Identifiers are returned nested
+        under each identity, preserving the Party -> Identity -> Identifier model.
+      tags: [ConnectorIdentities]
+      parameters:
+        - $ref: './connector-components.yml#/components/parameters/ConnectorInstanceId'
+        - $ref: './common-components.yml#/components/parameters/Page'
+        - $ref: './common-components.yml#/components/parameters/Size'
+      responses:
+        '200':
+          description: Paged identities assigned to the connector Party.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConnectorIdentityPage'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+
+  /connectors/{connectorInstanceId}/resources:
+    get:
+      operationId: listConnectorResources
+      summary: List resources attached to a connector
+      description: |
+        Lists resource descriptors attached to a connector instance for source and destination use.
+        The attached resource adds connector-local access details such as external resource name,
+        endpoint id, and access protocol; the descriptor remains the reusable logical data shape.
+      tags: [ConnectorResources]
+      parameters:
+        - $ref: './connector-components.yml#/components/parameters/ConnectorInstanceId'
+        - $ref: './connector-components.yml#/components/parameters/Role'
+        - $ref: './connector-components.yml#/components/parameters/ResourceKind'
+        - $ref: './common-components.yml#/components/parameters/Page'
+        - $ref: './common-components.yml#/components/parameters/Size'
+      responses:
+        '200':
+          description: Paged resources attached to the connector.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConnectorResourcePage'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+    post:
+      operationId: attachConnectorResource
+      summary: Attach a resource descriptor to a connector
+      description: |
+        Attaches a reusable resource descriptor to a connector instance. For example, the same
+        employee profile descriptor can be attached to an HTTP/OpenAPI connector over HTTPS, a CSV
+        resource accessed over VAULT, and a SQL connector accessed over JDBC without changing the descriptor.
+      tags: [ConnectorResources]
+      parameters:
+        - $ref: './connector-components.yml#/components/parameters/ConnectorInstanceId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AttachConnectorResourceRequest'
+      responses:
+        '201':
+          description: Resource attached to the connector.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConnectorResource'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+
+  /connectors/{connectorInstanceId}/discoveryruns:
+    post:
+      operationId: createConnectorDiscoveryRun
+      summary: Discover connector resources
+      description: |
+        Runs connector discovery and returns suggested resource descriptors and operation hints.
+        Discovery results are advisory; callers must create resource descriptors and operation
+        bindings explicitly before routes can use them.
+      tags: [ConnectorResources]
+      parameters:
+        - $ref: './connector-components.yml#/components/parameters/ConnectorInstanceId'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DiscoverResourcesRequest'
+      responses:
+        '200':
+          description: Discovery result with suggested resource descriptors.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DiscoveryResult'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+
+  /connectors/{connectorInstanceId}/healthchecks:
+    post:
+      operationId: createConnectorHealthCheck
+      summary: Check connector health
+      description: |
+        Performs a health check for the connector instance and optionally its dependencies, such as
+        endpoint reachability, credentials, contract availability, or operation-specific readiness.
+        The health result is observational and does not change connector lifecycle status.
+      tags: [Connectors]
+      parameters:
+        - $ref: './connector-components.yml#/components/parameters/ConnectorInstanceId'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/HealthCheckRequest'
+      responses:
+        '200':
+          description: Connector health result.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConnectorHealth'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+
+  /resource/descriptors:
+    get:
+      operationId: listResourceDescriptors
+      summary: List resource descriptors
+      description: |
+        Lists reusable resource descriptors. Descriptors describe the logical resource, data
+        representation, structural contract, fields, semantic bindings, sensitivity, and retention
+        hints independently from connector transport.
+      tags: [ResourceDescriptors]
+      parameters:
+        - $ref: './connector-components.yml#/components/parameters/ResourceKind'
+        - $ref: './common-components.yml#/components/parameters/Page'
+        - $ref: './common-components.yml#/components/parameters/Size'
+      responses:
+        '200':
+          description: Paged resource descriptors.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResourceDescriptorPage'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+    post:
+      operationId: createResourceDescriptor
+      summary: Create a resource descriptor
+      description: |
+        Creates a reusable descriptor for data that can flow through connectors. Use this for CSV
+        rows, REST payloads, OIDC claim sets, SQL tables, vault objects, forms, workflow payloads,
+        credentials, presentations, and future resource types.
+      tags: [ResourceDescriptors]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResourceDescriptorCreateRequest'
+      responses:
+        '201':
+          description: Resource descriptor created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResourceDescriptor'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+
+  /resource/descriptors/{resourceDescriptorId}:
+    get:
+      operationId: getResourceDescriptor
+      summary: Get a resource descriptor
+      description: |
+        Reads one resource descriptor including field metadata, contract reference, representation,
+        and semantic/governance hints. The descriptor does not contain connector credentials or
+        transport endpoint details.
+      tags: [ResourceDescriptors]
+      parameters:
+        - $ref: './connector-components.yml#/components/parameters/ResourceDescriptorId'
+      responses:
+        '200':
+          description: Resource descriptor.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResourceDescriptor'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+    patch:
+      operationId: updateResourceDescriptor
+      summary: Update a resource descriptor
+      description: |
+        Updates descriptor metadata, resource classification, representation, contract reference,
+        or governance metadata. Field-level changes are managed through the fields subresource.
+      tags: [ResourceDescriptors]
+      parameters:
+        - $ref: './connector-components.yml#/components/parameters/ResourceDescriptorId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResourceDescriptorUpdateRequest'
+      responses:
+        '200':
+          description: Resource descriptor updated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResourceDescriptor'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+
+  /resource/descriptors/{resourceDescriptorId}/fields:
+    get:
+      operationId: listFieldDescriptors
+      summary: List resource descriptor fields
+      description: |
+        Lists fields declared for a resource descriptor. Fields carry path/column names, value
+        type hints, required/multi-valued semantics, business-term references, sensitivity,
+        and optional retention metadata.
+      tags: [ResourceDescriptors]
+      parameters:
+        - $ref: './connector-components.yml#/components/parameters/ResourceDescriptorId'
+        - $ref: './common-components.yml#/components/parameters/Page'
+        - $ref: './common-components.yml#/components/parameters/Size'
+      responses:
+        '200':
+          description: Paged field descriptors.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FieldDescriptorPage'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+    post:
+      operationId: createFieldDescriptor
+      summary: Add a field descriptor
+      description: |
+        Adds a field to a descriptor. Use this to document a CSV column, JSON path, SQL column,
+        OIDC claim, form field, credential claim, or presentation attribute that can be validated,
+        mapped, governed, or transformed.
+      tags: [ResourceDescriptors]
+      parameters:
+        - $ref: './connector-components.yml#/components/parameters/ResourceDescriptorId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FieldDescriptorInput'
+      responses:
+        '201':
+          description: Field descriptor created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FieldDescriptor'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+
+  /operation/bindings:
+    get:
+      operationId: listOperationBindings
+      summary: List operation bindings
+      description: |
+        Lists connector operation bindings. Operation bindings connect connector instances,
+        attached resources, logical operation kinds, connector-local operation names, protocols,
+        transformations, delivery behavior, and egress policies.
+      tags: [OperationBindings]
+      parameters:
+        - $ref: './connector-components.yml#/components/parameters/ConnectorType'
+        - $ref: './connector-components.yml#/components/parameters/OperationKind'
+        - $ref: './connector-components.yml#/components/parameters/Role'
+        - $ref: './common-components.yml#/components/parameters/Page'
+        - $ref: './common-components.yml#/components/parameters/Size'
+      responses:
+        '200':
+          description: Paged operation bindings.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationBindingPage'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+    post:
+      operationId: createOperationBinding
+      summary: Create an operation binding
+      description: |
+        Creates a source or destination operation binding. A source READ binding can later be
+        paired with a destination WRITE binding in a route, optionally with a transformation
+        between their resource descriptors.
+      tags: [OperationBindings]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OperationBindingCreateRequest'
+      responses:
+        '201':
+          description: Operation binding created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationBinding'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+
+  /operation/bindings/{bindingId}:
+    get:
+      operationId: getOperationBinding
+      summary: Get an operation binding
+      description: |
+        Reads one operation binding, including connector-local operation name, protocol, request
+        and response descriptors, transformation reference, delivery settings, and egress policy.
+      tags: [OperationBindings]
+      parameters:
+        - $ref: './connector-components.yml#/components/parameters/BindingId'
+      responses:
+        '200':
+          description: Operation binding.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationBinding'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+    patch:
+      operationId: updateOperationBinding
+      summary: Update an operation binding
+      description: |
+        Updates an operation binding without changing unrelated connector or resource descriptor
+        state. Use this for contract changes, renamed operation ids, updated delivery policies,
+        or new transformation references.
+      tags: [OperationBindings]
+      parameters:
+        - $ref: './connector-components.yml#/components/parameters/BindingId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OperationBindingUpdateRequest'
+      responses:
+        '200':
+          description: Operation binding updated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationBinding'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+    delete:
+      operationId: deleteOperationBinding
+      summary: Delete an operation binding
+      description: |
+        Deletes an operation binding. Implementations should reject deletion while active routes
+        still depend on the binding, or require those routes to be updated first.
+      tags: [OperationBindings]
+      parameters:
+        - $ref: './connector-components.yml#/components/parameters/BindingId'
+      responses:
+        '204':
+          description: Operation binding deleted.
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+
+  /semantic/bindings:
+    get:
+      operationId: listSemanticConnectorBindings
+      summary: List semantic connector bindings
+      description: |
+        Lists semantic bindings for connector resources and fields. These bindings let the platform
+        understand that an external field represents an employee email, SSN, customer id, supplier
+        relationship, policy classification, or other semantic concept.
+      tags: [SemanticBindings]
+      parameters:
+        - $ref: './connector-components.yml#/components/parameters/ConnectorType'
+        - $ref: './connector-components.yml#/components/parameters/ResourceKind'
+        - $ref: './common-components.yml#/components/parameters/Page'
+        - $ref: './common-components.yml#/components/parameters/Size'
+      responses:
+        '200':
+          description: Paged semantic connector bindings.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SemanticConnectorBindingPage'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+    post:
+      operationId: createSemanticConnectorBinding
+      summary: Create a semantic connector binding
+      description: |
+        Creates a semantic binding for a connector resource or field. This is the link that allows
+        validation, documentation, mapping, and future policy checks to reason over external data
+        using the same semantic model as credential designs, forms, parties, and relationships.
+      tags: [SemanticBindings]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SemanticConnectorBindingCreateRequest'
+      responses:
+        '201':
+          description: Semantic connector binding created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SemanticConnectorBinding'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+
+  /invocation/bindings:
+    get:
+      operationId: listConnectorInvocationBindings
+      summary: List connector invocation bindings
+      description: |
+        Lists persisted invocation bindings that connect product or protocol lifecycle stages to
+        connector routes, operations, logical connection bindings, subset mappings, governance, and
+        execution policies. These records are the registry surface used when an issuer, verifier,
+        form, portal, or workflow needs a durable connector action at a named stage.
+      tags: [ConnectorInvocationBindings]
+      parameters:
+        - name: ownerSurface
+          in: query
+          required: false
+          description: Filter by the product or protocol surface that owns the invocation.
+          schema:
+            $ref: './connector-components.yml#/components/schemas/ConnectorOwnerSurface'
+          example: OID4VCI
+        - name: ownerReference
+          in: query
+          required: false
+          description: Filter by owner-specific reference, such as issuer configuration id, verifier profile id, form id, or workflow id.
+          schema:
+            type: string
+          example: issuer-config-1
+        - name: stage
+          in: query
+          required: false
+          description: Filter by product or protocol lifecycle stage.
+          schema:
+            $ref: './connector-components.yml#/components/schemas/ConnectorInvocationStage'
+          example: OID4VCI_CREDENTIAL_REQUEST
+        - name: role
+          in: query
+          required: false
+          description: Filter by the connector's invocation role at the lifecycle stage.
+          schema:
+            $ref: './connector-components.yml#/components/schemas/ConnectorInvocationRole'
+          example: VAULT_RETENTION
+        - name: logicalConnectionBindingId
+          in: query
+          required: false
+          description: Filter by logical connection binding used by the invocation.
+          schema:
+            $ref: './connector-components.yml#/components/schemas/LogicalConnectionBindingId'
+          example: brand-a-proof-vault
+        - $ref: './common-components.yml#/components/parameters/Page'
+        - $ref: './common-components.yml#/components/parameters/Size'
+      responses:
+        '200':
+          description: Paged connector invocation bindings.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConnectorInvocationBindingPage'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+    post:
+      operationId: createConnectorInvocationBinding
+      summary: Create a connector invocation binding
+      description: |
+        Creates or replaces a durable invocation binding for a product or protocol lifecycle stage.
+        The stored binding carries the physical or logical connector target, subset mapping,
+        governance metadata, Party anchors, materialization policy, and execution policy that the
+        runtime will attach to resulting connector runs.
+      tags: [ConnectorInvocationBindings]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConnectorInvocationBindingCreateRequest'
+      responses:
+        '201':
+          description: Connector invocation binding created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConnectorInvocationBinding'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+
+  /invocation/bindings/{invocationBindingId}:
+    get:
+      operationId: getConnectorInvocationBinding
+      summary: Get a connector invocation binding
+      description: Reads one persisted invocation binding by id.
+      tags: [ConnectorInvocationBindings]
+      parameters:
+        - $ref: './connector-components.yml#/components/parameters/InvocationBindingId'
+      responses:
+        '200':
+          description: Connector invocation binding.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConnectorInvocationBinding'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+
+  /logical/bindings:
+    get:
+      operationId: listLogicalConnectionBindings
+      summary: List logical connection bindings
+      description: |
+        Lists logical usage bindings for physical connector instances. Logical bindings let one
+        connector instance be safely reused across tenants, organization units, brands, legal
+        entities, channels, and caller contexts while keeping discriminator, auth overlay,
+        governance, and catalog projection metadata explicit.
+      tags: [LogicalConnectionBindings]
+      parameters:
+        - name: physicalConnectorInstanceId
+          in: query
+          required: false
+          description: Filter by the physical connector instance backing the logical binding.
+          schema:
+            $ref: './connector-components.yml#/components/schemas/ConnectorInstanceId'
+          example: 8a7f09af-7ac9-4d96-91f9-a2a252f4aa4b
+        - name: organizationUnitId
+          in: query
+          required: false
+          description: Filter by organization unit in the logical context.
+          schema:
+            type: string
+          example: nl-ops
+        - name: brandId
+          in: query
+          required: false
+          description: Filter by brand in the logical context.
+          schema:
+            type: string
+          example: brand-a
+        - $ref: './common-components.yml#/components/parameters/Page'
+        - $ref: './common-components.yml#/components/parameters/Size'
+      responses:
+        '200':
+          description: Paged logical connection bindings.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LogicalConnectionBindingPage'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+    post:
+      operationId: createLogicalConnectionBinding
+      summary: Create a logical connection binding
+      description: |
+        Creates or replaces a logical connection binding for a physical connector instance. Use this
+        resource to declare tenant, OU, brand, channel, caller, auth overlay, grant, governance, and
+        system-catalog projection metadata without duplicating the physical connector registration.
+      tags: [LogicalConnectionBindings]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LogicalConnectionBindingCreateRequest'
+      responses:
+        '201':
+          description: Logical connection binding created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LogicalConnectionBinding'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+
+  /logical/bindings/{logicalConnectionBindingId}:
+    get:
+      operationId: getLogicalConnectionBinding
+      summary: Get a logical connection binding
+      description: Reads one logical connection binding by id.
+      tags: [LogicalConnectionBindings]
+      parameters:
+        - $ref: './connector-components.yml#/components/parameters/LogicalConnectionBindingId'
+      responses:
+        '200':
+          description: Logical connection binding.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LogicalConnectionBinding'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+
+  /route/exposures:
+    get:
+      operationId: listRouteExposureDescriptors
+      summary: List route exposure descriptors
+      description: |
+        Lists externally callable route exposure descriptors. Exposure descriptors are registry
+        records for external read/write capabilities, including accepted auth methods, caller Party
+        and relationship constraints, schemas, subset mapping, payload/rate limits, and audit category.
+      tags: [RouteExposures]
+      parameters:
+        - name: logicalConnectionBindingId
+          in: query
+          required: false
+          description: Filter by logical connection binding backing the exposed capability.
+          schema:
+            $ref: './connector-components.yml#/components/schemas/LogicalConnectionBindingId'
+          example: brand-a-proof-vault
+        - name: exchangeMode
+          in: query
+          required: false
+          description: Filter by the route exposure exchange quadrant.
+          schema:
+            $ref: './connector-components.yml#/components/schemas/ConnectorExchangeMode'
+          example: EXTERNALLY_INITIATED_READ
+        - $ref: './common-components.yml#/components/parameters/Page'
+        - $ref: './common-components.yml#/components/parameters/Size'
+      responses:
+        '200':
+          description: Paged route exposure descriptors.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RouteExposureDescriptorPage'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+    post:
+      operationId: createRouteExposureDescriptor
+      summary: Create a route exposure descriptor
+      description: |
+        Creates or replaces a route exposure descriptor for an externally initiated connector
+        capability. This registers the externally callable surface but does not by itself implement
+        the runtime endpoint for the external caller.
+      tags: [RouteExposures]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RouteExposureDescriptorCreateRequest'
+      responses:
+        '201':
+          description: Route exposure descriptor created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RouteExposureDescriptor'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+
+  /route/exposures/{exposureDescriptorId}:
+    get:
+      operationId: getRouteExposureDescriptor
+      summary: Get a route exposure descriptor
+      description: Reads one route exposure descriptor by id.
+      tags: [RouteExposures]
+      parameters:
+        - $ref: './connector-components.yml#/components/parameters/ExposureDescriptorId'
+      responses:
+        '200':
+          description: Route exposure descriptor.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RouteExposureDescriptor'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+
+  /route/exposures/{exposureDescriptorId}/grants:
+    post:
+      operationId: createRouteExposureGrant
+      summary: Create a route exposure grant
+      tags: [RouteExposures]
+      parameters:
+        - $ref: './connector-components.yml#/components/parameters/ExposureDescriptorId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RouteExposureGrantCreateRequest'
+      responses:
+        '201':
+          description: Route exposure grant created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RouteExposureGrant'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+    get:
+      operationId: listRouteExposureGrants
+      summary: List route exposure grants
+      tags: [RouteExposures]
+      parameters:
+        - $ref: './connector-components.yml#/components/parameters/ExposureDescriptorId'
+        - name: status
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/RouteExposureGrantStatus'
+        - $ref: './common-components.yml#/components/parameters/Page'
+        - $ref: './common-components.yml#/components/parameters/Size'
+      responses:
+        '200':
+          description: Paged route exposure grants.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RouteExposureGrantPage'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+
+  /route/exposures/{exposureDescriptorId}/grants/{grantId}:
+    get:
+      operationId: getRouteExposureGrant
+      summary: Get a route exposure grant
+      tags: [RouteExposures]
+      parameters:
+        - $ref: './connector-components.yml#/components/parameters/ExposureDescriptorId'
+        - $ref: './connector-components.yml#/components/parameters/RouteExposureGrantId'
+      responses:
+        '200':
+          description: Route exposure grant.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RouteExposureGrant'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+
+  /route/exposures/{exposureDescriptorId}/read:
+    post:
+      operationId: executeRouteExposureRead
+      summary: Execute an externally initiated route exposure read
+      description: |
+        Executes an explicitly registered external-read route exposure. The caller supplies the
+        authenticated Party context, governed canonical fields already eligible for projection,
+        governance metadata and optional cursor state. VDX evaluates policy server-side before
+        any grant or throttle consumption. The response is an
+        approved governed view with manifest, policy lineage, selected fields, and cursor state.
+        This endpoint does not expose internal connector records, Party tables, vault rows, or
+        semantic stores directly.
+      tags: [RouteExposures]
+      parameters:
+        - $ref: './connector-components.yml#/components/parameters/ExposureDescriptorId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RouteExposureExternalReadRequest'
+      responses:
+        '200':
+          description: Governed external-read view.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConnectorExternalReadResponse'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+
+  /route/exposures/{exposureDescriptorId}/write:
+    post:
+      operationId: executeRouteExposureWrite
+      summary: Execute an externally initiated route exposure write
+      description: |
+        Executes an explicitly registered external-write route exposure. The caller supplies the
+        authenticated Party context, governed payload envelope, field mappings, governance metadata,
+        governance metadata, optional idempotency key, and optional Party projection candidates.
+        VDX evaluates policy server-side before any grant or throttle consumption. The
+        response is an accepted, minimized, redacted, quarantined, or rejected governed-ingress
+        receipt with canonical-field mapping, projection-candidate ids, policy lineage, idempotency
+        result, payload hash, and later-use availability scope.
+      tags: [RouteExposures]
+      parameters:
+        - $ref: './connector-components.yml#/components/parameters/ExposureDescriptorId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RouteExposureExternalWriteRequest'
+      responses:
+        '200':
+          description: Governed external-write receipt.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConnectorExternalWriteReceipt'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+
+  /data/products:
+    get:
+      operationId: listDataProductDescriptors
+      summary: List connector data product descriptors
+      description: |
+        Lists connector data product descriptors. These registry records connect a logical binding
+        and physical connector instance to dataset resource descriptors, selected field scopes,
+        transfer types, provider and consumer Party references, governance scope, and catalog offer
+        references. This is the Phase 5 dataspace/data-use-contract readiness surface; it does not
+        implement DSP/DCAT runtime behavior by itself.
+      tags: [ConnectorDataProducts]
+      parameters:
+        - name: logicalConnectionBindingId
+          in: query
+          required: false
+          description: Filter by logical connection binding backing the data product.
+          schema:
+            $ref: './connector-components.yml#/components/schemas/LogicalConnectionBindingId'
+          example: brand-a-proof-vault
+        - name: physicalConnectorInstanceId
+          in: query
+          required: false
+          description: Filter by the physical connector instance backing the data product.
+          schema:
+            $ref: './connector-components.yml#/components/schemas/ConnectorInstanceId'
+          example: 8a7f09af-7ac9-4d96-91f9-a2a252f4aa4b
+        - $ref: './common-components.yml#/components/parameters/Page'
+        - $ref: './common-components.yml#/components/parameters/Size'
+      responses:
+        '200':
+          description: Paged connector data product descriptors.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConnectorDataProductDescriptorPage'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+    post:
+      operationId: createDataProductDescriptor
+      summary: Create a connector data product descriptor
+      description: |
+        Creates or replaces a connector data product descriptor. The descriptor must reference an
+        existing logical connection binding, matching physical connector instance, known dataset
+        resource descriptors, at least one transfer type, and at least one catalog offer policy ref.
+      tags: [ConnectorDataProducts]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConnectorDataProductDescriptorCreateRequest'
+      responses:
+        '201':
+          description: Connector data product descriptor created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConnectorDataProductDescriptor'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+
+  /data/products/{dataProductId}:
+    get:
+      operationId: getDataProductDescriptor
+      summary: Get a connector data product descriptor
+      description: Reads one connector data product descriptor by id.
+      tags: [ConnectorDataProducts]
+      parameters:
+        - $ref: './connector-components.yml#/components/parameters/DataProductId'
+      responses:
+        '200':
+          description: Connector data product descriptor.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConnectorDataProductDescriptor'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+
+  /transformations:
+    get:
+      operationId: listTransformations
+      summary: List transformations
+      description: |
+        Lists reusable transformations between resource descriptors. Transformations can represent
+        existing attribute mappers, expression-based mappings, template mappings, redaction steps,
+        lookup steps, or future workflow-specific transformation engines.
+      tags: [Transformations]
+      parameters:
+        - $ref: './common-components.yml#/components/parameters/Page'
+        - $ref: './common-components.yml#/components/parameters/Size'
+        - name: language
+          in: query
+          required: false
+          description: Filter by transformation language.
+          schema:
+            $ref: './connector-components.yml#/components/schemas/TransformationLanguage'
+          example: ATTRIBUTE_MAPPER
+        - name: sourceDescriptorId
+          in: query
+          required: false
+          description: Filter by source resource descriptor id.
+          schema:
+            $ref: './connector-components.yml#/components/schemas/ResourceDescriptorId'
+          example: 41436f49-040c-4f5f-9c7f-657f43762e2b
+        - name: targetDescriptorId
+          in: query
+          required: false
+          description: Filter by target resource descriptor id.
+          schema:
+            $ref: './connector-components.yml#/components/schemas/ResourceDescriptorId'
+          example: 7a44f0de-e4d9-44ef-9211-372433933a88
+      responses:
+        '200':
+          description: Paged transformations.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransformationPage'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+    post:
+      operationId: createTransformation
+      summary: Create a transformation
+      description: |
+        Creates a transformation definition. Use this when a route must map a source representation
+        to a destination representation, such as CSV employee rows to credential claims, REST HR
+        profiles to invitation payloads, or OIDC claims to a semantic profile.
+      tags: [Transformations]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TransformationCreateRequest'
+      responses:
+        '201':
+          description: Transformation created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransformationDefinition'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+
+  /transformations/{transformationId}:
+    get:
+      operationId: getTransformation
+      summary: Get a transformation
+      description: |
+        Reads one transformation definition, including source and target descriptors, step-based
+        mappings, expression text, and metadata used by the runtime mapper.
+      tags: [Transformations]
+      parameters:
+        - $ref: './connector-components.yml#/components/parameters/TransformationId'
+      responses:
+        '200':
+          description: Transformation.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransformationDefinition'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+    patch:
+      operationId: updateTransformation
+      summary: Update a transformation
+      description: |
+        Updates transformation metadata, descriptor references, steps, or expression text. Route
+        implementations should version or snapshot transformations when repeatable historical
+        execution is required.
+      tags: [Transformations]
+      parameters:
+        - $ref: './connector-components.yml#/components/parameters/TransformationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TransformationUpdateRequest'
+      responses:
+        '200':
+          description: Transformation updated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransformationDefinition'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+
+  /routes:
+    get:
+      operationId: listConnectorRoutes
+      summary: List connector routes
+      description: |
+        Lists routes that compose source bindings, destination bindings, optional transformations,
+        triggers, delivery policy, materialization policy, and atomicity. Routes are the durable
+        registry shape for import/export, issuance enrichment, form capture, and workflow
+        data movement.
+      tags: [Routes]
+      parameters:
+        - $ref: './common-components.yml#/components/parameters/Page'
+        - $ref: './common-components.yml#/components/parameters/Size'
+      responses:
+        '200':
+          description: Paged connector routes.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConnectorRoutePage'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+    post:
+      operationId: createConnectorRoute
+      summary: Create a connector route
+      description: |
+        Creates a route from one or more source operation bindings to one or more destination operation bindings.
+        The route can be on-demand, scheduled, event-triggered, webhook-triggered, or started by a
+        higher-level platform pipeline.
+      tags: [Routes]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConnectorRouteCreateRequest'
+      responses:
+        '201':
+          description: Connector route created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConnectorRoute'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+
+  /routes/{routeId}:
+    get:
+      operationId: getConnectorRoute
+      summary: Get a connector route
+      description: |
+        Reads one route definition. Use this before starting a run when a UI or orchestrator needs
+        to show the effective source, destination, transformation, trigger, materialization, and
+        atomicity policy.
+      tags: [Routes]
+      parameters:
+        - $ref: './connector-components.yml#/components/parameters/RouteId'
+      responses:
+        '200':
+          description: Connector route.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConnectorRoute'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+    patch:
+      operationId: updateConnectorRoute
+      summary: Update a connector route
+      description: |
+        Updates a route definition. Implementations should avoid mutating routes that are currently
+        running unless they snapshot the effective route definition into each run.
+      tags: [Routes]
+      parameters:
+        - $ref: './connector-components.yml#/components/parameters/RouteId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConnectorRouteUpdateRequest'
+      responses:
+        '200':
+          description: Connector route updated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConnectorRoute'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+    delete:
+      operationId: deleteConnectorRoute
+      summary: Delete a connector route
+      description: |
+        Deletes a route definition. Historical runs, events, and dead letters should remain subject
+        to audit and retention policies even when the route definition is removed.
+      tags: [Routes]
+      parameters:
+        - $ref: './connector-components.yml#/components/parameters/RouteId'
+      responses:
+        '204':
+          description: Connector route deleted.
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+
+  /routes/{routeId}/runs:
+    get:
+      operationId: listConnectorRouteRuns
+      summary: List connector route runs
+      description: |
+        Lists execution history for one connector route. Use this route-scoped view when a route
+        detail screen or orchestrator needs only runs belonging to the selected route. Tenant-wide
+        operational dashboards should use `/runs` and its filters.
+      tags: [Runs]
+      parameters:
+        - $ref: './connector-components.yml#/components/parameters/RouteId'
+        - $ref: './connector-components.yml#/components/parameters/ConnectorRunStatus'
+        - $ref: './connector-components.yml#/components/parameters/ConnectorInstanceIdQuery'
+        - $ref: './connector-components.yml#/components/parameters/InvocationBindingIdQuery'
+        - $ref: './connector-components.yml#/components/parameters/LogicalConnectionBindingIdQuery'
+        - $ref: './connector-components.yml#/components/parameters/PhysicalConnectorInstanceIdQuery'
+        - $ref: './connector-components.yml#/components/parameters/ConnectorExchangeModeQuery'
+        - $ref: './connector-components.yml#/components/parameters/ProtocolSurfaceQuery'
+        - $ref: './connector-components.yml#/components/parameters/CorrelationIdQuery'
+        - $ref: './common-components.yml#/components/parameters/Page'
+        - $ref: './common-components.yml#/components/parameters/Size'
+      responses:
+        '200':
+          description: Paged connector runs for the route.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConnectorRunPage'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+    post:
+      operationId: createConnectorRouteRun
+      summary: Start a connector route run
+      description: |
+        Starts a route run and returns the accepted execution record. The optional input can carry
+        lookup keys, batch references, dry-run flags, or caller metadata. Long-running execution is
+        observed through the runs, events, and dead-letter endpoints.
+      tags: [Runs]
+      parameters:
+        - $ref: './connector-components.yml#/components/parameters/RouteId'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StartConnectorRouteRunRequest'
+      responses:
+        '202':
+          description: Connector route run accepted.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConnectorRun'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+
+  /runs:
+    get:
+      operationId: listConnectorRuns
+      summary: List connector runs
+      description: |
+        Lists route and operation runs across the tenant. Use this direct tenant-wide run resource
+        for operational dashboards, customer support, audit trails, retry decisions, and monitoring
+        failed or partially failed imports and exports. Use `/routes/{routeId}/runs` for
+        route-scoped history.
+      tags: [Runs]
+      parameters:
+        - $ref: './connector-components.yml#/components/parameters/ConnectorRunStatus'
+        - $ref: './connector-components.yml#/components/parameters/RouteIdQuery'
+        - $ref: './connector-components.yml#/components/parameters/ConnectorInstanceIdQuery'
+        - $ref: './connector-components.yml#/components/parameters/InvocationBindingIdQuery'
+        - $ref: './connector-components.yml#/components/parameters/LogicalConnectionBindingIdQuery'
+        - $ref: './connector-components.yml#/components/parameters/PhysicalConnectorInstanceIdQuery'
+        - $ref: './connector-components.yml#/components/parameters/ConnectorExchangeModeQuery'
+        - $ref: './connector-components.yml#/components/parameters/ProtocolSurfaceQuery'
+        - $ref: './connector-components.yml#/components/parameters/CorrelationIdQuery'
+        - $ref: './common-components.yml#/components/parameters/Page'
+        - $ref: './common-components.yml#/components/parameters/Size'
+      responses:
+        '200':
+          description: Paged connector runs.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConnectorRunPage'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+
+  /runs/{runId}:
+    get:
+      operationId: getConnectorRun
+      summary: Get a connector run
+      description: |
+        Reads one connector execution record, including status, timestamps, counts, correlation id,
+        and error summary. Detailed logs are exposed as run events.
+      tags: [Runs]
+      parameters:
+        - $ref: './connector-components.yml#/components/parameters/RunId'
+      responses:
+        '200':
+          description: Connector run.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConnectorRun'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+
+  /runs/{runId}/events:
+    get:
+      operationId: listConnectorRunEvents
+      summary: List connector run events
+      description: |
+        Lists timestamped run events emitted by the connector runtime. Events should contain enough
+        detail for support and audit without embedding sensitive payloads unless policy permits it.
+      tags: [Runs]
+      parameters:
+        - $ref: './connector-components.yml#/components/parameters/RunId'
+        - $ref: './common-components.yml#/components/parameters/Page'
+        - $ref: './common-components.yml#/components/parameters/Size'
+      responses:
+        '200':
+          description: Paged connector run events.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConnectorRunEventPage'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+
+  /runs/{runId}/deadletters:
+    get:
+      operationId: listConnectorDeadLetters
+      summary: List connector dead letters
+      description: |
+        Lists failed items captured for a run after validation, transformation, or destination
+        delivery failure. Dead letters should reference retained payloads rather than embedding
+        them by default so retention and sensitivity policy can control access.
+      tags: [Runs]
+      parameters:
+        - $ref: './connector-components.yml#/components/parameters/RunId'
+        - $ref: './common-components.yml#/components/parameters/Page'
+        - $ref: './common-components.yml#/components/parameters/Size'
+      responses:
+        '200':
+          description: Paged connector dead letters.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConnectorDeadLetterPage'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+
+components:
+  securitySchemes:
+    bearer:
+      $ref: './common-components.yml#/components/securitySchemes/bearer'
+  schemas:
+    AccessProtocol:
+      $ref: './connector-components.yml#/components/schemas/AccessProtocol'
+    ResourceKind:
+      $ref: './connector-components.yml#/components/schemas/ResourceKind'
+    OperationKind:
+      $ref: './connector-components.yml#/components/schemas/OperationKind'
+    OperationTransferMode:
+      $ref: './connector-components.yml#/components/schemas/OperationTransferMode'
+    ConnectorInstanceCreateRequest:
+      $ref: './connector-components.yml#/components/schemas/ConnectorInstanceCreateRequest'
+    ConnectorInstanceUpdateRequest:
+      $ref: './connector-components.yml#/components/schemas/ConnectorInstanceUpdateRequest'
+    ConnectorInstance:
+      $ref: './connector-components.yml#/components/schemas/ConnectorInstance'
+    ConnectorInstancePage:
+      $ref: './connector-components.yml#/components/schemas/ConnectorInstancePage'
+    ConnectorTypeDescriptorPage:
+      $ref: './connector-components.yml#/components/schemas/ConnectorTypeDescriptorPage'
+    ConnectorIdentity:
+      $ref: './connector-components.yml#/components/schemas/ConnectorIdentity'
+    ConnectorIdentityPage:
+      $ref: './connector-components.yml#/components/schemas/ConnectorIdentityPage'
+    ConnectorResource:
+      $ref: './connector-components.yml#/components/schemas/ConnectorResource'
+    ConnectorResourcePage:
+      $ref: './connector-components.yml#/components/schemas/ConnectorResourcePage'
+    AttachConnectorResourceRequest:
+      $ref: './connector-components.yml#/components/schemas/AttachConnectorResourceRequest'
+    ResourceDescriptorCreateRequest:
+      $ref: './connector-components.yml#/components/schemas/ResourceDescriptorCreateRequest'
+    ResourceDescriptorUpdateRequest:
+      $ref: './connector-components.yml#/components/schemas/ResourceDescriptorUpdateRequest'
+    ResourceDescriptor:
+      $ref: './connector-components.yml#/components/schemas/ResourceDescriptor'
+    ResourceDescriptorPage:
+      $ref: './connector-components.yml#/components/schemas/ResourceDescriptorPage'
+    FieldDescriptorInput:
+      $ref: './connector-components.yml#/components/schemas/FieldDescriptorInput'
+    FieldDescriptor:
+      $ref: './connector-components.yml#/components/schemas/FieldDescriptor'
+    FieldDescriptorPage:
+      $ref: './connector-components.yml#/components/schemas/FieldDescriptorPage'
+    OperationBindingCreateRequest:
+      $ref: './connector-components.yml#/components/schemas/OperationBindingCreateRequest'
+    OperationBindingUpdateRequest:
+      $ref: './connector-components.yml#/components/schemas/OperationBindingUpdateRequest'
+    OperationBinding:
+      $ref: './connector-components.yml#/components/schemas/OperationBinding'
+    OperationBindingPage:
+      $ref: './connector-components.yml#/components/schemas/OperationBindingPage'
+    SemanticConnectorBindingCreateRequest:
+      $ref: './connector-components.yml#/components/schemas/SemanticConnectorBindingCreateRequest'
+    SemanticConnectorBinding:
+      $ref: './connector-components.yml#/components/schemas/SemanticConnectorBinding'
+    SemanticConnectorBindingPage:
+      $ref: './connector-components.yml#/components/schemas/SemanticConnectorBindingPage'
+    ConnectorInvocationBindingCreateRequest:
+      $ref: './connector-components.yml#/components/schemas/ConnectorInvocationBindingCreateRequest'
+    ConnectorInvocationBinding:
+      $ref: './connector-components.yml#/components/schemas/ConnectorInvocationBinding'
+    ConnectorInvocationBindingPage:
+      $ref: './connector-components.yml#/components/schemas/ConnectorInvocationBindingPage'
+    ConnectorInvocationRequest:
+      $ref: './connector-components.yml#/components/schemas/ConnectorInvocationRequest'
+    ConnectorInvocationTerminalStatus:
+      $ref: './connector-components.yml#/components/schemas/ConnectorInvocationTerminalStatus'
+    ConnectorInvocationTerminalOutcome:
+      $ref: './connector-components.yml#/components/schemas/ConnectorInvocationTerminalOutcome'
+    ConnectorInvocationMetering:
+      $ref: './connector-components.yml#/components/schemas/ConnectorInvocationMetering'
+    ConnectorInvocationEvent:
+      $ref: './connector-components.yml#/components/schemas/ConnectorInvocationEvent'
+    ConnectorInvocationCancellationOutcome:
+      $ref: './connector-components.yml#/components/schemas/ConnectorInvocationCancellationOutcome'
+    ConnectorInvocationCancellationResult:
+      $ref: './connector-components.yml#/components/schemas/ConnectorInvocationCancellationResult'
+    ConnectorRunCorrelation:
+      $ref: './connector-components.yml#/components/schemas/ConnectorRunCorrelation'
+    ConnectorVaultWrite:
+      $ref: './connector-components.yml#/components/schemas/ConnectorVaultWrite'
+    ConnectorVaultRetentionProfile:
+      $ref: './connector-components.yml#/components/schemas/ConnectorVaultRetentionProfile'
+    Oid4vciConnectorPipelineRequest:
+      $ref: './connector-components.yml#/components/schemas/Oid4vciConnectorPipelineRequest'
+    Oid4vciConnectorPipelineResult:
+      $ref: './connector-components.yml#/components/schemas/Oid4vciConnectorPipelineResult'
+    LogicalConnectionBindingCreateRequest:
+      $ref: './connector-components.yml#/components/schemas/LogicalConnectionBindingCreateRequest'
+    LogicalConnectionBinding:
+      $ref: './connector-components.yml#/components/schemas/LogicalConnectionBinding'
+    LogicalConnectionBindingPage:
+      $ref: './connector-components.yml#/components/schemas/LogicalConnectionBindingPage'
+    RouteExposureDescriptorCreateRequest:
+      $ref: './connector-components.yml#/components/schemas/RouteExposureDescriptorCreateRequest'
+    RouteExposureDescriptor:
+      $ref: './connector-components.yml#/components/schemas/RouteExposureDescriptor'
+    RouteExposureDescriptorPage:
+      $ref: './connector-components.yml#/components/schemas/RouteExposureDescriptorPage'
+    RouteExposureGrantStatus:
+      $ref: './connector-components.yml#/components/schemas/RouteExposureGrantStatus'
+    RouteExposureGrantCreateRequest:
+      $ref: './connector-components.yml#/components/schemas/RouteExposureGrantCreateRequest'
+    RouteExposureGrant:
+      $ref: './connector-components.yml#/components/schemas/RouteExposureGrant'
+    RouteExposureGrantPage:
+      $ref: './connector-components.yml#/components/schemas/RouteExposureGrantPage'
+    RouteExposureExternalReadRequest:
+      $ref: './connector-components.yml#/components/schemas/RouteExposureExternalReadRequest'
+    RouteExposureExternalWriteRequest:
+      $ref: './connector-components.yml#/components/schemas/RouteExposureExternalWriteRequest'
+    ConnectorExternalReadResponse:
+      $ref: './connector-components.yml#/components/schemas/ConnectorExternalReadResponse'
+    ConnectorExternalWriteReceipt:
+      $ref: './connector-components.yml#/components/schemas/ConnectorExternalWriteReceipt'
+    ConnectorPolicyDecision:
+      $ref: './connector-components.yml#/components/schemas/ConnectorPolicyDecision'
+    ConnectorPolicyEnforcementPoint:
+      $ref: './connector-components.yml#/components/schemas/ConnectorPolicyEnforcementPoint'
+    ConnectorPolicyEvaluationContext:
+      $ref: './connector-components.yml#/components/schemas/ConnectorPolicyEvaluationContext'
+    ConnectorGovernedIngressRequest:
+      $ref: './connector-components.yml#/components/schemas/ConnectorGovernedIngressRequest'
+    ConnectorEgressPreparationRequest:
+      $ref: './connector-components.yml#/components/schemas/ConnectorEgressPreparationRequest'
+    ConnectorControlOperationRequest:
+      $ref: './connector-components.yml#/components/schemas/ConnectorControlOperationRequest'
+    ConnectorDataProductId:
+      $ref: './connector-components.yml#/components/schemas/ConnectorDataProductId'
+    ConnectorDataProductDescriptorCreateRequest:
+      $ref: './connector-components.yml#/components/schemas/ConnectorDataProductDescriptorCreateRequest'
+    ConnectorDataProductDescriptor:
+      $ref: './connector-components.yml#/components/schemas/ConnectorDataProductDescriptor'
+    ConnectorDataProductDescriptorPage:
+      $ref: './connector-components.yml#/components/schemas/ConnectorDataProductDescriptorPage'
+    ConnectorCatalogOfferRef:
+      $ref: './connector-components.yml#/components/schemas/ConnectorCatalogOfferRef'
+    ConnectorCatalogOfferId:
+      $ref: './connector-components.yml#/components/schemas/ConnectorCatalogOfferId'
+    ConnectorOdrlPolicyRef:
+      $ref: './connector-components.yml#/components/schemas/ConnectorOdrlPolicyRef'
+    ConnectorOdrlPolicyType:
+      $ref: './connector-components.yml#/components/schemas/ConnectorOdrlPolicyType'
+    TransformationCreateRequest:
+      $ref: './connector-components.yml#/components/schemas/TransformationCreateRequest'
+    TransformationUpdateRequest:
+      $ref: './connector-components.yml#/components/schemas/TransformationUpdateRequest'
+    TransformationDefinition:
+      $ref: './connector-components.yml#/components/schemas/TransformationDefinition'
+    TransformationPage:
+      $ref: './connector-components.yml#/components/schemas/TransformationPage'
+    ConnectorRouteCreateRequest:
+      $ref: './connector-components.yml#/components/schemas/ConnectorRouteCreateRequest'
+    ConnectorRouteUpdateRequest:
+      $ref: './connector-components.yml#/components/schemas/ConnectorRouteUpdateRequest'
+    ConnectorRoute:
+      $ref: './connector-components.yml#/components/schemas/ConnectorRoute'
+    ConnectorRoutePage:
+      $ref: './connector-components.yml#/components/schemas/ConnectorRoutePage'
+    DiscoverResourcesRequest:
+      $ref: './connector-components.yml#/components/schemas/DiscoverResourcesRequest'
+    DiscoveryResult:
+      $ref: './connector-components.yml#/components/schemas/DiscoveryResult'
+    HealthCheckRequest:
+      $ref: './connector-components.yml#/components/schemas/HealthCheckRequest'
+    ConnectorHealth:
+      $ref: './connector-components.yml#/components/schemas/ConnectorHealth'
+    StartConnectorRouteRunRequest:
+      $ref: './connector-components.yml#/components/schemas/StartConnectorRouteRunRequest'
+    ConnectorRun:
+      $ref: './connector-components.yml#/components/schemas/ConnectorRun'
+    ConnectorRunPage:
+      $ref: './connector-components.yml#/components/schemas/ConnectorRunPage'
+    ConnectorRunEventPage:
+      $ref: './connector-components.yml#/components/schemas/ConnectorRunEventPage'
+    ConnectorDeadLetterPage:
+      $ref: './connector-components.yml#/components/schemas/ConnectorDeadLetterPage'

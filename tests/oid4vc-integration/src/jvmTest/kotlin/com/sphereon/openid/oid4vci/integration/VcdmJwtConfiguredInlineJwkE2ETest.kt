@@ -21,21 +21,23 @@ import com.sphereon.crypto.resolution.IdentifierService
 import com.sphereon.crypto.resolution.extern.ExternalIdentifierJwkOpts
 import com.sphereon.crypto.resolution.extern.ExternalIdentifierResult
 import com.sphereon.di.session.SessionScope
+import com.sphereon.oauth2.common.model.AuthorizationRequest
+import com.sphereon.oauth2.common.model.AuthorizationResponse
 import com.sphereon.openid.oid4vc.common.CredentialFormat
 import com.sphereon.openid.oid4vci.common.model.CredentialConfigurationSupported
 import com.sphereon.openid.oid4vci.common.model.CredentialDefinition
 import com.sphereon.openid.oid4vci.common.model.CredentialRequest
+import com.sphereon.openid.oid4vci.issuer.format.CredentialFormatHandler
 import com.sphereon.openid.oid4vci.issuer.format.IssuanceContext
 import com.sphereon.openid.oid4vci.issuer.format.SigningKeyMode
-import com.sphereon.openid.oid4vci.issuer.format.CredentialFormatHandler
 import com.sphereon.openid.oid4vci.issuer.impl.format.JwtVcJsonFormatHandler
 import com.sphereon.openid.oid4vci.issuer.impl.format.VcLdJsonJwtFormatHandler
 import com.sphereon.openid.oid4vp.common.ClientIdScheme
 import com.sphereon.openid.oid4vp.common.ClientMetadata
 import com.sphereon.openid.oid4vp.common.ResponseMode
 import com.sphereon.openid.oid4vp.common.VpToken
-import com.sphereon.openid.oid4vp.common.vpToken
 import com.sphereon.openid.oid4vp.common.jwtVcFormatInfo
+import com.sphereon.openid.oid4vp.common.vpToken
 import com.sphereon.openid.oid4vp.dcql.DcqlCredentialQuery
 import com.sphereon.openid.oid4vp.dcql.DcqlQuery
 import com.sphereon.openid.oid4vp.dcql.w3cVcMeta
@@ -44,15 +46,13 @@ import com.sphereon.openid.oid4vp.holder.HolderJwtVpSigningIdentifier
 import com.sphereon.openid.oid4vp.holder.Oid4vpHolder
 import com.sphereon.openid.oid4vp.holder.ResolvedOid4vpRequest
 import com.sphereon.openid.oid4vp.holder.SelectedCredential
+import com.sphereon.openid.oid4vp.holder.VerifierInfo
 import com.sphereon.openid.oid4vp.verifier.CreateAuthorizationRequestArgs
 import com.sphereon.openid.oid4vp.verifier.Oid4vpVerifierService
 import com.sphereon.openid.oid4vp.verifier.ParseAuthorizationResponseArgs
-import com.sphereon.openid.oid4vp.verifier.TrustedAuthenticationResolution
 import com.sphereon.openid.oid4vp.verifier.TrustedAuthenticationPurpose
+import com.sphereon.openid.oid4vp.verifier.TrustedAuthenticationResolution
 import com.sphereon.openid.oid4vp.verifier.ValidateAuthorizationResponseArgs
-import com.sphereon.openid.oid4vp.holder.VerifierInfo
-import com.sphereon.oauth2.common.model.AuthorizationRequest
-import com.sphereon.oauth2.common.model.AuthorizationResponse
 import com.sphereon.wallet.unit.SecureComponentUsage
 import dev.zacsweers.metro.ContributesTo
 import kotlinx.coroutines.test.runTest
@@ -107,11 +107,19 @@ class VcdmJwtConfiguredInlineJwkE2ETest {
                 assertTrue(validation.isOk, "production verifier must return a structured result")
                 assertTrue(validation.value.valid, "configured issuer and holder JWK signatures must verify: ${validation.value.errors}")
 
-                val vp = assertNotNull(flow.response.value.vpToken!!.getSinglePresentation(QUERY_ID))
+                val vp =
+                    assertNotNull(
+                        flow.response.value.vpToken!!
+                            .getSinglePresentation(QUERY_ID)
+                    )
                 assertCredentialShape(flow.credential, version)
                 assertVpShape(vp, version)
                 assertTrue(verifyRawJws(flow.credential, flow.issuerKey), "issuer VC signature must verify with its KMS public key")
-                assertEquals(1, flow.response.value.vpToken!!.presentationCount)
+                assertEquals(
+                    1,
+                    flow.response.value.vpToken!!
+                        .presentationCount
+                )
                 assertFalse(jwtHeader(flow.credential).containsKey("jwk"))
                 assertFalse(jwtHeader(vp).containsKey("jwk"))
             }
@@ -158,20 +166,21 @@ class VcdmJwtConfiguredInlineJwkE2ETest {
         val credential = credentialTransform(issue(issuerKey.alias, version))
         val query = DcqlQuery(credentials = listOf(query(version)))
         val request =
-            verifierService().createAuthorizationRequest(
-                CreateAuthorizationRequestArgs(
-                    instanceId = "configured-jwk-vcdm-verifier",
-                    dcqlQuery = query,
-                    clientId = verifier,
-                    responseUri = "$verifier/response",
-                    responseMode = ResponseMode.DIRECT_POST,
-                    nonce = NONCE,
-                    state = "configured-jwk-state",
-                    clientMetadata = ClientMetadata(vpFormatsSupported = mapOf(version.format.value to jwtVcFormatInfo(listOf("ES256")))),
-                ),
-            ).also {
-                assertTrue(it.isOk, "production verifier request command should succeed: ${if (it.isErr) it.error else ""}")
-            }.value
+            verifierService()
+                .createAuthorizationRequest(
+                    CreateAuthorizationRequestArgs(
+                        instanceId = "configured-jwk-vcdm-verifier",
+                        dcqlQuery = query,
+                        clientId = verifier,
+                        responseUri = "$verifier/response",
+                        responseMode = ResponseMode.DIRECT_POST,
+                        nonce = NONCE,
+                        state = "configured-jwk-state-$aliasPrefix-${version.name.lowercase()}",
+                        clientMetadata = ClientMetadata(vpFormatsSupported = mapOf(version.format.value to jwtVcFormatInfo(listOf("ES256")))),
+                    ),
+                ).also {
+                    assertTrue(it.isOk, "production verifier request command should succeed: ${if (it.isErr) it.error else ""}")
+                }.value
         val resolved =
             ResolvedOid4vpRequest(
                 request = request.request,
@@ -209,7 +218,10 @@ class VcdmJwtConfiguredInlineJwkE2ETest {
         return Flow(issuerKey, holderKey, credential, query, request.request, response)
     }
 
-    private suspend fun issue(alias: String, version: JwtVersion = JwtVersion.V20): String {
+    private suspend fun issue(
+        alias: String,
+        version: JwtVersion = JwtVersion.V20
+    ): String {
         ctx.registerIssuerSigningKey(alias)
         val configuration =
             CredentialConfigurationSupported(
@@ -218,7 +230,8 @@ class VcdmJwtConfiguredInlineJwkE2ETest {
             )
         val graph = ctx.session.graph as VcdmConfiguredInlineJwkTestGraph
         val handler: CredentialFormatHandler = if (version == JwtVersion.V11) graph.jwtVcJsonFormatHandler else graph.vcLdJsonJwtFormatHandler
-        val result = handler.issueCredential(
+        val result =
+            handler.issueCredential(
                 CredentialRequest(format = version.format.value),
                 IssuanceContext(
                     subject = "$holder/subject",
@@ -238,7 +251,11 @@ class VcdmJwtConfiguredInlineJwkE2ETest {
         return result.value.credential.jsonPrimitive.content
     }
 
-    private suspend fun admit(controller: String, jwk: Jwk, purpose: TrustedAuthenticationPurpose = TrustedAuthenticationPurpose.HOLDER): TrustedAuthenticationResolution {
+    private suspend fun admit(
+        controller: String,
+        jwk: Jwk,
+        purpose: TrustedAuthenticationPurpose = TrustedAuthenticationPurpose.HOLDER
+    ): TrustedAuthenticationResolution {
         val opts = ExternalIdentifierJwkOpts(identifier = jwk)
         val resolution = identifierService().resolve(opts)
         assertTrue(
@@ -256,17 +273,18 @@ class VcdmJwtConfiguredInlineJwkE2ETest {
         flow: Flow,
         issuerTrust: TrustedAuthenticationResolution,
         holderTrust: TrustedAuthenticationResolution,
-    ) =
-        verifierService().let { service ->
-            val response = flow.response.value
-            val parsed =
-                service.parseAuthorizationResponse(
+    ) = verifierService().let { service ->
+        val response = flow.response.value
+        val parsed =
+            service
+                .parseAuthorizationResponse(
                     ParseAuthorizationResponseArgs(
                         responseParams =
                             mapOf(
                                 "vp_token" to
                                     json.encodeToString(
-                                        kotlinx.serialization.json.JsonElement.serializer(),
+                                        kotlinx.serialization.json.JsonElement
+                                            .serializer(),
                                         VpToken.run { response.vpToken!!.toJson() },
                                     ),
                                 "state" to assertNotNull(response.state),
@@ -276,16 +294,16 @@ class VcdmJwtConfiguredInlineJwkE2ETest {
                 ).also {
                     assertTrue(it.isOk, "production response parser should accept command output: ${if (it.isErr) it.error else ""}")
                 }
-            service.validateAuthorizationResponse(
-                ValidateAuthorizationResponseArgs(
-                    parsedResponse = parsed.value,
-                    originalRequest = flow.request,
-                    dcqlQuery = flow.query,
-                    expectedNonce = NONCE,
-                    trustedAuthentications = listOf(issuerTrust, holderTrust),
-                ),
-            )
-        }
+        service.validateAuthorizationResponse(
+            ValidateAuthorizationResponseArgs(
+                parsedResponse = parsed.value,
+                originalRequest = flow.request,
+                dcqlQuery = flow.query,
+                expectedNonce = NONCE,
+                trustedAuthentications = listOf(issuerTrust, holderTrust),
+            ),
+        )
+    }
 
     private suspend fun generateKey(alias: String): ManagedKeyInfoType<*> {
         val generated =
@@ -317,7 +335,10 @@ class VcdmJwtConfiguredInlineJwkE2ETest {
         )
     }
 
-    private suspend fun verifyRawJws(jwt: String, key: ManagedKeyInfoType<*>): Boolean {
+    private suspend fun verifyRawJws(
+        jwt: String,
+        key: ManagedKeyInfoType<*>
+    ): Boolean {
         val parts = jwt.split('.')
         if (parts.size != 3) return false
         return keyManagerService().isValidRawSignature(
@@ -327,10 +348,15 @@ class VcdmJwtConfiguredInlineJwkE2ETest {
         )
     }
 
-    private fun publicJwk(key: ManagedKeyInfoType<*>, kid: String): Jwk =
-        assertNotNull(key.toManagedPublicKeyInfo().key as? Jwk).copy(kid = kid)
+    private fun publicJwk(
+        key: ManagedKeyInfoType<*>,
+        kid: String
+    ): Jwk = assertNotNull(key.toManagedPublicKeyInfo().key as? Jwk).copy(kid = kid)
 
-    private fun addEmbeddedJwk(jwt: String, jwk: Jwk): String {
+    private fun addEmbeddedJwk(
+        jwt: String,
+        jwk: Jwk
+    ): String {
         val parts = jwt.split('.')
         assertEquals(3, parts.size)
         val header = json.parseToJsonElement(parts[0].decodeFromBase64Url().decodeToString()).jsonObject.toMutableMap()
@@ -340,21 +366,20 @@ class VcdmJwtConfiguredInlineJwkE2ETest {
 
     private fun issuerJwtKid(jwt: String): String = assertNotNull(jwtHeader(jwt)["kid"]?.jsonPrimitive?.content)
 
-    private fun jwtHeader(jwt: String): JsonObject =
-        json.parseToJsonElement(jwt.substringBefore('.').decodeFromBase64Url().decodeToString()).jsonObject
+    private fun jwtHeader(jwt: String): JsonObject = json.parseToJsonElement(jwt.substringBefore('.').decodeFromBase64Url().decodeToString()).jsonObject
 
-    private fun jwtPayload(jwt: String): JsonObject =
-        json.parseToJsonElement(jwt.split('.')[1].decodeFromBase64Url().decodeToString()).jsonObject
+    private fun jwtPayload(jwt: String): JsonObject = json.parseToJsonElement(jwt.split('.')[1].decodeFromBase64Url().decodeToString()).jsonObject
 
-    private fun verifierService(): Oid4vpVerifierService =
-        (ctx.session.graph as VcdmConfiguredInlineJwkTestGraph).oid4vpVerifierService
+    private fun verifierService(): Oid4vpVerifierService = (ctx.session.graph as VcdmConfiguredInlineJwkTestGraph).oid4vpVerifierService
 
     private fun holderService(): Oid4vpHolder = (ctx.session.graph as VcdmConfiguredInlineJwkTestGraph).oid4vpHolder
 
-    private fun identifierService(): IdentifierService =
-        (ctx.session.graph as VcdmConfiguredInlineJwkTestGraph).identifierService
+    private fun identifierService(): IdentifierService = (ctx.session.graph as VcdmConfiguredInlineJwkTestGraph).identifierService
 
-    private fun keyManagerService(): KeyManagerService = ctx.session.graph.asKeyManagerServiceGraph().keyManagerService
+    private fun keyManagerService(): KeyManagerService =
+        ctx.session.graph
+            .asKeyManagerServiceGraph()
+            .keyManagerService
 
     private fun query(version: JwtVersion = JwtVersion.V20) =
         DcqlCredentialQuery(
@@ -363,7 +388,10 @@ class VcdmJwtConfiguredInlineJwkE2ETest {
             meta = w3cVcMeta(listOf("VerifiableCredential", version.credentialType)),
         )
 
-    private fun assertCredentialShape(jwt: String, version: JwtVersion) {
+    private fun assertCredentialShape(
+        jwt: String,
+        version: JwtVersion
+    ) {
         val header = jwtHeader(jwt)
         val payload = jwtPayload(jwt)
         assertEquals(version.credentialTyp, header["typ"]?.jsonPrimitive?.content)
@@ -389,7 +417,10 @@ class VcdmJwtConfiguredInlineJwkE2ETest {
         assertFalse(anonymousSubject.containsKey("id"), "credential subject must remain anonymous")
     }
 
-    private fun assertVpShape(jwt: String, version: JwtVersion) {
+    private fun assertVpShape(
+        jwt: String,
+        version: JwtVersion
+    ) {
         val header = jwtHeader(jwt)
         if (version == JwtVersion.V11) {
             assertEquals("JWT", header["typ"]?.jsonPrimitive?.content)

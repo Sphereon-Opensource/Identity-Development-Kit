@@ -1,0 +1,391 @@
+openapi: 3.0.4
+info:
+  title: OID4VCI Issuer Session API Components
+  version: 0.1.0
+  description: Entity schemas, value objects, and enums for the OID4VCI Issuer Session API.
+paths: {}
+components:
+  parameters:
+    CorrelationId:
+      in: path
+      name: correlation_id
+      schema:
+        type: string
+      required: true
+      description: |
+        Business key that identifies the credential-offer session, as returned in the
+        `correlation_id` field of CreateCredentialOfferOutput. Either the caller-supplied
+        `correlation_id` from the create request or the server-generated one.
+      example: order-2026-000931
+
+  schemas:
+    CreateCredentialOfferInput:
+      type: object
+      description: |
+        Request body for creating a new OID4VCI credential-offer session. The caller specifies
+        which credential configurations to offer and optionally supplies subject data, grant
+        configuration, and offer-URI lifecycle behaviour.
+      required: [credential_configuration_ids]
+      properties:
+        credential_configuration_ids:
+          type: array
+          description: Identifiers for the offered credential configurations.
+          items:
+            type: string
+          example: [EuPid]
+        credential_subject_data:
+          type: object
+          additionalProperties: true
+          description: |
+            Pre-seeded attributes for the credential subject. Keys are attribute names, values are
+            arbitrary JSON elements.
+        initial_connector_fields:
+          type: object
+          additionalProperties: true
+          description: |
+            Initial JSON fields passed unchanged to the configured issuer connector pipeline. They
+            are operational pipeline input and become credential attributes only when a connector
+            or mapping explicitly contributes them.
+        correlation_id:
+          type: string
+          description: Business key for later status queries. If omitted, the server generates one.
+          example: my-business-key-or-uuid
+        issuer_id:
+          type: string
+          description: Which configured issuer to use. Resolved from context if omitted.
+        grants:
+          $ref: '#/components/schemas/CredentialOfferGrantsInput'
+        scheme:
+          type: string
+          description: 'URI scheme for the offer deeplink. Default: openid-credential-offer://.'
+          example: openid-credential-offer://
+        qr_code:
+          $ref: '#/components/schemas/QrCodeOptions'
+        callback:
+          $ref: '#/components/schemas/IssuanceCallbackConfig'
+        state:
+          type: string
+          description: Caller-provided opaque state for correlation.
+        ttl_seconds:
+          type: integer
+          format: int64
+          description: Session time-to-live in seconds.
+        uri_lifecycle:
+          $ref: '#/components/schemas/OfferUriLifecycle'
+        rate_limit:
+          $ref: '#/components/schemas/OfferRateLimit'
+
+    CredentialOfferGrantsInput:
+      type: object
+      description: |
+        Authorization grant configuration for a credential offer. Supply a pre-authorized code
+        grant, an authorization code grant, or both. When neither is provided, a pre-authorized
+        code grant is used by default.
+      properties:
+        pre_authorized_code:
+          $ref: '#/components/schemas/PreAuthorizedCodeGrantInput'
+        authorization_code:
+          $ref: '#/components/schemas/AuthorizationCodeGrantInput'
+
+    CredentialOfferDefaults:
+      type: object
+      additionalProperties: true
+      description: |
+        Stable partial credential-offer defaults. Same field semantics as CreateCredentialOfferInput;
+        merged (deep merge for grants) under any execution-time overrides before offer creation.
+      properties:
+        grants:
+          $ref: '#/components/schemas/CredentialOfferGrantsInput'
+        scheme:
+          type: string
+          description: 'URI scheme for the offer deeplink. Default: openid-credential-offer://.'
+          example: openid-credential-offer://
+        qr_code:
+          $ref: '#/components/schemas/QrCodeOptions'
+        callback:
+          $ref: '#/components/schemas/IssuanceCallbackConfig'
+        ttl_seconds:
+          type: integer
+          format: int64
+          description: Session time-to-live in seconds.
+        uri_lifecycle:
+          $ref: '#/components/schemas/OfferUriLifecycle'
+        rate_limit:
+          $ref: '#/components/schemas/OfferRateLimit'
+
+    PreAuthorizedCodeGrantInput:
+      type: object
+      description: |
+        Pre-authorized code grant configuration. The holder redeems a pre-authorized code (issued
+        as part of the offer) for an access token. Optionally requires a transaction code (PIN).
+      properties:
+        tx_code:
+          $ref: '#/components/schemas/TxCodeInput'
+
+    TxCodeInput:
+      type: object
+      description: |
+        Transaction code (PIN) configuration for a pre-authorized code grant. When present, the
+        holder must enter a code that is delivered to them out of band before the credential is
+        issued.
+      properties:
+        input_mode:
+          type: string
+          description: 'How the holder enters the code: "numeric" or "text".'
+          example: numeric
+        length:
+          type: integer
+          description: Number of characters in the transaction code.
+          example: 6
+        description:
+          type: string
+          description: Guidance shown to the holder on how to obtain or enter the code. Maximum 300 characters.
+          example: Enter the 6-digit code shown on your confirmation page.
+
+    AuthorizationCodeGrantInput:
+      type: object
+      description: |
+        Authorization code grant configuration. The wallet runs the OAuth2 authorization code flow
+        against the issuer's authorization server to obtain an access token.
+      properties:
+        issuer_state:
+          type: string
+          description: |
+            Opaque OAuth2 `issuer_state` value carried in the offer and echoed by the wallet on the
+            authorization request, so the issuer can correlate the flow back to this session.
+
+    IssuanceCallbackConfig:
+      type: object
+      description: Webhook callback configuration for OID4VCI issuance sessions.
+      required: [url]
+      properties:
+        url:
+          type: string
+          description: Webhook URL to POST status updates to.
+          example: https://example.com/callback/status
+        statuses:
+          type: array
+          description: Filter callbacks to only these statuses. Empty list means all statuses.
+          items:
+            $ref: '#/components/schemas/CredentialOfferSessionStatus'
+        include_issuance_data:
+          type: boolean
+          default: false
+          description: Include issuance data in callback payload when credential is issued.
+        secret_ref:
+          type: string
+          pattern: '^sec_[A-Za-z0-9_-]{16,128}$'
+          description: |
+            Per-session override of the webhook registry: reference of the secret used to sign
+            this session's callbacks. When absent, callbacks are signed with the secret of the
+            matching registered webhook endpoint, or sent unsigned when there is none.
+          example: sec_01JZZZZZZZZZZZZZZZZZZZZZZZ
+        signing:
+          type: string
+          enum: [HMAC_SHA256]
+          description: Signature scheme for this session's callbacks. Callbacks carry the same Webhook-Id, Webhook-Timestamp, Webhook-Event-Type, Webhook-Attempt, and Webhook-Signature headers as registry deliveries.
+
+    QrCodeOptions:
+      type: object
+      description: QR code generation options.
+      properties:
+        size:
+          type: integer
+          default: 400
+          description: QR code size in pixels.
+        color_dark:
+          type: string
+          default: '#000000'
+          description: Dark color (foreground) in CSS format.
+        color_light:
+          type: string
+          default: '#ffffff'
+          description: Light color (background) in CSS format.
+
+    OfferUriLifecycle:
+      type: string
+      description: |
+        Controls how long an offer URI remains valid and how its offer payload is generated on
+        each access. `SINGLE_USE` (the spec default) serves a pre-created offer JSON once and then
+        expires. `REUSABLE_FRESH_PER_FETCH` keeps the URI alive across multiple wallet fetches,
+        minting a fresh offer payload on each GET so every holder receives an independent session.
+      enum: [SINGLE_USE, REUSABLE_FRESH_PER_FETCH]
+      default: SINGLE_USE
+
+    OfferRateLimit:
+      type: object
+      description: |
+        Optional rate-limit applied to a reusable offer URI. Caps the number of fresh offer-mint
+        operations the issuer will service within a rolling time window. Only meaningful when the
+        parent offer is configured with `REUSABLE_FRESH_PER_FETCH`.
+      required: [max_per_window, window_seconds]
+      properties:
+        max_per_window:
+          type: integer
+          description: Maximum number of offer-mint operations allowed within the window.
+        window_seconds:
+          type: integer
+          format: int64
+          description: Length of the rolling time window in seconds.
+
+    CreateCredentialOfferOutput:
+      type: object
+      description: Response body for a successful credential-offer creation.
+      required: [correlation_id, session_id, offer_uri]
+      properties:
+        correlation_id:
+          type: string
+          description: |
+            Session / correlation identifier that keys the issuance session. Echoes the
+            caller-supplied `correlation_id` when one was provided, otherwise a server-generated
+            value. Use it as the path parameter for the status and delete endpoints.
+          example: order-2026-000931
+        session_id:
+          type: string
+          description: |
+            Immutable opaque protocol-session identifier used by the durable issuance-session
+            APIs. It is distinct from the business `correlation_id` and must not be interpreted by
+            clients.
+          example: 123e4567-e89b-12d3-a456-426614174000
+        offer_uri:
+          type: string
+          description: |
+            Credential offer URI for the wallet (typically an `openid-credential-offer://` deeplink
+            referencing the offer). Present this to the holder directly or render it as a QR code.
+          example: 'openid-credential-offer://?credential_offer_uri=https://issuer.example.com/api/oid4vci/v1/credentials/offers/abc123'
+        status_uri:
+          type: string
+          description: |
+            Absolute URL of the status endpoint for this session. Present when an external base URL
+            is configured for the issuer. A GET against it returns the current session status.
+          example: 'https://issuer.example.com/api/oid4vci/v1/backend/credential/offers/order-2026-000931'
+        qr_uri:
+          type: string
+          format: dataurl
+          description: |
+            QR code encoding the offer URI, returned as a data URI. Only present when `qr_code`
+            options were supplied in the request.
+          example: data:image/png;base64,iVBORw0KGgoAAAANSUhEUg...
+        tx_code:
+          type: string
+          description: |
+            Transaction code (PIN) the holder must enter, present only when a pre-authorized grant
+            requested one. Deliver it to the holder out of band (for example on a confirmation page).
+          example: '492817'
+
+    GetCredentialOfferStatusOutput:
+      type: object
+      description: |
+        Response body for a credential-offer session status query. Always carries the current
+        `status` and a `last_updated` timestamp. `issuance_data` is populated once the status is
+        `credential_issued`; `error` is populated once the status is `error`.
+      required: [correlation_id, status, last_updated]
+      properties:
+        correlation_id:
+          type: string
+          description: Session / correlation identifier of the queried session.
+          example: order-2026-000931
+        status:
+          $ref: '#/components/schemas/CredentialOfferSessionStatus'
+        last_updated:
+          type: integer
+          format: int64
+          description: Unix timestamp in milliseconds at which the session was last updated.
+          example: 1706515200000
+        session_id:
+          type: string
+          description: Optional internal issuance-session identifier for external testing integrations.
+        offer_id:
+          type: string
+          description: Optional credential-offer identifier associated with the session.
+        issuance_session_id:
+          type: string
+          description: Optional protocol issuance-session identifier associated with the offer.
+        created_at:
+          type: integer
+          format: int64
+          description: Optional Unix timestamp in milliseconds at which the session was created.
+        expires_at:
+          type: integer
+          format: int64
+          nullable: true
+          description: Optional Unix timestamp in milliseconds at which the session expires.
+        error:
+          $ref: '#/components/schemas/SessionError'
+        issuance_data:
+          $ref: '#/components/schemas/IssuanceData'
+
+    CredentialOfferSessionStatus:
+      type: string
+      description: |
+        Lifecycle status of an OID4VCI backend credential-offer session. The session advances as
+        the holder's wallet drives the protocol:
+
+        - `credential_offer_created`: the offer and its session have been created; the wallet has
+          not retrieved the offer yet.
+        - `credential_offer_retrieved`: the wallet has fetched the credential offer.
+        - `token_requested`: the wallet has requested an access token.
+        - `credential_requested`: the wallet has requested the credential.
+        - `credential_issued`: the credential has been issued; `issuance_data` is then available.
+        - `error`: the session has failed; `error` details are then available.
+      enum:
+        - credential_offer_created
+        - credential_offer_retrieved
+        - token_requested
+        - credential_requested
+        - credential_issued
+        - error
+      example: credential_offer_created
+
+    IssuanceData:
+      type: object
+      description: |
+        Issuance result data, included on a status response once the session has reached
+        `credential_issued`.
+      required: [credential_configuration_ids]
+      properties:
+        credential_configuration_ids:
+          type: array
+          description: Credential configuration ids of the credentials that were issued.
+          items:
+            type: string
+          example: [EuPid]
+        credential_identifiers:
+          type: array
+          description: Identifiers assigned to the issued credentials during issuance.
+          items:
+            type: string
+          example: [urn:credential:8f2a1c4e-0b77-4f3a-9d21-2a6f5b9c0e10]
+
+    SessionError:
+      type: object
+      description: |
+        Error details, included on a status response once the session has reached `error`.
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          description: Stable, machine-readable error code identifying the failure.
+          example: issuance_failed
+        message:
+          type: string
+          description: Human-readable description of the failure.
+          example: Credential issuance failed because the subject data was incomplete.
+
+    Error:
+      type: object
+      description: |
+        Error response body for OID4VCI REST API errors (`Oid4vciRestErrorResponse`).
+      required: [status, message]
+      properties:
+        status:
+          type: integer
+          description: HTTP status code.
+          example: 500
+        message:
+          type: string
+          description: Human-readable error message.
+          example: Could not create credential offer
+        error_details:
+          type: string
+          description: Optional additional error details.

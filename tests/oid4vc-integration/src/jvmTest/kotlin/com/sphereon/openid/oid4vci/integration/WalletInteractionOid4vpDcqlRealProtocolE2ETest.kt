@@ -16,15 +16,15 @@
 
 package com.sphereon.openid.oid4vci.integration
 
-import com.sphereon.core.api.conf.DefaultPrincipalMapPropertySource
 import com.sphereon.core.api.Ok
+import com.sphereon.core.api.conf.DefaultPrincipalMapPropertySource
 import com.sphereon.core.api.decodeFromBase64Url
 import com.sphereon.core.api.http.GenericHttpRequest
 import com.sphereon.core.defaults.random.defaultSecureRandom
-import com.sphereon.crypto.core.generic.SignatureAlgorithm
-import com.sphereon.crypto.core.jose.JwkUse
 import com.sphereon.crypto.core.KeyVisibility
+import com.sphereon.crypto.core.generic.SignatureAlgorithm
 import com.sphereon.crypto.core.jose.Jwk
+import com.sphereon.crypto.core.jose.JwkUse
 import com.sphereon.crypto.core.kms.asKeyManagerServiceGraph
 import com.sphereon.di.session.SessionScope
 import com.sphereon.oauth2.common.command.DpopProofAssembly
@@ -33,15 +33,15 @@ import com.sphereon.openid.oid4vci.issuer.command.CreateCredentialOfferArgs
 import com.sphereon.openid.oid4vci.issuer.config.Oid4vciIssuerConfigProvider
 import com.sphereon.openid.oid4vp.dcql.DcqlClaimQuery
 import com.sphereon.openid.oid4vp.dcql.DcqlCredentialQuery
-import com.sphereon.openid.oid4vp.dcql.claimsPathPointer
 import com.sphereon.openid.oid4vp.dcql.DcqlQuery
+import com.sphereon.openid.oid4vp.dcql.claimsPathPointer
 import com.sphereon.openid.oid4vp.dcql.sdJwtVcMeta
 import com.sphereon.openid.oid4vp.universal.CreateAuthorizationRequestInput
 import com.sphereon.openid.oid4vp.universal.CreateAuthorizationRequestOutput
 import com.sphereon.openid.oid4vp.universal.GetAuthorizationRequestStatusOutput
-import com.sphereon.openid.oid4vp.verifier.model.AuthorizationSessionStatus
-import com.sphereon.openid.oid4vp.verifier.TrustedAuthenticationResolution
 import com.sphereon.openid.oid4vp.verifier.TrustedAuthenticationPurpose
+import com.sphereon.openid.oid4vp.verifier.TrustedAuthenticationResolution
+import com.sphereon.openid.oid4vp.verifier.model.AuthorizationSessionStatus
 import com.sphereon.sdjwt.vc.command.VerifySdJwtVcCommand
 import com.sphereon.wallet.WalletIdentityResolver
 import com.sphereon.wallet.credential.CredentialLifecycleState
@@ -49,11 +49,11 @@ import com.sphereon.wallet.credential.CredentialRecord
 import com.sphereon.wallet.credential.CredentialSubjectExtractor
 import com.sphereon.wallet.credential.WalletCredentialStore
 import com.sphereon.wallet.credential.WalletIssuanceSessionStore
+import com.sphereon.wallet.interaction.ProtocolExecutionOwner
 import com.sphereon.wallet.interaction.WalletCredentialSelection
 import com.sphereon.wallet.interaction.WalletEntryPoint
 import com.sphereon.wallet.interaction.WalletInteractionAction
 import com.sphereon.wallet.interaction.WalletInteractionClient
-import com.sphereon.wallet.interaction.ProtocolExecutionOwner
 import com.sphereon.wallet.interaction.WalletInteractionInput
 import com.sphereon.wallet.interaction.WalletInteractionStatus
 import com.sphereon.wallet.interaction.WalletProtocol
@@ -68,41 +68,42 @@ import com.sphereon.wallet.interaction.impl.InMemoryWalletInteractionPrivateSess
 import com.sphereon.wallet.interaction.impl.InMemoryWalletInteractionSessionStore
 import com.sphereon.wallet.interaction.impl.WscdAwareExecutionPlanner
 import com.sphereon.wallet.interaction.impl.WscdExecutionProfileSource
+import com.sphereon.wallet.interaction.protocol.oid4vci.HolderServiceOid4vciCredentialRequestProofProvider
+import com.sphereon.wallet.interaction.protocol.oid4vci.HolderServiceOid4vciRefreshTokenGrantProvider
 import com.sphereon.wallet.interaction.protocol.oid4vci.Oid4vciHolderIssuanceExecutor
 import com.sphereon.wallet.interaction.protocol.oid4vci.Oid4vciHolderIssuanceOptions
 import com.sphereon.wallet.interaction.protocol.oid4vci.Oid4vciIssuanceOptionsProvider
 import com.sphereon.wallet.interaction.protocol.oid4vci.Oid4vciIssuedCredentialAcceptance
 import com.sphereon.wallet.interaction.protocol.oid4vci.Oid4vciWalletInteractionProtocolAdapter
-import com.sphereon.wallet.interaction.protocol.oid4vci.HolderServiceOid4vciCredentialRequestProofProvider
-import com.sphereon.wallet.interaction.protocol.oid4vci.HolderServiceOid4vciRefreshTokenGrantProvider
 import com.sphereon.wallet.interaction.protocol.oid4vci.SecureComponentOid4vciKeyAttestationProvider
 import com.sphereon.wallet.interaction.protocol.oid4vci.WalletStoreOid4vciCredentialResponseReceiver
 import com.sphereon.wallet.interaction.protocol.oid4vp.Oid4vpPresentationSecurityAttributes
-import com.sphereon.wallet.interaction.protocol.oid4vp.SecureComponentOid4vpSdJwtHolderBindingProvider
 import com.sphereon.wallet.interaction.protocol.oid4vp.Oid4vpWalletConfigProvider
 import com.sphereon.wallet.interaction.protocol.oid4vp.Oid4vpWalletInteractionProtocolAdapter
+import com.sphereon.wallet.interaction.protocol.oid4vp.SecureComponentOid4vpSdJwtHolderBindingProvider
+import com.sphereon.wallet.unit.attestation.LocalWalletProviderAttestationSignerResolver
 import com.sphereon.wallet.wsca.Wsca
 import com.sphereon.wallet.wsca.impl.LocalWsca
 import com.sphereon.wallet.wsca.impl.WalletUserAuthenticator
-import com.sphereon.wallet.unit.attestation.LocalWalletProviderAttestationSignerResolver
 import com.sphereon.wallet.wscd.ActivationProof
 import com.sphereon.wallet.wscd.ActivationProofKind
 import com.sphereon.wallet.wscd.Wscd
 import dev.zacsweers.metro.ContributesTo
 import kotlinx.coroutines.test.runTest
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 import com.sphereon.openid.oid4vp.holder.WalletConfig as Oid4vpWalletConfig
+import com.sphereon.wallet.interaction.WalletInteractionDiagnostics
 
 @ContributesTo(SessionScope::class)
 interface WalletInteractionOid4vpStoreTestGraph {
@@ -276,7 +277,7 @@ class WalletInteractionOid4vpDcqlRealProtocolE2ETest {
         }
     }
 
-    private val ctx = Oid4vciTestContext(this)
+    private val ctx = Oid4vciTestContext(this, credentialConfigurationIds = listOf(CREDENTIAL_CONFIG_ID, SD_JWT_CONFIG_ID))
     private val json =
         Json {
             ignoreUnknownKeys = true
@@ -355,6 +356,7 @@ class WalletInteractionOid4vpDcqlRealProtocolE2ETest {
                                 profileSource = WscdExecutionProfileSource { null },
                             ),
                         securityGate = securityGate,
+                        diagnostics = WalletInteractionDiagnostics.none,
                     )
 
                 val input =
@@ -499,6 +501,7 @@ class WalletInteractionOid4vpDcqlRealProtocolE2ETest {
                 // wallet-product/runner suites, not here.
                 securityGate = WalletSecurityGate.allow,
                 adapters = listOf(adapter),
+                diagnostics = WalletInteractionDiagnostics.none,
             )
 
         val session =
@@ -519,7 +522,13 @@ class WalletInteractionOid4vpDcqlRealProtocolE2ETest {
             WalletInteractionAction.selectCredentials(
                 WalletCredentialSelection(
                     selectedCredentialIdsByRequirement =
-                        mapOf("oid4vci-offer" to engine.observe(session.sessionId).value.credentialOffer!!.credentialConfigurationIds),
+                        mapOf(
+                            "oid4vci-offer" to
+                                engine
+                                    .observe(session.sessionId)
+                                    .value.credentialOffer!!
+                                    .credentialConfigurationIds
+                        ),
                 ),
             ),
         )
@@ -650,7 +659,10 @@ class WalletInteractionOid4vpDcqlRealProtocolE2ETest {
             signingConfig?.signingKeyAlias,
             "The SD-JWT fixture must resolve its issuer signing key through the test authority",
         )
-        val publicKey = result.value.keyPair?.joseToManagedKeyInfo(KeyVisibility.PUBLIC)?.key
+        val publicKey =
+            result.value.keyPair
+                ?.joseToManagedKeyInfo(KeyVisibility.PUBLIC)
+                ?.key
         return assertIs<Jwk>(publicKey)
     }
 

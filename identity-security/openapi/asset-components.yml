@@ -1,0 +1,113 @@
+openapi: 3.0.4
+info:
+  title: Asset Components
+  version: 0.1.0
+  description: |
+    Shared schemas for the tenant asset service: content-addressed asset references,
+    blob store descriptors, and asset library listings. These shapes are shared with the
+    credential design API, which re-references them from here.
+paths: {}
+components:
+  schemas:
+    AssetNamespace:
+      type: string
+      description: |
+        Logical namespace an asset belongs to. `brand` holds theming and branding assets
+        (logos, favicons, backgrounds); `design` holds credential design assets.
+      enum: [brand, design]
+
+    BlobInfo:
+      type: object
+      description: |
+        A reference to a binary stored in the platform blob store. Present on assets and source
+        snapshots that have been persisted locally. The pair `(storeId, path)` locates the bytes.
+      properties:
+        storeId:
+          type: string
+          nullable: true
+          description: Identifier of the blob store holding the bytes.
+        path:
+          type: string
+          nullable: true
+          description: Path of the blob within the store.
+        tenantId:
+          type: string
+          nullable: true
+          description: Tenant the blob belongs to.
+        contentType:
+          type: string
+          nullable: true
+          description: MIME type of the stored bytes.
+          example: image/png
+        metadata:
+          type: object
+          additionalProperties:
+            type: string
+          description: Free-form key/value metadata recorded with the blob.
+
+    AssetReference:
+      type: object
+      description: A pointer to a branding asset, either external (by URI) or stored locally (by blob).
+      required: [uri]
+      properties:
+        uri:
+          type: string
+          description: Resolvable URI of the asset. For locally stored assets this is the asset download URL.
+          example: https://cdn.example.com/logos/identity.png
+        integrity:
+          type: string
+          nullable: true
+          description: Optional subresource-integrity digest (for example `sha256-...`).
+        altText:
+          type: string
+          nullable: true
+          description: Accessible alt text for the asset.
+        contentType:
+          type: string
+          nullable: true
+          description: MIME type of the asset.
+          example: image/png
+        localBlob:
+          type: object
+          allOf:
+            - $ref: '#/components/schemas/BlobInfo'
+          nullable: true
+          description: Set when the asset is stored in the platform blob store.
+      example:
+        uri: https://cdn.example.com/logos/identity.png
+        contentType: image/png
+        altText: Identity issuer logo
+
+    AssetInfo:
+      type: object
+      description: >-
+        A descriptor for a content-addressed, tenant-scoped asset blob, returned by the
+        asset library listing surface. `hash` is the lowercase-hex SHA-256 of the bytes and
+        `uri` is the stable relative public path (the per-tenant absolute host is applied at serve time).
+      required: [uri, contentType, hash]
+      properties:
+        uri:
+          type: string
+          description: >-
+            Stable relative public path of the asset, for example
+            `/public/assets/{tenantId}/brand/{sha256}.png`. Credential design assets keep their
+            existing `/public/assets/design/{sha256}.png` form.
+          example: /public/assets/acme/brand/0f4636c78f65d3639ece5a064b5ae753e3408614a14fb18ab4d7540d2c248543.png
+        contentType:
+          type: string
+          description: MIME type the asset was stored as.
+          example: image/png
+        hash:
+          type: string
+          description: Lowercase-hex SHA-256 digest (64 chars) of the asset bytes.
+          example: 0f4636c78f65d3639ece5a064b5ae753e3408614a14fb18ab4d7540d2c248543
+        sizeBytes:
+          type: integer
+          format: int64
+          nullable: true
+          description: Size of the asset in bytes, when the blob store reports it.
+        createdAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: Creation timestamp of the asset blob, when the blob store reports it.

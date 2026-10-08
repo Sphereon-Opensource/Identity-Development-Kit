@@ -193,6 +193,7 @@ class MultiTenantSigningKeyIsolationTest {
                         subject = "user-$tenantId",
                         clientId = "client-$tenantId",
                         scope = "read",
+                        audience = listOf("https://api.test/resource"),
                     ),
                 )
             assertTrue(

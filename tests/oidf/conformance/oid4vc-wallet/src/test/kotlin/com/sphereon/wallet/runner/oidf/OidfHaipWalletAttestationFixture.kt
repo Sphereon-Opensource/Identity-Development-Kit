@@ -6,8 +6,8 @@
 package com.sphereon.wallet.runner.oidf
 
 import com.sphereon.crypto.core.generic.SignatureAlgorithm
-import com.sphereon.crypto.core.jose.Jwk
 import com.sphereon.crypto.core.jose.JwaCurve
+import com.sphereon.crypto.core.jose.Jwk
 import com.sphereon.wallet.runner.HeadlessWalletRunnerBootstrap
 import com.sphereon.wallet.unit.SecureComponentUsage
 import com.sphereon.wallet.unit.WalletProviderAttestationSignerRef

@@ -1,0 +1,256 @@
+openapi: 3.0.4
+info:
+  title: Business Conduit API
+  version: 0.1.0
+  x-products: [edk, vdx]
+  description: |
+    Authenticated assigned-business-wallet operations. Party, relationship, delegation, policy,
+    protocol execution, target-wallet key authority, protected capture, and egress evidence remain
+    server-side. HTTP responses expose only the UI-safe projections defined by this contract.
+servers:
+  - url: https://api.example.com/api/business-conduit/v1
+  - url: http://localhost:8080/api/business-conduit/v1
+security:
+  - bearer: []
+tags:
+  - name: BusinessConduit
+paths:
+  /assignments:
+    post:
+      tags: [BusinessConduit]
+      summary: Create a business conduit assignment from a server-authorized offer
+      operationId: createBusinessConduitAssignment
+      x-command-id: enterprise-wallet.business-conduit.create-assignment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './business-conduit-components.yml#/components/schemas/CreateBusinessConduitAssignmentHttpBody'
+      responses:
+        '201':
+          description: Assignment created or idempotently returned.
+          content:
+            application/json:
+              schema:
+                $ref: './business-conduit-components.yml#/components/schemas/BusinessConduitAssignmentHttpView'
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+    get:
+      tags: [BusinessConduit]
+      summary: Discover assignments visible to the current operator
+      operationId: discoverBusinessConduitAssignments
+      x-command-id: enterprise-wallet.business-conduit.discover-assignments
+      parameters:
+        - name: includeInactive
+          in: query
+          schema: { type: boolean, default: false }
+      responses:
+        '200':
+          description: UI-safe assignment projections.
+          content:
+            application/json:
+              schema:
+                $ref: './business-conduit-components.yml#/components/schemas/BusinessConduitAssignmentList'
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+  /assignments/{assignmentRef}/activation:
+    parameters:
+      - $ref: './business-conduit-components.yml#/components/parameters/AssignmentRef'
+    post:
+      tags: [BusinessConduit]
+      summary: Activate an offered business conduit assignment
+      operationId: activateBusinessConduitAssignment
+      x-command-id: enterprise-wallet.business-conduit.activate-assignment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './business-conduit-components.yml#/components/schemas/ActivateBusinessConduitAssignmentHttpBody'
+      responses:
+        '200':
+          description: Activated assignment projection.
+          content:
+            application/json:
+              schema:
+                $ref: './business-conduit-components.yml#/components/schemas/BusinessConduitAssignmentHttpView'
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+  /assignments/{assignmentRef}/revalidation:
+    parameters:
+      - $ref: './business-conduit-components.yml#/components/parameters/AssignmentRef'
+    post:
+      tags: [BusinessConduit]
+      summary: Revalidate an assignment against current Party and policy authority
+      operationId: revalidateBusinessConduitAssignment
+      x-command-id: enterprise-wallet.business-conduit.revalidate-assignment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './business-conduit-components.yml#/components/schemas/RevalidateBusinessConduitAssignmentHttpBody'
+      responses:
+        '200':
+          description: Revalidated assignment projection.
+          content:
+            application/json:
+              schema:
+                $ref: './business-conduit-components.yml#/components/schemas/BusinessConduitAssignmentHttpView'
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+  /assignments/{assignmentRef}/revocation:
+    parameters:
+      - $ref: './business-conduit-components.yml#/components/parameters/AssignmentRef'
+    post:
+      tags: [BusinessConduit]
+      summary: Revoke an assignment and its active interactions
+      operationId: revokeBusinessConduitAssignment
+      x-command-id: enterprise-wallet.business-conduit.revoke-assignment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './business-conduit-components.yml#/components/schemas/RevokeBusinessConduitAssignmentHttpBody'
+      responses:
+        '200':
+          description: Revoked assignment projection.
+          content:
+            application/json:
+              schema:
+                $ref: './business-conduit-components.yml#/components/schemas/BusinessConduitAssignmentHttpView'
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+  /assignments/{assignmentRef}/interactions:
+    parameters:
+      - $ref: './business-conduit-components.yml#/components/parameters/AssignmentRef'
+    post:
+      tags: [BusinessConduit]
+      summary: Initiate an interaction from a single-use opaque capture
+      operationId: initiateBusinessConduitInteraction
+      x-command-id: enterprise-wallet.business-conduit.initiate-interaction
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './business-conduit-components.yml#/components/schemas/InitiateBusinessConduitInteractionHttpBody'
+      responses:
+        '201':
+          description: Durable UI-safe interaction projection.
+          content:
+            application/json:
+              schema:
+                $ref: './business-conduit-components.yml#/components/schemas/BusinessConduitInteractionHttpView'
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+  /interactions/{interactionRef}/account:
+    parameters:
+      - $ref: './business-conduit-components.yml#/components/parameters/InteractionRef'
+    post:
+      tags: [BusinessConduit]
+      summary: Select an eligible business account
+      operationId: selectBusinessConduitAccount
+      x-command-id: enterprise-wallet.business-conduit.select-account
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './business-conduit-components.yml#/components/schemas/SelectBusinessConduitAccountHttpBody'
+      responses:
+        '200':
+          description: Updated interaction projection.
+          content:
+            application/json:
+              schema:
+                $ref: './business-conduit-components.yml#/components/schemas/BusinessConduitInteractionHttpView'
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+  /interactions/{interactionRef}/approval:
+    parameters:
+      - $ref: './business-conduit-components.yml#/components/parameters/InteractionRef'
+    post:
+      tags: [BusinessConduit]
+      summary: Submit an approval decision bound to the current interaction revision
+      operationId: submitBusinessConduitApproval
+      x-command-id: enterprise-wallet.business-conduit.submit-approval
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './business-conduit-components.yml#/components/schemas/SubmitBusinessConduitApprovalHttpBody'
+      responses:
+        '200':
+          description: Updated interaction projection.
+          content:
+            application/json:
+              schema:
+                $ref: './business-conduit-components.yml#/components/schemas/BusinessConduitInteractionHttpView'
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+  /interactions/{interactionRef}/execution:
+    parameters:
+      - $ref: './business-conduit-components.yml#/components/parameters/InteractionRef'
+    post:
+      tags: [BusinessConduit]
+      summary: Execute an approved interaction in the target business wallet
+      operationId: executeBusinessConduitInteraction
+      x-command-id: enterprise-wallet.business-conduit.execute-interaction
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './business-conduit-components.yml#/components/schemas/ExecuteBusinessConduitInteractionHttpBody'
+      responses:
+        '200':
+          description: Completed interaction projection with verified backend egress status.
+          content:
+            application/json:
+              schema:
+                $ref: './business-conduit-components.yml#/components/schemas/BusinessConduitInteractionHttpView'
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+  /interactions/{interactionRef}:
+    parameters:
+      - $ref: './business-conduit-components.yml#/components/parameters/InteractionRef'
+    get:
+      tags: [BusinessConduit]
+      summary: Get a UI-safe interaction projection
+      operationId: getBusinessConduitInteraction
+      x-command-id: enterprise-wallet.business-conduit.get-interaction
+      responses:
+        '200':
+          description: Current interaction projection.
+          content:
+            application/json:
+              schema:
+                $ref: './business-conduit-components.yml#/components/schemas/BusinessConduitInteractionHttpView'
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '404': { $ref: './common-components.yml#/components/responses/NotFound' }
+components:
+  securitySchemes:
+    bearer:
+      $ref: './common-components.yml#/components/securitySchemes/bearer'

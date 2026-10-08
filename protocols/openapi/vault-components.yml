@@ -1,0 +1,545 @@
+openapi: 3.0.4
+info:
+  title: Vault Components
+  version: 1.0.0
+  description: Provider-neutral schemas shared by the canonical generic Vault API.
+paths: {}
+components:
+  schemas:
+    VaultId: { type: string, minLength: 1, maxLength: 128 }
+    VaultObjectId: { type: string, minLength: 1, maxLength: 128 }
+    VaultVersionId: { type: string, minLength: 1, maxLength: 128 }
+    VaultRevision: { type: string, minLength: 1, maxLength: 512 }
+    VaultPath:
+      type: string
+      minLength: 1
+      maxLength: 4096
+      description: Canonical absolute vault path. Paths are mutable names, never object identities.
+      example: /documents/contracts/contract.pdf
+
+    VaultKind: { type: string, enum: [GENERIC, WALLET] }
+    VaultAuthorityLocation: { type: string, enum: [CLIENT_DEVICE, SERVICE, EXTERNAL_PROVIDER] }
+    VaultProtectionProfile:
+      type: string
+      enum: [OWNER_CONTROLLED_ZERO_ACCESS, WSCD_GATED, SERVICE_MANAGED]
+    VaultLifecycleState: { type: string, enum: [ACTIVE, SUSPENDED, DELETING, DELETED] }
+    VaultObjectKind: { type: string, enum: [FILE, FOLDER] }
+
+    VaultAuthority:
+      type: object
+      additionalProperties: false
+      required: [location, authorityRef]
+      properties:
+        location: { $ref: '#/components/schemas/VaultAuthorityLocation' }
+        authorityRef: { type: string, minLength: 1 }
+
+    VaultProtectionDescriptor:
+      type: object
+      additionalProperties: false
+      required: [profile, providerRef, parameters]
+      properties:
+        profile: { $ref: '#/components/schemas/VaultProtectionProfile' }
+        providerRef: { type: string, minLength: 1 }
+        keyReference:
+          type: string
+          nullable: true
+          description: Opaque provider reference. Raw key material is forbidden.
+        parameters:
+          type: object
+          additionalProperties: { type: string }
+
+    VaultPolicyRef:
+      type: object
+      additionalProperties: false
+      required: [value]
+      properties:
+        value: { type: string, minLength: 1 }
+
+    VaultDescriptor:
+      type: object
+      additionalProperties: false
+      required: [vaultId, kind, authority, protection, repositoryRef, providerRef, revision, lifecycleState, createdAt, updatedAt]
+      properties:
+        vaultId: { $ref: '#/components/schemas/VaultId' }
+        kind: { $ref: '#/components/schemas/VaultKind' }
+        authority: { $ref: '#/components/schemas/VaultAuthority' }
+        protection: { $ref: '#/components/schemas/VaultProtectionDescriptor' }
+        repositoryRef: { type: string }
+        providerRef: { type: string }
+        policyRef:
+          allOf: [{ $ref: '#/components/schemas/VaultPolicyRef' }]
+        revision: { $ref: '#/components/schemas/VaultRevision' }
+        lifecycleState: { $ref: '#/components/schemas/VaultLifecycleState' }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
+    VaultDigest:
+      type: object
+      additionalProperties: false
+      required: [algorithm, value]
+      properties:
+        algorithm: { type: string, enum: [sha-256, sha-384, sha-512] }
+        value: { type: string }
+
+    VaultSidecarRef:
+      type: object
+      additionalProperties: false
+      required: [type, schemaRef, version, digest]
+      properties:
+        type: { type: string }
+        schemaRef: { type: string }
+        version: { type: string }
+        digest: { $ref: '#/components/schemas/VaultDigest' }
+
+    VaultMetadata:
+      type: object
+      additionalProperties: false
+      properties:
+        contentType: { type: string, nullable: true }
+        displayName: { type: string, nullable: true }
+        tags:
+          type: object
+          additionalProperties: { type: string }
+        attributes:
+          type: object
+          additionalProperties: { type: string }
+        sidecars:
+          type: array
+          items: { $ref: '#/components/schemas/VaultSidecarRef' }
+
+    VaultObject:
+      type: object
+      additionalProperties: false
+      required: [vaultId, objectId, kind, currentVersionId, revision, createdAt, updatedAt]
+      properties:
+        vaultId: { $ref: '#/components/schemas/VaultId' }
+        objectId: { $ref: '#/components/schemas/VaultObjectId' }
+        kind: { $ref: '#/components/schemas/VaultObjectKind' }
+        currentVersionId: { $ref: '#/components/schemas/VaultVersionId' }
+        revision: { $ref: '#/components/schemas/VaultRevision' }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
+    VaultObjectVersion:
+      type: object
+      additionalProperties: false
+      required: [vaultId, objectId, versionId, contentRef, contentDigest, protection, metadata, sizeBytes, createdBy, createdAt, revision]
+      properties:
+        vaultId: { $ref: '#/components/schemas/VaultId' }
+        objectId: { $ref: '#/components/schemas/VaultObjectId' }
+        versionId: { $ref: '#/components/schemas/VaultVersionId' }
+        contentRef: { type: string }
+        contentDigest: { $ref: '#/components/schemas/VaultDigest' }
+        protection: { $ref: '#/components/schemas/VaultProtectionDescriptor' }
+        metadata: { $ref: '#/components/schemas/VaultMetadata' }
+        sizeBytes: { type: integer, format: int64, minimum: 0 }
+        createdBy: { type: string }
+        createdAt: { type: string, format: date-time }
+        parentVersionId:
+          allOf: [{ $ref: '#/components/schemas/VaultVersionId' }]
+        revision: { $ref: '#/components/schemas/VaultRevision' }
+
+    VaultPathEntry:
+      type: object
+      additionalProperties: false
+      required: [vaultId, path, objectId, kind, revision]
+      properties:
+        vaultId: { $ref: '#/components/schemas/VaultId' }
+        path: { $ref: '#/components/schemas/VaultPath' }
+        objectId: { $ref: '#/components/schemas/VaultObjectId' }
+        kind: { $ref: '#/components/schemas/VaultObjectKind' }
+        revision: { $ref: '#/components/schemas/VaultRevision' }
+
+    VaultFolder:
+      type: object
+      required: [entry, metadata]
+      properties:
+        entry: { $ref: '#/components/schemas/VaultPathEntry' }
+        metadata: { $ref: '#/components/schemas/VaultMetadata' }
+        policyRef:
+          allOf: [{ $ref: '#/components/schemas/VaultPolicyRef' }]
+
+    VaultObjectRecord:
+      type: object
+      required: [objectInfo, pathEntry, currentVersion]
+      properties:
+        objectInfo: { $ref: '#/components/schemas/VaultObject' }
+        pathEntry: { $ref: '#/components/schemas/VaultPathEntry' }
+        currentVersion: { $ref: '#/components/schemas/VaultObjectVersion' }
+
+    VaultExistenceCondition: { type: string, enum: [ANY, MUST_EXIST, MUST_NOT_EXIST] }
+    VaultMutationCondition:
+      type: object
+      additionalProperties: false
+      properties:
+        existence: { $ref: '#/components/schemas/VaultExistenceCondition' }
+        expectedVaultRevision: { $ref: '#/components/schemas/VaultRevision' }
+        expectedObjectRevision: { $ref: '#/components/schemas/VaultRevision' }
+        expectedPathRevision: { $ref: '#/components/schemas/VaultRevision' }
+        expectedVersionRevision: { $ref: '#/components/schemas/VaultRevision' }
+        expectedCurrentVersionId: { $ref: '#/components/schemas/VaultVersionId' }
+
+    CreateVaultRequest:
+      type: object
+      additionalProperties: false
+      required: [vaultId, kind, authority, protection, repositoryRef, providerRef]
+      properties:
+        vaultId: { $ref: '#/components/schemas/VaultId' }
+        kind: { $ref: '#/components/schemas/VaultKind' }
+        authority: { $ref: '#/components/schemas/VaultAuthority' }
+        protection: { $ref: '#/components/schemas/VaultProtectionDescriptor' }
+        repositoryRef: { type: string }
+        providerRef: { type: string }
+        policyRef: { $ref: '#/components/schemas/VaultPolicyRef' }
+        condition: { $ref: '#/components/schemas/VaultMutationCondition' }
+
+    CreateFolderRequest:
+      type: object
+      additionalProperties: false
+      required: [path, metadata]
+      properties:
+        path: { $ref: '#/components/schemas/VaultPath' }
+        metadata: { $ref: '#/components/schemas/VaultMetadata' }
+        policyRef: { $ref: '#/components/schemas/VaultPolicyRef' }
+        condition: { $ref: '#/components/schemas/VaultMutationCondition' }
+
+    VaultContentWriteMetadata:
+      type: object
+      additionalProperties: false
+      required: [metadata, condition]
+      properties:
+        metadata: { $ref: '#/components/schemas/VaultMetadata' }
+        protection:
+          allOf: [{ $ref: '#/components/schemas/VaultProtectionDescriptor' }]
+          description: Plaintext routes reject OWNER_CONTROLLED_ZERO_ACCESS.
+        condition: { $ref: '#/components/schemas/VaultMutationCondition' }
+
+    ProtectedVaultContentMetadata:
+      type: object
+      additionalProperties: false
+      description: >-
+        Client-created protected-content descriptor. The server validates canonicalAad exactly as
+        versioned, length-prefixed UTF-8 bytes in field order vaultId, objectId, versionId, profile,
+        digestAlgorithm and rejects object/version identifier collisions or reuse. Protected bytes
+        are never interpreted as plaintext.
+      required: [objectId, versionId, plaintextDigest, plaintextSizeBytes, protectedPackageRef, protection, canonicalAad, metadata, condition]
+      properties:
+        objectId: { $ref: '#/components/schemas/VaultObjectId' }
+        versionId: { $ref: '#/components/schemas/VaultVersionId' }
+        plaintextDigest: { $ref: '#/components/schemas/VaultDigest' }
+        plaintextSizeBytes: { type: integer, format: int64, minimum: 0 }
+        protectedPackageRef: { type: string, minLength: 1 }
+        protection: { $ref: '#/components/schemas/VaultProtectionDescriptor' }
+        protectionParameters:
+          type: object
+          additionalProperties: { type: string }
+        canonicalAad:
+          type: string
+          description: >-
+            Exact UTF-8 `v1|<utf8Length>:<vaultId>|<utf8Length>:<objectId>|<utf8Length>:<versionId>|<utf8Length>:<profile>|<utf8Length>:<digestAlgorithm>`
+            binding. Each length is the unsigned decimal UTF-8 byte count of the value after the colon.
+          example: v1|8:vault-01|9:object-01|10:version-01|28:OWNER_CONTROLLED_ZERO_ACCESS|7:SHA-256
+        metadata: { $ref: '#/components/schemas/VaultMetadata' }
+        condition: { $ref: '#/components/schemas/VaultMutationCondition' }
+
+    PlaintextVaultWrite:
+      type: object
+      required: [write, content]
+      properties:
+        write: { $ref: '#/components/schemas/VaultContentWriteMetadata' }
+        content: { type: string, format: binary }
+
+    ProtectedVaultWrite:
+      type: object
+      required: [write, protectedContent]
+      properties:
+        write: { $ref: '#/components/schemas/ProtectedVaultContentMetadata' }
+        protectedContent:
+          type: string
+          format: binary
+          description: Client-produced protected bytes. This field never contains plaintext.
+
+    ProtectedVaultReadMetadata:
+      type: object
+      required: [record, plaintextDigest, plaintextSizeBytes, protectedPackageRef, protection, protectionParameters, canonicalAad]
+      properties:
+        record: { $ref: '#/components/schemas/VaultObjectRecord' }
+        plaintextDigest: { $ref: '#/components/schemas/VaultDigest' }
+        plaintextSizeBytes: { type: integer, format: int64, minimum: 0 }
+        protectedPackageRef: { type: string }
+        protection: { $ref: '#/components/schemas/VaultProtectionDescriptor' }
+        protectionParameters:
+          type: object
+          additionalProperties: { type: string }
+        canonicalAad:
+          type: string
+          description: >-
+            Exact UTF-8 `v1|<utf8Length>:<vaultId>|<utf8Length>:<objectId>|<utf8Length>:<versionId>|<utf8Length>:<profile>|<utf8Length>:<digestAlgorithm>`
+            binding. Each length is the unsigned decimal UTF-8 byte count of the value after the colon.
+          example: v1|8:vault-01|9:object-01|10:version-01|28:OWNER_CONTROLLED_ZERO_ACCESS|7:SHA-256
+
+    ProtectedVaultRead:
+      type: object
+      required: [metadata, protectedContent]
+      properties:
+        metadata: { $ref: '#/components/schemas/ProtectedVaultReadMetadata' }
+        protectedContent: { type: string, format: binary }
+
+    UpdatePolicyRequest:
+      type: object
+      required: [policyRef, condition]
+      properties:
+        policyRef: { $ref: '#/components/schemas/VaultPolicyRef' }
+        condition: { $ref: '#/components/schemas/VaultMutationCondition' }
+
+    PutGrantRequest:
+      type: object
+      required: [grant, condition]
+      properties:
+        grant: { $ref: '#/components/schemas/VaultGrant' }
+        condition: { $ref: '#/components/schemas/VaultMutationCondition' }
+
+    UpdateMetadataRequest:
+      type: object
+      required: [metadata, condition]
+      properties:
+        metadata: { $ref: '#/components/schemas/VaultMetadata' }
+        condition: { $ref: '#/components/schemas/VaultMutationCondition' }
+
+    VaultMoveRequest:
+      type: object
+      required: [destination, condition]
+      properties:
+        destination: { $ref: '#/components/schemas/VaultPath' }
+        condition: { $ref: '#/components/schemas/VaultMutationCondition' }
+
+    VaultCopyRequest:
+      type: object
+      required: [destination, recursive, condition]
+      properties:
+        destination: { $ref: '#/components/schemas/VaultPath' }
+        recursive: { type: boolean, default: false }
+        condition: { $ref: '#/components/schemas/VaultMutationCondition' }
+
+    VaultSearchQuery:
+      type: object
+      additionalProperties: false
+      properties:
+        pathPrefix: { $ref: '#/components/schemas/VaultPath' }
+        text: { type: string }
+        objectKinds:
+          type: array
+          uniqueItems: true
+          items: { $ref: '#/components/schemas/VaultObjectKind' }
+        contentTypes:
+          type: array
+          uniqueItems: true
+          items: { type: string }
+        tags:
+          type: object
+          additionalProperties: { type: string }
+        createdAfter: { type: string, format: date-time }
+        createdBefore: { type: string, format: date-time }
+        pageSize: { type: integer, minimum: 1, maximum: 1000, default: 100 }
+        pageToken: { type: string }
+
+    VaultSearchHit:
+      type: object
+      required: [objectInfo, pathEntry, metadata]
+      properties:
+        objectInfo: { $ref: '#/components/schemas/VaultObject' }
+        pathEntry: { $ref: '#/components/schemas/VaultPathEntry' }
+        metadata: { $ref: '#/components/schemas/VaultMetadata' }
+        score: { type: number, format: double, nullable: true }
+
+    VaultAction:
+      type: string
+      enum: [CREATE, READ, UPDATE, DELETE, LIST, SEARCH, COPY, MOVE, MANAGE_POLICY, MANAGE_GRANTS, EXPORT, IMPORT]
+    VaultGrantEffect: { type: string, enum: [ALLOW, DENY] }
+    VaultGrantScope:
+      type: object
+      properties:
+        pathPrefix: { $ref: '#/components/schemas/VaultPath' }
+        objectIds:
+          type: array
+          uniqueItems: true
+          items: { $ref: '#/components/schemas/VaultObjectId' }
+        objectKinds:
+          type: array
+          uniqueItems: true
+          items: { $ref: '#/components/schemas/VaultObjectKind' }
+
+    VaultGrant:
+      type: object
+      required: [grantId, vaultId, principalRef, effect, actions, scope, purposes, revision]
+      properties:
+        grantId: { type: string }
+        vaultId: { $ref: '#/components/schemas/VaultId' }
+        principalRef: { type: string }
+        effect: { $ref: '#/components/schemas/VaultGrantEffect' }
+        actions:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: { $ref: '#/components/schemas/VaultAction' }
+        scope: { $ref: '#/components/schemas/VaultGrantScope' }
+        purposes:
+          type: array
+          uniqueItems: true
+          items: { type: string }
+        notBefore: { type: string, format: date-time, nullable: true }
+        expiresAt: { type: string, format: date-time, nullable: true }
+        revision: { $ref: '#/components/schemas/VaultRevision' }
+
+    VaultExportScope: { type: string, enum: [OBJECT, FOLDER, VAULT] }
+    VaultExportRecipient:
+      type: object
+      required: [recipientRef, wrappingKeyRef]
+      properties:
+        recipientRef: { type: string }
+        wrappingKeyRef: { type: string, description: "Opaque reference, never raw key material." }
+    VaultExportRequest:
+      type: object
+      required: [scope, recipient, includeVersionHistory, includeProvenance, includeDpvJsonLd, condition]
+      properties:
+        scope: { $ref: '#/components/schemas/VaultExportScope' }
+        objectId: { $ref: '#/components/schemas/VaultObjectId' }
+        path: { $ref: '#/components/schemas/VaultPath' }
+        recipient: { $ref: '#/components/schemas/VaultExportRecipient' }
+        includeVersionHistory: { type: boolean, default: true }
+        includeProvenance: { type: boolean, default: true }
+        includeDpvJsonLd: { type: boolean, default: false }
+        condition: { $ref: '#/components/schemas/VaultMutationCondition' }
+
+    VaultImportManifest:
+      type: object
+      required: [importId, targetVaultId, importedAt, sourceDigest, importedObjects]
+      properties:
+        importId: { type: string }
+        targetVaultId: { $ref: '#/components/schemas/VaultId' }
+        importedAt: { type: string, format: date-time }
+        sourceDigest: { $ref: '#/components/schemas/VaultDigest' }
+        importedObjects:
+          type: array
+          items:
+            type: object
+            required: [objectId, path, keyDisposition]
+            properties:
+              objectId: { $ref: '#/components/schemas/VaultObjectId' }
+              path: { $ref: '#/components/schemas/VaultPath' }
+              keyDisposition: { type: string, enum: [AVAILABLE, REISSUANCE_REQUIRED] }
+
+    VaultError:
+      type: object
+      additionalProperties: false
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          enum:
+            - VAULT_NOT_FOUND
+            - VAULT_ALREADY_EXISTS
+            - VAULT_INVALID_REQUEST
+            - VAULT_PRECONDITION_FAILED
+            - VAULT_PERMISSION_DENIED
+            - VAULT_UNSUPPORTED
+            - VAULT_INTEGRITY_ERROR
+            - VAULT_CLIENT_UNWRAP_REQUIRED
+            - VAULT_BACKEND_ERROR
+        message: { type: string }
+        operationId: { type: string, nullable: true }
+
+    VaultClientUnwrapRequiredError:
+      allOf:
+        - $ref: '#/components/schemas/VaultError'
+        - type: object
+          required: [vaultId, objectId, versionId, protectedPackageRef]
+          properties:
+            code: { type: string, enum: [VAULT_CLIENT_UNWRAP_REQUIRED] }
+            vaultId: { $ref: '#/components/schemas/VaultId' }
+            objectId: { $ref: '#/components/schemas/VaultObjectId' }
+            versionId: { $ref: '#/components/schemas/VaultVersionId' }
+            protectedPackageRef: { type: string }
+
+    VaultPagePathEntries:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/VaultPathEntry' }
+        nextPageToken: { type: string, nullable: true }
+    VaultPageVersions:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/VaultObjectVersion' }
+        nextPageToken: { type: string, nullable: true }
+    VaultPageSearchHits:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/VaultSearchHit' }
+        nextPageToken: { type: string, nullable: true }
+    VaultPageGrants:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/VaultGrant' }
+        nextPageToken: { type: string, nullable: true }
+
+  responses:
+    VaultBadRequest:
+      description: Invalid path, selector, condition, protection profile, or request shape.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/VaultError' }
+    VaultUnauthorized:
+      description: Authentication is required.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/VaultError' }
+    VaultForbidden:
+      description: Authorization or required approval was denied.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/VaultError' }
+    VaultNotFound:
+      description: Vault, path, object, version, policy, or grant not found.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/VaultError' }
+    VaultConflict:
+      description: Target exists or a logical mutation conflicts.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/VaultError' }
+    VaultPreconditionFailed:
+      description: A vault, object, path, version, or current-version revision precondition failed.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/VaultError' }
+    VaultClientUnwrapRequired:
+      description: >-
+        Plaintext was requested from an OWNER_CONTROLLED_ZERO_ACCESS object. The protected
+        package reference is returned for authorized client processing; ciphertext is not
+        silently returned as plaintext.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/VaultClientUnwrapRequiredError' }
+    VaultUnsupported:
+      description: The selected provider does not support this operation safely.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/VaultError' }
+    VaultErrorResponse:
+      description: Vault integrity, provider, repository, or backend failure.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/VaultError' }

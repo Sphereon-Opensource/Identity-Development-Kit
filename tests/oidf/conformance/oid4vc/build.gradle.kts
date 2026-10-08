@@ -32,7 +32,10 @@ tasks.withType<Test>().configureEach {
     val evidenceDirectory =
         System.getProperty("oidf.evidence.dir")
             ?: providers.gradleProperty("oidf.evidence.dir").orNull
-            ?: layout.buildDirectory.dir("oidf-evidence").get().asFile.absolutePath
+            ?: layout.buildDirectory
+                .dir("oidf-evidence")
+                .get()
+                .asFile.absolutePath
     systemProperty("oidf.evidence.dir", evidenceDirectory)
     listOf("oidf.suite.mode").forEach { key ->
         val value = System.getProperty(key) ?: providers.gradleProperty(key).orNull

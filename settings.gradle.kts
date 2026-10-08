@@ -1,5 +1,34 @@
+import java.util.Properties
+
 rootProject.name = "Identity-Development-Kit"
 enableFeaturePreview("TYPESAFE_PROJECT_ACCESSORS")
+
+/** Load platformVersion + gbsVersion from platform-version.properties (single source of truth). */
+fun loadPlatformVersionProperties(rootDir: java.io.File): Properties {
+    val file = rootDir.resolve("platform-version.properties")
+    require(file.isFile) {
+        "Missing ${file.absolutePath}. Create it with platformVersion= and gbsVersion=."
+    }
+    return Properties().apply {
+        file.reader(Charsets.UTF_8).use { load(it) }
+    }
+}
+
+val platformVersionProperties = loadPlatformVersionProperties(settings.rootDir)
+val platformVersion = platformVersionProperties.getProperty("platformVersion")?.trim().orEmpty()
+    .ifEmpty { error("platformVersion missing in platform-version.properties") }
+val gbsVersionCanonical = platformVersionProperties.getProperty("gbsVersion")?.trim().orEmpty()
+    .ifEmpty { error("gbsVersion missing in platform-version.properties") }
+
+settings.extra["platformVersion"] = platformVersion
+settings.extra["gbsVersion"] = gbsVersionCanonical
+
+// Apply uniform product version to every project before build scripts run.
+gradle.beforeProject {
+    version = platformVersion
+    extra["platformVersion"] = platformVersion
+    extra["gbsVersion"] = gbsVersionCanonical
+}
 
 val sphereonBuildProfile = (System.getenv("SPHEREON_BUILD_PROFILE")
     ?: System.getProperty("sphereon.build.profile"))?.trim()?.lowercase()
@@ -33,39 +62,51 @@ fun includeProject(name: String, path: String) {
 }
 
 pluginManagement {
-    val gbsSourceDirectory = settings.rootDir.resolve("gradle-build-support")
-    val gbsPluginCatalog = gbsSourceDirectory.resolve("versions/gradle-plugin-bom/build/tomlCatalog/sphereonGradlePluginBom.toml")
-    val gbsLibraryCatalog = gbsSourceDirectory.resolve("versions/library-bom/build/tomlCatalog/sphereonLibraryBom.versioned.toml")
-    val gbsSourcePresent = gbsSourceDirectory.isDirectory && gbsSourceDirectory.resolve("settings.gradle.kts").isFile
-    val gbsCatalogsPresent = gbsPluginCatalog.isFile && gbsLibraryCatalog.isFile
-    val gbsOverride = System.getenv("USE_LOCAL_GRADLE_BUILD_SUPPORT")?.let { value ->
-        when {
-            value.equals("true", ignoreCase = true) || value == "1" -> true
-            value.equals("false", ignoreCase = true) || value == "0" -> false
-            else -> null
-        }
+    val platformVersionFile = settings.rootDir.resolve("platform-version.properties")
+    require(platformVersionFile.isFile) {
+        "Missing ${platformVersionFile.absolutePath}. Create it with platformVersion= and gbsVersion=."
     }
-    if (gbsOverride == true && (!gbsSourcePresent || !gbsCatalogsPresent)) {
-        val missing = buildList {
-            if (!gbsSourcePresent) add("the local gradle-build-support source")
-            if (!gbsPluginCatalog.isFile) add("sphereonGradlePluginBom.toml")
-            if (!gbsLibraryCatalog.isFile) add("sphereonLibraryBom.versioned.toml")
-        }
-        throw GradleException(
-            "USE_LOCAL_GRADLE_BUILD_SUPPORT=true requires ${missing.joinToString()} before local composite mode can be used. " +
-                "Run ./gradlew generateTomlCatalog on POSIX or .\\gradlew.bat generateTomlCatalog on Windows " +
-                "from the gradle-build-support directory."
-        )
+    val platformProps = java.util.Properties().apply {
+        platformVersionFile.reader(Charsets.UTF_8).use { load(it) }
     }
-    val useLocalGradleBuildSupport = gbsOverride ?: (gbsSourcePresent && gbsCatalogsPresent)
-    settings.extra["gbsUseLocalGradleBuildSupport"] = useLocalGradleBuildSupport
+    val gbsVersionProperty = platformProps.getProperty("gbsVersion")?.trim().orEmpty()
+        .ifEmpty { error("gbsVersion missing in platform-version.properties") }
+    val platformVersionProperty = platformProps.getProperty("platformVersion")?.trim().orEmpty()
+        .ifEmpty { error("platformVersion missing in platform-version.properties") }
+    settings.extra["gbsVersion"] = gbsVersionProperty
+    settings.extra["platformVersion"] = platformVersionProperty
 
-    if (useLocalGradleBuildSupport) {
-        includeBuild("gradle-build-support/plugins/toml-catalog")
-        includeBuild("gradle-build-support")
+    val worktreeMavenRepo = System.getenv("WORKTREE_MAVEN_REPO")?.trim()?.takeIf { it.isNotEmpty() }
+
+    // Build tooling is consumed as published artifacts in standalone builds.
+
+    // GBS TOML emits id="software.amazon.app.platform"; Nexus has gradle-plugin:0.0.16SPH
+    // but the plugin marker POM was only published through 0.0.15SPH. Map id -> module.
+    resolutionStrategy {
+        eachPlugin {
+            if (requested.id.id == "software.amazon.app.platform") {
+                useModule("software.amazon.app.platform:gradle-plugin:${requested.version}")
+            }
+        }
     }
 
     repositories {
+        if (worktreeMavenRepo != null) {
+            exclusiveContent {
+                forRepository {
+                    maven {
+                        name = "worktree"
+                        url = uri(worktreeMavenRepo)
+                    }
+                }
+                filter {
+                    includeGroupByRegex(
+                        if (System.getenv("WORKSPACE_TOOL_MAVEN_REPO") == null) "com\\.sphereon(\\..+)?"
+                        else "com\\.sphereon(?!\\.gradle(?:\\.|$))(\\..+)?"
+                    )
+                }
+            }
+        }
         google {
             mavenContent {
                 includeGroupAndSubgroups("androidx")
@@ -124,7 +165,6 @@ pluginManagement {
     }
 }
 
-val useGbsCompositeBuild = settings.extra["gbsUseLocalGradleBuildSupport"] as Boolean
 
 
 // Workaround: Kotlin 2.3.x npm-publish plugin registers assembleWasmJsPackage with a broken
@@ -140,51 +180,8 @@ run {
     }
 }
 
-// ===========================================
-// Composite Build Configuration for gradle-build-support
-// ===========================================
-
-/**
- * Parses a settings.gradle.kts file and extracts module info from include() calls.
- * Matches patterns like: include(":versions:common-bom")
- * Returns pairs of (artifactName, projectPath) e.g. ("common-bom", ":versions:common-bom")
- * Skips commented lines.
- */
-fun extractGbsModulesFromSettings(settingsFile: File): List<Pair<String, String>> {
-    if (!settingsFile.exists()) return emptyList()
-    return settingsFile.readLines()
-        .filter { line ->
-            val trimmed = line.trim()
-            !trimmed.startsWith("//") && !trimmed.startsWith("/*") && !trimmed.startsWith("*")
-        }
-        .mapNotNull { line ->
-            val regex = Regex("""include\s*\(\s*"(:[^"]+)"\s*\)""")
-            regex.find(line)?.let { match ->
-                val projectPath = match.groupValues[1]
-                val artifactName = projectPath.substringAfterLast(":")
-                Pair(artifactName, projectPath)
-            }
-        }
-}
-
+// Cross-repository dependencies are resolved from published Maven artifacts.
 val gbsVersion: String by settings
-
-if (useGbsCompositeBuild) {
-    val gbsSettingsFile = file("gradle-build-support/settings.gradle.kts")
-    val gbsModules = extractGbsModulesFromSettings(gbsSettingsFile)
-
-    includeBuild("gradle-build-support") {
-        name = "gradle-build-support"
-        dependencySubstitution {
-            gbsModules.forEach { (artifactName, projectPath) ->
-                substitute(module("com.sphereon.gradle:$artifactName")).using(project(projectPath))
-            }
-        }
-    }
-    println("==> Gradle Build Support Composite Build: ENABLED (${gbsModules.size} modules)")
-} else {
-    println("==> Gradle Build Support Composite Build: DISABLED (using Maven dependencies)")
-}
 
 gradle.settingsEvaluated {
     gradle.allprojects {
@@ -202,34 +199,18 @@ gradle.settingsEvaluated {
 
 plugins {
     id("com.gradle.develocity") version ("4.0.2")
-    id("org.gradle.toolchains.foojay-resolver-convention") version ("0.9.0")
+    id("org.gradle.toolchains.foojay-resolver-convention") version ("1.0.0")
 }
 
 
 dependencyResolutionManagement {
     versionCatalogs {
-        // When gradle-build-support submodule is available with generated TOML catalogs,
-        // use local files directly — no publishToMavenLocal needed.
-        // Generate with: cd gradle-build-support && ./gradlew generateTomlCatalog
-        val gbsTomlDir = file("gradle-build-support/versions")
-        // Use non-versioned plugin TOML in composite build mode: Sphereon plugins resolve from
-        // includeBuild without version, third-party plugins keep their versions.
-        val plugBomToml = gbsTomlDir.resolve("gradle-plugin-bom/build/tomlCatalog/sphereonGradlePluginBom.toml")
-        val libBomToml = gbsTomlDir.resolve("library-bom/build/tomlCatalog/sphereonLibraryBom.versioned.toml")
-
+        // Build tooling and catalogs are published Maven inputs.
         create("sphereonplug") {
-            if (useGbsCompositeBuild) {
-                from(files(plugBomToml))
-            } else {
-                from("com.sphereon.gradle:gradle-plugin-bom:$gbsVersion@toml" as String)
-            }
+            from("com.sphereon.gradle:gradle-plugin-bom:$gbsVersion@toml" as String)
         }
         create("sphereonlib") {
-            if (useGbsCompositeBuild) {
-                from(files(libBomToml))
-            } else {
-                from("com.sphereon.gradle:library-bom:$gbsVersion@toml" as String)
-            }
+            from("com.sphereon.gradle:library-bom:$gbsVersion@toml" as String)
         }
         // TODO: Move aws sdk to our bom
         create("awssdk") {
@@ -238,6 +219,23 @@ dependencyResolutionManagement {
 
     }
     repositories {
+        val worktreeMavenRepo = System.getenv("WORKTREE_MAVEN_REPO")?.trim()?.takeIf { it.isNotEmpty() }
+        if (worktreeMavenRepo != null) {
+            exclusiveContent {
+                forRepository {
+                    maven {
+                        name = "worktree"
+                        url = uri(worktreeMavenRepo)
+                    }
+                }
+                filter {
+                    includeGroupByRegex(
+                        if (System.getenv("WORKSPACE_TOOL_MAVEN_REPO") == null) "com\\.sphereon(\\..+)?"
+                        else "com\\.sphereon(?!\\.gradle(?:\\.|$))(\\..+)?"
+                    )
+                }
+            }
+        }
         google {
             mavenContent {
                 includeGroupAndSubgroups("androidx")
@@ -302,360 +300,10 @@ develocity {
     }
 }
 
-// Core libraries
-includeProject("lib-cbor-public", "lib/cbor/public")
-includeProject("lib-cbor-impl", "lib/cbor/impl")
-includeProject("lib-core-api-public", "lib/core/api/public")
-includeProject("lib-core-compat-annotations", "lib/core/compat-annotations")
-includeProject("lib-core-api-default", "lib/core/api/default")
-includeProject("lib-core-benchmarks", "lib/core/benchmarks")
-includeProject("lib-conf-settings", "lib/conf/settings")
-includeProject("lib-conf-yaml", "lib/conf/yaml")
-
-// Theme
-includeProject("lib-conf-theme-core-public", "lib/conf/theme/core/public")
-includeProject("lib-conf-theme-core-impl", "lib/conf/theme/core/impl")
-includeProject("lib-conf-theme-client", "lib/conf/theme/client")
-includeProject("lib-conf-theme-compose", "lib/conf/theme/compose")
-includeProject("lib-conf-theme-web", "lib/conf/theme/web")
-// UI Components
-includeProject("lib-ui-compose", "lib/ui/compose")
-includeProject("lib-ui-compose-blob-adapter", "lib/ui/compose-blob-adapter")
-includeProject("lib-core-test", "lib/core/test")
-includeProject("lib-data-link-http-client-public", "lib/data/link/http/client/public")
-includeProject("lib-data-link-http-client-impl", "lib/data/link/http/client/impl")
-includeProject("lib-data-link-http-client", "lib/data/link/http/client")
-includeProject("lib-core-loggers-mobile-logger", "lib/core/loggers/mobile-logger")
-
-// Core Events
-includeProject("lib-core-events-public", "lib/core/events/public")
-includeProject("lib-core-events-impl", "lib/core/events/impl")
-
-// Core IDN (RFC 3492 Punycode + IDNA2008)
-includeProject("lib-core-idn-public", "lib/core/idn/public")
-
-// Crypto libraries
-includeProject("lib-crypto-core-public", "lib/crypto/core/public")
-includeProject("lib-crypto-core-impl", "lib/crypto/core/impl")
-includeProject("lib-crypto-core", "lib/crypto/core")
-includeProject("lib-crypto-secdsa-public", "lib/crypto/secdsa/public")
-includeProject("lib-crypto-secdsa-impl", "lib/crypto/secdsa/impl")
-includeProject("lib-crypto-kms-provider-software", "lib/crypto/kms/provider/software")
-includeProject("lib-crypto-kms-provider-aws", "lib/crypto/kms/provider/aws")
-includeProject("lib-crypto-kms-provider-azure", "lib/crypto/kms/provider/azure")
-includeProject("lib-crypto-kms-provider-mobile", "lib/crypto/kms/provider/mobile")
-includeProject("lib-crypto-kms-rest-api", "lib/crypto/kms/rest/api")
-includeProject("lib-crypto-kms-provider-rest", "lib/crypto/kms/provider/rest")
-// KMS REST server moved to services/kms/rest/ — see Services section below
-
-// Crypto key persistence (tenant-aware key reference store)
-includeProject("lib-crypto-key-persistence-api", "lib/crypto/key/persistence/api")
-includeProject("lib-crypto-key-persistence-impl", "lib/crypto/key/persistence/impl")
-includeProject("lib-crypto-key-persistence-sqlite", "lib/crypto/key/persistence/sqlite")
-
-// Crypto certificate persistence (tenant-aware certificate reference store)
-includeProject("lib-crypto-certificate-persistence-api", "lib/crypto/certificate/persistence/api")
-includeProject("lib-crypto-certificate-persistence-sqlite", "lib/crypto/certificate/persistence/sqlite")
-
-// W3C Verifiable Credentials Data Integrity 1.0
-includeProject("lib-crypto-data-integrity-proof-public", "lib/crypto/data-integrity-proof/public")
-includeProject("lib-crypto-data-integrity-proof-impl", "lib/crypto/data-integrity-proof/impl")
-includeProject("lib-crypto-data-integrity-proof-eddsa-jcs-2022", "lib/crypto/data-integrity-proof/eddsa-jcs-2022")
-includeProject("lib-crypto-data-integrity-proof-eddsa-rdfc-2022", "lib/crypto/data-integrity-proof/eddsa-rdfc-2022")
-includeProject("lib-crypto-data-integrity-proof-ecdsa-rdfc-2019", "lib/crypto/data-integrity-proof/ecdsa-rdfc-2019")
-
-// Compression primitives (GZIP / zlib / raw DEFLATE) — status lists, JWE, etc.
-includeProject("lib-compression", "lib/compression")
-
-// Credential Status Lists — IETF Token Status List + W3C Bitstring Status List
-includeProject("lib-statuslist-public", "lib/statuslist/public")
-includeProject("lib-statuslist-impl", "lib/statuslist/impl")
-// Public, unauthenticated token hosting REST (serves the signed jwt/cwt; open-core, so IDK).
-// Lives on the services side alongside the other IDK REST API implementations. The business-key
-// admin management REST is EDK (:lib-statuslist-management-rest).
-includeProject("services-statuslist-rest", "services/statuslist/rest")
-
-// JSON-LD 1.1 capability (Track A: loader + validators; Track B: full processor)
-includeProject("lib-jsonld-public", "lib/jsonld/public")
-includeProject("lib-jsonld-loader", "lib/jsonld/loader")
-includeProject("lib-jsonld-rdf-canon", "lib/jsonld/rdf-canon")
-includeProject("lib-jsonld-processor", "lib/jsonld/processor")
-
-// SD-JWT libraries
-includeProject("lib-sdjwt-public", "lib/sdjwt/public")
-includeProject("lib-sdjwt-impl", "lib/sdjwt/impl")
-
-// OAuth2 Common (shared models)
-includeProject("lib-oauth2-common-public", "lib/oauth2/common/public")
-includeProject("lib-oauth2-common-impl", "lib/oauth2/common/impl")
-
-// OAuth2 Client
-includeProject("lib-oauth2-client-public", "lib/oauth2/client/public")
-includeProject("lib-oauth2-client-impl", "lib/oauth2/client/impl")
-
-// OAuth2 Authorization Server
-includeProject("lib-oauth2-server-authorization-public", "lib/oauth2/server/authorization/public")
-includeProject("lib-oauth2-server-authorization-impl", "lib/oauth2/server/authorization/impl")
-includeProject("lib-oauth2-server-resource-public", "lib/oauth2/server/resource/public")
-includeProject("lib-oauth2-server-resource-impl", "lib/oauth2/server/resource/impl")
-includeProject("lib-oauth2-server-rest", "lib/oauth2/server/rest")
-
-// OpenID OID4VC (shared VC-family types)
-includeProject("lib-openid-oid4vc-common-public", "lib/openid/oid4vc/common/public")
-includeProject("lib-openid-oid4vc-common-impl", "lib/openid/oid4vc/common/impl")
-
-// OpenID OID4VCI
-includeProject("lib-openid-oid4vci-common-public", "lib/openid/oid4vci/common/public")
-includeProject("lib-openid-oid4vci-common-impl", "lib/openid/oid4vci/common/impl")
-includeProject("lib-openid-oid4vci-issuer-public", "lib/openid/oid4vci/issuer/public")
-includeProject("lib-openid-oid4vci-issuer-impl", "lib/openid/oid4vci/issuer/impl")
-includeProject("lib-openid-oid4vci-issuer-rest", "lib/openid/oid4vci/issuer/rest")
-includeProject("lib-openid-oid4vci-holder-public", "lib/openid/oid4vci/holder/public")
-includeProject("lib-openid-oid4vci-holder-impl", "lib/openid/oid4vci/holder/impl")
-includeProject("lib-openid-oid4vci-rest-public", "lib/openid/oid4vci/rest/public")
-includeProject("lib-openid-oid4vci-rest-impl", "lib/openid/oid4vci/rest/impl")
-
-// OpenID OID4VP
-includeProject("lib-openid-oid4vp-dcql", "lib/openid/oid4vp/dcql")
-includeProject("lib-openid-oid4vp-dcql-store-public", "lib/openid/oid4vp/dcql-store/public")
-includeProject("lib-openid-oid4vp-dcql-store-impl", "lib/openid/oid4vp/dcql-store/impl")
-includeProject("lib-openid-oid4vp-dcql-store-rest", "lib/openid/oid4vp/dcql-store/rest")
-includeProject("lib-openid-oid4vp-common-public", "lib/openid/oid4vp/common/public")
-includeProject("lib-openid-oid4vp-common-impl", "lib/openid/oid4vp/common/impl")
-includeProject("lib-openid-oid4vp-holder-public", "lib/openid/oid4vp/holder/public")
-includeProject("lib-openid-oid4vp-holder-impl", "lib/openid/oid4vp/holder/impl")
-includeProject("lib-openid-oid4vp-verifier-public", "lib/openid/oid4vp/verifier/public")
-includeProject("lib-openid-oid4vp-verifier-vcdm-impl", "lib/openid/oid4vp/verifier/vcdm-impl")
-includeProject("lib-openid-oid4vp-verifier-impl", "lib/openid/oid4vp/verifier/impl")
-includeProject("lib-openid-oid4vp-verifier-rest", "lib/openid/oid4vp/verifier/rest")
-includeProject("lib-openid-oid4vp-universal-public", "lib/openid/oid4vp/universal/public")
-includeProject("lib-openid-oid4vp-universal-impl", "lib/openid/oid4vp/universal/impl")
-
-// Wallet SDK
-includeProject("lib-wallet-public", "lib/wallet/public")
-includeProject("lib-wallet-impl", "lib/wallet/impl")
-includeProject("lib-wallet-unit-public", "lib/wallet/unit/public")
-includeProject("lib-wallet-unit-impl", "lib/wallet/unit/impl")
-includeProject("lib-wallet-wsca-public", "lib/wallet/wsca/public")
-includeProject("lib-wallet-wsca-impl", "lib/wallet/wsca/impl")
-includeProject("lib-wallet-wscd-public", "lib/wallet/wscd/public")
-includeProject("lib-wallet-wscd-software", "lib/wallet/wscd/software")
-includeProject("lib-wallet-wscd-mobile", "lib/wallet/wscd/mobile")
-includeProject("lib-wallet-wscd-test-fixtures", "lib/wallet/wscd/test-fixtures")
-includeProject("lib-wallet-provider-public", "lib/wallet/provider/public")
-includeProject("lib-wallet-provider-local", "lib/wallet/provider/local")
-includeProject("lib-wallet-party-public", "lib/wallet/party/public")
-includeProject("lib-wallet-party-local", "lib/wallet/party/local")
-
-// Wallet Interaction API (protocol-neutral headless wallet runtime)
-includeProject("lib-wallet-interaction-public", "lib/wallet/interaction/public")
-includeProject("lib-wallet-interaction-impl", "lib/wallet/interaction/impl")
-includeProject("lib-wallet-interaction-test-fixtures", "lib/wallet/interaction/test-fixtures")
-includeProject("lib-wallet-interaction-client-rest", "lib/wallet/interaction/client-rest")
-includeProject("lib-wallet-interaction-presenter", "lib/wallet/interaction/presenter")
-includeProject("lib-wallet-interaction-presenter-contracts", "lib/wallet/interaction/presenter-contracts")
-includeProject("lib-wallet-interaction-protocol-oid4vci", "lib/wallet/interaction/protocol/oid4vci")
-includeProject("lib-wallet-interaction-protocol-oid4vp", "lib/wallet/interaction/protocol/oid4vp")
-includeProject("lib-wallet-interaction-protocol-iso18013", "lib/wallet/interaction/protocol/iso18013")
-includeProject("lib-wallet-interaction-holder-wiring", "lib/wallet/interaction/holder-wiring")
-
-includeProject("wallet-profile-public", "wallet/profile/public")
-includeProject("wallet-profile-impl", "wallet/profile/impl")
-includeProject("wallet-app-public", "wallet/app/public") // Phase 1
-includeProject("wallet-app-impl", "wallet/app/impl")
-includeProject("wallet-app-client-rest", "wallet/app/client-rest")
-includeProject("wallet-kit", "wallet/kit")
-includeProject("wallet-presentation-contracts", "wallet/presentation/contracts")
-includeProject("wallet-presentation", "wallet/presentation/presenter")
-includeProject("wallet-presentation-molecule", "wallet/presentation/molecule")
-includeProject("wallet-ui-compose", "wallet/ui/compose")
-includeProject("wallet-ui-navigation3", "wallet/ui/navigation3")
-includeProject("wallet-reference-app", "wallet/reference/app")
-includeProject("wallet-reference-compose", "wallet/reference/compose")
-includeProject("wallet-reference-local", "wallet/reference/local")
-includeProject("wallet-reference-node", "wallet/reference/node")
-includeProject("wallet-reference-wasm", "wallet/reference/wasm")
-includeProject("wallet-cli", "wallet/cli")
-includeProject("wallet-runner", "wallet/runner")
-includeProject("wallet-example-custom-wscd", "wallet/examples/custom-wscd")
-
-// Data Link - BLE
-includeProject("lib-data-link-ble-public", "lib/data/link/ble/public")
-includeProject("lib-data-link-ble-test-fixtures", "lib/data/link/ble/test-fixtures")
-includeProject("lib-data-link-ble-robots", "lib/data/link/ble/robots")
-
-// Data Link - NFC
-includeProject("lib-data-link-nfc-impl", "lib/data/link/nfc/impl")
-includeProject("lib-data-link-nfc-public", "lib/data/link/nfc/public")
-
-// Data Store (cross-cutting storage abstractions)
-includeProject("lib-data-store-kv-public", "lib/data/store/kv/public")
-includeProject("lib-data-store-kv-impl", "lib/data/store/kv/impl")
-includeProject("lib-data-store-kv-impl-memory", "lib/data/store/kv/impl-memory")
-includeProject("lib-data-store-kv-impl-kottage", "lib/data/store/kv/impl-kottage")
-includeProject("lib-data-store-kv-impl-android-protected", "lib/data/store/kv/impl-android-protected")
-
-// Data Store - Blob (cross-cutting blob/object storage abstraction)
-includeProject("lib-data-store-blob-public", "lib/data/store/blob/public")
-includeProject("lib-data-store-blob-impl", "lib/data/store/blob/impl")
-
-// Data Store - Vault (provider-neutral protected file/folder contract)
-includeProject("lib-data-store-vault-public", "lib/data/store/vault/public")
-includeProject("lib-data-store-vault-portability", "lib/data/store/vault/portability")
-
-// Data Integration (cross-cutting transport/resource/operation taxonomy for connectors,
-// inventory, workflows, forms, and policy).
-includeProject("lib-data-integration-public", "lib/data/integration/public")
-
-// Attribute Flow (flow-agnostic attribute wiring primitives: AttributeBag, AttributePath,
-// AttributeSource/Target/Binding. Consumed by IDV graphs, issuance pipelines, tabular sources, etc.)
-includeProject("lib-attribute-flow-public", "lib/attribute/flow/public")
-
-// Attribute Mapping (generic source -> target attribute rename rules + applier; reused by
-// reconciliation flows, CSV-roster issuance, OIDC claim projection, etc.)
-includeProject("lib-attribute-mapping-public", "lib/attribute/mapping/public")
-
-
-// Invitation service — RELOCATED to VDX as vdx-service-invitation-* per
-// feedback_edk_vs_vdx_placement (invitation orchestration is a product feature,
-// not an open-source primitive).
-includeProject("lib-data-store-blob-impl-memory", "lib/data/store/blob/impl-memory")
-includeProject("lib-data-store-blob-impl-fs", "lib/data/store/blob/impl-fs")
-includeProject("lib-data-store-blob-impl-kv", "lib/data/store/blob/impl-kv")
-includeProject("lib-data-store-blob-client-http", "lib/data/store/blob/client-http")
-
-// Data Store - Asset (tenant asset library: content-addressed, per-tenant deduplicated
-// assets over the blob store; shared by theming/branding and credential design)
-includeProject("lib-data-store-asset-public", "lib/data/store/asset/public")
-includeProject("lib-data-store-asset-impl", "lib/data/store/asset/impl")
-
-// Data Store - OKD (Onderwijs Koppeling voor Document Management — Dutch MBO education standard)
-includeProject("lib-data-store-okd-openapi", "lib/data/store/okd-openapi")
-includeProject("lib-data-store-blob-impl-okd", "lib/data/store/blob/impl-okd")
-includeProject("lib-data-store-okd-server", "lib/data/store/okd-server")
-
-// Data Store - Schema Registry (schema management with blob store backing)
-includeProject("lib-data-store-schema-registry-public", "lib/data/store/schema-registry/public")
-includeProject("lib-data-store-schema-registry-impl", "lib/data/store/schema-registry/impl")
-
-// Data Store - Credential Design (design, localization, and render metadata)
-includeProject("lib-data-store-credential-design-public", "lib/data/store/credential-design/public")
-includeProject("lib-data-store-credential-design-impl", "lib/data/store/credential-design/impl")
-
-// Data Store - Credential Type Binding (role-independent registry: semantic attribute set -> credential wire format identity)
-includeProject("lib-data-store-credential-type-binding-public", "lib/data/store/credential-type-binding/public")
-includeProject("lib-data-store-credential-type-binding-impl", "lib/data/store/credential-type-binding/impl")
-
-// Data - Credential Definition (role-neutral free-form/lightweight definition: pure claim data, no profile link)
-includeProject("lib-data-credential-definition-public", "lib/data/credential-definition/public")
-includeProject("lib-data-credential-definition-impl", "lib/data/credential-definition/impl")
-includeProject("lib-data-credential-definition-rest", "lib/data/credential-definition/rest")
-
-// Software Registry (unified software-instance model + read/write SPIs)
-includeProject("lib-software-registry-public", "lib/software/registry/public")
-includeProject("lib-software-registry-impl", "lib/software/registry/impl")
-
-// Data Store - Party (data models for identity, contact, tenant)
-includeProject("lib-data-store-party-public", "lib/data/store/party/public")
-
-// DID libraries (W3C Decentralized Identifiers)
-includeProject("lib-did-core-public", "lib/did/core/public")
-includeProject("lib-did-resolver-public", "lib/did/resolver/public")
-includeProject("lib-did-resolver-impl", "lib/did/resolver/impl")
-includeProject("lib-did-manager-public", "lib/did/manager/public")
-includeProject("lib-did-manager-impl", "lib/did/manager/impl")
-includeProject("lib-did-methods-key", "lib/did/methods/key")
-includeProject("lib-did-methods-jwk", "lib/did/methods/jwk")
-includeProject("lib-did-methods-web", "lib/did/methods/web")
-includeProject("lib-did-methods-webvh-public", "lib/did/methods/webvh/public")
-includeProject("lib-did-methods-webvh-resolver", "lib/did/methods/webvh/resolver")
-includeProject("lib-did-methods-webvh-provider", "lib/did/methods/webvh/provider")
-includeProject("lib-did-methods-webvh-rest-server", "lib/did/methods/webvh/rest/server")
-includeProject("lib-did-persistence-api", "lib/did/persistence/api")
-includeProject("lib-did-persistence-memory", "lib/did/persistence/memory")
-includeProject("lib-did-persistence-sqlite", "lib/did/persistence/sqlite")
-includeProject("lib-did-persistence-test-fixtures", "lib/did/persistence/test-fixtures")
-includeProject("lib-did-rest-resolver-server", "lib/did/rest/resolver/server")
-includeProject("lib-did-hosting-public", "lib/did/hosting/public")
-includeProject("lib-did-hosting-impl", "lib/did/hosting/impl")
-
-// mDoc libraries
-includeProject("lib-mdoc-core-public", "lib/mdoc/core/public")
-includeProject("lib-mdoc-core-impl", "lib/mdoc/core/impl")
-includeProject("lib-mdoc-core", "lib/mdoc/core")
-includeProject("lib-mdoc-transport-ble-public", "lib/mdoc/transport-ble/public")
-includeProject("lib-mdoc-transport-ble-impl", "lib/mdoc/transport-ble/impl")
-includeProject("lib-mdoc-transport-ble", "lib/mdoc/transport-ble")
-includeProject("lib-mdoc-transport-nfc", "lib/mdoc/transport-nfc")
-includeProject("lib-mdoc-transport-restapi", "lib/mdoc/transport-restapi")
-includeProject("lib-mdoc-transport-oid4vp", "lib/mdoc/transport-oid4vp")
-includeProject("lib-mdoc-datatransfer-public", "lib/mdoc/datatransfer/public")
-includeProject("lib-mdoc-datatransfer-impl", "lib/mdoc/datatransfer/impl")
-includeProject("lib-mdoc-datatransfer", "lib/mdoc/datatransfer")
-includeProject("lib-mdoc-reader", "lib/mdoc/reader")
-
-
-
-// TS 11 attestation catalogs
-includeProject("lib-catalog-public", "lib/catalog/public")
-includeProject("lib-catalog-ts11-public", "lib/catalog/ts11-public")
-includeProject("lib-catalog-eu-public", "lib/catalog/eu-public")
-includeProject("lib-catalog-eu-impl", "lib/catalog/eu-impl")
-includeProject("lib-catalog-impl", "lib/catalog/impl")
-includeProject("lib-catalog-persistence-api", "lib/catalog/persistence/api")
-includeProject("lib-catalog-persistence-memory", "lib/catalog/persistence/memory")
-includeProject("lib-catalog-persistence-sqlite", "lib/catalog/persistence/sqlite")
-
-// Trust libraries
-includeProject("lib-trust-core-public", "lib/trust/core/public")
-includeProject("lib-trust-core-impl", "lib/trust/core/impl")
-includeProject("lib-trust-etsi-entities-public", "lib/trust/etsi-entities-public")
-includeProject("lib-trust-etsi", "lib/trust/etsi")
-includeProject("lib-trust-x509", "lib/trust/x509")
-includeProject("lib-trust-did", "lib/trust/did")
-includeProject("lib-trust-oidfed", "lib/trust/oidfed")
-
-
-
-// OAuth2 JWT Validation
-includeProject("lib-oauth2-jwt-validation-api", "lib/oauth2/jwt/validation/api")
-includeProject("lib-oauth2-jwt-validation-impl", "lib/oauth2/jwt/validation/impl")
-
-// Credential Claims Mapper
-includeProject("lib-credential-claims-mapper-public", "lib/credential/claims-mapper/public")
-includeProject("lib-credential-claims-mapper-impl", "lib/credential/claims-mapper/impl")
-
-// OID4VP Authentication Bridge
-includeProject("lib-openid-oid4vp-auth-bridge-public", "lib/openid/oid4vp/auth-bridge/public")
-includeProject("lib-openid-oid4vp-auth-bridge-impl", "lib/openid/oid4vp/auth-bridge/impl")
-
-// Identity Matching
-includeProject("lib-identity-matching-public", "lib/identity/matching/public")
-includeProject("lib-identity-matching-impl", "lib/identity/matching/impl")
-
-// Identity Resolution
-includeProject("lib-identity-resolution-public", "lib/identity/resolution/public")
-includeProject("lib-identity-resolution-impl", "lib/identity/resolution/impl")
-
-// Identity Reconciliation
-includeProject("lib-identity-reconciliation-public", "lib/identity/reconciliation/public")
-includeProject("lib-identity-reconciliation-impl", "lib/identity/reconciliation/impl")
-
-// Identity Verification
-includeProject("lib-idv-public", "lib/identity/idv/public")
-includeProject("lib-idv-oidc", "lib/identity/idv/oidc")
-includeProject("lib-idv-wallet", "lib/identity/idv/wallet")
-
-// Services (REST API deployment modules)
-includeProject("ktor-server-kotlin-inject", "services/ktor/server/plugins/ktor-server-kotlin-inject")
-includeProject("ktor-server-jwt-auth", "services/ktor/server/plugins/ktor-server-jwt-auth")
-includeProject("services-kms-rest", "services/kms/rest")
-includeProject("services-did-manager-rest", "services/did/manager/rest")
-includeProject("services-did-hosting-rest", "services/did/hosting/rest")
-includeProject("services-oid4vp-verifier-rest", "services/oid4vp-verifier/rest")
-includeProject("services-oauth2-as-rest", "services/oauth2-as/rest")
-includeProject("services-oid4vci-issuer-rest", "services/oid4vci-issuer/rest")
-// services-oid4vci-holder-rest moved to EDK (vdx/edk/services/oid4vci-holder/rest)
+// Pack modules (core/, platform/, infra/, identity-security/, protocols/, wallet-lib/, wallet/)
+// are owned by pack settings via includeBuild when IDK_LOCAL_PACKS is set — not registered
+// as projects of Identity-Development-Kit. lib-core-benchmarks removed: core/lib/core/benchmarks
+// does not exist (orphan path was lib/core/benchmarks).
 
 // Examples
 includeProject("examples-oid4vc-webapp-server", "examples/oid4vc/webapp/server")
@@ -702,5 +350,71 @@ if (useLibAllBuild) {
     println("==> lib-all (XCFramework): DISABLED - Set BUILD_XCFRAMEWORKS=true to enable")
 }
 
-// BOM
-includeProject("idk-bom", "versions/idk-bom")
+// keep in sync with gradle/idk-local-packs.gradle.kts
+// (apply(from) does not export top-level functions into this settings script)
+val IDK_PACK_DIRS: Set<String> =
+    setOf("core", "platform", "infra", "identity-security", "protocols", "wallet-lib")
+
+fun parseIdkLocalPacks(): List<String> {
+    val raw = System.getenv("IDK_LOCAL_PACKS")?.trim().orEmpty()
+    if (raw.isEmpty()) return emptyList()
+    return raw.split(",")
+        .map { it.trim() }
+        .filter { it.isNotEmpty() }
+        .also { packs ->
+            packs.forEach { pack ->
+                if (pack !in IDK_PACK_DIRS) {
+                    throw GradleException(
+                        "Unknown IDK_LOCAL_PACKS entry '$pack'. Allowed: ${IDK_PACK_DIRS.joinToString()}",
+                    )
+                }
+            }
+        }
+        .distinct()
+}
+
+fun extractIdkPackModuleNames(settingsFile: File): List<String> {
+    if (!settingsFile.isFile) return emptyList()
+    val localOrMapped =
+        Regex("""include(?:Local|Mapped)\s*\(\s*"([^"]+)"\s*,\s*"[^"]+"\s*\)""")
+    return settingsFile.readLines()
+        .filter { line ->
+            val t = line.trim()
+            !t.startsWith("//") && !t.startsWith("/*") && !t.startsWith("*")
+        }
+        .mapNotNull { line -> localOrMapped.find(line)?.groupValues?.get(1) }
+        .distinct()
+}
+
+fun Settings.includeIdkLocalPackBuilds(idkRoot: File) {
+    val packs = parseIdkLocalPacks()
+    if (packs.isEmpty()) {
+        println("==> IDK pack source builds: none (IDK_LOCAL_PACKS empty; using Maven artifacts for IDK modules)")
+        return
+    }
+    packs.forEach { pack ->
+        val packRoot = idkRoot.resolve(pack)
+        val packSettings = packRoot.resolve("settings.gradle.kts")
+        if (!packSettings.isFile) {
+            throw GradleException("Missing pack settings: ${packSettings.absolutePath}")
+        }
+        val modules = extractIdkPackModuleNames(packSettings)
+        if (modules.isEmpty()) {
+            throw GradleException(
+                "No includeLocal/includeMapped modules in ${packSettings.absolutePath}",
+            )
+        }
+        includeBuild(packRoot) {
+            name = "idk-$pack"
+            dependencySubstitution {
+                modules.forEach { moduleName ->
+                    substitute(module("com.sphereon.idk:$moduleName")).using(project(":$moduleName"))
+                }
+            }
+        }
+        println("==> IDK pack source build: $pack (${modules.size} modules)")
+    }
+}
+
+// Selective multi-pack source composite when developing from the IDK checkout root.
+includeIdkLocalPackBuilds(settings.rootDir)

@@ -1,0 +1,1085 @@
+openapi: 3.0.4
+info:
+  title: Resource Manager API Components
+  version: 0.1.0
+  description: Entity schemas, enums, and path parameters for the Resource Manager REST Server API.
+paths: {}
+components:
+  parameters:
+    ResourceId:
+      name: resourceId
+      in: path
+      required: true
+      description: Unique identifier of the resource.
+      schema:
+        type: string
+        format: uuid
+  schemas:
+    BookingStatus:
+      type: string
+      enum: [ PENDING, CONFIRMED, CANCELLED, COMPLETED, NO_SHOW, ERROR ]
+    BookingType:
+      type: string
+      enum: [ USER_RESERVATION, MAINTENANCE, SYSTEM_BLOCK ]
+    BookingProofStatus:
+      type: string
+      enum: [ NOT_REQUIRED, PENDING, VERIFIED, FAILED, EXPIRED ]
+    ResourceStatus:
+      type: string
+      description: Resource lifecycle status
+      enum: [ ACTIVE, MAINTENANCE, RETIRED ]
+    RequirementVerificationStatus:
+      type: string
+      enum: [ PENDING, AWAITING_RESPONSE, VERIFIED, FAILED, EXPIRED ]
+    ResourceCategory:
+      type: object
+      required:
+        - id
+        - tenantId
+        - name
+        - slug
+        - isActive
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenantId:
+          type: string
+          format: uuid
+        name:
+          type: string
+        slug:
+          type: string
+        description:
+          type: string
+        iconAssetId:
+          type: string
+        schemaDefinitionId:
+          type: string
+        parentCategoryId:
+          type: string
+          format: uuid
+        isActive:
+          type: boolean
+        displayOrder:
+          type: integer
+        createdById:
+          type: string
+        updatedById:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    RequirementCategory:
+      type: object
+      required:
+        - id
+        - tenantId
+        - name
+        - slug
+        - isActive
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenantId:
+          type: string
+          format: uuid
+        name:
+          type: string
+        slug:
+          type: string
+        description:
+          type: string
+        isActive:
+          type: boolean
+        displayOrder:
+          type: integer
+        createdById:
+          type: string
+        updatedById:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    UsagePolicy:
+      type: object
+      required:
+        - id
+        - tenantId
+        - name
+        - concurrencyLimit
+        - slotIntervalMinutes
+        - minBookingDurationMinutes
+        - bufferAfterMinutes
+        - allowSameDayBooking
+        - isDefault
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenantId:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+        concurrencyLimit:
+          type: integer
+          format: int32
+        slotIntervalMinutes:
+          type: integer
+          format: int32
+        minBookingDurationMinutes:
+          type: integer
+          format: int32
+        maxBookingDurationMinutes:
+          type: integer
+          format: int32
+          nullable: true
+        bufferAfterMinutes:
+          type: integer
+          format: int32
+        maxAdvanceBookingDays:
+          type: integer
+          format: int32
+        maxBookingsPerDay:
+          type: integer
+          format: int32
+          nullable: true
+          description: Maximum number of bookings a user can hold for the same day.
+        maxConcurrentBookingsPerAdvanceBookingPeriod:
+          type: integer
+          format: int32
+          nullable: true
+          description: Maximum number of active advance bookings a user can hold.
+        maxConcurrentBookings:
+          type: integer
+          format: int32
+          nullable: true
+          deprecated: true
+          description: Deprecated alias of maxConcurrentBookingsPerAdvanceBookingPeriod.
+        allowSameDayBooking:
+          type: boolean
+        minAdvanceBookingHours:
+          type: integer
+          format: int32
+          description: Minimum hours in advance a booking must be made
+          nullable: true
+        requiresApproval:
+          type: boolean
+          description: Whether bookings require approval before confirmation
+        allowRecurring:
+          type: boolean
+          description: Whether recurring bookings are allowed
+        isDefault:
+          type: boolean
+        createdById:
+          type: string
+        updatedById:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    ResourceUsagePolicy:
+      type: object
+      required:
+        - resourceId
+        - usagePolicyId
+      properties:
+        id:
+          type: string
+          format: uuid
+        resourceId:
+          type: string
+          format: uuid
+        usagePolicyId:
+          type: string
+          format: uuid
+        priority:
+          type: integer
+          format: int32
+          description: Priority for policy resolution (lower number = higher priority)
+          default: 0
+        effectiveFrom:
+          type: string
+          format: date-time
+        effectiveUntil:
+          type: string
+          format: date-time
+        createdById:
+          type: string
+        updatedById:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    ResourceUsagePolicyInput:
+      type: object
+      required:
+        - usagePolicyId
+      properties:
+        usagePolicyId:
+          type: string
+          format: uuid
+        priority:
+          type: integer
+          format: int32
+          description: Priority for policy resolution (lower number = higher priority)
+          default: 0
+        effectiveFrom:
+          type: string
+          format: date-time
+        effectiveUntil:
+          type: string
+          format: date-time
+    Resource:
+      type: object
+      required:
+        - resourceId
+        - resourceCategoryId
+        - status
+      properties:
+        resourceId:
+          type: string
+          format: uuid
+          description: Canonical resource identifier.
+        name:
+          type: string
+          description: Display name of the resource (from party.displayName).
+        description:
+          type: string
+          nullable: true
+          description: Optional free-form description.
+        imageAssetId:
+          type: string
+          nullable: true
+          description: Optional image URL/asset reference.
+        resourceCategoryId:
+          type: string
+          format: uuid
+        groupId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Optional resource group membership.
+        timezone:
+          type: string
+          description: IANA timezone identifier (e.g., 'Europe/Amsterdam').
+        status:
+          $ref: '#/components/schemas/ResourceStatus'
+        capacity:
+          type: integer
+          format: int32
+        createdAt:
+          type: string
+          format: date-time
+          description: When the resource was created.
+        updatedAt:
+          type: string
+          format: date-time
+          description: When the resource was last updated.
+    ResourceRequirementInput:
+      type: object
+      description: Input for creating/updating a resource requirement. Server generates id and resourceId.
+      required:
+        - isMandatory
+      properties:
+        requirementCategoryId:
+          type: string
+          format: uuid
+        credentialDefinitionId:
+          type: string
+          nullable: true
+          description: Legacy credential definition approach (nullable when using DCQL)
+        presentationDefinitionId:
+          type: string
+          nullable: true
+          description: Legacy presentation definition approach (nullable when using DCQL)
+        dcqlQuery:
+          type: string
+          nullable: true
+          description: DCQL-based verification query (alternative to credentialDefinitionId)
+        subIdentifier:
+          type: string
+          nullable: true
+          description: Sub-credential identification for DCQL queries
+        description:
+          type: string
+        isMandatory:
+          type: boolean
+        displayOrder:
+          type: integer
+          format: int32
+    ResourceRequirement:
+      type: object
+      required:
+        - id
+        - resourceId
+        - isMandatory
+      properties:
+        id:
+          type: string
+          format: uuid
+        resourceId:
+          type: string
+          format: uuid
+        requirementCategoryId:
+          type: string
+          format: uuid
+        credentialDefinitionId:
+          type: string
+          nullable: true
+          description: Legacy credential definition approach (nullable when using DCQL)
+        presentationDefinitionId:
+          type: string
+          nullable: true
+          description: Legacy presentation definition approach (nullable when using DCQL)
+        dcqlQuery:
+          type: string
+          nullable: true
+          description: DCQL-based verification query (alternative to credentialDefinitionId)
+        subIdentifier:
+          type: string
+          nullable: true
+          description: Sub-credential identification for DCQL queries
+        description:
+          type: string
+        isMandatory:
+          type: boolean
+        displayOrder:
+          type: integer
+          format: int32
+        createdById:
+          type: string
+        updatedById:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    ResourceSchedule:
+      type: object
+      required:
+        - id
+        - resourceId
+        - isClosed
+      properties:
+        id:
+          type: string
+          format: uuid
+        resourceId:
+          type: string
+          format: uuid
+        dayOfWeek:
+          type: integer
+          minimum: 1
+          maximum: 7
+          nullable: true
+          description: 1=Monday, 7=Sunday per ISO 8601. For weekly recurring schedules.
+        dayOfMonth:
+          type: integer
+          minimum: 1
+          maximum: 31
+          nullable: true
+          description: Day of month (1-31) for monthly recurring schedules.
+        month:
+          type: integer
+          minimum: 1
+          maximum: 12
+          nullable: true
+          description: Month (1-12) for annual recurring schedules.
+        specificDate:
+          type: string
+          format: date
+          nullable: true
+          description: Exact date for one-time schedules. Mutually exclusive with recurring fields.
+        startTime:
+          type: string
+          format: time
+          nullable: true
+          description: Wall-clock time (e.g., '09:00'). Interpreted using resource's timezone for UTC conversion.
+        endTime:
+          type: string
+          format: time
+          nullable: true
+          description: Wall-clock time (e.g., '17:00'). Interpreted using resource's timezone for UTC conversion.
+        isClosed:
+          type: boolean
+        validFrom:
+          type: string
+          format: date-time
+        validUntil:
+          type: string
+          format: date-time
+        createdById:
+          type: string
+        updatedById:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    AvailabilitySlot:
+      type: object
+      required:
+        - startTime
+        - endTime
+        - status
+      properties:
+        startTime:
+          type: string
+          format: date-time
+        endTime:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum: [ AVAILABLE, UNAVAILABLE ]
+        unavailableReason:
+          type: string
+          enum: [ CLOSED, IN_MAINTENANCE, BLOCKED, FULLY_BOOKED, OUTSIDE_POLICY ]
+        state:
+          type: string
+          deprecated: true
+          enum: [ CLOSED, IN_MAINTENANCE, BLOCKED, FULLY_BOOKED, LIMITED, AVAILABLE, USER_BOOKED ]
+        availableCapacity:
+          type: integer
+        totalCapacity:
+          type: integer
+    EffectiveSourceLevel:
+      type: string
+      enum: [ default, category, group, resource ]
+    EffectiveSource:
+      type: object
+      required:
+        - sourceLevel
+        - priority
+      properties:
+        sourceLevel:
+          $ref: '#/components/schemas/EffectiveSourceLevel'
+        sourceId:
+          type: string
+          format: uuid
+          nullable: true
+        sourceName:
+          type: string
+          nullable: true
+        priority:
+          type: integer
+          format: int32
+    ResourceUpdateInput:
+      type: object
+      properties:
+        resourceCategoryId:
+          type: string
+          format: uuid
+          description: Updated category ID.
+        groupId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Optional resource group membership.
+        timezone:
+          type: string
+          description: IANA timezone identifier (e.g., 'Europe/Amsterdam').
+        status:
+          $ref: '#/components/schemas/ResourceStatus'
+        capacity:
+          type: integer
+    ResourceDetail:
+      type: object
+      description: |
+        Complete resource details including party, usage policy, and requirements.
+      required:
+        - resource
+      properties:
+        party:
+          $ref: './party-manager-components.yml#/components/schemas/PartyEntity'
+        resource:
+          $ref: '#/components/schemas/Resource'
+        usagePolicy:
+          $ref: '#/components/schemas/UsagePolicy'
+        resourceUsagePolicy:
+          $ref: '#/components/schemas/ResourceUsagePolicy'
+        resourceCategory:
+          $ref: '#/components/schemas/ResourceCategory'
+        resourceGroup:
+          $ref: '#/components/schemas/ResourceGroup'
+        effectiveScheduleSet:
+          $ref: '#/components/schemas/ScheduleSet'
+          description: The effective schedule set after inheritance resolution.
+        effectivePolicy:
+          $ref: '#/components/schemas/UsagePolicy'
+          description: The effective policy after inheritance resolution.
+        schedules:
+          type: array
+          items:
+            $ref: '#/components/schemas/ResourceSchedule'
+        requirements:
+          type: array
+          items:
+            $ref: '#/components/schemas/ResourceRequirement'
+        addresses:
+          type: array
+          items:
+            $ref: './party-manager-components.yml#/components/schemas/PhysicalAddress'
+    Booking:
+      type: object
+      required:
+        - id
+        - tenantId
+        - bookingType
+        - resourceId
+        - startTime
+        - endTime
+        - status
+        - proofStatus
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenantId:
+          type: string
+          format: uuid
+        userId:
+          type: string
+          format: uuid
+          nullable: true
+          description: System user who created the booking (authentication/audit)
+        delegateId:
+          type: string
+          format: uuid
+          description: Party entity making the booking (natural_person or organization)
+        resourceId:
+          type: string
+          format: uuid
+        bookingType:
+          $ref: '#/components/schemas/BookingType'
+        title:
+          type: string
+        description:
+          type: string
+        startTime:
+          type: string
+          format: date-time
+        endTime:
+          type: string
+          format: date-time
+        status:
+          $ref: '#/components/schemas/BookingStatus'
+        proofStatus:
+          $ref: '#/components/schemas/BookingProofStatus'
+        recurrenceGroupId:
+          type: string
+          format: uuid
+        recurrenceRule:
+          type: string
+          description: RFC-5545 RRule for recurring bookings
+        headcount:
+          type: integer
+          format: int32
+          description: Number of attendees for this booking
+        createdById:
+          type: string
+          format: uuid
+        updatedById:
+          type: string
+          format: uuid
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    BookingVerification:
+      type: object
+      required:
+        - id
+        - bookingId
+        - requirementId
+        - verificationStatus
+      properties:
+        id:
+          type: string
+          format: uuid
+        bookingId:
+          type: string
+          format: uuid
+        requirementId:
+          type: string
+          format: uuid
+        oid4vcStateId:
+          type: string
+        verificationStatus:
+          $ref: '#/components/schemas/RequirementVerificationStatus'
+        credentialHash:
+          type: string
+        verifiedAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    BookingMetadataEntry:
+      type: object
+      required:
+        - id
+        - bookingId
+        - key
+        - valueType
+      properties:
+        id:
+          type: string
+          format: uuid
+        bookingId:
+          type: string
+          format: uuid
+        key:
+          type: string
+        valueType:
+          type: string
+          enum: [ Text, Number, Boolean, Date, Json ]
+        textValue:
+          type: string
+        numberValue:
+          type: number
+          format: double
+        booleanValue:
+          type: boolean
+        dateValue:
+          type: string
+          format: date-time
+        jsonValue:
+          type: string
+    BookingDetail:
+      type: object
+      required:
+        - booking
+      properties:
+        booking:
+          $ref: '#/components/schemas/Booking'
+        resource:
+          $ref: '#/components/schemas/Resource'
+        party:
+          $ref: './party-manager-components.yml#/components/schemas/PartyEntity'
+        verifications:
+          type: array
+          items:
+            $ref: '#/components/schemas/BookingVerification'
+        metadata:
+          type: array
+          items:
+            $ref: '#/components/schemas/BookingMetadataEntry'
+    VerificationStatus:
+      type: string
+      enum: [ PENDING, VERIFIED, FAILED, EXPIRED ]
+    Verification:
+      type: object
+      required:
+        - id
+        - resourceId
+        - status
+        - qrUri
+        - deeplink
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        resourceId:
+          type: string
+          format: uuid
+        bookingId:
+          type: string
+          format: uuid
+          nullable: true
+        status:
+          $ref: '#/components/schemas/VerificationStatus'
+        qrUri:
+          type: string
+        deeplink:
+          type: string
+        verifiedAt:
+          type: string
+          format: date-time
+          nullable: true
+        expiresAt:
+          type: string
+          format: date-time
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    ResourceGroup:
+      type: object
+      required:
+        - id
+        - tenantId
+        - name
+        - status
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenantId:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+        categoryId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Optional category affiliation for the group.
+        imageAssetId:
+          type: string
+          nullable: true
+        status:
+          type: string
+          enum: [ACTIVE, INACTIVE]
+        createdById:
+          type: string
+        updatedById:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    ResourceGroupDetail:
+      type: object
+      required:
+        - group
+      properties:
+        group:
+          $ref: '#/components/schemas/ResourceGroup'
+        category:
+          $ref: '#/components/schemas/ResourceCategory'
+        resources:
+          type: array
+          items:
+            $ref: '#/components/schemas/ResourceDetail'
+        effectivePolicy:
+          $ref: '#/components/schemas/UsagePolicy'
+        effectiveScheduleSet:
+          $ref: '#/components/schemas/ScheduleSet'
+    ScheduleRule:
+      type: object
+      required:
+        - id
+        - isClosed
+        - startTime
+        - endTime
+      properties:
+        id:
+          type: string
+          format: uuid
+        scheduleSetId:
+          type: string
+          format: uuid
+        dayOfWeek:
+          type: integer
+          minimum: 1
+          maximum: 7
+          nullable: true
+          description: 1=Monday, 7=Sunday per ISO 8601. For weekly recurring schedules.
+        dayOfMonth:
+          type: integer
+          minimum: 1
+          maximum: 31
+          nullable: true
+          description: Day of month (1-31) for monthly recurring schedules. Use -1 for last day.
+        month:
+          type: integer
+          minimum: 1
+          maximum: 12
+          nullable: true
+          description: Month (1-12) for annual recurring schedules.
+        specificDate:
+          type: string
+          format: date
+          nullable: true
+          description: Exact date for one-time schedules.
+        nthWeekday:
+          type: integer
+          minimum: 1
+          maximum: 5
+          nullable: true
+          description: Nth weekday of month (1-5) for patterns like "2nd Monday".
+        startTime:
+          type: string
+          format: time
+          description: Wall-clock time (e.g., '09:00').
+        endTime:
+          type: string
+          format: time
+          description: Wall-clock time (e.g., '17:00').
+        isClosed:
+          type: boolean
+          description: True = blocked/closed time.
+        validFrom:
+          type: string
+          format: date-time
+          nullable: true
+        validUntil:
+          type: string
+          format: date-time
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    ScheduleRuleInput:
+      type: object
+      required:
+        - startTime
+        - endTime
+        - isClosed
+      properties:
+        dayOfWeek:
+          type: integer
+          minimum: 1
+          maximum: 7
+          nullable: true
+        dayOfMonth:
+          type: integer
+          minimum: 1
+          maximum: 31
+          nullable: true
+        month:
+          type: integer
+          minimum: 1
+          maximum: 12
+          nullable: true
+        specificDate:
+          type: string
+          format: date
+          nullable: true
+        nthWeekday:
+          type: integer
+          minimum: 1
+          maximum: 5
+          nullable: true
+        startTime:
+          type: string
+          format: time
+        endTime:
+          type: string
+          format: time
+        isClosed:
+          type: boolean
+          default: false
+        validFrom:
+          type: string
+          format: date-time
+          nullable: true
+        validUntil:
+          type: string
+          format: date-time
+          nullable: true
+    ScheduleSet:
+      type: object
+      required:
+        - id
+        - tenantId
+        - name
+        - priority
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenantId:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+        priority:
+          type: integer
+          format: int32
+          description: Higher = more specific (overrides lower priority sets).
+          default: 0
+        isDefault:
+          type: boolean
+          description: True if this is the system default schedule set.
+          default: false
+        createdById:
+          type: string
+        updatedById:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    ScheduleSetDetail:
+      type: object
+      required:
+        - scheduleSet
+      properties:
+        scheduleSet:
+          $ref: '#/components/schemas/ScheduleSet'
+        rules:
+          type: array
+          items:
+            $ref: '#/components/schemas/ScheduleRule'
+        includedSets:
+          type: array
+          items:
+            $ref: '#/components/schemas/ScheduleSet'
+        assignments:
+          type: array
+          items:
+            $ref: '#/components/schemas/ScheduleSetAssignment'
+    ScheduleSetAssignment:
+      type: object
+      required:
+        - id
+        - scheduleSetId
+        - priority
+      properties:
+        id:
+          type: string
+          format: uuid
+        scheduleSetId:
+          type: string
+          format: uuid
+        categoryId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Assign to a category (all resources in category inherit).
+        groupId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Assign to a group (all resources in group inherit).
+        resourceId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Assign to a specific resource (override).
+        isDefault:
+          type: boolean
+          description: True if this is the system default assignment.
+          default: false
+        priority:
+          type: integer
+          format: int32
+          description: Priority for multiple assignments at same level.
+          default: 0
+        validFrom:
+          type: string
+          format: date-time
+          nullable: true
+        validUntil:
+          type: string
+          format: date-time
+          nullable: true
+        tenantId:
+          type: string
+          format: uuid
+        createdById:
+          type: string
+        updatedById:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    PolicyAssignment:
+      type: object
+      required:
+        - id
+        - policyId
+        - priority
+      properties:
+        id:
+          type: string
+          format: uuid
+        policyId:
+          type: string
+          format: uuid
+        categoryId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Assign to a category (all resources in category inherit).
+        groupId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Assign to a group (all resources in group inherit).
+        resourceId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Assign to a specific resource (override).
+        isDefault:
+          type: boolean
+          description: True if this is the system default assignment.
+          default: false
+        priority:
+          type: integer
+          format: int32
+          description: Priority for multiple assignments at same level.
+          default: 0
+        validFrom:
+          type: string
+          format: date-time
+          nullable: true
+        validUntil:
+          type: string
+          format: date-time
+          nullable: true
+        tenantId:
+          type: string
+          format: uuid
+        createdById:
+          type: string
+        updatedById:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time

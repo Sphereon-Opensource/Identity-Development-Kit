@@ -32,16 +32,16 @@ import com.sphereon.openid.oid4vci.common.model.stringValues
 import com.sphereon.openid.oid4vci.holder.CreateCredentialRequestProofArgs
 import com.sphereon.openid.oid4vci.holder.Oid4vciHolder
 import com.sphereon.openid.oid4vci.holder.ParseCredentialOfferArgs
+import com.sphereon.openid.oid4vci.issuer.authorization.Oid4vciAuthorizationGrant
+import com.sphereon.openid.oid4vci.issuer.authorization.Oid4vciAuthorizationPolicySnapshot
+import com.sphereon.openid.oid4vci.issuer.authorization.Oid4vciAuthorizationServerDeployment
 import com.sphereon.openid.oid4vci.issuer.bridge.ConsumePreAuthCodeArgs
 import com.sphereon.openid.oid4vci.issuer.bridge.Oid4vciAuthorizationServerBridge
-import com.sphereon.openid.oid4vci.issuer.authorization.Oid4vciAuthorizationGrant
-import com.sphereon.openid.oid4vci.issuer.authorization.Oid4vciAuthorizationServerDeployment
-import com.sphereon.openid.oid4vci.issuer.authorization.Oid4vciAuthorizationPolicySnapshot
-import com.sphereon.openid.oid4vci.issuer.config.Oid4vciIssuerSpecProfile
 import com.sphereon.openid.oid4vci.issuer.command.BuildIssuerMetadataArgs
 import com.sphereon.openid.oid4vci.issuer.command.CreateCredentialOfferArgs
 import com.sphereon.openid.oid4vci.issuer.command.HandleCredentialRequestArgs
 import com.sphereon.openid.oid4vci.issuer.command.IssueNonceArgs
+import com.sphereon.openid.oid4vci.issuer.config.Oid4vciIssuerSpecProfile
 import com.sphereon.openid.oid4vci.issuer.service.Oid4vciIssuerService
 import dev.zacsweers.metro.ContributesTo
 import kotlinx.coroutines.test.runTest
@@ -52,20 +52,21 @@ import kotlin.test.assertTrue
 import kotlin.uuid.Uuid
 
 /** Explicit immutable authorization decision used by direct issuer-command test fixtures. */
-internal val OID4VCI_TEST_AUTHORIZATION_POLICY_SNAPSHOT = Oid4vciAuthorizationPolicySnapshot(
-    issuerId = Uuid.parse(OID4VCI_TEST_ISSUER_INSTANCE_ID),
-    authorizationServerId = Uuid.parse("00000000-0000-4000-8000-000000000002"),
-    authorizationServerIssuer = OID4VCI_TEST_ISSUER_URL,
-    authorizationServerDeployment = Oid4vciAuthorizationServerDeployment.HOSTED,
-    authorizationServerRuntimeKey = "default",
-    authorizationServerTokenEndpoint = "$OID4VCI_TEST_ISSUER_URL/token",
-    authorizationServerJwksUri = "$OID4VCI_TEST_ISSUER_URL/.well-known/jwks.json",
-    applicableGrants = setOf(Oid4vciAuthorizationGrant.PRE_AUTHORIZED_CODE),
-    profile = Oid4vciIssuerSpecProfile.OID4VCI_1_0_FINAL,
-    profileRevision = 7,
-    authorizationServerRevision = 11,
-    bindingRevision = 13,
-)
+internal val OID4VCI_TEST_AUTHORIZATION_POLICY_SNAPSHOT =
+    Oid4vciAuthorizationPolicySnapshot(
+        issuerId = Uuid.parse(OID4VCI_TEST_ISSUER_INSTANCE_ID),
+        authorizationServerId = Uuid.parse("00000000-0000-4000-8000-000000000002"),
+        authorizationServerIssuer = OID4VCI_TEST_ISSUER_URL,
+        authorizationServerDeployment = Oid4vciAuthorizationServerDeployment.HOSTED,
+        authorizationServerRuntimeKey = "default",
+        authorizationServerTokenEndpoint = "$OID4VCI_TEST_ISSUER_URL/token",
+        authorizationServerJwksUri = "$OID4VCI_TEST_ISSUER_URL/.well-known/jwks.json",
+        applicableGrants = setOf(Oid4vciAuthorizationGrant.PRE_AUTHORIZED_CODE),
+        profile = Oid4vciIssuerSpecProfile.OID4VCI_1_0_FINAL,
+        profileRevision = 7,
+        authorizationServerRevision = 11,
+        bindingRevision = 13,
+    )
 
 /**
  * Graph interface to access OID4VCI + OAuth2 services from the session graph.
@@ -383,6 +384,7 @@ class Oid4vciIssuanceE2ETest {
                         subject = consumed.sessionId,
                         clientId = "test-wallet",
                         scope = "degree",
+                        audience = listOf(issuerUrl),
                         expiresInSeconds = 3600,
                     ),
                 )

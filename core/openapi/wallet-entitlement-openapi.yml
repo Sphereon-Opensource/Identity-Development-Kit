@@ -1,0 +1,296 @@
+openapi: 3.0.4
+info:
+  title: Wallet Entitlement API
+  version: 0.2.0
+  x-products: [edk, vdx]
+  description: |
+    Resolves backend-managed wallet feature entitlements into a signed manifest
+    and exposes admin CRUD for entitlement rows and versioned, scoped feature-policy profiles.
+servers:
+  - url: https://api.example.com/api/wallet-entitlement/v1
+  - url: http://localhost:8080/api/wallet-entitlement/v1
+security:
+  - bearer: []
+tags:
+  - name: WalletEntitlementManifest
+  - name: WalletEntitlementAdmin
+  - name: WalletFeaturePolicyAdmin
+paths:
+  /manifest:
+    get:
+      tags: [WalletEntitlementManifest]
+      summary: Resolve wallet feature manifest
+      operationId: resolveWalletFeatureManifest
+      x-command-id: wallet-entitlement.manifest.resolve
+      parameters:
+        - name: walletUnitId
+          in: query
+          schema: { type: string }
+        - name: appId
+          in: query
+          schema: { type: string }
+        - name: manifestVersion
+          in: query
+          schema: { type: string, default: "1" }
+      responses:
+        '200':
+          description: Signed wallet feature manifest.
+          content:
+            application/json:
+              schema:
+                $ref: './wallet-entitlement-components.yml#/components/schemas/SignedWalletFeatureManifest'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+  /entitlements:
+    get:
+      tags: [WalletEntitlementAdmin]
+      summary: List wallet entitlements
+      operationId: listWalletEntitlements
+      x-command-id: wallet-entitlement.entitlement.list
+      parameters:
+        - name: subjectType
+          in: query
+          schema:
+            $ref: './wallet-entitlement-components.yml#/components/schemas/WalletEntitlementSubjectType'
+        - name: subjectId
+          in: query
+          schema: { type: string }
+        - name: featureKey
+          in: query
+          schema: { type: string }
+      responses:
+        '200':
+          description: Wallet entitlements.
+          content:
+            application/json:
+              schema:
+                $ref: './wallet-entitlement-components.yml#/components/schemas/ListWalletEntitlementsResult'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+    put:
+      tags: [WalletEntitlementAdmin]
+      summary: Create or update wallet entitlement
+      operationId: upsertWalletEntitlement
+      x-command-id: wallet-entitlement.entitlement.upsert
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './wallet-entitlement-components.yml#/components/schemas/UpsertWalletEntitlementArgs'
+      responses:
+        '200':
+          description: Wallet entitlement row.
+          content:
+            application/json:
+              schema:
+                $ref: './wallet-entitlement-components.yml#/components/schemas/WalletEntitlementRow'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+  /entitlements/{entitlementId}:
+    parameters:
+      - name: entitlementId
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      tags: [WalletEntitlementAdmin]
+      summary: Get wallet entitlement
+      operationId: getWalletEntitlement
+      x-command-id: wallet-entitlement.entitlement.get
+      responses:
+        '200':
+          description: Wallet entitlement row.
+          content:
+            application/json:
+              schema:
+                $ref: './wallet-entitlement-components.yml#/components/schemas/WalletEntitlementRow'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+    delete:
+      tags: [WalletEntitlementAdmin]
+      summary: Delete wallet entitlement
+      operationId: deleteWalletEntitlement
+      x-command-id: wallet-entitlement.entitlement.delete
+      responses:
+        '200':
+          description: Delete result.
+          content:
+            application/json:
+              schema:
+                $ref: './wallet-entitlement-components.yml#/components/schemas/DeleteWalletEntitlementResult'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+  /policy-profiles:
+    get:
+      tags: [WalletFeaturePolicyAdmin]
+      summary: List wallet feature policy profiles
+      operationId: listWalletFeaturePolicyProfiles
+      x-command-id: wallet-entitlement.policy-profile.list
+      responses:
+        '200':
+          description: Versioned policy profiles for the authenticated tenant.
+          content:
+            application/json:
+              schema:
+                $ref: './wallet-entitlement-components.yml#/components/schemas/WalletFeaturePolicyProfilesResult'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+    put:
+      tags: [WalletFeaturePolicyAdmin]
+      summary: Create or update a wallet feature policy profile
+      operationId: upsertWalletFeaturePolicyProfile
+      x-command-id: wallet-entitlement.policy-profile.upsert
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './wallet-entitlement-components.yml#/components/schemas/WalletFeaturePolicyProfile'
+      responses:
+        '200':
+          description: Persisted policy profile.
+          content:
+            application/json:
+              schema:
+                $ref: './wallet-entitlement-components.yml#/components/schemas/WalletFeaturePolicyProfile'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+  /policy-assignments:
+    get:
+      tags: [WalletFeaturePolicyAdmin]
+      summary: List wallet feature policy assignments
+      operationId: listWalletFeaturePolicyAssignments
+      x-command-id: wallet-entitlement.policy-assignment.list
+      responses:
+        '200':
+          description: Scoped assignments for the authenticated tenant.
+          content:
+            application/json:
+              schema:
+                $ref: './wallet-entitlement-components.yml#/components/schemas/WalletFeaturePolicyAssignmentsResult'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+    put:
+      tags: [WalletFeaturePolicyAdmin]
+      summary: Create or update a scoped wallet feature policy assignment
+      operationId: upsertWalletFeaturePolicyAssignment
+      x-command-id: wallet-entitlement.policy-assignment.upsert
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './wallet-entitlement-components.yml#/components/schemas/WalletFeaturePolicyAssignment'
+      responses:
+        '200':
+          description: Persisted scoped assignment.
+          content:
+            application/json:
+              schema:
+                $ref: './wallet-entitlement-components.yml#/components/schemas/WalletFeaturePolicyAssignment'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+  /policy-assignments/{assignmentId}:
+    parameters:
+      - name: assignmentId
+        in: path
+        required: true
+        schema: { type: string }
+    delete:
+      tags: [WalletFeaturePolicyAdmin]
+      summary: Revoke a wallet feature policy assignment
+      operationId: revokeWalletFeaturePolicyAssignment
+      x-command-id: wallet-entitlement.policy-assignment.revoke
+      responses:
+        '200':
+          description: Assignment revocation result.
+          content:
+            application/json:
+              schema:
+                $ref: './wallet-entitlement-components.yml#/components/schemas/WalletFeaturePolicyAssignmentRevokeResult'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+  /policy-preview:
+    post:
+      tags: [WalletFeaturePolicyAdmin]
+      summary: Preview effective wallet feature policy
+      description: Membership, organization units, groups, license ceilings, and tenant ceilings are resolved server-side and cannot be asserted by the caller.
+      operationId: previewWalletFeaturePolicy
+      x-command-id: wallet-entitlement.policy.preview
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './wallet-entitlement-components.yml#/components/schemas/WalletFeaturePolicyPreviewRequest'
+      responses:
+        '200':
+          description: Effective restrict-only policy with complete assignment and membership provenance.
+          content:
+            application/json:
+              schema:
+                $ref: './wallet-entitlement-components.yml#/components/schemas/ResolvedWalletFeaturePolicy'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+  /policy-profiles/{profileId}/versions/{profileVersion}/readiness:
+    parameters:
+      - name: profileId
+        in: path
+        required: true
+        schema: { type: string, minLength: 1 }
+      - name: profileVersion
+        in: path
+        required: true
+        schema: { type: integer, format: int64, minimum: 1 }
+    get:
+      tags: [WalletFeaturePolicyAdmin]
+      summary: Evaluate managed wallet offering readiness
+      description: Returns only safe configuration, dependency, and signed-release-evidence gate results for the authenticated tenant.
+      operationId: evaluateManagedWalletOfferingReadiness
+      x-command-id: wallet-entitlement.readiness.evaluate
+      responses:
+        '200':
+          description: Fail-closed managed wallet readiness projection.
+          content:
+            application/json:
+              schema:
+                $ref: './wallet-entitlement-components.yml#/components/schemas/ManagedWalletOfferingReadiness'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+components:
+  securitySchemes:
+    bearer:
+      $ref: './common-components.yml#/components/securitySchemes/bearer'

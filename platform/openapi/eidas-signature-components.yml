@@ -1,0 +1,642 @@
+openapi: 3.0.4
+info:
+  title: eIDAS Signature API Components
+  version: 0.1.0
+  description: Entity schemas, enums, and path/header parameters for the eIDAS Signature REST Server API.
+paths: {}
+components:
+  parameters:
+    ConfigId:
+      name: configId
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Signature configuration ID
+      example: "5d9f2462-13c8-45b6-8e0e-8971cbe412b5"
+
+  schemas:
+    SignerData:
+      type: object
+      description: Signer information for visual signature
+      properties:
+        name:
+          type: string
+          description: Signer name
+          example: "John Doe"
+        emailAddress:
+          type: string
+          description: Signer email
+          example: "john.doe@example.com"
+        location:
+          type: string
+          description: Signing location
+          example: "Amsterdam, NL"
+        reason:
+          type: string
+          description: Reason for signing
+          example: "Document approval"
+
+    # ==================== CORE SCHEMAS ====================
+
+    SignInput:
+      type: object
+      description: Input document to be signed
+      required:
+        - data
+      properties:
+        data:
+          type: string
+          format: byte
+          description: Document content (Base64)
+        name:
+          type: string
+          default: "document"
+          description: Document name
+          example: "contract.pdf"
+        mimeType:
+          type: string
+          description: Document MIME type
+          example: "application/pdf"
+        signMode:
+          $ref: '#/components/schemas/SignMode'
+        password:
+          type: string
+          description: Password for protected documents
+          writeOnly: true
+
+    SignMode:
+      type: string
+      description: Whether to sign a full document or a pre-computed digest
+      enum:
+        - DOCUMENT
+        - DIGEST
+      default: DOCUMENT
+
+    SignatureParameters:
+      type: object
+      description: |
+        Signature format-specific parameters. Exactly one of the format-specific objects should be provided.
+      properties:
+        cades:
+          $ref: '#/components/schemas/CAdESParameters'
+        pades:
+          $ref: '#/components/schemas/PAdESParameters'
+        jades:
+          $ref: '#/components/schemas/JAdESParameters'
+        xades:
+          $ref: '#/components/schemas/XAdESParameters'
+
+    SignatureParametersOverride:
+      type: object
+      description: |
+        Override specific parameters from a configuration. Only non-null fields will override.
+      properties:
+        signatureLevel:
+          $ref: '#/components/schemas/SignatureLevel'
+        digestAlgorithm:
+          $ref: '#/components/schemas/DigestAlgorithm'
+        signWithExpiredCertificate:
+          type: boolean
+        visualSignatureParameters:
+          $ref: '#/components/schemas/VisualSignatureParameters'
+        reason:
+          type: string
+        location:
+          type: string
+        contactInfo:
+          type: string
+
+    CAdESParameters:
+      type: object
+      description: CAdES (CMS Advanced Electronic Signatures) parameters
+      properties:
+        signatureLevel:
+          $ref: '#/components/schemas/SignatureLevel'
+        signaturePackaging:
+          $ref: '#/components/schemas/SignaturePackaging'
+        digestAlgorithm:
+          $ref: '#/components/schemas/DigestAlgorithm'
+        signWithExpiredCertificate:
+          type: boolean
+          default: false
+        generateTBSWithoutCertificate:
+          type: boolean
+          default: false
+        signingDate:
+          type: string
+          format: date-time
+          description: Signing date (set during digest creation for two-step signing)
+
+    PAdESParameters:
+      type: object
+      description: PAdES (PDF Advanced Electronic Signatures) parameters
+      properties:
+        signatureLevel:
+          $ref: '#/components/schemas/SignatureLevel'
+        signaturePackaging:
+          $ref: '#/components/schemas/SignaturePackaging'
+        digestAlgorithm:
+          $ref: '#/components/schemas/DigestAlgorithm'
+        signWithExpiredCertificate:
+          type: boolean
+          default: false
+        generateTBSWithoutCertificate:
+          type: boolean
+          default: false
+        visualSignatureParameters:
+          $ref: '#/components/schemas/VisualSignatureParameters'
+        signatureFieldId:
+          type: string
+          description: ID of existing signature field to use
+        reason:
+          type: string
+          description: Reason for signing
+          example: "Document approval"
+        location:
+          type: string
+          description: Signing location
+          example: "Amsterdam, NL"
+        contactInfo:
+          type: string
+          description: Signer contact information
+          example: "john@example.com"
+        permission:
+          $ref: '#/components/schemas/PdfPermission'
+        signatureMode:
+          $ref: '#/components/schemas/PdfSignatureMode'
+        signingDate:
+          type: string
+          format: date-time
+          description: Signing date (set during digest creation for two-step signing)
+
+    JAdESParameters:
+      type: object
+      description: JAdES (JSON Advanced Electronic Signatures) parameters
+      properties:
+        signatureLevel:
+          $ref: '#/components/schemas/SignatureLevel'
+        signaturePackaging:
+          $ref: '#/components/schemas/SignaturePackaging'
+        digestAlgorithm:
+          $ref: '#/components/schemas/DigestAlgorithm'
+        signWithExpiredCertificate:
+          type: boolean
+          default: false
+        generateTBSWithoutCertificate:
+          type: boolean
+          default: false
+        jwsSerializationType:
+          $ref: '#/components/schemas/JwsSerializationType'
+        sigDPolicy:
+          type: string
+          description: Signature policy identifier
+        base64UrlEncodedPayload:
+          type: boolean
+          default: true
+        signingDate:
+          type: string
+          format: date-time
+          description: Signing date (set during digest creation for two-step signing)
+
+    XAdESParameters:
+      type: object
+      description: XAdES (XML Advanced Electronic Signatures) parameters
+      properties:
+        signatureLevel:
+          $ref: '#/components/schemas/SignatureLevel'
+        signaturePackaging:
+          $ref: '#/components/schemas/SignaturePackaging'
+        digestAlgorithm:
+          $ref: '#/components/schemas/DigestAlgorithm'
+        signWithExpiredCertificate:
+          type: boolean
+          default: false
+        generateTBSWithoutCertificate:
+          type: boolean
+          default: false
+        xPathLocationString:
+          type: string
+          description: XPath expression for signature placement
+        signedInfoCanonicalizationMethod:
+          $ref: '#/components/schemas/CanonicalizationMethod'
+        signedPropertiesCanonicalizationMethod:
+          $ref: '#/components/schemas/CanonicalizationMethod'
+        signingDate:
+          type: string
+          format: date-time
+          description: Signing date (set during digest creation for two-step signing)
+
+    VisualSignatureParameters:
+      type: object
+      description: Visual signature appearance for PDF documents
+      properties:
+        fieldParameters:
+          $ref: '#/components/schemas/SignatureFieldParameters'
+        imageParameters:
+          $ref: '#/components/schemas/SignatureImageParameters'
+        textParameters:
+          $ref: '#/components/schemas/SignatureTextParameters'
+        rotation:
+          $ref: '#/components/schemas/VisualSignatureRotation'
+        zoom:
+          type: integer
+          default: 100
+          description: Image zoom percentage
+
+    SignatureFieldParameters:
+      type: object
+      description: Signature field position and dimensions
+      properties:
+        fieldId:
+          type: string
+          description: Existing field ID to use
+        page:
+          type: integer
+          default: 1
+          description: Page number (1-based)
+        originX:
+          type: number
+          format: float
+          default: 0
+          description: X coordinate
+        originY:
+          type: number
+          format: float
+          default: 0
+          description: Y coordinate
+        width:
+          type: number
+          format: float
+          default: 200
+          description: Field width
+        height:
+          type: number
+          format: float
+          default: 50
+          description: Field height
+
+    SignatureImageParameters:
+      type: object
+      description: Image for visual signature
+      properties:
+        image:
+          type: string
+          format: byte
+          description: Image data (Base64, PNG/JPEG)
+        dpi:
+          type: integer
+          default: 96
+        alignmentHorizontal:
+          $ref: '#/components/schemas/AlignmentHorizontal'
+        alignmentVertical:
+          $ref: '#/components/schemas/AlignmentVertical'
+        imageScaling:
+          $ref: '#/components/schemas/ImageScaling'
+
+    SignatureTextParameters:
+      type: object
+      description: Text for visual signature
+      properties:
+        text:
+          type: string
+          description: Text to display
+        font:
+          type: string
+          default: "Helvetica"
+        size:
+          type: number
+          format: float
+          default: 10
+        textColor:
+          type: string
+          default: "#000000"
+        backgroundColor:
+          type: string
+        padding:
+          type: number
+          format: float
+          default: 5
+        signerTextPosition:
+          $ref: '#/components/schemas/SignerTextPosition'
+        textWrapping:
+          $ref: '#/components/schemas/TextWrapping'
+
+    TimestampParameters:
+      type: object
+      description: Timestamp Authority configuration
+      required:
+        - tsaUrl
+      properties:
+        tsaUrl:
+          type: string
+          format: uri
+          description: TSA endpoint URL
+          example: "http://timestamp.example.com"
+        tsaPolicyOid:
+          type: string
+          description: Timestamp policy OID
+          example: "1.2.3.4.5"
+        digestAlgorithm:
+          $ref: '#/components/schemas/DigestAlgorithm'
+        includeNonce:
+          type: boolean
+          default: true
+        includeCertificates:
+          type: boolean
+          default: true
+        username:
+          type: string
+          description: TSA username for authentication
+        password:
+          type: string
+          format: password
+          description: TSA password
+          writeOnly: true
+
+    TimestampParametersOverride:
+      type: object
+      description: Override specific timestamp parameters from config. Only non-null fields override.
+      properties:
+        tsaUrl:
+          type: string
+          format: uri
+          description: Override TSA endpoint URL
+        tsaPolicyOid:
+          type: string
+          description: Override timestamp policy OID
+        digestAlgorithm:
+          $ref: '#/components/schemas/DigestAlgorithm'
+        includeNonce:
+          type: boolean
+        includeCertificates:
+          type: boolean
+
+    # ==================== KEY INFO (KMS Reference) ====================
+
+    KeyInfo:
+      type: object
+      description: |
+        Reference to a key managed by the KMS.
+        Provide either `kid` or `alias`, along with the `providerId`.
+        The certificate chain, algorithm, and other key details are looked up from the KMS.
+      required:
+        - providerId
+      properties:
+        kid:
+          type: string
+          description: Key identifier (provide either kid or alias)
+          example: "signing-key-001"
+        alias:
+          type: string
+          description: Key alias in KMS (provide either kid or alias)
+          example: "production-signing"
+        providerId:
+          type: string
+          description: KMS provider ID where the key is stored
+          example: "4895d0cf-2061-41cb-8fd4-13af5724569e"
+
+    CertificateInfo:
+      type: object
+      description: Certificate information
+      required:
+        - subjectDN
+        - issuerDN
+      properties:
+        subjectDN:
+          type: string
+          example: "CN=John Doe,O=Acme Corp,C=NL"
+        issuerDN:
+          type: string
+          example: "CN=Acme CA,O=Acme Corp,C=NL"
+        serialNumber:
+          type: string
+        notBefore:
+          type: string
+          format: date-time
+        notAfter:
+          type: string
+          format: date-time
+        fingerprint:
+          type: string
+          description: SHA-256 fingerprint
+
+    TimestampInfo:
+      type: object
+      description: Timestamp information
+      required:
+        - timestampTime
+      properties:
+        timestampTime:
+          type: string
+          format: date-time
+        timestampAuthority:
+          type: string
+        policyOid:
+          type: string
+        serialNumber:
+          type: string
+
+    # ==================== ENUMS ====================
+
+    SignatureLevel:
+      type: string
+      description: eIDAS signature level
+      enum:
+        # CAdES levels
+        - CMS_NOT_ETSI
+        - CAdES_BES
+        - CAdES_EPES
+        - CAdES_T
+        - CAdES_LT
+        - CAdES_LTA
+        - CAdES_C
+        - CAdES_X
+        - CAdES_XL
+        - CAdES_A
+        - CAdES_BASELINE_B
+        - CAdES_BASELINE_T
+        - CAdES_BASELINE_LT
+        - CAdES_BASELINE_LTA
+        # PAdES levels
+        - PDF_NOT_ETSI
+        - PKCS7_B
+        - PKCS7_T
+        - PKCS7_LT
+        - PKCS7_LTA
+        - PAdES_BASELINE_B
+        - PAdES_BASELINE_T
+        - PAdES_BASELINE_LT
+        - PAdES_BASELINE_LTA
+        # JAdES levels
+        - JSON_NOT_ETSI
+        - JAdES_BASELINE_B
+        - JAdES_BASELINE_T
+        - JAdES_BASELINE_LT
+        - JAdES_BASELINE_LTA
+        # XAdES levels
+        - XML_NOT_ETSI
+        - XAdES_BES
+        - XAdES_EPES
+        - XAdES_T
+        - XAdES_C
+        - XAdES_X
+        - XAdES_XL
+        - XAdES_A
+        - XAdES_BASELINE_B
+        - XAdES_BASELINE_T
+        - XAdES_BASELINE_LT
+        - XAdES_BASELINE_LTA
+      example: PAdES_BASELINE_LT
+
+    SignatureForm:
+      type: string
+      description: Signature format type
+      enum:
+        - CAdES
+        - PAdES
+        - JAdES
+        - XAdES
+        - PKCS7
+      example: PAdES
+
+    SignaturePackaging:
+      type: string
+      description: How the signature relates to the document
+      enum:
+        - ENVELOPED
+        - ENVELOPING
+        - DETACHED
+        - INTERNALLY_DETACHED
+      example: ENVELOPED
+
+    DigestAlgorithm:
+      type: string
+      description: Hash algorithm
+      enum:
+        - SHA256
+        - SHA384
+        - SHA512
+        - SHA3_256
+        - SHA3_384
+        - SHA3_512
+      default: SHA256
+
+    SignatureAlgorithm:
+      type: string
+      description: Signature algorithm
+      enum:
+        - RSA_SHA256
+        - RSA_SHA384
+        - RSA_SHA512
+        - RSA_SHA3_256
+        - RSA_SHA3_512
+        - RSA_SSA_PSS_SHA256_MGF1
+        - RSA_SSA_PSS_SHA384_MGF1
+        - RSA_SSA_PSS_SHA512_MGF1
+        - ECDSA_SHA256
+        - ECDSA_SHA384
+        - ECDSA_SHA512
+        - ED25519
+        - ED448
+      example: ECDSA_SHA256
+
+    PdfPermission:
+      type: string
+      description: PDF modification permissions after signing
+      enum:
+        - NO_CHANGES_PERMITTED
+        - MINIMAL_CHANGES_PERMITTED
+        - CHANGES_PERMITTED
+      default: NO_CHANGES_PERMITTED
+
+    PdfSignatureMode:
+      type: string
+      description: PDF signature mode
+      enum:
+        - CERTIFICATION
+        - APPROVAL
+      default: APPROVAL
+
+    JwsSerializationType:
+      type: string
+      description: JWS serialization format
+      enum:
+        - COMPACT_SERIALIZATION
+        - JSON_SERIALIZATION
+        - FLATTENED_JSON_SERIALIZATION
+      default: COMPACT_SERIALIZATION
+
+    CanonicalizationMethod:
+      type: string
+      description: XML canonicalization method
+      enum:
+        - INCLUSIVE
+        - INCLUSIVE_WITH_COMMENTS
+        - EXCLUSIVE
+        - EXCLUSIVE_WITH_COMMENTS
+        - INCLUSIVE_11
+        - INCLUSIVE_11_WITH_COMMENTS
+      default: EXCLUSIVE
+
+    VisualSignatureRotation:
+      type: string
+      enum:
+        - NONE
+        - AUTOMATIC
+        - ROTATE_90
+        - ROTATE_180
+        - ROTATE_270
+      default: NONE
+
+    AlignmentHorizontal:
+      type: string
+      enum:
+        - NONE
+        - LEFT
+        - CENTER
+        - RIGHT
+      default: NONE
+
+    AlignmentVertical:
+      type: string
+      enum:
+        - NONE
+        - TOP
+        - MIDDLE
+        - BOTTOM
+      default: NONE
+
+    ImageScaling:
+      type: string
+      enum:
+        - STRETCH
+        - ZOOM_AND_CENTER
+        - CENTER
+      default: ZOOM_AND_CENTER
+
+    SignerTextPosition:
+      type: string
+      enum:
+        - TOP
+        - BOTTOM
+        - LEFT
+        - RIGHT
+      default: TOP
+
+    TextWrapping:
+      type: string
+      enum:
+        - FILL_BOX
+        - FILL_BOX_AND_LINEBREAK
+        - FONT_BASED
+      default: FONT_BASED
+
+    ValidationIndication:
+      type: string
+      description: Main validation indication
+      enum:
+        - TOTAL_PASSED
+        - TOTAL_FAILED
+        - INDETERMINATE
+      example: TOTAL_PASSED

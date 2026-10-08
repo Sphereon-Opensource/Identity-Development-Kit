@@ -1,0 +1,7 @@
+# Normalize all text to LF in the repository for byte-stable, cross-platform specs.
+* text=auto eol=lf
+*.yml   text eol=lf
+*.yaml  text eol=lf
+*.json  text eol=lf
+*.js    text eol=lf
+*.md    text eol=lf

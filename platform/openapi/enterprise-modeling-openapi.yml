@@ -1,0 +1,1767 @@
+openapi: 3.0.4
+info:
+  title: Enterprise Modeling API
+  version: 0.2.0
+  description: Guided and expert semantic authoring over one governed RDF and OCA model.
+servers:
+  - url: https://api.example.com/api/modeling/v1
+  - url: http://localhost:8080/api/modeling/v1
+security:
+  - bearer: []
+tags:
+  - name: EnterpriseModeling
+paths:
+  /changes:preview:
+    post:
+      tags: [EnterpriseModeling]
+      operationId: previewSemanticChange
+      x-command-id: modeling.change.preview
+      summary: Normalize and validate a guided or expert semantic change
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PreviewSemanticChangeRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/SemanticChangePreviewResponse' }
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+  /changes:apply:
+    post:
+      tags: [EnterpriseModeling]
+      operationId: applySemanticChange
+      x-command-id: modeling.change.apply
+      summary: Apply an approved preview to a new draft revision
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ApplySemanticChangeRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/SemanticDraftResponse' }
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+  /models/{modelId}/revisions/{revision}/guided:
+    get:
+      tags: [EnterpriseModeling]
+      operationId: getGuidedSemanticProjection
+      x-command-id: modeling.projection.guided
+      summary: Read a business-language projection without RDF or OCA syntax
+      parameters:
+        - $ref: '#/components/parameters/ModelId'
+        - $ref: '#/components/parameters/SemanticRevision'
+      responses:
+        '200':
+          description: Guided projection.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GuidedSemanticProjection' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '404': { $ref: './common-components.yml#/components/responses/NotFound' }
+  /models/{modelId}/revisions/{revision}/expert:
+    get:
+      tags: [EnterpriseModeling]
+      operationId: getExpertSemanticProjection
+      x-command-id: modeling.projection.expert
+      summary: Read RDF, Turtle, OCA, mappings, namespaces, and installed constraints
+      parameters:
+        - $ref: '#/components/parameters/ModelId'
+        - $ref: '#/components/parameters/SemanticRevision'
+      responses:
+        '200':
+          description: Expert projection.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ExpertSemanticProjection' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '404': { $ref: './common-components.yml#/components/responses/NotFound' }
+  /capabilities:
+    get:
+      tags: [EnterpriseModeling]
+      operationId: getSemanticCapabilities
+      x-command-id: modeling.capability.get
+      summary: Report only installed semantic interchange processors
+      responses:
+        '200':
+          description: Installed capabilities and resource limits.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SemanticCapabilityCatalog' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+  /interchange:validate:
+    post:
+      tags: [EnterpriseModeling]
+      operationId: validateSemanticInterchange
+      x-command-id: modeling.interchange.validate
+      summary: Validate bounded semantic interchange input
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ValidateSemanticInterchangeRequest' }
+      responses:
+        '200':
+          description: Plain-language and technical diagnostics.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SemanticValidationResult' }
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '413': { description: Interchange input exceeds an installed resource limit. }
+  /imports:preview:
+    post:
+      tags: [EnterpriseModeling]
+      operationId: previewSemanticImport
+      x-command-id: modeling.import.preview
+      summary: Normalize an import into the shared typed change-set model
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PreviewSemanticImportRequest' }
+      responses:
+        '200':
+          description: Import preview, conflicts, losses, and parser provenance.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SemanticImportPreview' }
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+  /imports:apply:
+    post:
+      tags: [EnterpriseModeling]
+      operationId: applySemanticImport
+      x-command-id: modeling.import.apply
+      summary: Apply an approved import preview to a new draft revision
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ApplySemanticImportRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/SemanticDraftResponse' }
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+  /releases:export:
+    post:
+      tags: [EnterpriseModeling]
+      operationId: exportSemanticRelease
+      x-command-id: modeling.release.export
+      summary: Export a pinned RDF and OCA semantic release
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ExportSemanticReleaseRequest' }
+      responses:
+        '200':
+          description: Release manifest with RDF hashes, OCA SAIDs, mappings, and projector revisions.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SemanticExportReceipt' }
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '404': { $ref: './common-components.yml#/components/responses/NotFound' }
+  /models/{modelId}/policy-bindings:preview:
+    post:
+      tags: [EnterpriseModeling]
+      summary: Preview policy binding
+      operationId: previewPolicyBinding
+      x-command-id: modeling.policy-binding.preview
+      parameters:
+        - { $ref: '#/components/parameters/ModelId' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/IfMatch' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PolicyBinding' }
+      responses:
+        '200': { $ref: '#/components/responses/SemanticChangePreviewResponse' }
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+  /sources:import:
+    post:
+      tags: [EnterpriseModeling]
+      operationId: importLegalSource
+      x-command-id: modeling.source-snapshot.import
+      summary: Import Legal Source
+      parameters:
+        - { $ref: '#/components/parameters/ModelIdQuery' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/IfMatch' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ImportLegalSourceRequest' }
+      responses:
+        '200':
+          description: Successful importLegalSource result.
+          content:
+            application/json:
+              schema: { $ref: './enterprise-contract-components.yml#/components/schemas/LegalSourceSnapshot' }
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '404': { $ref: './common-components.yml#/components/responses/NotFound' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+  /sources/{sourceId}/snapshots/{snapshotId}:
+    get:
+      tags: [EnterpriseModeling]
+      operationId: readLegalSource
+      x-command-id: modeling.source-snapshot.read
+      summary: Read Legal Source
+      parameters:
+        - { $ref: '#/components/parameters/SourceId' }
+        - { $ref: '#/components/parameters/SnapshotId' }
+        - { $ref: '#/components/parameters/ModelIdQuery' }
+      responses:
+        '200':
+          description: Successful readLegalSource result.
+          content:
+            application/json:
+              schema: { $ref: './enterprise-contract-components.yml#/components/schemas/LegalSourceSnapshot' }
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '404': { $ref: './common-components.yml#/components/responses/NotFound' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+  /sources/{sourceId}/snapshots/{snapshotId}/clauses:
+    get:
+      tags: [EnterpriseModeling]
+      operationId: listLegalClauses
+      x-command-id: modeling.source-clause.list
+      summary: List Legal Clauses
+      parameters:
+        - { $ref: '#/components/parameters/SourceId' }
+        - { $ref: '#/components/parameters/SnapshotId' }
+        - { $ref: '#/components/parameters/ModelIdQuery' }
+        - { $ref: './common-components.yml#/components/parameters/Limit' }
+        - { $ref: './common-components.yml#/components/parameters/Offset' }
+        - { $ref: './common-components.yml#/components/parameters/Sort' }
+        - { $ref: './common-components.yml#/components/parameters/SortDirection' }
+      responses:
+        '200':
+          description: Successful listLegalClauses result.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LegalClausePage' }
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '404': { $ref: './common-components.yml#/components/responses/NotFound' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+  /interpretations:
+    post:
+      tags: [EnterpriseModeling]
+      operationId: createInterpretation
+      x-command-id: modeling.interpretation.create
+      summary: Create Interpretation
+      parameters:
+        - { $ref: '#/components/parameters/ModelIdQuery' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/IfMatch' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/InterpretationRequest' }
+      responses:
+        '200':
+          description: Successful createInterpretation result.
+          content:
+            application/json:
+              schema: { $ref: './enterprise-contract-components.yml#/components/schemas/InterpretationRecord' }
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '404': { $ref: './common-components.yml#/components/responses/NotFound' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+    get:
+      tags: [EnterpriseModeling]
+      operationId: listInterpretations
+      x-command-id: modeling.interpretation.list
+      summary: List Interpretations
+      parameters:
+        - { $ref: '#/components/parameters/ModelIdQuery' }
+        - { $ref: './common-components.yml#/components/parameters/Limit' }
+        - { $ref: './common-components.yml#/components/parameters/Offset' }
+        - { $ref: './common-components.yml#/components/parameters/Sort' }
+        - { $ref: './common-components.yml#/components/parameters/SortDirection' }
+      responses:
+        '200':
+          description: Successful listInterpretations result.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InterpretationPage' }
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '404': { $ref: './common-components.yml#/components/responses/NotFound' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+  /interpretations/{interpretationId}:revise:
+    post:
+      tags: [EnterpriseModeling]
+      operationId: reviseInterpretation
+      x-command-id: modeling.interpretation.revise
+      summary: Revise Interpretation
+      parameters:
+        - { $ref: '#/components/parameters/InterpretationId' }
+        - { $ref: '#/components/parameters/ModelIdQuery' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/IfMatch' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/InterpretationRequest' }
+      responses:
+        '200':
+          description: Successful reviseInterpretation result.
+          content:
+            application/json:
+              schema: { $ref: './enterprise-contract-components.yml#/components/schemas/InterpretationRecord' }
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '404': { $ref: './common-components.yml#/components/responses/NotFound' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+  /interpretations/{interpretationId}:submit:
+    post:
+      tags: [EnterpriseModeling]
+      operationId: submitInterpretation
+      x-command-id: modeling.interpretation.submit
+      summary: Submit Interpretation
+      parameters:
+        - { $ref: '#/components/parameters/InterpretationId' }
+        - { $ref: '#/components/parameters/ModelIdQuery' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/IfMatch' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/InterpretationReviewRequest' }
+      responses:
+        '200':
+          description: Successful submitInterpretation result.
+          content:
+            application/json:
+              schema: { $ref: './enterprise-contract-components.yml#/components/schemas/InterpretationRecord' }
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '404': { $ref: './common-components.yml#/components/responses/NotFound' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+  /interpretations/{interpretationId}:approve:
+    post:
+      tags: [EnterpriseModeling]
+      operationId: approveInterpretation
+      x-command-id: modeling.interpretation.approve
+      summary: Approve Interpretation
+      parameters:
+        - { $ref: '#/components/parameters/InterpretationId' }
+        - { $ref: '#/components/parameters/ModelIdQuery' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/IfMatch' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/InterpretationReviewRequest' }
+      responses:
+        '200':
+          description: Successful approveInterpretation result.
+          content:
+            application/json:
+              schema: { $ref: './enterprise-contract-components.yml#/components/schemas/InterpretationRecord' }
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '404': { $ref: './common-components.yml#/components/responses/NotFound' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+  /interpretations/{interpretationId}:reject:
+    post:
+      tags: [EnterpriseModeling]
+      operationId: rejectInterpretation
+      x-command-id: modeling.interpretation.reject
+      summary: Reject Interpretation
+      parameters:
+        - { $ref: '#/components/parameters/InterpretationId' }
+        - { $ref: '#/components/parameters/ModelIdQuery' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/IfMatch' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/InterpretationReviewRequest' }
+      responses:
+        '200':
+          description: Successful rejectInterpretation result.
+          content:
+            application/json:
+              schema: { $ref: './enterprise-contract-components.yml#/components/schemas/InterpretationRecord' }
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '404': { $ref: './common-components.yml#/components/responses/NotFound' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+  /interpretations/{interpretationId}:supersede:
+    post:
+      tags: [EnterpriseModeling]
+      operationId: supersedeInterpretation
+      x-command-id: modeling.interpretation.supersede
+      summary: Supersede Interpretation
+      parameters:
+        - { $ref: '#/components/parameters/InterpretationId' }
+        - { $ref: '#/components/parameters/ModelIdQuery' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/IfMatch' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SupersedeResourceRequest' }
+      responses:
+        '200':
+          description: Successful supersedeInterpretation result.
+          content:
+            application/json:
+              schema: { $ref: './enterprise-contract-components.yml#/components/schemas/InterpretationRecord' }
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '404': { $ref: './common-components.yml#/components/responses/NotFound' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+  /interpretations/{interpretationId}:
+    get:
+      tags: [EnterpriseModeling]
+      operationId: readInterpretation
+      x-command-id: modeling.interpretation.read
+      summary: Read Interpretation
+      parameters:
+        - { $ref: '#/components/parameters/InterpretationId' }
+        - { $ref: '#/components/parameters/ModelIdQuery' }
+        - { $ref: '#/components/parameters/VersionQuery' }
+      responses:
+        '200':
+          description: Successful readInterpretation result.
+          content:
+            application/json:
+              schema: { $ref: './enterprise-contract-components.yml#/components/schemas/InterpretationRecord' }
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '404': { $ref: './common-components.yml#/components/responses/NotFound' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+  /requirements:
+    post:
+      tags: [EnterpriseModeling]
+      operationId: createRequirement
+      x-command-id: modeling.requirement.create
+      summary: Create Requirement
+      parameters:
+        - { $ref: '#/components/parameters/ModelIdQuery' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/IfMatch' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RequirementRequest' }
+      responses:
+        '200':
+          description: Successful createRequirement result.
+          content:
+            application/json:
+              schema: { $ref: './enterprise-contract-components.yml#/components/schemas/RequirementDefinition' }
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '404': { $ref: './common-components.yml#/components/responses/NotFound' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+    get:
+      tags: [EnterpriseModeling]
+      operationId: listRequirements
+      x-command-id: modeling.requirement.list
+      summary: List Requirements
+      parameters:
+        - { $ref: '#/components/parameters/ModelIdQuery' }
+        - { $ref: './common-components.yml#/components/parameters/Limit' }
+        - { $ref: './common-components.yml#/components/parameters/Offset' }
+        - { $ref: './common-components.yml#/components/parameters/Sort' }
+        - { $ref: './common-components.yml#/components/parameters/SortDirection' }
+      responses:
+        '200':
+          description: Successful listRequirements result.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RequirementPage' }
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '404': { $ref: './common-components.yml#/components/responses/NotFound' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+  /requirements/{requirementId}:revise:
+    post:
+      tags: [EnterpriseModeling]
+      operationId: reviseRequirement
+      x-command-id: modeling.requirement.revise
+      summary: Revise Requirement
+      parameters:
+        - { $ref: '#/components/parameters/RequirementId' }
+        - { $ref: '#/components/parameters/ModelIdQuery' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/IfMatch' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RequirementRequest' }
+      responses:
+        '200':
+          description: Successful reviseRequirement result.
+          content:
+            application/json:
+              schema: { $ref: './enterprise-contract-components.yml#/components/schemas/RequirementDefinition' }
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '404': { $ref: './common-components.yml#/components/responses/NotFound' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+  /requirements/{requirementId}:approve:
+    post:
+      tags: [EnterpriseModeling]
+      operationId: approveRequirement
+      x-command-id: modeling.requirement.approve
+      summary: Approve Requirement
+      parameters:
+        - { $ref: '#/components/parameters/RequirementId' }
+        - { $ref: '#/components/parameters/ModelIdQuery' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/IfMatch' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RequirementReviewRequest' }
+      responses:
+        '200':
+          description: Successful approveRequirement result.
+          content:
+            application/json:
+              schema: { $ref: './enterprise-contract-components.yml#/components/schemas/RequirementDefinition' }
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '404': { $ref: './common-components.yml#/components/responses/NotFound' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+  /requirements/{requirementId}:publish:
+    post:
+      tags: [EnterpriseModeling]
+      operationId: publishRequirement
+      x-command-id: modeling.requirement.publish
+      summary: Publish Requirement
+      parameters:
+        - { $ref: '#/components/parameters/RequirementId' }
+        - { $ref: '#/components/parameters/ModelIdQuery' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/IfMatch' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PublishResourceRequest' }
+      responses:
+        '200':
+          description: Successful publishRequirement result.
+          content:
+            application/json:
+              schema: { $ref: './enterprise-contract-components.yml#/components/schemas/RequirementDefinition' }
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '404': { $ref: './common-components.yml#/components/responses/NotFound' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+  /requirements/{requirementId}:supersede:
+    post:
+      tags: [EnterpriseModeling]
+      operationId: supersedeRequirement
+      x-command-id: modeling.requirement.supersede
+      summary: Supersede Requirement
+      parameters:
+        - { $ref: '#/components/parameters/RequirementId' }
+        - { $ref: '#/components/parameters/ModelIdQuery' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/IfMatch' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SupersedeResourceRequest' }
+      responses:
+        '200':
+          description: Successful supersedeRequirement result.
+          content:
+            application/json:
+              schema: { $ref: './enterprise-contract-components.yml#/components/schemas/RequirementDefinition' }
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '404': { $ref: './common-components.yml#/components/responses/NotFound' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+  /requirements/{requirementId}:
+    get:
+      tags: [EnterpriseModeling]
+      operationId: readRequirement
+      x-command-id: modeling.requirement.read
+      summary: Read Requirement
+      parameters:
+        - { $ref: '#/components/parameters/RequirementId' }
+        - { $ref: '#/components/parameters/ModelIdQuery' }
+        - { $ref: '#/components/parameters/VersionQuery' }
+      responses:
+        '200':
+          description: Successful readRequirement result.
+          content:
+            application/json:
+              schema: { $ref: './enterprise-contract-components.yml#/components/schemas/RequirementDefinition' }
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '404': { $ref: './common-components.yml#/components/responses/NotFound' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+  /evidence-requirements:
+    post:
+      tags: [EnterpriseModeling]
+      operationId: createEvidenceRequirement
+      x-command-id: modeling.evidence-requirement.create
+      summary: Create Evidence Requirement
+      parameters:
+        - { $ref: '#/components/parameters/ModelIdQuery' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/IfMatch' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EvidenceRequirementRequest' }
+      responses:
+        '200':
+          description: Successful createEvidenceRequirement result.
+          content:
+            application/json:
+              schema: { $ref: './enterprise-contract-components.yml#/components/schemas/EvidenceRequirement' }
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '404': { $ref: './common-components.yml#/components/responses/NotFound' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+    get:
+      tags: [EnterpriseModeling]
+      operationId: listEvidenceRequirements
+      x-command-id: modeling.evidence-requirement.list
+      summary: List Evidence Requirements
+      parameters:
+        - { $ref: '#/components/parameters/ModelIdQuery' }
+        - { $ref: './common-components.yml#/components/parameters/Limit' }
+        - { $ref: './common-components.yml#/components/parameters/Offset' }
+        - { $ref: './common-components.yml#/components/parameters/Sort' }
+        - { $ref: './common-components.yml#/components/parameters/SortDirection' }
+      responses:
+        '200':
+          description: Successful listEvidenceRequirements result.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EvidenceRequirementPage' }
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '404': { $ref: './common-components.yml#/components/responses/NotFound' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+  /evidence-requirements/{requirementId}:revise:
+    post:
+      tags: [EnterpriseModeling]
+      operationId: reviseEvidenceRequirement
+      x-command-id: modeling.evidence-requirement.revise
+      summary: Revise Evidence Requirement
+      parameters:
+        - { $ref: '#/components/parameters/RequirementId' }
+        - { $ref: '#/components/parameters/ModelIdQuery' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/IfMatch' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EvidenceRequirementRequest' }
+      responses:
+        '200':
+          description: Successful reviseEvidenceRequirement result.
+          content:
+            application/json:
+              schema: { $ref: './enterprise-contract-components.yml#/components/schemas/EvidenceRequirement' }
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '404': { $ref: './common-components.yml#/components/responses/NotFound' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+  /evidence-requirements/{requirementId}:publish:
+    post:
+      tags: [EnterpriseModeling]
+      operationId: publishEvidenceRequirement
+      x-command-id: modeling.evidence-requirement.publish
+      summary: Publish Evidence Requirement
+      parameters:
+        - { $ref: '#/components/parameters/RequirementId' }
+        - { $ref: '#/components/parameters/ModelIdQuery' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/IfMatch' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PublishResourceRequest' }
+      responses:
+        '200':
+          description: Successful publishEvidenceRequirement result.
+          content:
+            application/json:
+              schema: { $ref: './enterprise-contract-components.yml#/components/schemas/EvidenceRequirement' }
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '404': { $ref: './common-components.yml#/components/responses/NotFound' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+  /evidence-requirements/{requirementId}:
+    get:
+      tags: [EnterpriseModeling]
+      operationId: readEvidenceRequirement
+      x-command-id: modeling.evidence-requirement.read
+      summary: Read Evidence Requirement
+      parameters:
+        - { $ref: '#/components/parameters/RequirementId' }
+        - { $ref: '#/components/parameters/ModelIdQuery' }
+        - { $ref: '#/components/parameters/VersionQuery' }
+      responses:
+        '200':
+          description: Successful readEvidenceRequirement result.
+          content:
+            application/json:
+              schema: { $ref: './enterprise-contract-components.yml#/components/schemas/EvidenceRequirement' }
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '404': { $ref: './common-components.yml#/components/responses/NotFound' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+  /policy-bindings:publish:
+    post:
+      tags: [EnterpriseModeling]
+      operationId: publishPolicyBinding
+      x-command-id: modeling.policy-binding.publish
+      summary: Publish Policy Binding
+      parameters:
+        - { $ref: '#/components/parameters/ModelIdQuery' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/IfMatch' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PolicyBindingRequest' }
+      responses:
+        '200':
+          description: Successful publishPolicyBinding result.
+          content:
+            application/json:
+              schema: { $ref: './enterprise-contract-components.yml#/components/schemas/PolicyBinding' }
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '404': { $ref: './common-components.yml#/components/responses/NotFound' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+  /policy-bindings/{bindingId}:
+    get:
+      tags: [EnterpriseModeling]
+      operationId: readPolicyBinding
+      x-command-id: modeling.policy-binding.read
+      summary: Read Policy Binding
+      parameters:
+        - { $ref: '#/components/parameters/BindingId' }
+        - { $ref: '#/components/parameters/ModelIdQuery' }
+        - { $ref: '#/components/parameters/RequiredVersionQuery' }
+      responses:
+        '200':
+          description: Successful readPolicyBinding result.
+          content:
+            application/json:
+              schema: { $ref: './enterprise-contract-components.yml#/components/schemas/PolicyBinding' }
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '404': { $ref: './common-components.yml#/components/responses/NotFound' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+  /resources/{resourceId}/lineage:
+    get:
+      tags: [EnterpriseModeling]
+      operationId: readResourceLineage
+      x-command-id: modeling.resource-lineage.read
+      summary: Read Resource Lineage
+      parameters:
+        - { $ref: '#/components/parameters/ResourceId' }
+        - { $ref: '#/components/parameters/ModelIdQuery' }
+        - { $ref: '#/components/parameters/VersionQuery' }
+      responses:
+        '200':
+          description: Successful readResourceLineage result.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ResourceLineage' }
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '404': { $ref: './common-components.yml#/components/responses/NotFound' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+  /templates:install:
+    post:
+      tags: [EnterpriseModeling]
+      operationId: installCaseTemplate
+      x-command-id: modeling.template.install
+      summary: Install Case Template
+      parameters:
+        - { $ref: '#/components/parameters/ModelIdQuery' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/IfMatch' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/InstallCaseTemplateRequest' }
+      responses:
+        '200':
+          description: Successful installCaseTemplate result.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TemplateInstallation' }
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '404': { $ref: './common-components.yml#/components/responses/NotFound' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+  /template-installations/{installationId}:
+    get:
+      tags: [EnterpriseModeling]
+      operationId: readTemplateInstallation
+      x-command-id: modeling.template-installation.read
+      summary: Read Template Installation
+      parameters:
+        - { $ref: '#/components/parameters/InstallationId' }
+        - { $ref: '#/components/parameters/ModelIdQuery' }
+      responses:
+        '200':
+          description: Successful readTemplateInstallation result.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TemplateInstallation' }
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '404': { $ref: './common-components.yml#/components/responses/NotFound' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+
+components:
+  securitySchemes:
+    bearer: { $ref: './common-components.yml#/components/securitySchemes/bearer' }
+  parameters:
+    ModelIdQuery:
+      name: modelId
+      in: query
+      required: true
+      description: Governed semantic model identifier that owns the journey resource.
+      schema: { type: string, minLength: 1 }
+    SourceId:
+      name: sourceId
+      in: path
+      required: true
+      schema: { type: string, minLength: 1 }
+    SnapshotId:
+      name: snapshotId
+      in: path
+      required: true
+      schema: { type: string, minLength: 1 }
+    InterpretationId:
+      name: interpretationId
+      in: path
+      required: true
+      schema: { type: string, minLength: 1 }
+    RequirementId:
+      name: requirementId
+      in: path
+      required: true
+      schema: { type: string, minLength: 1 }
+    BindingId:
+      name: bindingId
+      in: path
+      required: true
+      schema: { type: string, minLength: 1 }
+    ResourceId:
+      name: resourceId
+      in: path
+      required: true
+      schema: { type: string, minLength: 1 }
+    InstallationId:
+      name: installationId
+      in: path
+      required: true
+      schema: { type: string, minLength: 1 }
+    VersionQuery:
+      name: version
+      in: query
+      required: false
+      schema: { type: string, pattern: '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$' }
+    RequiredVersionQuery:
+      name: version
+      in: query
+      required: true
+      schema: { type: string, pattern: '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$' }
+    ModelId:
+      name: modelId
+      in: path
+      required: true
+      schema: { type: string, minLength: 1 }
+    SemanticRevision:
+      name: revision
+      in: path
+      required: true
+      schema: { type: integer, format: int64, minimum: 1 }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema: { type: string, minLength: 1, maxLength: 255 }
+    IfMatch:
+      name: If-Match
+      in: header
+      required: true
+      description: Expected ordinal semantic revision encoded as a strong entity tag.
+      schema: { type: string, pattern: '^"[0-9]+"$' }
+  responses:
+    SemanticChangePreviewResponse:
+      description: Reviewable normalized change preview.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/SemanticChangePreview' }
+    SemanticDraftResponse:
+      description: New draft semantic revision.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/SemanticModelDraftRevision' }
+  schemas:
+    ImportLegalSourceRequest:
+      type: object
+      required: [snapshot]
+      properties:
+        snapshot: { $ref: './enterprise-contract-components.yml#/components/schemas/LegalSourceSnapshot' }
+        clauses:
+          type: array
+          items: { $ref: './enterprise-contract-components.yml#/components/schemas/LegalClause' }
+    InterpretationRequest:
+      type: object
+      required: [record]
+      properties:
+        record: { $ref: './enterprise-contract-components.yml#/components/schemas/InterpretationRecord' }
+    InterpretationReviewRequest:
+      type: object
+      required: [version, authorityRef]
+      properties:
+        version: { $ref: '#/components/schemas/PackageVersion' }
+        authorityRef: { $ref: './enterprise-contract-components.yml#/components/schemas/BusinessObjectRef' }
+        reason: { type: string }
+    SupersedeResourceRequest:
+      type: object
+      required: [replacement]
+      properties:
+        replacement: { $ref: '#/components/schemas/ArtifactRef' }
+        sourceVersion: { $ref: '#/components/schemas/PackageVersion', description: 'Exact predecessor revision. Omission is accepted only when the predecessor is unambiguous.' }
+    RequirementRequest:
+      type: object
+      required: [definition]
+      properties:
+        definition: { $ref: './enterprise-contract-components.yml#/components/schemas/RequirementDefinition' }
+    RequirementReviewRequest:
+      type: object
+      required: [version, authorityRef]
+      properties:
+        version: { $ref: '#/components/schemas/PackageVersion' }
+        authorityRef: { $ref: './enterprise-contract-components.yml#/components/schemas/BusinessObjectRef' }
+    PublishResourceRequest:
+      type: object
+      required: [version]
+      properties:
+        version: { $ref: '#/components/schemas/PackageVersion' }
+    EvidenceRequirementRequest:
+      type: object
+      required: [requirement]
+      properties:
+        requirement: { $ref: './enterprise-contract-components.yml#/components/schemas/EvidenceRequirement' }
+    PolicyBindingRequest:
+      type: object
+      required: [binding]
+      properties:
+        binding: { $ref: './enterprise-contract-components.yml#/components/schemas/PolicyBinding' }
+    LegalClausePage:
+      type: object
+      required: [items, pagination]
+      properties:
+        items: { type: array, items: { $ref: './enterprise-contract-components.yml#/components/schemas/LegalClause' } }
+        pagination: { $ref: './common-components.yml#/components/schemas/PageMeta' }
+    InterpretationPage:
+      type: object
+      required: [items, pagination]
+      properties:
+        items: { type: array, items: { $ref: './enterprise-contract-components.yml#/components/schemas/InterpretationRecord' } }
+        pagination: { $ref: './common-components.yml#/components/schemas/PageMeta' }
+    RequirementPage:
+      type: object
+      required: [items, pagination]
+      properties:
+        items: { type: array, items: { $ref: './enterprise-contract-components.yml#/components/schemas/RequirementDefinition' } }
+        pagination: { $ref: './common-components.yml#/components/schemas/PageMeta' }
+    EvidenceRequirementPage:
+      type: object
+      required: [items, pagination]
+      properties:
+        items: { type: array, items: { $ref: './enterprise-contract-components.yml#/components/schemas/EvidenceRequirement' } }
+        pagination: { $ref: './common-components.yml#/components/schemas/PageMeta' }
+    ResourceLineage:
+      type: object
+      required: [resourceRef, contentHash]
+      properties:
+        resourceRef: { $ref: '#/components/schemas/ArtifactRef' }
+        sourceRefs: { type: array, items: { $ref: '#/components/schemas/ArtifactRef' } }
+        interpretationRefs: { type: array, items: { $ref: '#/components/schemas/ArtifactRef' } }
+        approvalRefs: { type: array, items: { $ref: '#/components/schemas/ArtifactRef' } }
+        semanticRefs: { type: array, items: { $ref: '#/components/schemas/SemanticResourceRef' } }
+        policyRefs: { type: array, items: { $ref: '#/components/schemas/ArtifactRef' } }
+        contentHash: { $ref: './enterprise-contract-components.yml#/components/schemas/ContentHash' }
+    InstallCaseTemplateRequest:
+      type: object
+      required: [template, semanticRef]
+      properties:
+        template: { $ref: '#/components/schemas/GovernedCaseTemplate' }
+        semanticRef: { $ref: '#/components/schemas/SemanticResourceRef' }
+        workflowRef: { $ref: '#/components/schemas/WorkflowDefinitionRef' }
+        sourceRouteRefs: { type: array, items: { $ref: '#/components/schemas/ArtifactRef' } }
+        policyRefs: { type: array, items: { $ref: '#/components/schemas/ArtifactRef' } }
+        replayManifestRef: { $ref: '#/components/schemas/ArtifactRef' }
+    TemplateInstallation:
+      allOf:
+        - { $ref: '#/components/schemas/InstallCaseTemplateRequest' }
+        - type: object
+          required: [installationId, tenantId, modelId, contentHash, installedAt]
+          properties:
+            installationId: { type: string, minLength: 1 }
+            tenantId: { type: string, minLength: 1 }
+            modelId: { type: string, minLength: 1 }
+            contentHash: { $ref: './enterprise-contract-components.yml#/components/schemas/ContentHash' }
+            installedAt: { type: string, format: date-time }
+    GovernedCaseTemplate:
+      type: object
+      required: [templateId, version, title, stages, transitions, actions]
+      properties:
+        templateId: { $ref: './enterprise-contract-components.yml#/components/schemas/GovernedTypeId' }
+        version: { $ref: '#/components/schemas/PackageVersion' }
+        title: { type: string, minLength: 1 }
+        stages: { type: array, minItems: 1, items: { $ref: '#/components/schemas/GovernedStageDefinition' } }
+        transitions: { type: array, items: { $ref: '#/components/schemas/GovernedTransitionDefinition' } }
+        actions: { type: array, items: { $ref: '#/components/schemas/GovernedActionDefinition' } }
+        gates: { type: array, items: { $ref: '#/components/schemas/GovernedGateDefinition' } }
+        reasons: { type: array, items: { type: object, additionalProperties: true } }
+        semanticReleaseRef: { $ref: '#/components/schemas/SemanticResourceRef' }
+        lifecycleDefinitionRef: { $ref: '#/components/schemas/WorkflowDefinitionRef' }
+        evidenceDispositions: { type: array, items: { type: object, additionalProperties: true } }
+        lifecyclePlans: { type: array, items: { $ref: '#/components/schemas/GovernedLifecyclePlanDefinition' } }
+        initialStageRef: { $ref: './enterprise-contract-components.yml#/components/schemas/GovernedTypeId' }
+    GovernedStageDefinition:
+      type: object
+      required: [stageId, version, title]
+      properties:
+        stageId: { $ref: './enterprise-contract-components.yml#/components/schemas/GovernedTypeId' }
+        version: { $ref: '#/components/schemas/PackageVersion' }
+        title: { type: string }
+        entryPolicyRefs: { type: array, items: { $ref: '#/components/schemas/ArtifactRef' } }
+        exitPolicyRefs: { type: array, items: { $ref: '#/components/schemas/ArtifactRef' } }
+        metadata: { type: object, additionalProperties: true }
+        caseStatus: { $ref: './enterprise-contract-components.yml#/components/schemas/CaseStatus' }
+    GovernedActionDefinition:
+      type: object
+      required: [actionId, version, title]
+      properties:
+        actionId: { $ref: './enterprise-contract-components.yml#/components/schemas/GovernedTypeId' }
+        version: { $ref: '#/components/schemas/PackageVersion' }
+        title: { type: string }
+        requiredCapabilityRefs: { type: array, items: { $ref: '#/components/schemas/ArtifactRef' } }
+        policyRefs: { type: array, items: { $ref: '#/components/schemas/ArtifactRef' } }
+        inputSchemaRef: { $ref: '#/components/schemas/ArtifactRef' }
+    GovernedLifecyclePlanDefinition:
+      type: object
+      required: [planId, version]
+      properties:
+        planId: { $ref: './enterprise-contract-components.yml#/components/schemas/GovernedTypeId' }
+        version: { $ref: '#/components/schemas/PackageVersion' }
+        agreementRequired: { type: boolean, default: false }
+        requiredTimerRefs: { type: array, items: { $ref: '#/components/schemas/ArtifactRef' } }
+        requiredConfirmationRefs: { type: array, items: { $ref: '#/components/schemas/ArtifactRef' } }
+        activationPolicyRefs: { type: array, items: { $ref: '#/components/schemas/ArtifactRef' } }
+        activationStageRefs: { type: array, items: { $ref: './enterprise-contract-components.yml#/components/schemas/GovernedTypeId' } }
+        preconditionRefs: { type: array, items: { $ref: '#/components/schemas/ArtifactRef' } }
+    WorkflowDefinitionRef:
+      $ref: './enterprise-contract-components.yml#/components/schemas/WorkflowDefinitionRef'
+    JsonElement:
+      description: An arbitrary JSON value preserved without string coercion.
+    JsonObject:
+      type: object
+      description: An arbitrary JSON object preserved without string coercion.
+      additionalProperties:
+        $ref: '#/components/schemas/JsonElement'
+    PackageVersion:
+      type: object
+      required: [value]
+      properties:
+        value: { type: string, pattern: '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$' }
+    ExternalDialectVersion:
+      type: object
+      required: [value]
+      properties:
+        value: { type: string, minLength: 1 }
+    ExternalDialectRef:
+      type: object
+      required: [id, version]
+      properties:
+        id: { type: string, minLength: 1 }
+        version: { $ref: '#/components/schemas/ExternalDialectVersion' }
+    ArtifactRef:
+      type: object
+      required: [id, version]
+      properties:
+        id: { type: string, minLength: 1 }
+        version: { $ref: '#/components/schemas/PackageVersion' }
+    GovernedTransitionDefinition:
+      type: object
+      required: [transitionId, version, fromStage, toStage, actionRef]
+      description: |
+        One authored stage change of a governed case template. `preconditionRefs` name the gates
+        that must pass before the transition is applied; `startsGateRef` names the elapsed gate whose
+        clock the apply starts, if any. Both resolve to entries of the template's own `gates` by id
+        and version; a started gate must have predicate `ELAPSED_FROM_CASE_METADATA` and may not also
+        be one of this transition's preconditions.
+      properties:
+        transitionId: { $ref: './enterprise-contract-components.yml#/components/schemas/GovernedTypeId' }
+        version: { $ref: '#/components/schemas/PackageVersion' }
+        fromStage: { $ref: './enterprise-contract-components.yml#/components/schemas/GovernedTypeId' }
+        toStage: { $ref: './enterprise-contract-components.yml#/components/schemas/GovernedTypeId' }
+        actionRef: { $ref: '#/components/schemas/ArtifactRef' }
+        preconditionRefs: { type: array, items: { $ref: '#/components/schemas/ArtifactRef' } }
+        approvalPolicyRefs: { type: array, items: { $ref: '#/components/schemas/ArtifactRef' } }
+        reasonRefs: { type: array, items: { $ref: '#/components/schemas/ArtifactRef' } }
+        startsGateRef: { $ref: '#/components/schemas/ArtifactRef' }
+    GovernedGatePredicate:
+      type: string
+      description: |
+        The runtime-neutral test a gate performs. `CASE_CONFIRMATION_RECORDED` takes no parameters,
+        `ELAPSED_FROM_CASE_METADATA` reads `metadataKey` from the case metadata and adds `duration`,
+        and `CURRENT_STAGE` compares the case stage with `expectedStage`.
+      enum: [CASE_CONFIRMATION_RECORDED, ELAPSED_FROM_CASE_METADATA, CURRENT_STAGE, REQUIRED_EVIDENCE_TERMINAL, REQUIRED_EVIDENCE_ACCEPTED]
+    GovernedGateDefinition:
+      type: object
+      required: [gateId, version, predicate, failureReasonRef]
+      description: |
+        One deterministic precondition of a governed case template. Predicate parameters stay
+        explicit so a template is inspectable and replayable without embedded executable code, which
+        is why they are declared here rather than left free-form: `ELAPSED_FROM_CASE_METADATA`
+        requires `metadataKey` and a positive finite `duration`, `CURRENT_STAGE` requires
+        `expectedStage`, and `CASE_CONFIRMATION_RECORDED` requires neither. Every elapsed gate owns
+        its `metadataKey` alone, so two gates cannot read one clock. These are the fields a
+        transition's `preconditionRefs` and `startsGateRef` resolve against.
+      properties:
+        gateId: { $ref: './enterprise-contract-components.yml#/components/schemas/GovernedTypeId' }
+        version: { $ref: '#/components/schemas/PackageVersion' }
+        predicate: { $ref: '#/components/schemas/GovernedGatePredicate' }
+        failureReasonRef: { $ref: '#/components/schemas/ArtifactRef' }
+        metadataKey:
+          type: string
+          minLength: 1
+          description: |
+            The case-metadata key an `ELAPSED_FROM_CASE_METADATA` gate reads its start instant from,
+            and the key the transition that starts this gate stamps. Absent for other predicates.
+        duration:
+          type: string
+          minLength: 1
+          description: |
+            How long an `ELAPSED_FROM_CASE_METADATA` gate waits, counted from the instant stored
+            under `metadataKey`. Kotlin components such as `480h` or `20d 12h`, or ISO-8601 such as
+            `P20D`. Must be positive and finite. Absent for other predicates.
+        expectedStage: { $ref: './enterprise-contract-components.yml#/components/schemas/GovernedTypeId' }
+        confirmationRef: { $ref: '#/components/schemas/ArtifactRef' }
+        evidenceRequirementRefs: { type: array, items: { $ref: '#/components/schemas/ArtifactRef' } }
+    ProjectorRevision:
+      type: object
+      required: [value]
+      properties:
+        value: { type: integer, format: int64, minimum: 1 }
+    ProjectorRef:
+      type: object
+      required: [id, revision]
+      properties:
+        id: { type: string, minLength: 1 }
+        revision: { $ref: '#/components/schemas/ProjectorRevision' }
+    RdfIri:
+      type: object
+      required: [value]
+      properties:
+        value: { type: string, format: uri }
+    GovernedTypeId:
+      $ref: './enterprise-contract-components.yml#/components/schemas/GovernedTypeId'
+    LocalizedText:
+      type: object
+      required: [locale, label]
+      properties:
+        locale: { type: string }
+        label: { type: string }
+        description: { type: string }
+    GuidedAttribute:
+      type: object
+      required: [name, valueType, labels]
+      properties:
+        name: { type: string }
+        valueType: { $ref: '#/components/schemas/GovernedTypeId' }
+        labels: { type: array, minItems: 1, items: { $ref: '#/components/schemas/LocalizedText' } }
+        examples: { type: array, items: { $ref: '#/components/schemas/JsonElement' } }
+        constraints: { type: array, items: { $ref: '#/components/schemas/GuidedConstraint' } }
+        sensitive: { type: boolean, default: false }
+    GuidedConstraint:
+      type: object
+      required: [kind, explanation]
+      properties:
+        kind: { $ref: '#/components/schemas/GovernedTypeId' }
+        arguments: { $ref: '#/components/schemas/JsonObject' }
+        explanation: { type: string, minLength: 1 }
+    GuidedEntity:
+      type: object
+      required: [name, partyRoot, labels]
+      properties:
+        name: { type: string }
+        partyRoot: { $ref: '#/components/schemas/GovernedTypeId' }
+        labels: { type: array, minItems: 1, items: { $ref: '#/components/schemas/LocalizedText' } }
+        specializesEntityName: { type: string }
+        attributes: { type: array, default: [], items: { $ref: '#/components/schemas/GuidedAttribute' } }
+        identifiers: { type: array, default: [], items: { $ref: '#/components/schemas/GuidedAttribute' } }
+        roles: { type: array, default: [], items: { $ref: '#/components/schemas/GovernedTypeId' } }
+        examples: { type: array, default: [], items: { $ref: '#/components/schemas/JsonObject' } }
+    GuidedRelationship:
+      type: object
+      required: [name, relationshipType, sourceEntityName, targetEntityName, labels]
+      properties:
+        name: { type: string }
+        relationshipType: { $ref: '#/components/schemas/GovernedTypeId' }
+        sourceEntityName: { type: string }
+        targetEntityName: { type: string }
+        sourceRole: { $ref: '#/components/schemas/GovernedTypeId' }
+        targetRole: { $ref: '#/components/schemas/GovernedTypeId' }
+        labels: { type: array, minItems: 1, items: { $ref: '#/components/schemas/LocalizedText' } }
+        constraints: { type: array, default: [], items: { $ref: '#/components/schemas/GuidedConstraint' } }
+    GuidedSemanticModelInput:
+      type: object
+      required: [modelName, entities]
+      properties:
+        modelName: { type: string }
+        namespaceHint: { type: string }
+        entities: { type: array, minItems: 1, items: { $ref: '#/components/schemas/GuidedEntity' } }
+        relationships: { type: array, default: [], items: { $ref: '#/components/schemas/GuidedRelationship' } }
+    SemanticInterchangeDocument:
+      type: object
+      required: [format, dialect, artifactKind, mediaType, contentHash, byteSize]
+      properties:
+        format: { $ref: '#/components/schemas/GovernedTypeId' }
+        dialect: { $ref: '#/components/schemas/ExternalDialectRef' }
+        artifactKind: { $ref: '#/components/schemas/GovernedTypeId' }
+        mediaType: { type: string }
+        charset: { type: string, default: UTF-8 }
+        inlineContent: { type: string }
+        contentRef: { $ref: './enterprise-contract-components.yml#/components/schemas/ProtectedPayloadRef' }
+        baseIri: { type: string, format: uri }
+        graphIri: { type: string, format: uri }
+        namespaces: { type: object, additionalProperties: { type: string, format: uri } }
+        sourceUri: { type: string, format: uri }
+        contentHash: { $ref: './enterprise-contract-components.yml#/components/schemas/ContentHash' }
+        byteSize: { type: integer, format: int64, minimum: 0 }
+        strict: { type: boolean, default: true }
+      description: Exactly one of inlineContent and contentRef must be present; the server rejects zero or two content sources.
+    PreviewSemanticChangeRequest:
+      type: object
+      required: [modelId, request]
+      properties:
+        modelId: { type: string, minLength: 1 }
+        request: { $ref: '#/components/schemas/SemanticChangeRequest' }
+    SemanticChangeRequest:
+      type: object
+      description: The type selects exactly one matching payload field; mismatches are rejected during normalization.
+      required: [type]
+      properties:
+        type: { type: string, enum: [guided, expert-interchange, normalized] }
+        model: { $ref: '#/components/schemas/GuidedSemanticModelInput' }
+        document: { $ref: '#/components/schemas/SemanticInterchangeDocument' }
+        changeSet: { $ref: '#/components/schemas/SemanticModelChangeSet' }
+    ApplySemanticChangeRequest:
+      type: object
+      required: [modelId, previewId, changeSet]
+      properties:
+        modelId: { type: string, minLength: 1 }
+        previewId: { type: string }
+        changeSet: { $ref: '#/components/schemas/SemanticModelChangeSet' }
+    ValidateSemanticInterchangeRequest:
+      type: object
+      required: [modelId, document]
+      properties:
+        modelId: { type: string }
+        document: { $ref: '#/components/schemas/SemanticInterchangeDocument' }
+    PreviewSemanticImportRequest:
+      type: object
+      required: [modelId, document]
+      properties:
+        modelId: { type: string, minLength: 1 }
+        document: { $ref: '#/components/schemas/SemanticInterchangeDocument' }
+    ApplySemanticImportRequest:
+      type: object
+      required: [modelId, preview]
+      properties:
+        modelId: { type: string, minLength: 1 }
+        preview: { $ref: '#/components/schemas/SemanticImportPreview' }
+    ExportSemanticReleaseRequest:
+      type: object
+      required: [modelRef, requestedFormat, requestedDialect]
+      properties:
+        modelRef: { $ref: '#/components/schemas/SemanticResourceRef' }
+        requestedFormat: { $ref: '#/components/schemas/GovernedTypeId' }
+        requestedDialect: { $ref: '#/components/schemas/ExternalDialectRef' }
+    SemanticResourceRef:
+      type: object
+      required: [id, revision]
+      properties:
+        id: { type: string }
+        revision: { type: object, required: [value], properties: { value: { type: integer, format: int64, minimum: 1 } } }
+    SemanticModelChangeSet:
+      type: object
+      required: [changeSetId, origin, changes, requestedCapabilities, createdAt]
+      properties:
+        changeSetId: { type: string }
+        origin: { type: string, enum: [GUIDED, EXPERT, IMPORT] }
+        baseModelRef: { $ref: '#/components/schemas/SemanticResourceRef' }
+        changes: { type: array, minItems: 1, items: { $ref: '#/components/schemas/SemanticModelChange' } }
+        requestedCapabilities: { type: array, uniqueItems: true, items: { type: string, enum: [GUIDED_AUTHORING, EXPERT_MAPPING, EXTENSION_GRAPH_EDITING, APPROVAL, PUBLICATION] } }
+        sourceArtifactRef: { $ref: '#/components/schemas/ArtifactRef' }
+        createdAt: { type: string, format: date-time }
+    SemanticModelChange:
+      type: object
+      description: The type selects exactly one matching governed change payload; mismatches are rejected.
+      required: [type]
+      properties:
+        type: { type: string, enum: [upsert-entity, remove-entity, upsert-relationship, remove-relationship, upsert-extension-graph, upsert-policy-binding, import-oca-capture-base, preserve-oca-overlay, import-shacl-shapes] }
+        entity: { $ref: '#/components/schemas/ObjectType' }
+        entityName: { type: string }
+        relationship: { $ref: '#/components/schemas/RelationshipType' }
+        relationshipName: { type: string }
+        graph: { $ref: '#/components/schemas/ExtensionNamedGraph' }
+        binding: { $ref: '#/components/schemas/PolicyBinding' }
+        captureBase: { $ref: '#/components/schemas/JsonObject' }
+        mappings: { type: array, items: { $ref: '#/components/schemas/MappingManifestEntry' } }
+        overlay: { $ref: '#/components/schemas/JsonObject' }
+        overlaySaid: { type: string }
+        shapesTurtle: { type: string }
+        profile: { type: string }
+        contentHash: { $ref: './enterprise-contract-components.yml#/components/schemas/ContentHash' }
+    ObjectTypeRef:
+      type: object
+      required: [entity]
+      properties:
+        entity: { type: string, minLength: 1 }
+        dataDomain: { $ref: '#/components/schemas/JsonObject' }
+    ObjectType:
+      type: object
+      required: [name, kind]
+      properties:
+        name: { type: string, minLength: 1 }
+        kind: { type: string, enum: [PREDEFINED, SPECIALIZATION] }
+        partyType: { type: string }
+        specializes: { $ref: '#/components/schemas/ObjectTypeRef' }
+        attributes: { type: array, items: { $ref: '#/components/schemas/BusinessTerm' } }
+        schemaRelationships: { type: array, items: { $ref: '#/components/schemas/JsonObject' } }
+        overlays: { $ref: '#/components/schemas/JsonObject' }
+        rdfClassBindings: { type: array, items: { $ref: '#/components/schemas/ObjectTypeRdfBinding' } }
+    BusinessTerm:
+      type: object
+      required: [path, valueType]
+      properties:
+        path: { type: array, minItems: 1, items: { type: string, minLength: 1 } }
+        valueType: { type: string, minLength: 1 }
+        overlays: { $ref: '#/components/schemas/JsonObject' }
+        entityType: { type: string }
+        children: { type: array, items: { $ref: '#/components/schemas/BusinessTerm' } }
+        entryCodeScheme: { $ref: '#/components/schemas/JsonObject' }
+        semanticTerms: { type: array, items: { $ref: '#/components/schemas/JsonObject' } }
+        rdfMapping: { $ref: '#/components/schemas/BusinessTermRdfMapping' }
+    RelationshipEnd:
+      type: object
+      required: [entity]
+      properties:
+        entity: { $ref: '#/components/schemas/ObjectTypeRef' }
+        role: { type: string }
+        cardinality: { $ref: '#/components/schemas/JsonObject' }
+    RelationshipType:
+      type: object
+      required: [name, relationType, source, target]
+      properties:
+        name: { type: string, minLength: 1 }
+        relationType: { type: string, minLength: 1 }
+        source: { $ref: '#/components/schemas/RelationshipEnd' }
+        target: { $ref: '#/components/schemas/RelationshipEnd' }
+        overlays: { $ref: '#/components/schemas/JsonObject' }
+        rdfMapping: { $ref: '#/components/schemas/RelationshipTypeRdfMapping' }
+    RdfOcaMappingKind:
+      type: string
+      enum: [ONE_TO_ONE, ONE_TO_MANY, MANY_TO_ONE, COMPOUND, COMPUTED, UNMAPPED, NON_REPRESENTABLE]
+    MappingInformationLoss:
+      type: string
+      enum: [NONE, POSSIBLE, KNOWN]
+    SemanticMappingProvenance:
+      type: object
+      required: [sourceId]
+      properties:
+        sourceId: { type: string, minLength: 1 }
+        sourceRevision: { type: string }
+        generated: { type: boolean, default: false }
+        reviewed: { type: boolean, default: false }
+    ObjectTypeRdfBinding:
+      type: object
+      required: [classIri, mappingKind, provenance, informationLoss]
+      properties:
+        classIri: { $ref: '#/components/schemas/RdfIri' }
+        mappingKind: { $ref: '#/components/schemas/RdfOcaMappingKind' }
+        transformId: { type: string }
+        provenance: { $ref: '#/components/schemas/SemanticMappingProvenance' }
+        informationLoss: { $ref: '#/components/schemas/MappingInformationLoss' }
+    BusinessTermRdfMapping:
+      type: object
+      required: [propertyIris, mappingKind, provenance, informationLoss]
+      properties:
+        propertyIris: { type: array, items: { $ref: '#/components/schemas/RdfIri' } }
+        datatypeIri: { $ref: '#/components/schemas/RdfIri' }
+        mappingKind: { $ref: '#/components/schemas/RdfOcaMappingKind' }
+        transformId: { type: string }
+        provenance: { $ref: '#/components/schemas/SemanticMappingProvenance' }
+        informationLoss: { $ref: '#/components/schemas/MappingInformationLoss' }
+    RelationshipTypeRdfMapping:
+      type: object
+      required: [propertyIri, domainClassIris, rangeClassIris, mappingKind, provenance, informationLoss]
+      properties:
+        propertyIri: { $ref: '#/components/schemas/RdfIri' }
+        domainClassIris: { type: array, minItems: 1, items: { $ref: '#/components/schemas/RdfIri' } }
+        rangeClassIris: { type: array, minItems: 1, items: { $ref: '#/components/schemas/RdfIri' } }
+        inversePropertyIri: { $ref: '#/components/schemas/RdfIri' }
+        mappingKind: { $ref: '#/components/schemas/RdfOcaMappingKind' }
+        transformId: { type: string }
+        provenance: { $ref: '#/components/schemas/SemanticMappingProvenance' }
+        informationLoss: { $ref: '#/components/schemas/MappingInformationLoss' }
+    ExtensionNamedGraph:
+      type: object
+      required: [graphIri, turtle, contentHash, provenance]
+      properties:
+        graphIri: { $ref: '#/components/schemas/RdfIri' }
+        turtle: { type: string, minLength: 1 }
+        contentHash: { $ref: './enterprise-contract-components.yml#/components/schemas/ContentHash' }
+        provenance: { $ref: '#/components/schemas/ArtifactRef' }
+    MappingManifestEntry:
+      type: object
+      required: [mappingId, ocaPaths, rdfTerms, kind, provenance, informationLoss]
+      properties:
+        mappingId: { type: string, minLength: 1 }
+        ocaPaths: { type: array, items: { type: string } }
+        rdfTerms: { type: array, items: { $ref: '#/components/schemas/RdfIri' } }
+        kind: { $ref: '#/components/schemas/RdfOcaMappingKind' }
+        transformId: { type: string }
+        provenance: { $ref: '#/components/schemas/SemanticMappingProvenance' }
+        informationLoss: { $ref: '#/components/schemas/MappingInformationLoss' }
+    SemanticValidationDiagnostic:
+      type: object
+      required: [violationId, severity, summary]
+      properties:
+        violationId: { type: string, minLength: 1 }
+        severity: { type: string, enum: [INFO, WARNING, ERROR] }
+        summary: { type: string, minLength: 1 }
+        remediation: { type: string }
+        technical: { $ref: '#/components/schemas/TechnicalDiagnostic' }
+    SemanticValidationResult:
+      type: object
+      required: [valid, diagnostics, validatorRevision]
+      properties:
+        valid: { type: boolean }
+        diagnostics:
+          type: array
+          items:
+            $ref: '#/components/schemas/SemanticValidationDiagnostic'
+        validatorRevision: { $ref: '#/components/schemas/ProjectorRef' }
+    TechnicalDiagnostic:
+      type: object
+      properties:
+        rdfTerms: { type: array, items: { $ref: '#/components/schemas/RdfIri' } }
+        shaclShapeRefs: { type: array, items: { $ref: '#/components/schemas/ArtifactRef' } }
+        ocaPaths: { type: array, items: { type: string } }
+        mappingIds: { type: array, items: { type: string } }
+        details: { $ref: '#/components/schemas/JsonObject' }
+    SemanticAuthoringConflict:
+      type: object
+      required: [conflictId, managedConceptRef, diagnostic]
+      properties:
+        conflictId: { type: string, minLength: 1 }
+        managedConceptRef: { $ref: './enterprise-contract-components.yml#/components/schemas/BusinessObjectRef' }
+        extensionGraphIri: { $ref: '#/components/schemas/RdfIri' }
+        diagnostic: { $ref: '#/components/schemas/SemanticValidationDiagnostic' }
+    SemanticAuthoringAudit:
+      type: object
+      required: [actor, action, commandDigest, recordedAt]
+      properties:
+        actor: { $ref: './enterprise-contract-components.yml#/components/schemas/ActorRef' }
+        action: { $ref: '#/components/schemas/GovernedTypeId' }
+        commandDigest: { $ref: './enterprise-contract-components.yml#/components/schemas/ContentHash' }
+        recordedAt: { type: string, format: date-time }
+    SemanticChangePreview:
+      type: object
+      required: [previewId, changeSet, validation]
+      properties:
+        previewId: { type: string }
+        changeSet: { $ref: '#/components/schemas/SemanticModelChangeSet' }
+        validation: { $ref: '#/components/schemas/SemanticValidationResult' }
+        generatedIris: { type: object, additionalProperties: { type: string, format: uri } }
+        mappingProposals: { type: array, items: { $ref: '#/components/schemas/MappingManifestEntry' } }
+        conflicts: { type: array, items: { $ref: '#/components/schemas/SemanticAuthoringConflict' } }
+    SemanticModelDraftRevision:
+      type: object
+      required: [modelRef, status, entities, relationships, validation]
+      properties:
+        modelRef: { $ref: '#/components/schemas/SemanticResourceRef' }
+        status: { type: string, enum: [DRAFT, VALIDATING, REVIEW_REQUIRED, APPROVED, PUBLISHED, REJECTED] }
+        entities: { type: array, items: { $ref: '#/components/schemas/ObjectType' } }
+        relationships: { type: array, items: { $ref: '#/components/schemas/RelationshipType' } }
+        extensionGraphs: { type: array, items: { $ref: '#/components/schemas/ExtensionNamedGraph' } }
+        nativeOcaCaptureBase: { $ref: '#/components/schemas/JsonObject' }
+        nativeOcaOverlays: { type: array, items: { $ref: '#/components/schemas/JsonObject' } }
+        shaclShapesTurtle: { type: string }
+        policyBindings: { type: array, items: { $ref: '#/components/schemas/PolicyBinding' } }
+        validation: { $ref: '#/components/schemas/SemanticValidationResult' }
+        auditTrail: { type: array, items: { $ref: '#/components/schemas/SemanticAuthoringAudit' } }
+    PolicyBinding:
+      type: object
+      required: [bindingId, version, requirementRef, engineProfile, policySetRef, principalMapping, actionMapping, resourceMapping, contextMapping, semanticInputs, missingInputBehavior]
+      properties:
+        bindingId: { type: string, minLength: 1 }
+        version: { $ref: '#/components/schemas/PackageVersion' }
+        requirementRef: { $ref: '#/components/schemas/ArtifactRef' }
+        engineProfile: { $ref: '#/components/schemas/GovernedTypeId' }
+        policySetRef: { $ref: '#/components/schemas/ArtifactRef' }
+        principalMapping: { $ref: '#/components/schemas/JsonObject' }
+        actionMapping: { $ref: '#/components/schemas/JsonObject' }
+        resourceMapping: { $ref: '#/components/schemas/JsonObject' }
+        contextMapping: { $ref: '#/components/schemas/JsonObject' }
+        semanticInputs: { type: array, items: { $ref: './enterprise-contract-components.yml#/components/schemas/SemanticCoordinate' } }
+        freshnessRequirements:
+          type: object
+          additionalProperties: { $ref: '#/components/schemas/ArtifactRef' }
+        missingInputBehavior: { type: string, enum: [DENY, REVIEW_REQUIRED, INDETERMINATE] }
+        reviewBehavior: { type: string }
+        reasonCodeMapping:
+          type: object
+          additionalProperties: { type: string }
+    GuidedSemanticProjection:
+      type: object
+      required: [modelRef, modelName, entities, relationships, validationSummary, technicalDetailsIncluded]
+      properties:
+        modelRef: { $ref: '#/components/schemas/SemanticResourceRef' }
+        modelName: { type: string }
+        entities: { type: array, items: { $ref: '#/components/schemas/GuidedEntity' } }
+        relationships: { type: array, items: { $ref: '#/components/schemas/GuidedRelationship' } }
+        validationSummary: { type: array, items: { $ref: '#/components/schemas/SemanticValidationDiagnostic' } }
+        technicalDetailsIncluded: { type: boolean, default: false }
+    ExpertSemanticProjection:
+      type: object
+      required: [modelRef, managedGraphTurtle, extensionGraphs, namespaces, ocaBundle, mappings, constraints]
+      properties:
+        modelRef: { $ref: '#/components/schemas/SemanticResourceRef' }
+        managedGraphTurtle: { type: string }
+        extensionGraphs: { type: array, items: { $ref: '#/components/schemas/ExtensionNamedGraph' } }
+        namespaces: { type: object, additionalProperties: { type: string, format: uri } }
+        ocaBundle: { $ref: '#/components/schemas/OcaBundleArtifact' }
+        mappings: { type: array, items: { $ref: '#/components/schemas/MappingManifestEntry' } }
+        constraints: { type: array, items: { $ref: '#/components/schemas/ConstraintArtifact' } }
+    OcaBundleArtifact:
+      type: object
+      required: [bundle, bundleSaid, captureBaseSaid]
+      properties:
+        bundle: { $ref: '#/components/schemas/JsonObject' }
+        bundleSaid: { type: string, minLength: 1 }
+        captureBaseSaid: { type: string, minLength: 1 }
+    ConstraintArtifact:
+      type: object
+      required: [kind, processorStatus, statusExplanation]
+      properties:
+        kind: { $ref: '#/components/schemas/GovernedTypeId' }
+        artifactRef: { $ref: '#/components/schemas/ArtifactRef' }
+        contentHash: { $ref: './enterprise-contract-components.yml#/components/schemas/ContentHash' }
+        profile: { type: string, minLength: 1 }
+        validatorRevision: { $ref: '#/components/schemas/ProjectorRef' }
+        validationReceipt: { $ref: '#/components/schemas/SemanticConstraintValidationReceipt' }
+        processorStatus: { type: string, enum: [AVAILABLE, UNAVAILABLE] }
+        statusExplanation: { type: string }
+    SemanticConstraintValidationReceipt:
+      type: object
+      required: [receiptId, shapesGraphHash, dataGraphHash, profile, validatorRevision, valid, diagnosticsHash, validatedAt]
+      properties:
+        receiptId: { type: string, minLength: 1 }
+        shapesGraphHash: { $ref: './enterprise-contract-components.yml#/components/schemas/ContentHash' }
+        dataGraphHash: { $ref: './enterprise-contract-components.yml#/components/schemas/ContentHash' }
+        profile: { type: string, minLength: 1 }
+        validatorRevision: { $ref: '#/components/schemas/ProjectorRef' }
+        valid: { type: boolean }
+        diagnosticsHash: { $ref: './enterprise-contract-components.yml#/components/schemas/ContentHash' }
+        validatedAt: { type: string, format: date-time }
+    RdfDatasetArtifact:
+      type: object
+      required: [managedGraphIri, turtle, graphHash, tripleCount]
+      properties:
+        managedGraphIri: { $ref: '#/components/schemas/RdfIri' }
+        turtle: { type: string }
+        graphHash: { $ref: './enterprise-contract-components.yml#/components/schemas/ContentHash' }
+        tripleCount: { type: integer, format: int64, minimum: 0 }
+        extensionGraphs: { type: array, items: { $ref: '#/components/schemas/ExtensionNamedGraph' } }
+    SemanticInterchangeLimits:
+      type: object
+      required: [maxBytes, maxDepth, maxTriples, maxNamedGraphs, maxProcessingMillis, remoteResolutionAllowed, allowedUriSchemes]
+      properties:
+        maxBytes: { type: integer, format: int64, minimum: 1 }
+        maxDepth: { type: integer, minimum: 1 }
+        maxTriples: { type: integer, format: int64, minimum: 1 }
+        maxNamedGraphs: { type: integer, minimum: 0 }
+        maxProcessingMillis: { type: integer, format: int64, minimum: 1 }
+        remoteResolutionAllowed: { type: boolean, default: false }
+        allowedUriSchemes: { type: array, uniqueItems: true, items: { type: string } }
+    SemanticInterchangeCapability:
+      type: object
+      required: [format, dialects, mediaTypes, fileExtensions, artifactKinds, canParse, canValidate, canImport, canExport, canProject, canCanonicalize, adapter, limits, knownLosses]
+      properties:
+        format: { $ref: '#/components/schemas/GovernedTypeId' }
+        dialects: { type: array, items: { $ref: '#/components/schemas/ExternalDialectRef' } }
+        mediaTypes: { type: array, uniqueItems: true, items: { type: string } }
+        fileExtensions: { type: array, uniqueItems: true, items: { type: string } }
+        artifactKinds: { type: array, uniqueItems: true, items: { $ref: '#/components/schemas/GovernedTypeId' } }
+        canParse: { type: boolean }
+        canValidate: { type: boolean }
+        canImport: { type: boolean }
+        canExport: { type: boolean }
+        canProject: { type: boolean }
+        canCanonicalize: { type: boolean }
+        roundTripLevel: { type: string }
+        adapter: { $ref: '#/components/schemas/ProjectorRef' }
+        limits: { $ref: '#/components/schemas/SemanticInterchangeLimits' }
+        knownLosses: { type: array, items: { type: string } }
+    SemanticCapabilityCatalog:
+      type: object
+      required: [contractVersion, capabilities]
+      properties:
+        contractVersion: { $ref: '#/components/schemas/PackageVersion' }
+        capabilities: { type: array, items: { $ref: '#/components/schemas/SemanticInterchangeCapability' } }
+    UnresolvedRdfTerm:
+      type: object
+      description: RDF term that could not be normalized into a typed managed semantic-model change.
+      required: [term, role, reason, explanation, relatedTerms]
+      properties:
+        term: { $ref: '#/components/schemas/RdfIri' }
+        role: { $ref: '#/components/schemas/GovernedTypeId' }
+        reason: { $ref: '#/components/schemas/GovernedTypeId' }
+        explanation: { type: string, minLength: 1 }
+        relatedTerms: { type: array, items: { $ref: '#/components/schemas/RdfIri' } }
+    UnresolvedOcaCaptureMapping:
+      type: object
+      description: Review state for an RDF property without a lossless native OCA capture mapping.
+      required: [rdfPropertyIri, reason, explanation]
+      properties:
+        rdfPropertyIri: { $ref: '#/components/schemas/RdfIri' }
+        rdfDatatypeIri: { $ref: '#/components/schemas/RdfIri' }
+        reason: { $ref: '#/components/schemas/GovernedTypeId' }
+        explanation: { type: string, minLength: 1 }
+        proposedCapturePath: { type: string, minLength: 1 }
+    SemanticImportPreview:
+      type: object
+      required:
+        [previewId, sourceHash, changeSet, validation, conflicts, unresolvedRdfTerms,
+         unresolvedOcaCaptureMappings, warnings, knownLosses, parser]
+      properties:
+        previewId: { type: string, minLength: 1 }
+        sourceHash: { $ref: './enterprise-contract-components.yml#/components/schemas/ContentHash' }
+        changeSet: { $ref: '#/components/schemas/SemanticModelChangeSet' }
+        validation: { $ref: '#/components/schemas/SemanticValidationResult' }
+        conflicts: { type: array, items: { $ref: '#/components/schemas/SemanticValidationDiagnostic' } }
+        unresolvedRdfTerms: { type: array, items: { $ref: '#/components/schemas/UnresolvedRdfTerm' } }
+        unresolvedOcaCaptureMappings: { type: array, items: { $ref: '#/components/schemas/UnresolvedOcaCaptureMapping' } }
+        warnings: { type: array, items: { type: string } }
+        knownLosses: { type: array, items: { type: string } }
+        parser: { $ref: '#/components/schemas/ProjectorRef' }
+    SemanticExportReceipt:
+      type: object
+      required: [release, requestedDialect]
+      properties:
+        release:
+          type: object
+          required: [releaseId, packageVersion, modelRef, rdfArtifact, ocaArtifact, mappingManifest, constraints, projectors, releasedAt]
+          properties:
+            releaseId: { type: string }
+            packageVersion: { $ref: '#/components/schemas/PackageVersion' }
+            modelRef: { $ref: '#/components/schemas/SemanticResourceRef' }
+            rdfArtifact: { $ref: '#/components/schemas/RdfDatasetArtifact' }
+            ocaArtifact: { $ref: '#/components/schemas/OcaBundleArtifact' }
+            mappingManifest: { type: array, items: { $ref: '#/components/schemas/MappingManifestEntry' } }
+            constraints: { type: array, items: { $ref: '#/components/schemas/ConstraintArtifact' } }
+            projectors: { type: array, items: { $ref: '#/components/schemas/ProjectorRef' } }
+            releasedAt: { type: string, format: date-time }
+        requestedDialect: { $ref: '#/components/schemas/ExternalDialectRef' }
+        warnings: { type: array, items: { type: string } }
+        unresolvedMappings: { type: array, items: { type: string } }
+        knownLosses: { type: array, items: { type: string } }

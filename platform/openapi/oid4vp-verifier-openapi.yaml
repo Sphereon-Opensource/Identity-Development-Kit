@@ -1,0 +1,754 @@
+openapi: 3.0.4
+info:
+  title: OID4VP Verifier Integration API
+  version: 0.1.0
+  description: |
+    Server-to-server integration API for driving OpenID for Verifiable Presentations (OID4VP) from
+    a Relying Party backend. A backend creates an authorization request together with its
+    presentation session, follows that session as the wallet interaction progresses, and removes it
+    when it is no longer needed.
+
+    The create call returns everything needed to start the wallet flow: a `request_uri` (and an
+    optional QR code) that the wallet uses to fetch the signed request object, a `status_uri` for
+    polling, and a `correlation_id` that keys the session. The status call reports the session state
+    and, once a presentation has been received and verified, the verified credential claims. The
+    delete call ends the session.
+
+    The externally visible URLs returned and embedded by these endpoints (the wallet-facing
+    `request_uri` base, the `response_uri` the wallet posts to, and the `status_uri`) are resolved
+    for the calling tenant from its registered public endpoint binding, so a backend does not have to
+    supply or hard-code them.
+
+    This is a backend integration surface for confidential Relying Party systems, not a browser or
+    wallet API.
+
+    This API is explicitly not the wallet-facing OID4VP protocol surface (request-object retrieval by
+    `request_uri` and the `direct_post` authorization response). Those endpoints are consumed by
+    wallets, not by integrating backends, and are not described here. Management of DCQL query
+    configurations referenced by `query_id` is covered by the separate DCQL Query API.
+  license:
+    name: Apache-2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0
+
+servers:
+  - url: http://localhost:8080
+    description: Local verifier integration API
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: Backend
+    description: Authorization request session lifecycle for an OID4VP presentation.
+  - name: Testing
+    description: Public testing bootstrap plus dynamically protected workspace and presentation-session operations.
+
+paths:
+  /api/oid4vp/v1/testing/instances/{instanceId}/bootstrap:
+    get:
+      tags: [Testing]
+      summary: Get verifier testing-console bootstrap links
+      operationId: getOid4vpTestingBootstrap
+      security: []
+      parameters:
+        - name: instanceId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: redirectUri
+          in: query
+          required: false
+          description: |
+            Exact registered callback URI for the testing console OAuth client. This parameter is
+            required when the instance testing console uses `AS_PROTECTED`; it is ignored for a
+            `PUBLIC` surface. The URI must be absolute, secure (except loopback HTTP), fragment-free,
+            and registered on the configured authorization-server client.
+          schema: { type: string, format: uri }
+      responses:
+        '200':
+          description: Public testing-console routing, login, theme, discovery, and capability metadata.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VerifierTestingBootstrap'
+        '400': { description: 'The required redirect URI is missing, malformed, or not registered for the configured client.' }
+        '404': { description: Testing console is disabled or unavailable. }
+        '503': { description: Tenant configuration or related-surface authority is temporarily unavailable. }
+
+  /api/oid4vp/v1/testing/instances/{instanceId}/workspace:
+    get:
+      tags: [Testing]
+      summary: Get the verifier testing workspace
+      operationId: getOid4vpTestingWorkspace
+      description: Returns operational dashboard aggregates, client/DCQL/template catalog metadata, transport defaults, and action URLs. AS-protected instances require their exact configured resource grant.
+      security:
+        - {}
+        - bearerAuth: []
+      parameters:
+        - name: instanceId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Operational verifier testing workspace.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VerifierTestingWorkspace'
+        '401': { description: The configured exposure mode requires the exact AS-issued resource grant. }
+        '404': { description: Testing console is disabled or unavailable. }
+
+  /api/oid4vp/v1/testing/instances/{instanceId}/capabilities:
+    get:
+      tags: [Testing]
+      summary: Get verifier testing-console capabilities
+      operationId: getOid4vpTestingCapabilities
+      security:
+        - {}
+        - bearerAuth: []
+      parameters:
+        - name: instanceId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Supported testing actions.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VerifierTestingCapabilities'
+        '401': { description: The configured exposure mode requires AS authentication. }
+        '404': { description: Testing console is disabled or unavailable. }
+
+  /api/oid4vp/v1/testing/instances/{instanceId}/actions/{action}:
+    post:
+      tags: [Testing]
+      summary: Execute a verifier testing action
+      operationId: executeOid4vpTestingAction
+      security:
+        - {}
+        - bearerAuth: []
+      parameters:
+        - name: instanceId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: action
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [create-auth-request]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './oid4vp-universal-openapi.yml#/components/schemas/CreateAuthorizationRequest'
+      responses:
+        '201':
+          description: Authorization request created successfully.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: './oid4vp-universal-openapi.yml#/components/schemas/CreateAuthorizationRequestResponse'
+                  - type: object
+                    required: [session_id]
+                    properties:
+                      session_id:
+                        type: string
+        '400': { description: The action request was malformed or failed validation. }
+        '401': { description: Missing or invalid bearer credentials. }
+        '404': { description: 'Testing console, instance, or action not found.' }
+
+  /api/oid4vp/v1/testing/instances/{instanceId}/templates:
+    get:
+      tags: [Testing]
+      summary: List verifier testing templates
+      operationId: listOid4vpTestingTemplates
+      security:
+        - {}
+        - bearerAuth: []
+      parameters:
+        - name: instanceId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Available verifier testing templates.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Oid4vpTestingTemplatePage'
+        '401': { description: The configured exposure mode requires AS authentication. }
+        '404': { description: Testing console or instance not found. }
+
+  /api/oid4vp/v1/testing/instances/{instanceId}/templates/{templateId}/execute:
+    post:
+      tags: [Testing]
+      summary: Execute a verifier testing template
+      operationId: executeOid4vpTestingTemplate
+      security:
+        - {}
+        - bearerAuth: []
+      parameters:
+        - name: instanceId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: templateId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TestingTemplateExecutionRequest'
+      responses:
+        '201':
+          description: Authorization request created successfully.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: './oid4vp-universal-openapi.yml#/components/schemas/CreateAuthorizationRequestResponse'
+                  - type: object
+                    required: [session_id]
+                    properties:
+                      session_id:
+                        type: string
+        '400': { description: The template execution request was malformed or failed validation. }
+        '401': { description: Missing or invalid bearer credentials. }
+        '404': { description: 'Testing console, instance, or template not found.' }
+
+  /api/oid4vp/v1/testing/instances/{instanceId}/sessions:
+    get:
+      tags: [Testing]
+      summary: List event-sourced verifier sessions
+      operationId: listOid4vpTestingSessions
+      security:
+        - {}
+        - bearerAuth: []
+      parameters:
+        - name: instanceId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: cursor
+          in: query
+          description: Opaque cursor returned as `nextCursor` by the preceding page.
+          schema: { type: string }
+        - name: limit
+          in: query
+          description: Maximum number of session summaries to return.
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+        - name: state
+          in: query
+          description: Exact projected protocol state to include.
+          schema: { type: string }
+        - name: templateId
+          in: query
+          description: Restrict results to sessions created from this template.
+          schema: { type: string }
+        - name: createdFrom
+          in: query
+          description: Inclusive lower bound for the creation timestamp.
+          schema: { type: string, format: date-time }
+        - name: createdTo
+          in: query
+          description: Exclusive upper bound for the creation timestamp.
+          schema: { type: string, format: date-time }
+      responses:
+        '200':
+          description: Current verifier session projections.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VerifierTestingSessionPage'
+        '400': { description: A cursor or session filter is malformed or inconsistent. }
+        '401': { description: Missing or invalid bearer credentials. }
+        '404': { description: Testing console or instance not found. }
+
+  /api/oid4vp/v1/testing/instances/{instanceId}/sessions/{sessionId}:
+    get:
+      tags: [Testing]
+      summary: Get a verifier session projection
+      operationId: getOid4vpTestingSession
+      security:
+        - {}
+        - bearerAuth: []
+      parameters:
+        - name: instanceId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: sessionId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Current verifier session projection.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VerifierTestingSessionDetail'
+        '401': { description: Missing or invalid bearer credentials. }
+        '404': { description: Session not found. }
+
+  /api/oid4vp/v1/testing/instances/{instanceId}/sessions/{sessionId}/events:
+    get:
+      tags: [Testing]
+      summary: List immutable verifier session events
+      operationId: listOid4vpTestingSessionEvents
+      security:
+        - {}
+        - bearerAuth: []
+      parameters:
+        - name: instanceId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: sessionId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: afterSequence
+          in: query
+          schema: { type: integer, format: int64, minimum: 0 }
+        - name: cursor
+          in: query
+          description: Opaque cursor returned as `nextCursor` by the preceding page.
+          schema: { type: string }
+        - name: limit
+          in: query
+          description: Maximum number of events to return.
+          schema: { type: integer, minimum: 1, maximum: 200, default: 100 }
+      responses:
+        '200':
+          description: Ordered, redacted verifier session events.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VerifierTestingSessionEventPage'
+        '400': { description: The event cursor or sequence filter is malformed. }
+        '401': { description: Missing or invalid bearer credentials. }
+        '404': { description: Session not found. }
+
+  # -- Authorization request and its presentation session (typed contract from the Universal
+  #    OID4VP Verifier Session API, reused by path-item reference) --
+  /oid4vp/backend/auth/requests:
+    $ref: './oid4vp-universal-openapi.yml#/paths/~1auth~1requests'
+
+  /oid4vp/backend/auth/requests/{correlation_id}:
+    $ref: './oid4vp-universal-openapi.yml#/paths/~1auth~1requests~1{correlation_id}'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    TestingLink:
+      type: object
+      required: [label, href]
+      properties:
+        label: { type: string }
+        href: { type: string, format: uri }
+
+    VerifierTestingFeatureSet:
+      type: object
+      required: [templates, statusLists, dcql, sessions]
+      properties:
+        templates: { type: boolean }
+        statusLists: { type: boolean }
+        dcql: { type: boolean }
+        sessions: { type: boolean }
+
+    VerifierTestingActions:
+      type: object
+      required: [templates, direct, sessions, dcql]
+      properties:
+        templates: { type: string, format: uri }
+        direct: { type: string, format: uri }
+        sessions: { type: string, format: uri }
+        statusLists: { type: string, format: uri, nullable: true }
+        dcql: { type: string, format: uri }
+
+    VerifierTestingAuthentication:
+      type: object
+      description: Canonical authorization-code with PKCE metadata for an AS-protected testing console.
+      required:
+        - mode
+        - issuer
+        - metadataUrl
+        - authorizationEndpoint
+        - tokenEndpoint
+        - jwksUri
+        - clientId
+        - redirectUri
+        - scopes
+        - audience
+      properties:
+        mode: { type: string, enum: [AUTHORIZATION_CODE_PKCE] }
+        issuer: { type: string, format: uri }
+        metadataUrl: { type: string, format: uri }
+        authorizationEndpoint: { type: string, format: uri }
+        tokenEndpoint: { type: string, format: uri }
+        jwksUri: { type: string, format: uri }
+        clientId: { type: string, minLength: 1 }
+        redirectUri: { type: string, format: uri }
+        scopes:
+          type: array
+          minItems: 1
+          items: { type: string, minLength: 1 }
+        audience: { type: string, minLength: 1 }
+        resource: { type: string, nullable: true }
+
+    Oid4vpTestingDcqlPreset:
+      type: object
+      required: [bindingId, queryId, name, pinnedVersion, dcqlQuery]
+      properties:
+        bindingId: { type: string }
+        queryId: { type: string }
+        name: { type: string }
+        description: { type: string, nullable: true }
+        pinnedVersion: { type: integer, minimum: 1 }
+        dcqlQuery:
+          $ref: './oid4vp-universal-components.yml#/components/schemas/DcqlQuery'
+
+    Oid4vpTestingRequestProfile:
+      type: object
+      required: [id, name, queryId, bindingId, pinnedVersion, requestDefaults]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        description: { type: string, nullable: true }
+        queryId: { type: string }
+        bindingId: { type: string }
+        pinnedVersion: { type: integer, minimum: 1 }
+        requestDefaults:
+          type: object
+          additionalProperties: true
+
+    Oid4vpTestingRequestDefaults:
+      type: object
+      required: [requestUriBase, requestUriMethod, responseType, responseMode, responseUri, walletUriScheme, ttlSeconds]
+      properties:
+        requestUriBase: { type: string, format: uri }
+        requestUriMethod: { type: string, enum: [get, post] }
+        responseType: { type: string, enum: [vp_token, id_token] }
+        responseMode: { type: string, enum: [direct_post, direct_post.jwt] }
+        responseUri: { type: string, format: uri }
+        walletUriScheme: { type: string, enum: [openid4vp, openid, oid4vp, haip-vp] }
+        ttlSeconds: { type: integer, format: int64, minimum: 1 }
+
+    Oid4vpTestingTransportOptions:
+      type: object
+      required: [requestUriMethods, responseTypes, responseModes, clientIdSchemes, walletUriSchemes, defaults]
+      properties:
+        requestUriMethods:
+          type: array
+          items: { type: string, enum: [get, post] }
+        responseTypes:
+          type: array
+          items: { type: string, enum: [vp_token, id_token] }
+        responseModes:
+          type: array
+          items: { type: string, enum: [direct_post, direct_post.jwt] }
+        clientIdSchemes:
+          type: array
+          items:
+            type: string
+            enum: [PRE_REGISTERED, REDIRECT_URI, OPENID_FEDERATION, DECENTRALIZED_IDENTIFIER, VERIFIER_ATTESTATION, X509_SAN_DNS, X509_SAN_URI, X509_HASH]
+        walletUriSchemes:
+          type: array
+          items: { type: string, enum: [openid4vp, openid, oid4vp, haip-vp] }
+        defaults: { $ref: '#/components/schemas/Oid4vpTestingRequestDefaults' }
+
+    TestingSessionAggregate:
+      type: object
+      required: [total, recent, byState, recentByState, recentWindowSeconds]
+      properties:
+        total: { type: integer, format: int64, minimum: 0 }
+        recent: { type: integer, format: int64, minimum: 0 }
+        byState:
+          type: object
+          additionalProperties: { type: integer, format: int64, minimum: 0 }
+        recentByState:
+          type: object
+          additionalProperties: { type: integer, format: int64, minimum: 0 }
+        recentWindowSeconds: { type: integer, format: int64, minimum: 1, example: 86400 }
+
+    PresentationFormat:
+      type: string
+      description: Format of a produced Verifiable Presentation artifact. This is distinct from OID4VP vp_formats_supported Credential Format Identifier keys.
+      enum: [jwt_vp_json, ldp_vp]
+
+    Oid4vpTestingClientMetadataSummary:
+      type: object
+      required: [clientMetadataId, clientId, name, vpFormats, presentationFormats, encryptedResponseEncValues]
+      properties:
+        clientMetadataId: { type: string }
+        clientId: { type: string }
+        name: { type: string }
+        clientMetadataUri: { type: string, format: uri, nullable: true }
+        jwksUri: { type: string, format: uri, nullable: true }
+        vpFormats:
+          type: array
+          description: Credential Format Identifiers from the OID4VP vp_formats_supported object keys; these are credential formats, not PresentationFormat artifact values.
+          items: { type: string }
+        presentationFormats:
+          type: array
+          description: Actual Verifiable Presentation artifact formats projected from the supported credential formats.
+          items:
+            $ref: '#/components/schemas/PresentationFormat'
+        encryptedResponseEncValues:
+          type: array
+          items: { type: string }
+
+    Oid4vpTestingDashboard:
+      type: object
+      required: [templates, dcqlBindings, clientMetadataConfigurations, sessions]
+      properties:
+        templates: { type: integer, format: int64, minimum: 0 }
+        dcqlBindings: { type: integer, format: int64, minimum: 0 }
+        clientMetadataConfigurations: { type: integer, format: int64, minimum: 0 }
+        sessions: { $ref: '#/components/schemas/TestingSessionAggregate' }
+
+    RelatedSurfaceDescriptor:
+      type: object
+      required: [kind, surfaceId, instanceId, title, href, access, capabilities]
+      properties:
+        kind:
+          type: string
+          enum: [DEVELOPER_CONSOLE, OID4VCI_TESTING, OID4VP_TESTING]
+        surfaceId:
+          type: string
+          enum: [developer_console, oid4vci_testing, oid4vp_testing]
+        instanceId:
+          type: string
+        title:
+          type: string
+        href:
+          type: string
+          format: uri
+          pattern: '^https://'
+          description: Tenant-authoritative HTTPS URL; never derived from caller slugs or query parameters.
+        access:
+          type: string
+          enum: [PUBLIC, AS_PROTECTED]
+        capabilities:
+          type: array
+          uniqueItems: true
+          items: { type: string }
+
+    VerifierTestingBootstrap:
+      type: object
+      required:
+        - service
+        - kind
+        - instanceId
+        - displayName
+        - access
+        - publicBaseUrl
+        - displayUrl
+        - themeUrl
+        - themeCssUrl
+        - themeApplicationId
+        - requestUriBase
+        - responseUri
+        - capabilitiesUrl
+        - workspaceUrl
+        - discovery
+        - capabilities
+        - authentication
+        - relatedSurfaces
+      properties:
+        service: { type: string, enum: [oid4vp-verifier] }
+        kind: { type: string, enum: [verifier] }
+        instanceId: { type: string }
+        displayName: { type: string }
+        logo:
+          type: object
+          nullable: true
+          description: Branding logo resolved from the verifier design bound to this instance; absent when no design carries one.
+          required: [uri]
+          properties:
+            uri: { type: string, format: uri }
+            altText: { type: string, nullable: true }
+        access: { type: string, enum: [PUBLIC, AS_PROTECTED] }
+        publicBaseUrl:
+          type: string
+          format: uri
+          pattern: '^https?://[^/?#]+(?:/|(?:/[^/?#]+)+)?$'
+          description: Canonical public scheme, authority, and optional instance route prefix. HTTPS is required except for localhost or 127.0.0.1. Contains no query or fragment and has no trailing slash.
+        displayUrl: { type: string, format: uri, description: Canonical public testing-console page URL for this instance. This is not the API base; use publicBaseUrl for protocol testing API requests. }
+        themeUrl: { type: string, format: uri, description: Host-resolved public theme bootstrap URL; never contains the internal tenant identifier. }
+        themeCssUrl: { type: string, format: uri, description: Host-resolved public theme CSS URL; never contains the internal tenant identifier. }
+        themeApplicationId: { type: string, description: Application id used by the tenant theme resolver for this portal. }
+        requestUriBase: { type: string, format: uri }
+        responseUri: { type: string, format: uri }
+        capabilitiesUrl: { type: string, format: uri }
+        workspaceUrl: { type: string, format: uri, description: Explicit operational workspace resource. }
+        discovery:
+          type: array
+          items: { $ref: '#/components/schemas/TestingLink' }
+        capabilities: { $ref: '#/components/schemas/VerifierTestingFeatureSet' }
+        authentication:
+          type: object
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/VerifierTestingAuthentication'
+        relatedSurfaces:
+          type: array
+          description: >-
+            Other enabled, licensed and exposure-visible surfaces of the same tenant,
+            including the Developer Console and issuer/verifier testing instances. The
+            current exact kind/instance pair is excluded. Anonymous callers see PUBLIC only.
+          items:
+            $ref: '#/components/schemas/RelatedSurfaceDescriptor'
+
+    VerifierTestingWorkspace:
+      type: object
+      required: [service, kind, instanceId, actions, dashboard, clientMetadata, dcqlPresets, requestProfiles, transportOptions]
+      properties:
+        service: { type: string, enum: [oid4vp-verifier] }
+        kind: { type: string, enum: [verifier] }
+        instanceId: { type: string }
+        actions: { $ref: '#/components/schemas/VerifierTestingActions' }
+        dashboard: { $ref: '#/components/schemas/Oid4vpTestingDashboard' }
+        clientMetadata:
+          type: array
+          items: { $ref: '#/components/schemas/Oid4vpTestingClientMetadataSummary' }
+        dcqlPresets:
+          type: array
+          items: { $ref: '#/components/schemas/Oid4vpTestingDcqlPreset' }
+        requestProfiles:
+          type: array
+          items: { $ref: '#/components/schemas/Oid4vpTestingRequestProfile' }
+        transportOptions: { $ref: '#/components/schemas/Oid4vpTestingTransportOptions' }
+
+    VerifierTestingCapabilities:
+      type: object
+      required: [service, actions, bootstrapUrl, actionUrl]
+      properties:
+        service: { type: string, enum: [oid4vp-verifier] }
+        actions:
+          type: array
+          items: { type: string, enum: [create-auth-request] }
+        bootstrapUrl: { type: string, format: uri }
+        actionUrl:
+          type: string
+          description: Absolute action URL template containing the `{action}` path placeholder.
+
+    TestingTemplateExecutionRequest:
+      type: object
+      properties:
+        overrides:
+          type: object
+          additionalProperties: true
+
+    Oid4vpTestingTemplateSummary:
+      type: object
+      required: [id, name, queryId]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        description: { type: string, nullable: true }
+        queryId: { type: string }
+
+    Oid4vpTestingTemplatePage:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Oid4vpTestingTemplateSummary' }
+
+    VerifierTestingSessionSummary:
+      type: object
+      required: [id, state, createdAt]
+      properties:
+        id: { type: string }
+        state:
+          type: string
+          nullable: true
+          description: >-
+            Projected protocol state. EXPIRED is an effective, derived state for
+            pending sessions whose expiry passed; it is never stored.
+        createdAt: { type: string, format: date-time }
+        expiresAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: >-
+            Authorization-session expiry resolved from the live session TTL.
+            Sessions still pending past this instant are projected with the
+            effective state EXPIRED even though no stored transition exists.
+        templateId: { type: string, nullable: true }
+        updatedAt: { type: string, format: date-time, nullable: true }
+
+    VerifierTestingSessionDetail:
+      allOf:
+        - $ref: '#/components/schemas/VerifierTestingSessionSummary'
+        - type: object
+          required: [creationSnapshot, currentResult]
+          properties:
+            creationSnapshot:
+              type: object
+              nullable: true
+              additionalProperties: true
+            currentResult:
+              type: object
+              nullable: true
+              additionalProperties: true
+
+    VerifierTestingSessionEvent:
+      type: object
+      required: [sourceEventId, sequence, occurredAt, eventType]
+      properties:
+        sourceEventId:
+          type: string
+          minLength: 1
+          description: Stable identifier of the persisted source event used for idempotent projection.
+        sequence: { type: integer, format: int64, minimum: 0 }
+        occurredAt: { type: string, format: date-time }
+        eventType: { type: string }
+        oldState: { type: string, nullable: true }
+        newState: { type: string, nullable: true }
+        safeMetadata:
+          type: object
+          nullable: true
+          additionalProperties:
+            oneOf:
+              - { type: string, nullable: true }
+              - { type: number, nullable: true }
+              - { type: boolean, nullable: true }
+        redactedDiagnosticDetail: { type: string, nullable: true }
+
+    VerifierTestingSessionPage:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/VerifierTestingSessionSummary' }
+        nextCursor: { type: string, nullable: true }
+
+    VerifierTestingSessionEventPage:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/VerifierTestingSessionEvent' }
+        nextCursor: { type: string, nullable: true }

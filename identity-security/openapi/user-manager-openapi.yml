@@ -1,0 +1,1075 @@
+openapi: 3.0.4
+info:
+  title: User Manager API
+  version: 0.1.0
+  description: |
+    Manage users, groups, roles, and user-group membership for VDX tenants. Users and groups extend
+    the Party model, while roles are authorization grants rather than parties.
+
+    The API covers user and group lifecycle, role assignment, membership changes, and profile
+    information used by operational user-management screens.
+servers:
+  - url: http://localhost:8091/api/users/v1
+
+security:
+  - bearer: []
+
+tags:
+  - name: Users
+    description: User lifecycle, role assignment, group membership, and tenant access.
+  - name: Groups
+    description: Group lifecycle, member management, and role assignment.
+  - name: Roles
+    description: Role lifecycle management.
+  - name: Tenants
+    description: Tenant lifecycle management.
+
+paths:
+  # ============================================
+  # USERS
+  # ============================================
+  /users:
+    get:
+      tags: [Users]
+      operationId: listUsers
+      summary: List users
+      parameters:
+        - name: username
+          in: query
+          schema:
+            type: string
+          description: Filter by username (partial match).
+        - name: email
+          in: query
+          schema:
+            type: string
+          description: Filter by email (partial match).
+        - name: userType
+          in: query
+          schema:
+            $ref: '#/components/schemas/UserType'
+        - name: enabled
+          in: query
+          schema:
+            type: boolean
+        - name: includeDeleted
+          in: query
+          schema:
+            type: boolean
+            default: false
+          description: Include soft-deleted users in results.
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+        - name: size
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 20
+      responses:
+        '200':
+          description: Paged list of users.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserListResponse'
+    post:
+      tags: [Users]
+      operationId: createUser
+      summary: Create user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserCreateRequest'
+      responses:
+        '201':
+          description: User created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserDetail'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '409':
+          $ref: './common-components.yml#/components/responses/Conflict'
+
+  /users/{userId}:
+    parameters:
+      - $ref: '#/components/parameters/UserId'
+    get:
+      tags: [Users]
+      operationId: getUser
+      summary: Get user
+      parameters:
+        - name: include
+          in: query
+          schema:
+            type: string
+          description: Comma-separated list of related data to include. Values - roles, groups, tenants, naturalPerson. Use all four for full details.
+      responses:
+        '200':
+          description: User details.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserDetail'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+    put:
+      tags: [Users]
+      operationId: replaceUser
+      summary: Full update user
+      description: Replaces all updatable fields of the user. All required fields must be provided.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserFullUpdateRequest'
+      responses:
+        '200':
+          description: Updated user.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserDetail'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+    patch:
+      tags: [Users]
+      operationId: updateUser
+      summary: Partial update user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserUpdateRequest'
+      responses:
+        '200':
+          description: Updated user.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserDetail'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+    delete:
+      tags: [Users]
+      operationId: deleteUser
+      summary: Soft-delete user
+      responses:
+        '204':
+          description: Deleted.
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+
+  # User Roles
+  /users/{userId}/roles:
+    parameters:
+      - $ref: '#/components/parameters/UserId'
+    get:
+      tags: [Users]
+      operationId: getUserRoles
+      summary: Get user's directly assigned roles
+      responses:
+        '200':
+          description: List of roles.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RoleListResponse'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+
+  /users/{userId}/roles/{roleId}:
+    parameters:
+      - $ref: '#/components/parameters/UserId'
+      - $ref: '#/components/parameters/RoleId'
+    post:
+      tags: [Users]
+      operationId: assignRoleToUser
+      summary: Assign role to user
+      responses:
+        '204':
+          description: Role assigned.
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+    delete:
+      tags: [Users]
+      operationId: removeRoleFromUser
+      summary: Remove role from user
+      responses:
+        '204':
+          description: Role removed.
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+
+  # User Groups
+  /users/{userId}/groups:
+    parameters:
+      - $ref: '#/components/parameters/UserId'
+    get:
+      tags: [Users]
+      operationId: getUserGroups
+      summary: Get user's group memberships
+      responses:
+        '200':
+          description: List of groups.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupListResponse'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+
+  /users/{userId}/groups/{groupId}:
+    parameters:
+      - $ref: '#/components/parameters/UserId'
+      - $ref: '#/components/parameters/GroupId'
+    post:
+      tags: [Users]
+      operationId: addUserToGroup
+      summary: Add user to group
+      responses:
+        '204':
+          description: User added to group.
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+    delete:
+      tags: [Users]
+      operationId: removeUserFromGroup
+      summary: Remove user from group
+      responses:
+        '204':
+          description: User removed from group.
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+
+  # User Tenant Access
+  /users/{userId}/tenants:
+    parameters:
+      - $ref: '#/components/parameters/UserId'
+    get:
+      tags: [Users]
+      operationId: getUserTenants
+      summary: Get accessible tenants for user
+      responses:
+        '200':
+          description: List of tenant access records.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TenantAccessListResponse'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+
+  /users/{userId}/tenants/{tenantId}:
+    parameters:
+      - $ref: '#/components/parameters/UserId'
+      - $ref: '#/components/parameters/TargetTenantId'
+    post:
+      tags: [Users]
+      operationId: grantTenantAccess
+      summary: Grant user access to tenant
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TenantAccessRequest'
+      responses:
+        '204':
+          description: Access granted.
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+    delete:
+      tags: [Users]
+      operationId: revokeTenantAccess
+      summary: Revoke user access to tenant
+      responses:
+        '204':
+          description: Access revoked.
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+
+  # ============================================
+  # GROUPS
+  # ============================================
+  /groups:
+    get:
+      tags: [Groups]
+      operationId: listGroups
+      summary: List groups
+      parameters:
+        - name: name
+          in: query
+          schema:
+            type: string
+          description: Filter by name (partial match).
+        - name: includeDeleted
+          in: query
+          schema:
+            type: boolean
+            default: false
+          description: Include soft-deleted groups in results.
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+        - name: size
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 20
+      responses:
+        '200':
+          description: Paged list of groups.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupListResponse'
+    post:
+      tags: [Groups]
+      operationId: createGroup
+      summary: Create group
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GroupCreateRequest'
+      responses:
+        '201':
+          description: Group created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupDetail'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '409':
+          $ref: './common-components.yml#/components/responses/Conflict'
+
+  /groups/{groupId}:
+    parameters:
+      - $ref: '#/components/parameters/GroupId'
+    get:
+      tags: [Groups]
+      operationId: getGroup
+      summary: Get group
+      parameters:
+        - name: include
+          in: query
+          schema:
+            type: string
+          description: Comma-separated list of related data to include. Values - members, roles. Use both for full details.
+      responses:
+        '200':
+          description: Group details.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupDetail'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+    put:
+      tags: [Groups]
+      operationId: replaceGroup
+      summary: Full update group
+      description: Replaces all updatable fields of the group. All required fields must be provided.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GroupFullUpdateRequest'
+      responses:
+        '200':
+          description: Updated group.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupDetail'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+    patch:
+      tags: [Groups]
+      operationId: updateGroup
+      summary: Partial update group
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GroupUpdateRequest'
+      responses:
+        '200':
+          description: Updated group.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupDetail'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+    delete:
+      tags: [Groups]
+      operationId: deleteGroup
+      summary: Soft-delete group
+      responses:
+        '204':
+          description: Deleted.
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+
+  # Group Members
+  /groups/{groupId}/members:
+    parameters:
+      - $ref: '#/components/parameters/GroupId'
+    get:
+      tags: [Groups]
+      operationId: getGroupMembers
+      summary: Get group members
+      responses:
+        '200':
+          description: List of users in the group.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserListResponse'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+
+  /groups/{groupId}/members/{userId}:
+    parameters:
+      - $ref: '#/components/parameters/GroupId'
+      - $ref: '#/components/parameters/UserId'
+    post:
+      tags: [Groups]
+      operationId: addMemberToGroup
+      summary: Add member to group
+      responses:
+        '204':
+          description: Member added.
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+    delete:
+      tags: [Groups]
+      operationId: removeMemberFromGroup
+      summary: Remove member from group
+      responses:
+        '204':
+          description: Member removed.
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+
+  # Group Roles
+  /groups/{groupId}/roles:
+    parameters:
+      - $ref: '#/components/parameters/GroupId'
+    get:
+      tags: [Groups]
+      operationId: getGroupRoles
+      summary: Get group's assigned roles
+      responses:
+        '200':
+          description: List of roles.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RoleListResponse'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+
+  /groups/{groupId}/roles/{roleId}:
+    parameters:
+      - $ref: '#/components/parameters/GroupId'
+      - $ref: '#/components/parameters/RoleId'
+    post:
+      tags: [Groups]
+      operationId: assignRoleToGroup
+      summary: Assign role to group
+      responses:
+        '204':
+          description: Role assigned.
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+    delete:
+      tags: [Groups]
+      operationId: removeRoleFromGroup
+      summary: Remove role from group
+      responses:
+        '204':
+          description: Role removed.
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+
+  # ============================================
+  # TENANTS
+  # ============================================
+  /tenants:
+    get:
+      tags: [Tenants]
+      operationId: listTenants
+      summary: List tenants
+      parameters:
+        - name: search
+          in: query
+          description: Filter by name (case-insensitive contains).
+          schema:
+            type: string
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+        - name: size
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        '200':
+          description: Paged list of tenants.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TenantListResponse'
+    post:
+      tags: [Tenants]
+      operationId: createTenant
+      summary: Create tenant
+      description: |
+        Creates a new tenant. If organizationPartyId is not provided,
+        a new Party (organization) will be automatically created.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TenantCreateRequest'
+      responses:
+        '201':
+          description: Tenant created.
+          content:
+            application/json:
+              schema:
+                $ref: './user-manager-components.yml#/components/schemas/TenantDetail'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '409':
+          $ref: './common-components.yml#/components/responses/Conflict'
+
+  /tenants/{tenantId}:
+    parameters:
+      - $ref: '#/components/parameters/TenantPathId'
+    get:
+      tags: [Tenants]
+      operationId: getTenant
+      summary: Get tenant
+      responses:
+        '200':
+          description: Tenant details with organization and branding.
+          content:
+            application/json:
+              schema:
+                $ref: './user-manager-components.yml#/components/schemas/TenantDetail'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+    put:
+      tags: [Tenants]
+      operationId: replaceTenant
+      summary: Full update tenant
+      description: Replaces all updatable fields of the tenant. All required fields must be provided.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TenantFullUpdateRequest'
+      responses:
+        '200':
+          description: Updated tenant.
+          content:
+            application/json:
+              schema:
+                $ref: './user-manager-components.yml#/components/schemas/TenantDetail'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+    patch:
+      tags: [Tenants]
+      operationId: updateTenant
+      summary: Partial update tenant
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TenantUpdateRequest'
+      responses:
+        '200':
+          description: Updated tenant.
+          content:
+            application/json:
+              schema:
+                $ref: './user-manager-components.yml#/components/schemas/TenantDetail'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+    delete:
+      tags: [Tenants]
+      operationId: deleteTenant
+      summary: Delete tenant
+      description: Soft-delete a tenant. Associated data remains but is inaccessible.
+      responses:
+        '204':
+          description: Tenant deleted.
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+
+  # ============================================
+  # ROLES
+  # ============================================
+  /roles:
+    get:
+      tags: [Roles]
+      operationId: listRoles
+      summary: List roles
+      parameters:
+        - name: name
+          in: query
+          schema:
+            type: string
+          description: Filter by name (partial match).
+        - name: includeDeleted
+          in: query
+          schema:
+            type: boolean
+            default: false
+          description: Include soft-deleted roles in results.
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+        - name: size
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 20
+      responses:
+        '200':
+          description: Paged list of roles.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RoleListResponse'
+    post:
+      tags: [Roles]
+      operationId: createRole
+      summary: Create role
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RoleCreateRequest'
+      responses:
+        '201':
+          description: Role created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Role'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '409':
+          $ref: './common-components.yml#/components/responses/Conflict'
+
+  /roles/{roleId}:
+    parameters:
+      - $ref: '#/components/parameters/RoleId'
+    get:
+      tags: [Roles]
+      operationId: getRole
+      summary: Get role
+      responses:
+        '200':
+          description: Role details.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Role'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+    put:
+      tags: [Roles]
+      operationId: replaceRole
+      summary: Full update role
+      description: Replaces all updatable fields of the role. All required fields must be provided.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RoleFullUpdateRequest'
+      responses:
+        '200':
+          description: Updated role.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Role'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+    patch:
+      tags: [Roles]
+      operationId: updateRole
+      summary: Partial update role
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RoleUpdateRequest'
+      responses:
+        '200':
+          description: Updated role.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Role'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+    delete:
+      tags: [Roles]
+      operationId: deleteRole
+      summary: Soft-delete role
+      responses:
+        '204':
+          description: Deleted.
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+
+components:
+  securitySchemes:
+    bearer:
+      $ref: './common-components.yml#/components/securitySchemes/bearer'
+  parameters:
+    # -- Re-exported path parameters from user-manager-components.yml --
+    UserId:
+      $ref: './user-manager-components.yml#/components/parameters/UserId'
+    GroupId:
+      $ref: './user-manager-components.yml#/components/parameters/GroupId'
+    RoleId:
+      $ref: './user-manager-components.yml#/components/parameters/RoleId'
+    TargetTenantId:
+      $ref: './user-manager-components.yml#/components/parameters/TargetTenantId'
+    TenantPathId:
+      $ref: './user-manager-components.yml#/components/parameters/TenantPathId'
+
+  schemas:
+    # -- Re-exported entity schemas and enums from user-manager-components.yml --
+    UserType:
+      $ref: './user-manager-components.yml#/components/schemas/UserType'
+    TenantUserStatus:
+      $ref: './user-manager-components.yml#/components/schemas/TenantUserStatus'
+    User:
+      $ref: './user-manager-components.yml#/components/schemas/User'
+    UserDetail:
+      $ref: './user-manager-components.yml#/components/schemas/UserDetail'
+
+    UserCreateRequest:
+      type: object
+      required:
+        - username
+      properties:
+        username:
+          type: string
+          minLength: 1
+          maxLength: 255
+        email:
+          type: string
+          format: email
+        enabled:
+          type: boolean
+          default: true
+        userType:
+          $ref: '#/components/schemas/UserType'
+          default: INTERNAL
+        displayName:
+          type: string
+        naturalPersonId:
+          type: string
+          format: uuid
+
+    UserUpdateRequest:
+      type: object
+      description: Partial update. Only provided fields are changed. Note that username cannot be changed after creation.
+      properties:
+        email:
+          type: string
+          format: email
+        enabled:
+          type: boolean
+        userType:
+          $ref: '#/components/schemas/UserType'
+        displayName:
+          type: string
+        naturalPersonId:
+          type: string
+          format: uuid
+          nullable: true
+
+    UserFullUpdateRequest:
+      type: object
+      description: Full update. All updatable fields must be provided. Note that username cannot be changed after creation.
+      required:
+        - email
+        - enabled
+        - userType
+        - displayName
+      properties:
+        email:
+          type: string
+          format: email
+        enabled:
+          type: boolean
+        userType:
+          $ref: '#/components/schemas/UserType'
+        displayName:
+          type: string
+        naturalPersonId:
+          type: string
+          format: uuid
+          nullable: true
+
+    UserListResponse:
+      type: object
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/User'
+        page:
+          $ref: './common-components.yml#/components/schemas/PagingMeta'
+
+    # Group schemas
+    Group:
+      $ref: './user-manager-components.yml#/components/schemas/Group'
+    GroupDetail:
+      $ref: './user-manager-components.yml#/components/schemas/GroupDetail'
+
+    GroupCreateRequest:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        description:
+          type: string
+
+    GroupUpdateRequest:
+      type: object
+      description: Partial update. Only provided fields are changed.
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        description:
+          type: string
+
+    GroupFullUpdateRequest:
+      type: object
+      description: Full update. All updatable fields must be provided.
+      required:
+        - name
+        - description
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        description:
+          type: string
+
+    GroupListResponse:
+      type: object
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Group'
+        page:
+          $ref: './common-components.yml#/components/schemas/PagingMeta'
+
+    # Role schemas
+    Role:
+      $ref: './user-manager-components.yml#/components/schemas/Role'
+
+    RoleCreateRequest:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        description:
+          type: string
+
+    RoleUpdateRequest:
+      type: object
+      description: Partial update. Only provided fields are changed.
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        description:
+          type: string
+
+    RoleFullUpdateRequest:
+      type: object
+      description: Full update. All updatable fields must be provided.
+      required:
+        - name
+        - description
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        description:
+          type: string
+
+    RoleListResponse:
+      type: object
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Role'
+        page:
+          $ref: './common-components.yml#/components/schemas/PagingMeta'
+
+    # Tenant Access schemas
+    TenantAccess:
+      $ref: './user-manager-components.yml#/components/schemas/TenantAccess'
+
+    TenantAccessRequest:
+      type: object
+      properties:
+        status:
+          $ref: '#/components/schemas/TenantUserStatus'
+          default: ACTIVE
+
+    TenantAccessListResponse:
+      type: object
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/TenantAccess'
+
+    # Tenant schemas
+    TenantType:
+      $ref: './user-manager-components.yml#/components/schemas/TenantType'
+
+    TenantCreateRequest:
+      type: object
+      required:
+        - tenantType
+        - name
+      properties:
+        tenantType:
+          $ref: './user-manager-components.yml#/components/schemas/TenantType'
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        description:
+          type: string
+          maxLength: 1000
+        organizationPartyId:
+          type: string
+          format: uuid
+          description: Optionally link to an existing party. If not provided, one will be created.
+
+    TenantFullUpdateRequest:
+      type: object
+      description: Full update. All updatable fields must be provided.
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        description:
+          type: string
+          maxLength: 1000
+          nullable: true
+        organizationPartyId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Link or update the backing party for this tenant.
+
+    TenantUpdateRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        description:
+          type: string
+          maxLength: 1000
+        organizationPartyId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Link or update the backing party for this tenant.
+
+    TenantListResponse:
+      type: object
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: './user-manager-components.yml#/components/schemas/Tenant'
+        page:
+          $ref: './common-components.yml#/components/schemas/PagingMeta'

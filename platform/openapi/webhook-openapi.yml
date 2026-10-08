@@ -1,0 +1,470 @@
+openapi: 3.0.4
+info:
+  title: Webhook API
+  version: 0.1.0
+  x-products: [edk, vdx]
+  description: |
+    Tenant webhook registry and delivery log under `/api/webhook/v1`.
+
+    An endpoint subscribes an `https` receiver to event types at tenant scope or at the scope of
+    one issuer or verifier instance. Every event matching a subscription becomes a delivery that
+    the dispatcher pushes with retries, and the delivery log exposes the outcome of each attempt
+    without ever storing receiver response bodies. Per-session callbacks configured on OID4VCI
+    and OID4VP sessions use the same signing scheme and the same delivery log; the registry
+    supplies their defaults.
+
+    ## Delivery request
+
+    Every delivery is a `POST` of a `WebhookEventEnvelope` JSON body to the endpoint `url`, plus
+    the endpoint's static `headers`, with these headers set by the dispatcher:
+
+    | Header | Value |
+    |---|---|
+    | `Webhook-Id` | Delivery identifier, stable across retries of the same delivery. |
+    | `Webhook-Timestamp` | Unix time in seconds at which the request was signed. |
+    | `Webhook-Event-Type` | The `eventType` of the body. |
+    | `Webhook-Attempt` | One-based attempt counter. |
+    | `Webhook-Signature` | `v1=<hex HMAC-SHA256(secret, "<Webhook-Timestamp>.<raw body>")>` |
+
+    The receiver verifies the signature by computing HMAC-SHA256 over the ASCII concatenation of
+    the `Webhook-Timestamp` value, a single `.`, and the raw request body bytes, keyed with the
+    endpoint secret, and comparing the lowercase hex digest in constant time with the value after
+    `v1=`. During a secret rotation grace period the header carries one `v1=` value per active
+    secret, comma separated; any verifying value accepts the request. Receivers should reject
+    timestamps outside their tolerance window to defeat replay.
+
+    A `2xx` response marks the delivery `DELIVERED`. `408`, `425`, `429`, `5xx`, and transport
+    failures schedule a retry per the endpoint's `retry` policy; any other `4xx` marks the delivery
+    `FAILED` without retry. A delivery that exhausts `retry.maxAttempts` becomes `DEAD_LETTER` and
+    can be re-queued with the redeliver action.
+
+    ## Concurrency
+
+    Endpoint mutations are compare-and-set: `PUT` and `DELETE` require `If-Match` carrying the
+    `etag` of the last read and answer 412 on a stale tag or 428 when the header is missing.
+servers:
+  - url: https://api.example.com/api/webhook/v1
+    description: Production server.
+  - url: http://localhost:8080/api/webhook/v1
+    description: Local development server.
+security:
+  - bearer: []
+tags:
+  - name: WebhookEndpoints
+    description: Register, inspect, replace, test, and rotate the secret of webhook endpoints. The tenant is resolved from the bearer token.
+  - name: WebhookDeliveries
+    description: Read the delivery log and re-queue dead-lettered deliveries.
+  - name: WebhookEventTypes
+    description: Discover the event types an endpoint can subscribe to.
+paths:
+  /endpoints:
+    get:
+      tags: [WebhookEndpoints]
+      summary: List webhook endpoints
+      operationId: listWebhookEndpoints
+      x-command-id: webhook.endpoint.list
+      description: Returns every endpoint of the caller's tenant, optionally narrowed to one scope.
+      parameters:
+        - name: scope
+          in: query
+          required: false
+          schema:
+            $ref: './webhook-components.yml#/components/schemas/WebhookScope'
+        - name: scopeId
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: enabled
+          in: query
+          required: false
+          schema:
+            type: boolean
+      responses:
+        '200':
+          description: Endpoints of the tenant.
+          content:
+            application/json:
+              schema:
+                $ref: './webhook-components.yml#/components/schemas/WebhookEndpointList'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+    post:
+      tags: [WebhookEndpoints]
+      summary: Register a webhook endpoint
+      operationId: createWebhookEndpoint
+      x-command-id: webhook.endpoint.create
+      description: |
+        Registers a receiver. Exactly one of `secretValue` and `secretRef` must be supplied; the
+        value is stored through secret management and only its reference is ever returned. The
+        `url` must use `https`. `scopeId` is required for instance scopes and must name an issuer
+        or verifier instance of the tenant.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './webhook-components.yml#/components/schemas/CreateWebhookEndpointRequest'
+            examples:
+              tenantEndpoint:
+                $ref: './webhook-components.yml#/components/examples/CreateTenantEndpointRequest'
+              issuerInstanceEndpoint:
+                $ref: './webhook-components.yml#/components/examples/CreateIssuerInstanceEndpointRequest'
+      responses:
+        '201':
+          description: Endpoint registered.
+          content:
+            application/json:
+              schema:
+                $ref: './webhook-components.yml#/components/schemas/WebhookEndpoint'
+              examples:
+                endpoint:
+                  $ref: './webhook-components.yml#/components/examples/WebhookEndpointExample'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '409':
+          $ref: './common-components.yml#/components/responses/Conflict'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+      callbacks:
+        webhookEvent:
+          '{$request.body#/url}':
+            post:
+              summary: Event delivery
+              description: |
+                Sent for every event matching the endpoint's `eventTypes`. Signed as described in
+                the API description; the `Webhook-*` headers below are always present.
+              parameters:
+                - name: Webhook-Id
+                  in: header
+                  required: true
+                  schema:
+                    type: string
+                - name: Webhook-Timestamp
+                  in: header
+                  required: true
+                  schema:
+                    type: integer
+                    format: int64
+                - name: Webhook-Event-Type
+                  in: header
+                  required: true
+                  schema:
+                    $ref: './webhook-components.yml#/components/schemas/WebhookEventTypeId'
+                - name: Webhook-Attempt
+                  in: header
+                  required: true
+                  schema:
+                    type: integer
+                    minimum: 1
+                - name: Webhook-Signature
+                  in: header
+                  required: true
+                  schema:
+                    type: string
+                    pattern: '^v1=[0-9a-f]{64}(,v1=[0-9a-f]{64})*$'
+              requestBody:
+                required: true
+                content:
+                  application/json:
+                    schema:
+                      $ref: './webhook-components.yml#/components/schemas/WebhookEventEnvelope'
+                    examples:
+                      issuanceStatusChanged:
+                        $ref: './webhook-components.yml#/components/examples/WebhookEventEnvelopeExample'
+              responses:
+                '2XX':
+                  description: Delivery accepted by the receiver. The response body is ignored and never stored.
+                '4XX':
+                  description: Delivery rejected. `408`, `425`, and `429` are retried; every other 4xx marks the delivery `FAILED`.
+                '5XX':
+                  description: Receiver failure. Retried per the endpoint retry policy.
+
+  /endpoints/{endpointId}:
+    parameters:
+      - $ref: './webhook-components.yml#/components/parameters/EndpointId'
+    get:
+      tags: [WebhookEndpoints]
+      summary: Get a webhook endpoint
+      operationId: getWebhookEndpoint
+      x-command-id: webhook.endpoint.get
+      responses:
+        '200':
+          description: The endpoint.
+          content:
+            application/json:
+              schema:
+                $ref: './webhook-components.yml#/components/schemas/WebhookEndpoint'
+              examples:
+                endpoint:
+                  $ref: './webhook-components.yml#/components/examples/WebhookEndpointExample'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+    put:
+      tags: [WebhookEndpoints]
+      summary: Replace a webhook endpoint
+      operationId: replaceWebhookEndpoint
+      x-command-id: webhook.endpoint.replace
+      description: |
+        Replaces the endpoint configuration under `If-Match`. The signing secret is untouched;
+        rotate it through the dedicated action. Pending deliveries keep their queue position and
+        pick up the new `url`, `headers`, and `retry` policy on their next attempt.
+      parameters:
+        - $ref: './webhook-components.yml#/components/parameters/WebhookIfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './webhook-components.yml#/components/schemas/ReplaceWebhookEndpointRequest'
+      responses:
+        '200':
+          description: The replaced endpoint with its new `etag`.
+          content:
+            application/json:
+              schema:
+                $ref: './webhook-components.yml#/components/schemas/WebhookEndpoint'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '412':
+          $ref: './webhook-components.yml#/components/responses/PreconditionFailed'
+        '428':
+          $ref: './webhook-components.yml#/components/responses/PreconditionRequired'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+    delete:
+      tags: [WebhookEndpoints]
+      summary: Delete a webhook endpoint
+      operationId: deleteWebhookEndpoint
+      x-command-id: webhook.endpoint.delete
+      description: Deletes the endpoint under `If-Match`. Pending and retrying deliveries for it are cancelled; the delivery log is retained.
+      parameters:
+        - $ref: './webhook-components.yml#/components/parameters/WebhookIfMatch'
+      responses:
+        '204':
+          description: Endpoint deleted.
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '412':
+          $ref: './webhook-components.yml#/components/responses/PreconditionFailed'
+        '428':
+          $ref: './webhook-components.yml#/components/responses/PreconditionRequired'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /endpoints/{endpointId}/secret:rotate:
+    parameters:
+      - $ref: './webhook-components.yml#/components/parameters/EndpointId'
+    post:
+      tags: [WebhookEndpoints]
+      summary: Rotate the signing secret
+      operationId: rotateWebhookEndpointSecret
+      x-command-id: webhook.endpoint.rotatesecret
+      description: |
+        Installs a new signing secret. When the request carries neither `secretValue` nor
+        `secretRef`, the service generates one and returns it exactly once in `secretValue`.
+        With a non-zero `gracePeriodSeconds`, deliveries carry signatures under both the new and
+        the previous secret until the window closes. Rotation bumps the endpoint `etag`.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: './webhook-components.yml#/components/schemas/RotateWebhookSecretRequest'
+      responses:
+        '200':
+          description: Secret rotated.
+          content:
+            application/json:
+              schema:
+                $ref: './webhook-components.yml#/components/schemas/RotateWebhookSecretResponse'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /endpoints/{endpointId}/test:
+    parameters:
+      - $ref: './webhook-components.yml#/components/parameters/EndpointId'
+    post:
+      tags: [WebhookEndpoints]
+      summary: Send a test event
+      operationId: testWebhookEndpoint
+      x-command-id: webhook.endpoint.test
+      description: |
+        Queues a synthetic `webhook.endpoint.test` event for this endpoint through the regular
+        dispatcher, so the receiver sees a real signed request and the outcome lands in the
+        delivery log. A disabled endpoint is tested as well. The returned delivery is `PENDING`;
+        poll it to see the receiver's answer.
+      responses:
+        '202':
+          description: Test delivery queued.
+          content:
+            application/json:
+              schema:
+                $ref: './webhook-components.yml#/components/schemas/WebhookDelivery'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+      callbacks:
+        testEvent:
+          '{$request.path.endpointId}':
+            post:
+              summary: Test event delivery
+              description: A `WebhookEventEnvelope` with `eventType` `webhook.endpoint.test`, signed exactly like a production delivery and sent to the endpoint `url`.
+              requestBody:
+                required: true
+                content:
+                  application/json:
+                    schema:
+                      $ref: './webhook-components.yml#/components/schemas/WebhookEventEnvelope'
+              responses:
+                '2XX':
+                  description: Delivery accepted by the receiver.
+
+  /endpoints/{endpointId}/deliveries:
+    parameters:
+      - $ref: './webhook-components.yml#/components/parameters/EndpointId'
+    get:
+      tags: [WebhookDeliveries]
+      summary: List deliveries of an endpoint
+      operationId: listWebhookDeliveries
+      x-command-id: webhook.delivery.list
+      description: Pages through the delivery log of one endpoint, newest first, optionally filtered by status and event type.
+      parameters:
+        - $ref: './webhook-components.yml#/components/parameters/DeliveryStatusFilter'
+        - $ref: './webhook-components.yml#/components/parameters/EventTypeFilter'
+        - $ref: './common-components.yml#/components/parameters/Limit'
+        - $ref: './common-components.yml#/components/parameters/Offset'
+      responses:
+        '200':
+          description: Page of deliveries.
+          content:
+            application/json:
+              schema:
+                $ref: './webhook-components.yml#/components/schemas/WebhookDeliveryPage'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /deliveries/{deliveryId}:
+    parameters:
+      - $ref: './webhook-components.yml#/components/parameters/DeliveryId'
+    get:
+      tags: [WebhookDeliveries]
+      summary: Get a delivery
+      operationId: getWebhookDelivery
+      x-command-id: webhook.delivery.get
+      responses:
+        '200':
+          description: The delivery.
+          content:
+            application/json:
+              schema:
+                $ref: './webhook-components.yml#/components/schemas/WebhookDelivery'
+              examples:
+                delivery:
+                  $ref: './webhook-components.yml#/components/examples/WebhookDeliveryExample'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /deliveries/{deliveryId}:redeliver:
+    parameters:
+      - $ref: './webhook-components.yml#/components/parameters/DeliveryId'
+    post:
+      tags: [WebhookDeliveries]
+      summary: Re-queue a delivery
+      operationId: redeliverWebhookDelivery
+      x-command-id: webhook.delivery.redeliver
+      description: |
+        Returns a `DEAD_LETTER` or `FAILED` delivery to `PENDING` with its attempt counter reset,
+        so the dispatcher sends it again with the same `eventId`. Deliveries in any other status
+        are rejected with 409.
+      responses:
+        '202':
+          description: Delivery re-queued.
+          content:
+            application/json:
+              schema:
+                $ref: './webhook-components.yml#/components/schemas/WebhookDelivery'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '409':
+          $ref: './common-components.yml#/components/responses/Conflict'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /eventtypes:
+    get:
+      tags: [WebhookEventTypes]
+      summary: List event types
+      operationId: listWebhookEventTypes
+      x-command-id: webhook.eventtype.list
+      description: Returns the event types this deployment can emit, with the subject fields each one carries.
+      responses:
+        '200':
+          description: Event types.
+          content:
+            application/json:
+              schema:
+                $ref: './webhook-components.yml#/components/schemas/WebhookEventTypeList'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+components:
+  securitySchemes:
+    bearer:
+      $ref: './common-components.yml#/components/securitySchemes/bearer'

@@ -1,0 +1,528 @@
+components:
+  parameters:
+    ManagedWalletOnboardingProcessId:
+      name: processId
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
+  schemas:
+    WalletChannel:
+      type: string
+      enum: [WEB, MOBILE]
+    WalletAppRuntime:
+      type: string
+      enum: [WEB, MOBILE, DESKTOP, HEADLESS]
+    WalletPersona:
+      type: string
+      enum: [PERSONAL, PROFESSIONAL, BUSINESS]
+    WalletProfileType:
+      type: string
+      enum: [PERSONAL, PROFESSIONAL, BUSINESS]
+    WalletOfferAvailability:
+      type: string
+      enum: [AVAILABLE, TEMPORARILY_UNAVAILABLE]
+    WalletOnboardingPhase:
+      type: string
+      enum:
+        - IDLE
+        - CONSENT_REQUIRED
+        - IDV_REQUIRED
+        - IDV_PENDING
+        - OFFER_PENDING
+        - OFFER_SELECTION_REQUIRED
+        - AWAITING_PRIMARY_FACTOR
+        - ENROLLING_PASSKEY
+        - ENROLLING_PIN
+        - PRIMARY_FACTOR_ENROLLED
+        - ENABLING_BIOMETRICS
+        - READY_TO_COMPLETE
+        - LEGAL_ACCEPTED
+        - PROVISIONING
+        - RECOVERY_PENDING
+        - ACTIVE
+        - CANCELLED
+        - FAILED
+    ManagedWalletOnboardingProcessState:
+      type: string
+      enum:
+        - CONSENT_REQUIRED
+        - IDV_REQUIRED
+        - IDV_PENDING
+        - IDV_VERIFIED
+        - IDENTITY_LINKED
+        - OFFERS_PENDING
+        - OFFER_SELECTION_REQUIRED
+        - AUTHENTICATOR_PENDING
+        - ACTIVATION_PENDING
+        - CONTENT_KEY_PENDING
+        - ACTIVE
+        - COMPENSATING
+        - CANCELLED
+        - EXPIRED
+        - FAILED
+    WalletOnboardingFailureCode:
+      type: string
+      enum:
+        - INVALID_REQUEST
+        - SESSION_NOT_FOUND
+        - REVISION_CONFLICT
+        - INVALID_PHASE
+        - PROFILE_EXISTS
+        - PLATFORM_UNAVAILABLE
+        - PASSKEY_ENROLLMENT_FAILED
+        - PIN_ENROLLMENT_FAILED
+        - BIOMETRIC_ENROLLMENT_FAILED
+        - STORAGE_UNAVAILABLE
+        - PROVISIONING_FAILED
+        - WALLET_UNIT_BINDING_MISMATCH
+        - ACTIVATION_FAILED
+        - COMPENSATION_INCOMPLETE
+        - CANCELLED
+    WalletOnboardingStartRequest:
+      type: object
+      additionalProperties: false
+      required: [displayName, offeringRef, channel, appRuntime, idempotencyKey]
+      properties:
+        displayName: { type: string, minLength: 1 }
+        profileId: { type: string, nullable: true }
+        profileType:
+          allOf:
+            - $ref: '#/components/schemas/WalletProfileType'
+          nullable: true
+        offeringRef: { type: string, minLength: 1 }
+        channel:
+          $ref: '#/components/schemas/WalletChannel'
+        appRuntime:
+          $ref: '#/components/schemas/WalletAppRuntime'
+        idempotencyKey: { type: string, minLength: 1, maxLength: 256 }
+    CaptureManagedWalletIdentifierInputArgs:
+      type: object
+      additionalProperties: false
+      required: [ceremonyRef, email, idempotencyKey]
+      properties:
+        ceremonyRef:
+          type: string
+          minLength: 1
+          description: Opaque provider-issued ceremony reference.
+        email:
+          type: string
+          format: email
+          minLength: 1
+          maxLength: 320
+          writeOnly: true
+          description: One-use clear-text input protected immediately by the provider.
+        idempotencyKey:
+          type: string
+          minLength: 1
+          maxLength: 256
+          writeOnly: true
+    WalletOnboardingIdentifierInputRef:
+      type: object
+      additionalProperties: false
+      required: [value]
+      properties:
+        value:
+          type: string
+          minLength: 1
+          description: Opaque one-use reference. It does not contain the identifier.
+    ManagedWalletOnboardingDispatch:
+      type: object
+      additionalProperties: false
+      required: [expectedRevision, idempotencyKey, action]
+      properties:
+        expectedRevision: { type: integer, format: int64, minimum: 0 }
+        idempotencyKey: { type: string, minLength: 1, maxLength: 256 }
+        action:
+          $ref: '#/components/schemas/WalletOnboardingAction'
+    WalletOnboardingAction:
+      oneOf:
+        - $ref: '#/components/schemas/SubmitIdentifierInputAction'
+        - $ref: '#/components/schemas/EnrollPasskeyAction'
+        - $ref: '#/components/schemas/EnrollPinAction'
+        - $ref: '#/components/schemas/EnableBiometricsAction'
+        - $ref: '#/components/schemas/SkipBiometricsAction'
+        - $ref: '#/components/schemas/AcceptLegalAction'
+        - $ref: '#/components/schemas/SelectOfferAction'
+        - $ref: '#/components/schemas/CompleteAuthenticatorAction'
+        - $ref: '#/components/schemas/CompleteOnboardingAction'
+        - $ref: '#/components/schemas/ResendIdvAction'
+        - $ref: '#/components/schemas/RetryOnboardingAction'
+      discriminator:
+        propertyName: type
+        mapping:
+          submit-identifier-input: '#/components/schemas/SubmitIdentifierInputAction'
+          enroll-passkey: '#/components/schemas/EnrollPasskeyAction'
+          enroll-pin: '#/components/schemas/EnrollPinAction'
+          enable-biometrics: '#/components/schemas/EnableBiometricsAction'
+          skip-biometrics: '#/components/schemas/SkipBiometricsAction'
+          accept-legal: '#/components/schemas/AcceptLegalAction'
+          select-offer: '#/components/schemas/SelectOfferAction'
+          complete-authenticator: '#/components/schemas/CompleteAuthenticatorAction'
+          complete: '#/components/schemas/CompleteOnboardingAction'
+          resend-idv: '#/components/schemas/ResendIdvAction'
+          retry: '#/components/schemas/RetryOnboardingAction'
+    ActionBase:
+      type: object
+      required: [type]
+      properties:
+        type: { type: string }
+    SubmitIdentifierInputAction:
+      allOf:
+        - $ref: '#/components/schemas/ActionBase'
+        - type: object
+          required: [inputRef]
+          properties:
+            type: { type: string, enum: [submit-identifier-input] }
+            inputRef:
+              $ref: '#/components/schemas/WalletOnboardingIdentifierInputRef'
+    EnrollPasskeyAction:
+      allOf:
+        - $ref: '#/components/schemas/ActionBase'
+        - type: object
+          properties: { type: { type: string, enum: [enroll-passkey] } }
+    EnrollPinAction:
+      allOf:
+        - $ref: '#/components/schemas/ActionBase'
+        - type: object
+          properties: { type: { type: string, enum: [enroll-pin] } }
+    EnableBiometricsAction:
+      allOf:
+        - $ref: '#/components/schemas/ActionBase'
+        - type: object
+          properties: { type: { type: string, enum: [enable-biometrics] } }
+    SkipBiometricsAction:
+      allOf:
+        - $ref: '#/components/schemas/ActionBase'
+        - type: object
+          properties: { type: { type: string, enum: [skip-biometrics] } }
+    CompleteOnboardingAction:
+      allOf:
+        - $ref: '#/components/schemas/ActionBase'
+        - type: object
+          properties: { type: { type: string, enum: [complete] } }
+    WalletOnboardingLegalAcceptance:
+      type: object
+      additionalProperties: false
+      required: [termsDocumentRef, termsVersion, privacyDocumentRef, privacyVersion, acceptedAtEpochSeconds]
+      properties:
+        termsDocumentRef: { type: string, minLength: 1 }
+        termsVersion: { type: string, minLength: 1 }
+        privacyDocumentRef: { type: string, minLength: 1 }
+        privacyVersion: { type: string, minLength: 1 }
+        acceptedAtEpochSeconds: { type: integer, format: int64, minimum: 1 }
+    AcceptLegalAction:
+      allOf:
+        - $ref: '#/components/schemas/ActionBase'
+        - type: object
+          required: [acceptance]
+          properties:
+            type: { type: string, enum: [accept-legal] }
+            acceptance:
+              $ref: '#/components/schemas/WalletOnboardingLegalAcceptance'
+    SelectOfferAction:
+      allOf:
+        - $ref: '#/components/schemas/ActionBase'
+        - type: object
+          required: [offerRef]
+          properties:
+            type: { type: string, enum: [select-offer] }
+            offerRef: { type: string, minLength: 1 }
+    CompleteAuthenticatorAction:
+      allOf:
+        - $ref: '#/components/schemas/ActionBase'
+        - type: object
+          required: [ceremonyCompletionRef]
+          properties:
+            type: { type: string, enum: [complete-authenticator] }
+            ceremonyCompletionRef: { type: string, minLength: 1 }
+    ResendIdvAction:
+      allOf:
+        - $ref: '#/components/schemas/ActionBase'
+        - type: object
+          properties:
+            type: { type: string, enum: [resend-idv] }
+    RetryOnboardingAction:
+      allOf:
+        - $ref: '#/components/schemas/ActionBase'
+        - type: object
+          properties:
+            type: { type: string, enum: [retry] }
+    ManagedWalletOnboardingResumeHttpRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedRevision, idempotencyKey, completion]
+      properties:
+        expectedRevision: { type: integer, format: int64, minimum: 0 }
+        idempotencyKey: { type: string, minLength: 1, maxLength: 256 }
+        completion:
+          $ref: '#/components/schemas/ManagedWalletOnboardingCompletionHttpEnvelope'
+    ManagedWalletOnboardingCompletionHttpEnvelope:
+      type: object
+      additionalProperties: false
+      required: [correlationRef, payloadBase64Url, payloadDigest, signatureEvidence]
+      properties:
+        correlationRef: { type: string, minLength: 1 }
+        payloadBase64Url: { type: string, minLength: 1, pattern: '^[A-Za-z0-9_-]+$' }
+        payloadDigest: { type: string, minLength: 1 }
+        signatureEvidence:
+          $ref: '#/components/schemas/WalletSignatureEvidence'
+    WalletSignatureEvidence:
+      type: object
+      additionalProperties: false
+      required: [algorithm, keyId, compactJws, payloadDigest]
+      properties:
+        algorithm: { type: string, minLength: 1 }
+        keyId: { type: string, minLength: 1 }
+        compactJws: { type: string, minLength: 1, writeOnly: true }
+        payloadDigest: { type: string, minLength: 1 }
+    CancelManagedWalletOnboardingRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedRevision, idempotencyKey]
+      properties:
+        expectedRevision: { type: integer, format: int64, minimum: 0 }
+        idempotencyKey: { type: string, minLength: 1, maxLength: 256 }
+    WalletOnboardingFailure:
+      type: object
+      required: [code, messageKey, retryable]
+      properties:
+        code:
+          $ref: '#/components/schemas/WalletOnboardingFailureCode'
+        messageKey: { type: string }
+        retryable: { type: boolean }
+    WalletOnboardingState:
+      type: object
+      required: [phase, processRevision, availableActions, offers]
+      properties:
+        phase:
+          $ref: '#/components/schemas/WalletOnboardingPhase'
+        ref:
+          type: object
+          nullable: true
+          properties: { value: { type: string } }
+        profileId: { type: string, nullable: true }
+        profileDisplayName: { type: string, nullable: true }
+        profileType:
+          allOf:
+            - $ref: '#/components/schemas/WalletProfileType'
+          nullable: true
+        pinEntryStage: { type: string }
+        capabilities: { type: object, nullable: true, additionalProperties: true }
+        primaryFactor: { type: string, nullable: true }
+        biometricEnabled: { type: boolean, nullable: true }
+        legalAcceptance:
+          type: object
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/WalletOnboardingLegalAcceptance'
+        processRevision: { type: integer, format: int64, minimum: 0 }
+        availableActions:
+          type: array
+          uniqueItems: true
+          items: { type: string }
+        offers:
+          type: array
+          items:
+            $ref: '#/components/schemas/WalletOnboardingOffer'
+        selectedOfferRef: { type: string, nullable: true }
+        identifierInputCeremonyRef:
+          type: string
+          nullable: true
+          description: Opaque one-use identifier-input ceremony reference; never a raw identifier.
+        authenticatorCeremonyRef:
+          type: string
+          nullable: true
+          description: Opaque enterprise-wallet authenticator ceremony reference.
+        failure:
+          type: object
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/WalletOnboardingFailure'
+    WalletOnboardingOffer:
+      type: object
+      required: [offerRef, persona, displayName, allowedChannels, expiresAtEpochSeconds, availability]
+      properties:
+        offerRef: { type: string }
+        persona:
+          $ref: '#/components/schemas/WalletPersona'
+        displayName: { type: string }
+        allowedChannels:
+          type: array
+          uniqueItems: true
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/WalletChannel'
+        expiresAtEpochSeconds: { type: integer, format: int64, minimum: 1 }
+        availability:
+          $ref: '#/components/schemas/WalletOfferAvailability'
+        availabilityMessage:
+          type: string
+          nullable: true
+          enum: [Managed wallet temporarily unavailable]
+          description: Fixed generic message. Readiness gate details are never exposed.
+    ManagedWalletOffer:
+      type: object
+      required: [offerRef, persona, displayName, allowedChannels, featureManifest, expiresAtEpochSeconds, availability]
+      properties:
+        offerRef: { type: string }
+        persona:
+          $ref: '#/components/schemas/WalletPersona'
+        displayName: { type: string }
+        assignmentRef: { type: string, nullable: true }
+        allowedChannels:
+          type: array
+          uniqueItems: true
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/WalletChannel'
+        featureManifest:
+          type: object
+          description: Signed effective feature decisions and complete assignment provenance.
+          additionalProperties: true
+        expiresAtEpochSeconds: { type: integer, format: int64, minimum: 1 }
+        availability:
+          $ref: '#/components/schemas/WalletOfferAvailability'
+        availabilityMessage:
+          type: string
+          nullable: true
+          enum: [Managed wallet temporarily unavailable]
+          description: Fixed generic message. Readiness gate details are never exposed.
+    WalletAppRegistration:
+      type: object
+      required:
+        - appRegistrationId
+        - walletInstanceId
+        - walletUnitId
+        - channel
+        - runtime
+        - activationBindingRef
+        - authenticatorRefs
+        - status
+        - policyRevision
+        - registeredAtEpochSeconds
+      properties:
+        appRegistrationId: { type: string }
+        walletInstanceId: { type: string }
+        walletUnitId: { type: string }
+        channel:
+          $ref: '#/components/schemas/WalletChannel'
+        runtime:
+          $ref: '#/components/schemas/WalletAppRuntime'
+        activationBindingRef: { type: string }
+        authenticatorRefs:
+          type: array
+          uniqueItems: true
+          items: { type: string }
+        attestationEvidenceRef: { type: string, nullable: true }
+        status: { type: string, enum: [PENDING_ACTIVATION, ACTIVE, SUSPENDED, REVOKED] }
+        policyRevision: { type: integer, format: int64, minimum: 1 }
+        registeredAtEpochSeconds: { type: integer, format: int64, minimum: 1 }
+        lastUsedAtEpochSeconds: { type: integer, format: int64, nullable: true }
+    ManagedWalletOnboardingSnapshot:
+      type: object
+      required:
+        - processId
+        - revision
+        - state
+        - clientState
+        - offers
+        - createdAtEpochSeconds
+        - updatedAtEpochSeconds
+        - expiresAtEpochSeconds
+      properties:
+        processId:
+          type: object
+          required: [value]
+          properties: { value: { type: string } }
+        revision: { type: integer, format: int64, minimum: 0 }
+        state:
+          $ref: '#/components/schemas/ManagedWalletOnboardingProcessState'
+        clientState:
+          $ref: '#/components/schemas/WalletOnboardingState'
+        offers:
+          type: array
+          items:
+            $ref: '#/components/schemas/ManagedWalletOffer'
+        selectedOfferRef: { type: string, nullable: true }
+        authenticatorCeremonyRef:
+          type: string
+          nullable: true
+          description: Opaque reference for the enterprise-wallet-hosted authenticator ceremony.
+        activeAppRegistration:
+          type: object
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/WalletAppRegistration'
+        runtimePlan:
+          type: object
+          nullable: true
+          description: UI-safe resolved runtime plan; never includes KMS handles, keys, or plaintext secrets.
+          additionalProperties: true
+        createdAtEpochSeconds: { type: integer, format: int64 }
+        updatedAtEpochSeconds: { type: integer, format: int64 }
+        expiresAtEpochSeconds: { type: integer, format: int64 }
+        reasonCode: { type: string, nullable: true }
+    ManagedWalletOnboardingEvent:
+      type: object
+      additionalProperties: false
+      required: [processId, revision, eventType, state, occurredAtEpochSeconds]
+      properties:
+        processId:
+          type: object
+          additionalProperties: false
+          required: [value]
+          properties: { value: { type: string, minLength: 1 } }
+        revision: { type: integer, format: int64, minimum: 0 }
+        eventType: { type: string, minLength: 1 }
+        state:
+          $ref: '#/components/schemas/ManagedWalletOnboardingProcessState'
+        reasonCode: { type: string, nullable: true }
+        occurredAtEpochSeconds: { type: integer, format: int64, minimum: 1 }
+    ManagedWalletSupportHealth:
+      type: string
+      enum: [IN_PROGRESS, HEALTHY, ACTION_REQUIRED, TERMINAL]
+    ManagedWalletSupportReferences:
+      type: object
+      additionalProperties: false
+      required: [processRef]
+      properties:
+        processRef: { type: string, minLength: 1 }
+        walletInstanceRef: { type: string, nullable: true }
+        walletUnitRef: { type: string, nullable: true }
+        appRegistrationRef: { type: string, nullable: true }
+    ManagedWalletSupportSnapshot:
+      type: object
+      additionalProperties: false
+      required: [references, state, phase, health, createdAtEpochSeconds, updatedAtEpochSeconds, expiresAtEpochSeconds, ageSeconds, policyRevision, reasonCodes]
+      properties:
+        references:
+          $ref: '#/components/schemas/ManagedWalletSupportReferences'
+        state:
+          $ref: '#/components/schemas/ManagedWalletOnboardingProcessState'
+        phase:
+          $ref: '#/components/schemas/WalletOnboardingPhase'
+        health:
+          $ref: '#/components/schemas/ManagedWalletSupportHealth'
+        createdAtEpochSeconds: { type: integer, format: int64 }
+        updatedAtEpochSeconds: { type: integer, format: int64 }
+        expiresAtEpochSeconds: { type: integer, format: int64 }
+        ageSeconds: { type: integer, format: int64, minimum: 0 }
+        policyRevision: { type: integer, format: int64, minimum: 1 }
+        appRegistrationStatus:
+          type: string
+          nullable: true
+          enum: [PENDING_ACTIVATION, ACTIVE, SUSPENDED, REVOKED]
+        channel:
+          nullable: true
+          $ref: '#/components/schemas/WalletChannel'
+        runtime:
+          nullable: true
+          $ref: '#/components/schemas/WalletAppRuntime'
+        reasonCodes:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+            pattern: '^[a-z0-9][a-z0-9_.:-]{0,119}$'

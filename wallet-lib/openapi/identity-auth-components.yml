@@ -1,0 +1,306 @@
+openapi: 3.0.4
+info:
+  title: Identity Auth API Components
+  version: 0.1.0
+  description: Entity schemas, request payloads, enums, and path parameters for the Identity Auth API.
+paths: {}
+components:
+  parameters:
+    CredentialId:
+      name: credentialId
+      in: path
+      required: true
+      description: Credential row id.
+      schema:
+        type: string
+        format: uuid
+
+  schemas:
+    # --- Entities -----------------------------------------------
+
+    UserCredential:
+      type: object
+      description: >-
+        A stored login credential, linked one-to-one to the Identity it authenticates. Returned by
+        the credential admin operations. `passwordHash` is the PHC-formatted hash; treat it as
+        sensitive and never surface it to end users.
+      required:
+        - id
+        - tenantId
+        - identityId
+        - username
+        - passwordHash
+        - hashAlgorithm
+        - status
+        - failedAttempts
+        - temporaryLockoutCount
+        - passwordChangedAt
+        - createdAt
+        - updatedAt
+      properties:
+        id: { type: string, format: uuid }
+        tenantId: { type: string }
+        identityId:
+          type: string
+          format: uuid
+          description: The Identity record this credential authenticates.
+        username:
+          type: string
+          description: Login handle, typically the user's email address.
+        passwordHash:
+          type: string
+          description: PHC-formatted hash string, for example `$pbkdf2-sha256$i=600000$...`. The embedded algorithm is authoritative at verification time.
+        hashAlgorithm:
+          type: string
+          enum: [PBKDF2_SHA256, PBKDF2_SHA512, ARGON2ID, SCRYPT]
+        emailVerifiedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: Mirrors the linked Identity's verified email. Null when no identity-verification email challenge has completed for this username.
+        status:
+          type: string
+          enum: [ACTIVE, DISABLED, LOCKED]
+          description: Lifecycle state. Time-based lockout is tracked separately through `lockedUntil`.
+        failedAttempts: { type: integer, format: int32 }
+        lockedUntil:
+          type: string
+          format: date-time
+          nullable: true
+          description: When set and in the future, the credential is locked regardless of `status`.
+        temporaryLockoutCount:
+          type: integer
+          format: int32
+          description: Number of temporary-lockout cycles since the last successful login. Resets to 0 on success.
+        lastLoginAt:
+          type: string
+          format: date-time
+          nullable: true
+        lastLoginIp:
+          type: string
+          nullable: true
+        passwordChangedAt: { type: string, format: date-time }
+        mustChangePasswordBy:
+          type: string
+          format: date-time
+          nullable: true
+          description: When set and at or before now, the user must change their password. Future values lie dormant until the deadline. Cleared on a successful password change.
+        createdAt: { type: string, format: date-time }
+        createdById:
+          type: string
+          format: uuid
+          nullable: true
+        updatedAt: { type: string, format: date-time }
+        updatedById:
+          type: string
+          format: uuid
+          nullable: true
+        deletedAt:
+          type: string
+          format: date-time
+          nullable: true
+        deletedById:
+          type: string
+          format: uuid
+          nullable: true
+
+    AuthenticatedUser:
+      type: object
+      description: The authenticated subject the Authorization Server carries into its token flow.
+      required: [userId, authenticatedAt, authenticationMethod]
+      properties:
+        userId:
+          type: string
+          description: The tenant Identity record id.
+        authenticatedAt: { type: string, format: date-time }
+        authenticationMethod:
+          type: string
+          enum: [PASSWORD, MFA, OAUTH, SAML, WEBAUTHN, PASSWORDLESS, CERTIFICATE, CUSTOM]
+        acr:
+          type: string
+          nullable: true
+          description: OIDC Authentication Context Class Reference.
+        amr:
+          type: array
+          nullable: true
+          description: OIDC Authentication Methods References (RFC 8176).
+          items:
+            type: string
+
+    # --- Credential requests ------------------------------------
+
+    CreateCredentialRequest:
+      type: object
+      description: Admin request to create a login credential for an existing Identity.
+      required: [identityId, username, plaintextPassword]
+      properties:
+        identityId:
+          type: string
+          format: uuid
+          description: The Identity the new credential authenticates. Must already exist.
+        username:
+          type: string
+          description: Login handle, typically the user's email address.
+          example: alice@example.com
+        plaintextPassword:
+          type: string
+          format: password
+          writeOnly: true
+          description: Plaintext password. Hashed server-side before storage and never returned.
+
+    UpdatePasswordRequest:
+      type: object
+      description: >-
+        Rotate a credential's password. The caller proves knowledge of the current password; the
+        server re-verifies it before rotating the hash. The `credentialId` is taken from the path.
+      required: [oldPassword, newPassword]
+      properties:
+        oldPassword:
+          type: string
+          format: password
+          writeOnly: true
+        newPassword:
+          type: string
+          format: password
+          writeOnly: true
+
+    # --- Session requests and results ---------------------------
+
+    GetAuthenticatedSessionRequest:
+      type: object
+      required: [sessionId]
+      properties:
+        sessionId:
+          type: string
+          description: >-
+            Authorization-Server flow session id. Carried in the body rather than the URL because
+            it is bearer-equivalent and must not leak through referer, browser history, or proxy
+            logs (RFC 6750 section 2.3).
+
+    GetAuthenticatedSessionResult:
+      type: object
+      description: >-
+        The authenticated user for a session, or `user: null`. The null case collapses three
+        situations into one signal: the session does not exist, it has expired, or no
+        authentication has completed yet.
+      properties:
+        user:
+          type: object
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/AuthenticatedUser'
+
+    LogoutSessionRequest:
+      type: object
+      required: [sessionId]
+      properties:
+        sessionId:
+          type: string
+          description: Authorization-Server flow session id to terminate.
+
+    LogoutSessionResult:
+      type: object
+      required: [loggedOut]
+      properties:
+        loggedOut:
+          type: boolean
+          description: True when an active session was found and removed. False when none existed; logout is idempotent and the false case is not an error.
+
+    EndSessionRequest:
+      type: object
+      description: >-
+        OpenID Connect RP-Initiated Logout (section 3). Supply at least one of `idTokenHint`,
+        `sessionId`, or `identityId` to choose the precision. With `idTokenHint` the server validates
+        it and derives the subject; with `sessionId` a single session is terminated; with
+        `identityId` every session for that identity in the tenant is terminated.
+      properties:
+        idTokenHint:
+          type: string
+          nullable: true
+          description: A previously issued ID token. Validated, then used to derive the subject and optional session id.
+        sessionId:
+          type: string
+          nullable: true
+        identityId:
+          type: string
+          nullable: true
+        postLogoutRedirectUri:
+          type: string
+          nullable: true
+          description: Where to send the user agent after logout. Echoed back as `redirectUri` with `state` appended. Validation against the client's registered URIs is a client-store concern.
+        state:
+          type: string
+          nullable: true
+        clientId:
+          type: string
+          nullable: true
+
+    EndSessionResult:
+      type: object
+      required: [sessionsTerminated, backChannelNotified]
+      properties:
+        redirectUri:
+          type: string
+          nullable: true
+          description: Where the front-end should send the user agent after logout, or null when no redirect target was supplied.
+        sessionsTerminated:
+          type: integer
+          format: int32
+          description: Number of sessions removed from the store.
+        backChannelNotified:
+          type: integer
+          format: int32
+          description: Number of Back-Channel Logout notifications fired.
+
+    # --- Redirect-flow authentication ---------------------------
+
+    InitiateAuthenticationRequest:
+      type: object
+      required: [sessionId, returnUrl]
+      properties:
+        sessionId:
+          type: string
+          description: Authorization-Server flow session id this challenge belongs to.
+        returnUrl:
+          type: string
+          format: uri
+          description: Where the user agent returns after the external provider finishes.
+        methodId:
+          type: string
+          nullable: true
+          description: Configured method key. When null, the server resolves the tenant default method.
+        loginHint:
+          type: string
+          nullable: true
+          description: Pre-fill hint (such as an email address) forwarded to the method driver.
+
+    InitiateAuthenticationResult:
+      type: object
+      required: [dispatchUrl, executionId]
+      properties:
+        dispatchUrl:
+          type: string
+          format: uri
+          description: The URL the Authorization Server should redirect the user agent to.
+        executionId:
+          type: string
+          description: Correlates the subsequent callback to this challenge. Bearer-equivalent; treat as opaque.
+
+    CompleteAuthenticationRequest:
+      type: object
+      required: [sessionId, executionId, callbackParams]
+      properties:
+        sessionId:
+          type: string
+        executionId:
+          type: string
+          description: The id returned by the initiate call. Binds this callback to the originating challenge.
+        callbackParams:
+          type: object
+          additionalProperties:
+            type: string
+          description: The external provider's callback parameters (query and form), forwarded verbatim to the method driver.
+        remoteIp:
+          type: string
+          nullable: true
+          description: Caller IP, recorded on the session and audit event when present.

@@ -23,7 +23,11 @@ goto argloop
 :argdone
 
 set "IDK_ROOT=%~dp0..\..\.."
-for /f "tokens=2 delims==" %%v in ('findstr /b /c:"version=" "%IDK_ROOT%\gradle.properties"') do set IDK_VERSION=%%v
+if exist "%IDK_ROOT%\platform-version.properties" (
+    for /f "tokens=2 delims==" %%v in ('findstr /b /c:"platformVersion=" "%IDK_ROOT%\platform-version.properties"') do set IDK_VERSION=%%v
+) else (
+    for /f "tokens=2 delims==" %%v in ('findstr /b /c:"version=" "%IDK_ROOT%\gradle.properties"') do set IDK_VERSION=%%v
+)
 for /f %%s in ('git -C "%IDK_ROOT%" rev-parse --short HEAD') do set GIT_SHA=%%s
 if not defined REGISTRY set REGISTRY=sphereon
 

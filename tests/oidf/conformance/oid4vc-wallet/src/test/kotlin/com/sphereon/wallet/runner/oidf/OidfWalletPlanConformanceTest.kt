@@ -97,34 +97,34 @@ class OidfWalletPlanConformanceTest {
             .also { selected ->
                 require(selected.isNotEmpty()) { "No wallet scenario matched oidf.scenario='$selectedScenario'" }
             }.forEach { scenario ->
-            try {
-                val plan =
-                    runningSuite.createPlan(
-                        planName = scenario.planName,
-                        configJson =
-                            runningPreprocessor.config(
-                                scenario.configTemplate,
-                                haipAttestationFixture?.let { fixture ->
-                                    buildJsonObject {
-                                        scenario.configOverrides.forEach { (key, value) -> put(key, value) }
-                                        put(
-                                            "client_attestation",
-                                            buildJsonObject {
-                                                put("trust_anchor", fixture.trustAnchorPem)
-                                                put("key_attestation_trust_anchor_pem", fixture.trustAnchorPem)
-                                            },
-                                        )
-                                    }
-                                } ?: scenario.configOverrides,
-                            ),
-                        variant = scenario.variantJson(),
-                    )
-                require(plan.modules.isNotEmpty()) { "Scenario ${scenario.id} discovered no modules" }
-                plans[scenario] = plan
-            } catch (error: Throwable) {
-                scenarioErrors += "${scenario.id}: ${error.stackTraceToString()}"
+                try {
+                    val plan =
+                        runningSuite.createPlan(
+                            planName = scenario.planName,
+                            configJson =
+                                runningPreprocessor.config(
+                                    scenario.configTemplate,
+                                    haipAttestationFixture?.let { fixture ->
+                                        buildJsonObject {
+                                            scenario.configOverrides.forEach { (key, value) -> put(key, value) }
+                                            put(
+                                                "client_attestation",
+                                                buildJsonObject {
+                                                    put("trust_anchor", fixture.trustAnchorPem)
+                                                    put("key_attestation_trust_anchor_pem", fixture.trustAnchorPem)
+                                                },
+                                            )
+                                        }
+                                    } ?: scenario.configOverrides,
+                                ),
+                            variant = scenario.variantJson(),
+                        )
+                    require(plan.modules.isNotEmpty()) { "Scenario ${scenario.id} discovered no modules" }
+                    plans[scenario] = plan
+                } catch (error: Throwable) {
+                    scenarioErrors += "${scenario.id}: ${error.stackTraceToString()}"
+                }
             }
-        }
 
         val keys = plans.values.flatMap(OidfPlan::scenarioKeys)
         val duplicates = keys.groupingBy { it }.eachCount().filterValues { it > 1 }
@@ -259,7 +259,11 @@ class OidfWalletPlanConformanceTest {
         val workspace = System.getProperty("oidf.sut.workspace") ?: Path.of("").toAbsolutePath().toString()
         return runCatching {
             val process = ProcessBuilder(listOf("git", "-C", workspace) + args).redirectErrorStream(true).start()
-            val output = process.inputStream.bufferedReader().use { it.readText() }.trim()
+            val output =
+                process.inputStream
+                    .bufferedReader()
+                    .use { it.readText() }
+                    .trim()
             if (process.waitFor() == 0) output else ""
         }.getOrDefault("")
     }

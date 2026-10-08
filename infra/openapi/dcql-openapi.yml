@@ -1,0 +1,427 @@
+openapi: 3.0.4
+info:
+  title: OID4VP DCQL Query Configuration Admin API
+  version: 0.1.0
+  description: >
+    Manages stored DCQL query configurations that an OpenID4VP 1.0 verifier uses when
+    asking a wallet for credentials. DCQL (Digital Credentials Query Language) is the JSON
+    query language from OpenID4VP 1.0 with which a verifier states which verifiable
+    credentials it wants and which claims inside them it needs (for example a person's
+    `given_name` and `email` from an SD-JWT employee credential). Instead of embedding a
+    raw DCQL query in every presentation request, store each query once here and reference
+    it later by a stable `queryId`.
+
+
+    Each configuration holds the DCQL query plus metadata: a `name`, an optional
+    `description`, and an `enabled` flag (default `true`). Endpoints let you create, list,
+    get, replace (`PUT`), partially update (`PATCH`), and delete configurations. A `queryId`
+    must be unique within a tenant: creating a second configuration with an existing
+    `queryId` returns `409`, and getting, updating, or deleting an unknown `queryId` returns
+    `404`. Configurations are isolated per tenant, so two tenants may use the same `queryId`
+    independently.
+  license:
+    name: Apache-2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0
+
+servers:
+  - url: /api/dcql/v1
+    description: DCQL query configuration API base path.
+
+security:
+  - bearer: []
+
+tags:
+  - name: Queries
+    description: DCQL query configuration administration
+
+paths:
+  /queries:
+    get:
+      tags: [Queries]
+      operationId: listDcqlQueries
+      x-products: [idk, edk, vdx]
+      summary: List DCQL query configurations
+      description: >
+        Returns every DCQL query configuration belonging to the calling tenant,
+        ordered by `queryId`. Returns an empty array when the tenant has no
+        configurations. Only the calling tenant's configurations are visible.
+      responses:
+        "200":
+          description: The tenant's DCQL query configurations.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DcqlQueryConfiguration"
+              example:
+                - queryId: identity-verification
+                  name: Identity verification
+                  description: Verify a person's identity credential
+                  dcqlQuery:
+                    credentials:
+                      - id: EuPid
+                        format: dc+sd-jwt
+                        meta:
+                          vct_values: [https://issuer.example.com/public/schema/vct/EuPid]
+                        claims:
+                          - path: [given_name]
+                  enabled: true
+                  createdAt: 1749312000000
+                  updatedAt: 1749312000000
+                - queryId: eu-pid-mdl
+                  name: EuPid + mDL
+                  dcqlQuery:
+                    credentials:
+                      - id: EuPid
+                        format: dc+sd-jwt
+                        meta:
+                          vct_values:
+                            - https://issuer.example.com/public/schema/vct/EuPid
+                        claims:
+                          - path: [given_name]
+                          - path: [family_name]
+                          - path: [email]
+                      - id: Mdl
+                        format: mso_mdoc
+                        meta:
+                          doctype_value: org.iso.18013.5.1.mDL
+                        claims:
+                          - path: [org.iso.18013.5.1, given_name]
+                  enabled: true
+                  createdAt: 1749312500000
+                  updatedAt: 1749312500000
+        "401":
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+    post:
+      tags: [Queries]
+      operationId: createDcqlQuery
+      x-products: [idk, edk, vdx]
+      summary: Create a DCQL query configuration
+      description: >
+        Creates a new DCQL query configuration for the calling tenant. The
+        `queryId` you supply becomes the stable handle used to reference, update, and
+        delete the configuration later. Fails with `409` if a configuration with the
+        same `queryId` already exists for the tenant, and with `400` if the DCQL query
+        is malformed (for example a query that has neither `credentials` nor
+        `credential_sets`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateDcqlQueryRequest"
+            example:
+              queryId: eu-pid-verification
+              name: EuPid verification
+              description: Verify a person's EuPid credential
+              enabled: true
+              dcqlQuery:
+                credentials:
+                  - id: EuPid
+                    format: dc+sd-jwt
+                    meta:
+                      vct_values: [https://issuer.example.com/public/schema/vct/EuPid]
+                    claims:
+                      - path: [given_name]
+      responses:
+        "201":
+          description: The created DCQL query configuration.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DcqlQueryConfiguration"
+              example:
+                queryId: identity-verification
+                name: Identity verification
+                description: Verify a person's identity credential
+                dcqlQuery:
+                  credentials:
+                    - id: EuPid
+                      format: dc+sd-jwt
+                      meta:
+                        vct_values: [https://issuer.example.com/public/schema/vct/EuPid]
+                      claims:
+                        - path: [given_name]
+                enabled: true
+                createdAt: 1749312000000
+                updatedAt: 1749312000000
+        "400":
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        "401":
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        "409":
+          $ref: './common-components.yml#/components/responses/Conflict'
+
+  /queries/{queryId}:
+    parameters:
+      - $ref: "#/components/parameters/QueryId"
+    get:
+      tags: [Queries]
+      operationId: getDcqlQuery
+      x-products: [idk, edk, vdx]
+      summary: Get a DCQL query configuration
+      description: >
+        Returns the single DCQL query configuration identified by `{queryId}` for the
+        calling tenant. Fails with `404` if no configuration with that `queryId`
+        exists for the tenant.
+      responses:
+        "200":
+          description: The requested DCQL query configuration.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DcqlQueryConfiguration"
+              example:
+                queryId: identity-verification
+                name: Identity verification
+                description: Verify a person's identity credential
+                dcqlQuery:
+                  credentials:
+                    - id: EuPid
+                      format: dc+sd-jwt
+                      meta:
+                        vct_values: [https://issuer.example.com/public/schema/vct/EuPid]
+                      claims:
+                        - path: [given_name]
+                enabled: true
+                createdAt: 1749312000000
+                updatedAt: 1749312000000
+        "401":
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        "404":
+          $ref: './common-components.yml#/components/responses/NotFound'
+    put:
+      tags: [Queries]
+      operationId: replaceDcqlQuery
+      x-products: [idk, edk, vdx]
+      summary: Replace a DCQL query configuration
+      description: >
+        Replaces the configuration identified by `{queryId}`. A `PUT` caller supplies every
+        mutable field (`name`, `description`, `dcqlQuery`, `enabled`). The `queryId` is
+        taken from the path and is never read from the body. Any field omitted or sent as
+        `null` leaves the stored value unchanged, so to clear `description` send an empty
+        string rather than `null`. Fails with `404` if the configuration does not exist, and
+        with `400` if a supplied DCQL query is malformed.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateDcqlQueryRequest"
+            example:
+              name: Identity verification
+              description: Verify a person's identity credential and email
+              enabled: true
+              dcqlQuery:
+                credentials:
+                  - id: EuPid
+                    format: dc+sd-jwt
+                    meta:
+                      vct_values: [https://issuer.example.com/public/schema/vct/EuPid]
+                    claims:
+                      - path: [given_name]
+                      - path: [email]
+      responses:
+        "200":
+          description: The updated DCQL query configuration.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DcqlQueryConfiguration"
+              example:
+                queryId: identity-verification
+                name: Identity verification
+                description: Verify a person's identity credential and email
+                dcqlQuery:
+                  credentials:
+                    - id: EuPid
+                      format: dc+sd-jwt
+                      meta:
+                        vct_values: [https://issuer.example.com/public/schema/vct/EuPid]
+                      claims:
+                        - path: [given_name]
+                        - path: [email]
+                enabled: true
+                createdAt: 1749312000000
+                updatedAt: 1749398400000
+        "400":
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        "401":
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        "404":
+          $ref: './common-components.yml#/components/responses/NotFound'
+    patch:
+      tags: [Queries]
+      operationId: patchDcqlQuery
+      x-products: [idk, edk, vdx]
+      summary: Partially update a DCQL query configuration
+      description: >
+        Partially updates the configuration identified by `{queryId}`. Only the fields
+        present (and non-null) in the body are changed; every omitted field keeps its stored
+        value. The merge behaviour matches `PUT`, but `PATCH` is the idiomatic verb when
+        changing one or two fields (for example flipping `enabled` to `false` without
+        resending the DCQL query). The `queryId` is taken from the path, never the body.
+        Fails with `404` if the configuration does not exist, and with `400` if a supplied
+        DCQL query is malformed.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateDcqlQueryRequest"
+            example:
+              enabled: false
+      responses:
+        "200":
+          description: The updated DCQL query configuration.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DcqlQueryConfiguration"
+              example:
+                queryId: identity-verification
+                name: Identity verification
+                description: Verify a person's identity credential
+                dcqlQuery:
+                  credentials:
+                    - id: EuPid
+                      format: dc+sd-jwt
+                      meta:
+                        vct_values: [https://issuer.example.com/public/schema/vct/EuPid]
+                      claims:
+                        - path: [given_name]
+                enabled: false
+                createdAt: 1749312000000
+                updatedAt: 1749398400000
+        "400":
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        "401":
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        "404":
+          $ref: './common-components.yml#/components/responses/NotFound'
+    delete:
+      tags: [Queries]
+      operationId: deleteDcqlQuery
+      x-products: [idk, edk, vdx]
+      summary: Delete a DCQL query configuration
+      description: >
+        Permanently deletes the configuration identified by `{queryId}` for the
+        calling tenant. Returns `204` with no body on success and `404` if no
+        configuration with that `queryId` exists for the tenant.
+      responses:
+        "204":
+          description: The configuration was deleted.
+        "401":
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        "404":
+          $ref: './common-components.yml#/components/responses/NotFound'
+
+components:
+  securitySchemes:
+    bearer:
+      $ref: './common-components.yml#/components/securitySchemes/bearer'
+
+  parameters:
+    # -- Re-exported path parameters from dcql-components.yml --
+    QueryId:
+      $ref: './dcql-components.yml#/components/parameters/QueryId'
+
+  schemas:
+    # -- Re-exported entity schemas from dcql-components.yml --
+    DcqlQueryConfiguration:
+      $ref: './dcql-components.yml#/components/schemas/DcqlQueryConfiguration'
+    DcqlQuery:
+      $ref: './dcql-components.yml#/components/schemas/DcqlQuery'
+    DcqlCredentialQuery:
+      $ref: './dcql-components.yml#/components/schemas/DcqlCredentialQuery'
+    DcqlClaimQuery:
+      $ref: './dcql-components.yml#/components/schemas/DcqlClaimQuery'
+
+    CreateDcqlQueryRequest:
+      type: object
+      description: Request body for creating a DCQL query configuration.
+      required: [queryId, name, dcqlQuery]
+      properties:
+        queryId:
+          type: string
+          minLength: 1
+          description: Stable identifier for the new configuration. Must be unique within the tenant.
+          example: identity-verification
+        name:
+          type: string
+          description: Human-readable name.
+          example: Identity verification
+        description:
+          type: string
+          nullable: true
+          description: Optional free-text description.
+          example: Verify a person's identity credential
+        dcqlQuery:
+          $ref: "#/components/schemas/DcqlQuery"
+        trustedAuthorityProvenance:
+          type: array
+          nullable: true
+          description: >
+            Authoring metadata recording which `trusted_authorities` entries in `dcqlQuery` were
+            snapshotted from a trust domain. Never part of the wire DCQL query.
+          items:
+            $ref: "./dcql-components.yml#/components/schemas/DcqlTrustedAuthorityProvenanceEntry"
+        enabled:
+          type: boolean
+          default: true
+          description: Whether the configuration is available for use. Defaults to true.
+          example: true
+      example:
+        queryId: identity-verification
+        name: Identity verification
+        description: Verify a person's identity credential
+        enabled: true
+        dcqlQuery:
+          credentials:
+            - id: EuPid
+              format: dc+sd-jwt
+              meta:
+                vct_values: [https://issuer.example.com/public/schema/vct/EuPid]
+              claims:
+                - path: [given_name]
+
+    UpdateDcqlQueryRequest:
+      type: object
+      description: >
+        Request body for replacing (`PUT`) or partially updating (`PATCH`) a DCQL query
+        configuration. The `queryId` is taken from the path, never the body. A null or
+        omitted field leaves the corresponding stored value unchanged.
+      properties:
+        name:
+          type: string
+          nullable: true
+          description: New human-readable name. Unchanged when null or omitted.
+          example: Identity verification
+        description:
+          type: string
+          nullable: true
+          description: New description. Unchanged when null or omitted; send an empty string to clear it.
+          example: Verify a person's identity credential and email
+        dcqlQuery:
+          type: object
+          allOf:
+            - $ref: "#/components/schemas/DcqlQuery"
+          nullable: true
+          description: >
+            New DCQL query. If null or omitted, the stored DCQL query is left unchanged.
+        trustedAuthorityProvenance:
+          type: array
+          nullable: true
+          description: >
+            New trusted-authority provenance metadata. If null or omitted, the stored value is
+            left unchanged. Never part of the wire DCQL query.
+          items:
+            $ref: "./dcql-components.yml#/components/schemas/DcqlTrustedAuthorityProvenanceEntry"
+        enabled:
+          type: boolean
+          nullable: true
+          description: New enabled flag. Unchanged when null or omitted.
+          example: false
+      example:
+        enabled: false

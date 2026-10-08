@@ -1,0 +1,1582 @@
+openapi: 3.0.4
+info:
+    title: Pronto API
+    version: v1
+servers:
+    - url: "/api/v1"
+paths:
+    "/identifications":
+        get:
+            tags:
+                - Identification
+            summary: Get all identifications.
+            operationId: a53947b8b25491ca139d688b17a34f9a
+            parameters:
+                - "$ref": "#/components/parameters/Page"
+            responses:
+                '200':
+                    description: Retrieved.
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                allOf:
+                                    - "$ref": "#/components/schemas/PaginatedResponse"
+                                    - properties:
+                                          data:
+                                              type: array
+                                              items:
+                                                  "$ref": "#/components/schemas/Identification"
+                                      type: object
+                '401':
+                    description: Unauthorized.
+                '403':
+                    description: Forbidden.
+            security:
+                - bearerAuth: []
+        post:
+            tags:
+                - Identification
+            summary: Create an identification.
+            operationId: 1ea1a3841f94faea0b08931daee2df29
+            requestBody:
+                description: Send all the fields you want to set, including the required ones.
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            "$ref": "#/components/schemas/Identification"
+            responses:
+                '200':
+                    description: Created.
+                '401':
+                    description: Unauthorized.
+                '403':
+                    description: Forbidden.
+                '404':
+                    description: Not found.
+                '422':
+                    description: Unprocessable entity.
+            security:
+                - bearerAuth: []
+    "/persons":
+        get:
+            tags:
+                - Person
+            summary: Get all persons.
+            operationId: 5e778c2229e33ed221fc00e84187cc1d
+            parameters:
+                - "$ref": "#/components/parameters/Page"
+            responses:
+                '200':
+                    description: Retrieved.
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                allOf:
+                                    - "$ref": "#/components/schemas/PaginatedResponse"
+                                    - properties:
+                                          data:
+                                              type: array
+                                              items:
+                                                  "$ref": "#/components/schemas/Person"
+                                      type: object
+                '401':
+                    description: Unauthorized.
+                '403':
+                    description: Forbidden.
+            security:
+                - bearerAuth: []
+        post:
+            tags:
+                - Person
+            summary: Create a person.
+            operationId: 150b8c4738c8dd4a6f56d82f8fc815e7
+            requestBody:
+                description: Send all the fields you want to set, including the required ones.
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            "$ref": "#/components/schemas/Person"
+            responses:
+                '200':
+                    description: Created.
+                '401':
+                    description: Unauthorized.
+                '403':
+                    description: Forbidden.
+                '404':
+                    description: Not found.
+                '422':
+                    description: Unprocessable entity.
+            security:
+                - bearerAuth: []
+    "/personsgroups":
+        get:
+            tags:
+                - PersonsGroup
+            summary: Get all persons groups.
+            operationId: 52a1473e0eb29379358cec4502cd7775
+            parameters:
+                - "$ref": "#/components/parameters/Page"
+                - name: active
+                  in: query
+                  description: Filter to only return active groups. When true, excludes groups
+                      with UntilTime in the past.
+                  required: false
+                  schema:
+                      type: boolean
+                      default: false
+            responses:
+                '200':
+                    description: Retrieved.
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                allOf:
+                                    - "$ref": "#/components/schemas/PaginatedResponse"
+                                    - properties:
+                                          data:
+                                              type: array
+                                              items:
+                                                  "$ref": "#/components/schemas/PersonsGroup"
+                                      type: object
+                '401':
+                    description: Unauthorized.
+                '403':
+                    description: Forbidden.
+            security:
+                - bearerAuth: []
+        post:
+            tags:
+                - PersonsGroup
+            summary: Create a persons group.
+            operationId: 69a8fce7777b417b7251d26596a301cb
+            requestBody:
+                description: Send all the fields you want to set, including the required ones.
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            "$ref": "#/components/schemas/PersonsGroup"
+            responses:
+                '200':
+                    description: Created.
+                '401':
+                    description: Unauthorized.
+                '403':
+                    description: Forbidden.
+                '404':
+                    description: Not found.
+                '422':
+                    description: Unprocessable entity.
+            security:
+                - bearerAuth: []
+    "/roles":
+        get:
+            tags:
+                - Role
+            summary: Get a list of roles of the Pronto 3 web application.
+            operationId: fc2db8fe4e744e348b79edef4042a95b
+            parameters:
+                - "$ref": "#/components/parameters/Page"
+                - name: includes
+                  in: query
+                  description: Include additional collections of resources.
+                  required: false
+                  schema:
+                      type: string
+                      example: permissions
+            responses:
+                '200':
+                    description: Retrieved.
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                allOf:
+                                    - "$ref": "#/components/schemas/PaginatedResponse"
+                                    - properties:
+                                          data:
+                                              type: array
+                                              items:
+                                                  allOf:
+                                                      - "$ref": "#/components/schemas/Role"
+                                                      - properties:
+                                                            meta:
+                                                                "$ref": "#/components/schemas/RoleMeta"
+                                                        type: object
+                                      type: object
+                '401':
+                    description: Unauthorized.
+                '403':
+                    description: Forbidden.
+            security:
+                - bearerAuth: []
+        post:
+            tags:
+                - Role
+            summary: Create a role for the Pronto 3 web application.
+            operationId: 4571f823b5deee232ee8bb04828df4b6
+            requestBody:
+                description: Send all the fields you want to set, including the required ones.
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            "$ref": "#/components/schemas/Role"
+            responses:
+                '200':
+                    description: Created.
+                '401':
+                    description: Unauthorized.
+                '403':
+                    description: Forbidden.
+                '404':
+                    description: Not found.
+                '422':
+                    description: Unprocessable entity.
+            security:
+                - bearerAuth: []
+    "/auth/token":
+        post:
+            tags:
+                - Authentication
+            summary: Create an API token.
+            operationId: 8a3495051a5e94fdf28afce208277d35
+            requestBody:
+                description: Send the credentials of the user for whom the API token should
+                    be created.
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            properties:
+                                username:
+                                    type: string
+                                    example: example
+                                password:
+                                    type: string
+                                    example: s3cr3t_passw0rd
+                            type: object
+            responses:
+                '200':
+                    description: Created.
+                    content:
+                        application/json:
+                            schema:
+                                properties:
+                                    token:
+                                        type: string
+                                        example: 1|u8GdQ1yk13BFs3LCARp6cbAbQJn7ZaogDQKvt85t
+                                type: object
+                '403':
+                    description: Forbidden.
+                '422':
+                    description: Unprocessable entity.
+    "/webusers":
+        get:
+            tags:
+                - WebUser
+            summary: Get all users of the Pronto 2 web application.
+            operationId: 3b1256e77e3124154a9a7837442eb98b
+            parameters:
+                - name: page
+                  in: query
+                  description: The number that specifies which page of results to fetch.
+                  required: false
+                  schema:
+                      type: integer
+                      default: 1
+            responses:
+                '200':
+                    description: Retrieved.
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                allOf:
+                                    - "$ref": "#/components/schemas/PaginatedResponse"
+                                    - properties:
+                                          data:
+                                              type: array
+                                              items:
+                                                  "$ref": "#/components/schemas/WebUser"
+                                      type: object
+                '401':
+                    description: Unauthorized.
+                '403':
+                    description: Forbidden.
+            security:
+                - bearerAuth: []
+        post:
+            tags:
+                - WebUser
+            summary: Create a user of the Pronto 2 web application.
+            operationId: 562194818cdab805b3b2f04955c88655
+            requestBody:
+                description: Send all the fields you want to set, including the required ones.
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            "$ref": "#/components/schemas/WebUser"
+            responses:
+                '200':
+                    description: Created.
+                '401':
+                    description: Unauthorized.
+                '403':
+                    description: Forbidden.
+                '422':
+                    description: Unprocessable entity.
+            security:
+                - bearerAuth: []
+    "/permissions/{name}":
+        delete:
+            tags:
+                - Permission
+            summary: Delete an entity-level permission of the Pronto 3 web application.
+            description: Only permissions linked to specific entities like groups, zones
+                and roles can be deleted.
+            operationId: d09d6211834e5f3bf5e3a3cc4af5eadc
+            parameters:
+                - name: name
+                  in: path
+                  description: The identifier in the client's system.
+                  required: true
+                  schema:
+                      type: string
+                      default: context.action_model
+            responses:
+                '200':
+                    description: Deleted.
+                '401':
+                    description: Unauthorized.
+                '403':
+                    description: Forbidden.
+                '404':
+                    description: Not found.
+            security:
+                - bearerAuth: []
+    "/persons/{Id}":
+        get:
+            tags:
+                - Person
+            summary: Get a person.
+            operationId: c28172227bdd61e4c16c7ceba64355bc
+            parameters:
+                - name: Id
+                  in: path
+                  description: The identifier in the client's system.
+                  required: true
+                  schema:
+                      type: string
+                      default: personnel123
+            responses:
+                '200':
+                    description: Retrieved.
+                    content:
+                        application/json:
+                            schema:
+                                "$ref": "#/components/schemas/Person"
+                '401':
+                    description: Unauthorized.
+                '403':
+                    description: Forbidden.
+                '404':
+                    description: Not found.
+            security:
+                - bearerAuth: []
+        delete:
+            tags:
+                - Person
+            summary: Delete a person.
+            operationId: 5064fcbccb6029f1cfed06518111d4e3
+            parameters:
+                - name: Id
+                  in: path
+                  description: The identifier in the client's system.
+                  required: true
+                  schema:
+                      type: string
+                      default: personnel123
+            responses:
+                '200':
+                    description: Deleted.
+                '401':
+                    description: Unauthorized.
+                '403':
+                    description: Forbidden.
+                '404':
+                    description: Not found.
+            security:
+                - bearerAuth: []
+        patch:
+            tags:
+                - Person
+            summary: Update a person.
+            operationId: 398987bf1f840eb5b6d8fd9d9a05f181
+            parameters:
+                - name: Id
+                  in: path
+                  description: The identifier in the client's system.
+                  required: true
+                  schema:
+                      type: string
+                      default: personnel123
+            requestBody:
+                description: Send only the fields that you want to change.
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            "$ref": "#/components/schemas/Person"
+            responses:
+                '200':
+                    description: Updated.
+                '401':
+                    description: Unauthorized.
+                '403':
+                    description: Forbidden.
+                '404':
+                    description: Not found.
+                '422':
+                    description: Unprocessable entity.
+            security:
+                - bearerAuth: []
+    "/personsgroups/{Id}":
+        get:
+            tags:
+                - PersonsGroup
+            summary: Get a persons group.
+            operationId: c1350df8f93b1afb15c3548024bb81b7
+            parameters:
+                - name: Id
+                  in: path
+                  description: The identifier in the client's system.
+                  required: true
+                  schema:
+                      type: string
+                      default: group123
+            responses:
+                '200':
+                    description: Retrieved.
+                    content:
+                        application/json:
+                            schema:
+                                "$ref": "#/components/schemas/PersonsGroup"
+                '401':
+                    description: Unauthorized.
+                '403':
+                    description: Forbidden.
+                '404':
+                    description: Not found.
+            security:
+                - bearerAuth: []
+        delete:
+            tags:
+                - PersonsGroup
+            summary: Delete a persons group.
+            operationId: 661db7d8c280d385725ca42476a240e7
+            parameters:
+                - name: Id
+                  in: path
+                  description: The identifier in the client's system.
+                  required: true
+                  schema:
+                      type: string
+                      default: group123
+            responses:
+                '200':
+                    description: Deleted.
+                '401':
+                    description: Unauthorized.
+                '403':
+                    description: Forbidden.
+                '404':
+                    description: Not found.
+            security:
+                - bearerAuth: []
+        patch:
+            tags:
+                - PersonsGroup
+            summary: Update a persons group.
+            operationId: 1b114870c43624310f82e44aeae1f288
+            parameters:
+                - name: Id
+                  in: path
+                  description: The identifier in the client's system.
+                  required: true
+                  schema:
+                      type: string
+                      default: group123
+            requestBody:
+                description: Send only the fields that you want to change.
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            "$ref": "#/components/schemas/PersonsGroup"
+            responses:
+                '200':
+                    description: Updated.
+                '401':
+                    description: Unauthorized.
+                '403':
+                    description: Forbidden.
+                '404':
+                    description: Not found.
+                '422':
+                    description: Unprocessable entity.
+            security:
+                - bearerAuth: []
+    "/roles/{name}":
+        delete:
+            tags:
+                - Role
+            summary: Delete a role of the Pronto 3 web application.
+            operationId: f7c76085c4438e5996d9a1fbdb3e5269
+            parameters:
+                - name: name
+                  in: path
+                  description: The identifier in the client's system.
+                  required: true
+                  schema:
+                      type: string
+                      default: Customer application manager
+            responses:
+                '200':
+                    description: Deleted.
+                '401':
+                    description: Unauthorized.
+                '403':
+                    description: Forbidden.
+                '404':
+                    description: Not found.
+            security:
+                - bearerAuth: []
+    "/users/{username}":
+        delete:
+            tags:
+                - User
+            summary: Delete a user of the Pronto 3 web application.
+            operationId: 6b148bddde4cc157ce4598b88aad1559
+            parameters:
+                - name: username
+                  in: path
+                  description: The identifier in the client's system.
+                  required: true
+                  schema:
+                      type: string
+                      default: JohnDoe
+            responses:
+                '200':
+                    description: Deleted.
+                '401':
+                    description: Unauthorized.
+                '403':
+                    description: Forbidden.
+                '404':
+                    description: Not found.
+            security:
+                - bearerAuth: []
+    "/webusers/{Id}":
+        delete:
+            tags:
+                - WebUser
+            summary: Delete a user of the Pronto 2 web application.
+            operationId: c0201b08d914cbfad09b50ef63a4e1e4
+            parameters:
+                - name: Id
+                  in: path
+                  description: The identifier in the client's system.
+                  required: true
+                  schema:
+                      type: string
+                      default: JohnDoe
+            responses:
+                '200':
+                    description: Deleted.
+                '401':
+                    description: Unauthorized.
+                '403':
+                    description: Forbidden.
+                '404':
+                    description: Not found.
+            security:
+                - bearerAuth: []
+        patch:
+            tags:
+                - WebUser
+            summary: Update a user of the Pronto 2 web application.
+            operationId: 0ed15e73b19ea3385228243cbc097646
+            parameters:
+                - name: Id
+                  in: path
+                  description: The identifier in the client's system.
+                  required: true
+                  schema:
+                      type: string
+                      default: JohnDoe
+            requestBody:
+                description: Send only the fields that you want to change.
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            "$ref": "#/components/schemas/WebUser"
+            responses:
+                '200':
+                    description: Updated.
+                '401':
+                    description: Unauthorized.
+                '403':
+                    description: Forbidden.
+                '404':
+                    description: Not found.
+                '422':
+                    description: Unprocessable entity.
+            security:
+                - bearerAuth: []
+    "/persons/{Id}/palmki-enrollment":
+        post:
+            tags:
+                - Person
+            summary: Enroll a person as a Palmki user.
+            operationId: 7744addff54565c38a0b5e760e771383
+            parameters:
+                - name: Id
+                  in: path
+                  description: The identifier in the client's system.
+                  required: true
+                  schema:
+                      type: string
+                      default: personnel123
+            responses:
+                '200':
+                    description: Palmki user created and enrollment started.
+                '401':
+                    description: Unauthorized.
+                '403':
+                    description: Forbidden.
+                '404':
+                    description: Not found.
+                '422':
+                    description: Unprocessable entity.
+            security:
+                - bearerAuth: []
+    "/identifications/{Id}":
+        get:
+            tags:
+                - Identification
+            summary: Get an identification.
+            operationId: 3f0374716b5bad7c269d6544fb36c95d
+            parameters:
+                - name: Id
+                  in: path
+                  description: The identifier in the client's system.
+                  required: true
+                  schema:
+                      type: string
+                      default: 8e37dea9
+            responses:
+                '200':
+                    description: Retrieved.
+                    content:
+                        application/json:
+                            schema:
+                                "$ref": "#/components/schemas/Identification"
+                '401':
+                    description: Unauthorized.
+                '403':
+                    description: Forbidden.
+                '404':
+                    description: Not found.
+            security:
+                - bearerAuth: []
+        patch:
+            tags:
+                - Identification
+            summary: Update an identification.
+            operationId: 4e197140f245b5ad94551aa0c00a8b5c
+            parameters:
+                - name: Id
+                  in: path
+                  description: The identifier in the client's system.
+                  required: true
+                  schema:
+                      type: string
+                      default: 8e37dea9
+            requestBody:
+                description: Send only the fields that you want to change.
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            "$ref": "#/components/schemas/Identification"
+            responses:
+                '200':
+                    description: Updated.
+                '401':
+                    description: Unauthorized.
+                '403':
+                    description: Forbidden.
+                '404':
+                    description: Not found.
+                '422':
+                    description: Unprocessable entity.
+            security:
+                - bearerAuth: []
+    "/permissions":
+        get:
+            tags:
+                - Permission
+            summary: Get a list of permissions of the Pronto 3 web application.
+            operationId: f23f7ab6c7ef466a8f928dae5b434993
+            parameters:
+                - "$ref": "#/components/parameters/Page"
+            responses:
+                '200':
+                    description: Retrieved.
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                allOf:
+                                    - "$ref": "#/components/schemas/PaginatedResponse"
+                                    - properties:
+                                          data:
+                                              type: array
+                                              items:
+                                                  "$ref": "#/components/schemas/Permission"
+                                      type: object
+                '401':
+                    description: Unauthorized.
+                '403':
+                    description: Forbidden.
+            security:
+                - bearerAuth: []
+    "/readers":
+        get:
+            tags:
+                - Reader
+            summary: Get a list of readers.
+            operationId: 5d1fdddbcdf6e963b4ccf0610287ca9e
+            parameters:
+                - "$ref": "#/components/parameters/Page"
+            responses:
+                '200':
+                    description: Retrieved.
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                allOf:
+                                    - "$ref": "#/components/schemas/PaginatedResponse"
+                                    - properties:
+                                          data:
+                                              type: array
+                                              items:
+                                                  "$ref": "#/components/schemas/Reader"
+                                      type: object
+                '401':
+                    description: Unauthorized.
+                '403':
+                    description: Forbidden.
+            security:
+                - bearerAuth: []
+    "/registrations":
+        get:
+            tags:
+                - Registration
+            summary: Get a list of registrations.
+            operationId: 93f215a0e4b136638edb5493f7b5e2d9
+            parameters:
+                - "$ref": "#/components/parameters/Page"
+                - name: from
+                  in: query
+                  description: Fetch registrations with a scan time from the specified date
+                      and time.
+                  required: false
+                  schema:
+                      type: string
+                      format: date-time
+                      example: '2024-09-23T00:00:00'
+                - name: until
+                  in: query
+                  description: Fetch registrations with a scan time until the specified date
+                      and time.
+                  required: false
+                  schema:
+                      type: string
+                      format: date-time
+                - name: filter
+                  in: query
+                  description: Filter by serialnumber, external reference, reader or person.
+                  required: false
+                  schema:
+                      type: string
+                - name: includes
+                  in: query
+                  description: Include additional collections of resources.
+                  required: false
+                  schema:
+                      type: string
+                      example: readers,identifications,persons
+            responses:
+                '200':
+                    description: Retrieved.
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                allOf:
+                                    - "$ref": "#/components/schemas/PaginatedResponse"
+                                    - properties:
+                                          data:
+                                              type: array
+                                              items:
+                                                  "$ref": "#/components/schemas/Registration"
+                                      type: object
+                '401':
+                    description: Unauthorized.
+                '403':
+                    description: Forbidden.
+            security:
+                - bearerAuth: []
+    "/webprofiles":
+        get:
+            tags:
+                - WebProfile
+            summary: Get all web profiles.
+            operationId: 16e3aeeeacd837e2e538063dc3fb689e
+            parameters:
+                - "$ref": "#/components/parameters/Page"
+            responses:
+                '200':
+                    description: Retrieved.
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                allOf:
+                                    - "$ref": "#/components/schemas/PaginatedResponse"
+                                    - properties:
+                                          data:
+                                              type: array
+                                              items:
+                                                  "$ref": "#/components/schemas/WebProfile"
+                                      type: object
+                '401':
+                    description: Unauthorized.
+                '403':
+                    description: Forbidden.
+            security:
+                - bearerAuth: []
+    "/roles/{name}/permissions/{type}":
+        post:
+            tags:
+                - Role
+            summary: Give a permission to a role.
+            operationId: b4bff99ed596ff60b07c1293e5a2e052
+            parameters:
+                - name: name
+                  in: path
+                  description: The identifier in the client's system.
+                  required: true
+                  schema:
+                      type: string
+                      default: Customer application manager
+                - name: type
+                  in: path
+                  description: The type of permission.
+                  required: true
+                  schema:
+                      type: string
+                      default: application-level
+                      enum:
+                          - application-level
+                          - access-zone
+                          - persons-group
+                          - role
+            requestBody:
+                description: Exactly one permission type must be provided in the payload.
+                    Only a single key-value pair is allowed, corresponding to the specific permission
+                    type being granted.
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            "$ref": "#/components/schemas/PermissionRelation"
+                        examples:
+                            application-level:
+                                summary: Application-Level Permission
+                                value:
+                                    permission_name: api.create_person
+                            access-zone:
+                                summary: Permission for an AccessZone
+                                value:
+                                    access_zone_id: zone123
+                            persons-group:
+                                summary: Permission for a PersonsGroup
+                                value:
+                                    persons_group_id: group123
+                            role:
+                                summary: Permission for a Role
+                                value:
+                                    role_name: Customer application manager
+            responses:
+                '200':
+                    description: Created.
+                '401':
+                    description: Unauthorized.
+                '403':
+                    description: Forbidden.
+                '404':
+                    description: Not found.
+                '409':
+                    description: Conflict.
+                '422':
+                    description: Unprocessable entity.
+            security:
+                - bearerAuth: []
+    "/readers/{Id}/open":
+        get:
+            tags:
+                - Reader
+            operationId: 1339bf5c1ff3f750f40f4f1f06ccf96e
+            parameters:
+                - name: Id
+                  in: path
+                  description: The identifier in the client's system of the reader associated
+                      to a door or lock that needs to be opened.
+                  required: true
+                  schema:
+                      type: integer
+                      default: '1'
+                - name: token
+                  in: query
+                  description: The authorization token.
+                  required: false
+                  schema:
+                      type: string
+            responses:
+                '200':
+                    description: Command to open a door or lock received.
+                '401':
+                    description: Unauthorized.
+                '403':
+                    description: Forbidden.
+                '404':
+                    description: Not found.
+                '422':
+                    description: Unprocessable entity.
+            security:
+                - bearerAuth: []
+    "/zone/{Id}/open-or-close-dom-locks":
+        post:
+            tags:
+                - Zone
+            summary: Open or close all DOM locks in a zone.
+            description: Ensure that each lock is configured to allow opening.
+            operationId: 89abf634f13ea080d2637d774db6ea29
+            parameters:
+                - name: Id
+                  in: path
+                  description: The identifier in the client's system.
+                  required: true
+                  schema:
+                      type: string
+                      default: zone_1_dom_locks
+                      maxLength: 100
+            requestBody:
+                description: Send only the fields that you want to change.
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            properties:
+                                OpenOrClose:
+                                    type: string
+                                    default: Close
+                                    enum:
+                                        - Open
+                                        - Close
+                            type: object
+            responses:
+                '200':
+                    description: Command to open or close locks received.
+                '401':
+                    description: Unauthorized.
+                '403':
+                    description: Forbidden.
+                '404':
+                    description: Not found.
+                '422':
+                    description: Unprocessable entity.
+            security:
+                - bearerAuth: []
+    "/booking-experts/auth/token":
+        get:
+            tags:
+                - Authentication
+            summary: Request to fetch an Oauth2 token for Booking Experts.
+            operationId: d540c131a775cd9a69b375ac50526e75
+            parameters:
+                - name: code
+                  in: query
+                  description: An authorization code, generated by Booking Experts.
+                  required: true
+                  schema:
+                      type: string
+                      example: P66tmn20oiwyJRoHsN1iyNOzy37vKpRg8pEapG7s_ps
+            responses:
+                '200':
+                    description: Request received to fetch an Oauth2 token for Booking Experts.
+                '422':
+                    description: Unprocessable entity.
+    "/roles/{name}/permission":
+        delete:
+            tags:
+                - Role
+            summary: Revoke permission from a given role in the Pronto 3 web application.
+            operationId: f24ef516998f449f72de2ecf16354e42
+            parameters:
+                - name: name
+                  in: path
+                  description: The name of the role to revoke permission from.
+                  required: true
+                  schema:
+                      type: string
+                      example: Customer application manager
+            requestBody:
+                description: Exactly one permission name must be provided in the payload.
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            required:
+                                - permission_name
+                            properties:
+                                permission_name:
+                                    "$ref": "#/components/schemas/Permission/properties/name"
+                            type: object
+            responses:
+                '200':
+                    description: Deleted.
+                '401':
+                    description: Unauthorized.
+                '403':
+                    description: Forbidden.
+                '404':
+                    description: Not found.
+            security:
+                - bearerAuth: []
+components:
+    schemas:
+        ExternalReference:
+            description: The identifier in the client's system.
+            type: string
+            maxLength: 100
+            example: '1'
+        PaginatedResponse:
+            title: PaginatedResponse
+            properties:
+                data:
+                    description: The data field contains an array of resources, such as Persons,
+                        Identifications, WebUsers, and more.
+                    type: array
+                    items: {}
+                links:
+                    properties:
+                        first:
+                            type: string
+                            default: https://pronto.test/api/v1/<endpoint>?page=1
+                        last:
+                            type: string
+                            default:
+                        prev:
+                            type: string
+                            default:
+                        next:
+                            type: string
+                            default: https://pronto.test/api/v1/<endpoint>?page=2
+                    type: object
+                meta:
+                    properties:
+                        current_page:
+                            type: integer
+                            default: '1'
+                        from:
+                            type: integer
+                            default: '1'
+                        path:
+                            type: string
+                            default: https://pronto.test/api/v1/<endpoint>
+                        per_page:
+                            type: integer
+                            default: '1000'
+                        to:
+                            type: integer
+                            default: '1000'
+                    type: object
+                includes:
+                    description: The includes field contains an object of collections of resources
+                        such as Readers, Identifications or Persons.
+                    type: object
+            type: object
+        IdentificationRelation:
+            title: IdentificationRelation
+            required:
+                - Id
+            properties:
+                Id:
+                    description: The identifier in the client's system.
+                    type: string
+                    maxLength: 100
+                    example: 8e37dea9
+                FromTime:
+                    type: string
+                    format: date-time
+                    default: "<current time>"
+                    example: '2021-01-23T00:00:00'
+                UntilTime:
+                    type: string
+                    format: date-time
+                    default:
+            type: object
+        Identification:
+            title: Identification
+            required:
+                - Id
+                - SerialNumber
+            properties:
+                Id:
+                    description: The identifier in the client's system.
+                    type: string
+                    maxLength: 100
+                    example: 8e37dea9
+                SerialNumber:
+                    type: string
+                    maxLength: 32
+                    example: ABCDEF12345678
+                Blocked:
+                    type: boolean
+                    default: false
+                Type:
+                    type: string
+                    default: Mifare
+                    enum:
+                        - Mifare
+                        - Barcode
+                        - Pincode
+                        - Mobile
+                        - Smartphone
+                EntryDate:
+                    type: string
+                    format: date
+                    default: "<current date>"
+                    example: '2021-01-23'
+            type: object
+        PermissionRelation:
+            title: PermissionRelation
+            description: Payload for giving a permission to a role. Handles different permission
+                types (e.g. persons group, access zone, role, application-level).
+            type: object
+            oneOf:
+                - title: Application-Level Permission
+                  required:
+                      - permission_name
+                  properties:
+                      permission_name:
+                          "$ref": "#/components/schemas/Permission/properties/name"
+                  type: object
+                - title: Permission for an AccessZone
+                  required:
+                      - access_zone_id
+                  properties:
+                      access_zone_id:
+                          description: The identifier in the client's system.
+                          type: string
+                          maxLength: 100
+                          example: zone123
+                  type: object
+                - title: Permission for a PersonsGroup
+                  required:
+                      - persons_group_id
+                  properties:
+                      persons_group_id:
+                          "$ref": "#/components/schemas/PersonsGroup/properties/Id"
+                  type: object
+                - title: Permission for a Role
+                  required:
+                      - role_name
+                  properties:
+                      role_name:
+                          "$ref": "#/components/schemas/Role/properties/name"
+                  type: object
+        Permission:
+            title: Permission
+            description: A permission of the Pronto 3 web application.
+            required:
+                - name
+            properties:
+                name:
+                    description: The identifier in the client's system.
+                    type: string
+                    maxLength: 191
+                    example: api.create_person
+                description:
+                    description: A human-readable label describing the permission, used for
+                        display purposes.
+                    type: string
+                    maxLength: 191
+                    example: Create a person
+            type: object
+        Person:
+            title: Person
+            required:
+                - Id
+            properties:
+                Id:
+                    description: The identifier in the client's system.
+                    type: string
+                    default:
+                    maxLength: 100
+                    example: personnel123
+                FirstName:
+                    type: string
+                    default:
+                    maxLength: 40
+                    example: John
+                LastName:
+                    type: string
+                    default: "<empty value>"
+                    maxLength: 40
+                    example: Doe
+                Infix:
+                    type: string
+                    default:
+                    maxLength: 16
+                Initials:
+                    type: string
+                    default:
+                    maxLength: 16
+                    example: JD
+                PreferedFullname:
+                    description: If empty or not provided, this field is automatically composed
+                        as LastName, Infix FirstName (Id). If provided on creation, it will not
+                        be composed automatically anymore.
+                    type: string
+                    default:
+                    maxLength: 220
+                    example: Doe, John (personnel123)
+                AntiPassBack:
+                    type: boolean
+                    default: true
+                Email:
+                    type: string
+                    format: email
+                    default:
+                    maxLength: 50
+                    example: John.Doe@simac-access.com
+                Phone:
+                    type: string
+                    default:
+                    maxLength: 50
+                    example: "+31 40 258 2110"
+                Company:
+                    type: string
+                    default:
+                    maxLength: 50
+                    example: Simac Access Solutions
+                FromTime:
+                    type: string
+                    format: date-time
+                    default: "<current time>"
+                    example: '2021-01-23T00:00:00'
+                UntilTime:
+                    type: string
+                    format: date-time
+                    default:
+                PersonsGroups:
+                    type: array
+                    items:
+                        "$ref": "#/components/schemas/PersonsGroupRelation"
+                Identifications:
+                    type: array
+                    items:
+                        "$ref": "#/components/schemas/IdentificationRelation"
+            type: object
+        PersonsGroupRelation:
+            title: PersonsGroupRelation
+            required:
+                - Id
+            properties:
+                Id:
+                    description: The identifier in the client's system.
+                    type: string
+                    maxLength: 100
+                    example: Security
+                FromTime:
+                    type: string
+                    format: date-time
+                    default: "<current time>"
+                    example: '2021-01-23T00:00:00'
+                UntilTime:
+                    type: string
+                    format: date-time
+                    default:
+            type: object
+        PersonsGroup:
+            title: PersonsGroup
+            required:
+                - Id
+            properties:
+                Id:
+                    description: The identifier in the client's system.
+                    type: string
+                    maxLength: 100
+                    example: group123
+                ParentId:
+                    type: string
+                    default:
+                    maxLength: 100
+                Name:
+                    type: string
+                    default:
+                    maxLength: 200
+                    example: Security Building A
+                Description:
+                    type: string
+                    default:
+                    maxLength: 250
+                ReadOnly:
+                    type: boolean
+                    default: true
+                HideInAccessMatrix:
+                    type: boolean
+                    default: false
+                FromTime:
+                    type: string
+                    format: date-time
+                    default: "<current time>"
+                    example: '2021-01-23T00:00:00'
+                UntilTime:
+                    type: string
+                    format: date-time
+                    default:
+            type: object
+        Reader:
+            title: Reader
+            required:
+                - Id
+                - Address
+            properties:
+                Id:
+                    description: The identifier in Pronto.
+                    type: integer
+                    example: 1
+                Address:
+                    type: string
+                    maxLength: 100
+                    example: 76-1C-0A-FC-EF-35-RS485-1
+                Description:
+                    type: string
+                    maxLength: 64
+                    example: Simac Access Solutions front door
+                ExternalReference:
+                    description: The identifier in the client's system.
+                    type: string
+                    default:
+                    maxLength: 100
+                    example: reader_123
+                UntilTime:
+                    type: string
+                    format: date-time
+                    default:
+            type: object
+        Registration:
+            title: Registration
+            required:
+                - SerialNumber
+                - ReaderId
+                - ScanType
+                - RegistrationTime
+            properties:
+                SerialNumber:
+                    type: string
+                    maxLength: 32
+                    example: ABCDEF12345678
+                ReaderId:
+                    type: integer
+                    example: 1
+                ScanType:
+                    type: string
+                    default: Unknown
+                    enum:
+                        - In
+                        - Command
+                        - Desk
+                        - Information
+                        - Unknown
+                        - Blocked
+                        - Antipassback
+                        - Pending
+                        - Invalid
+                        - Authorisation
+                        - Credit
+                        - WriteAck
+                        - WriteFail
+                        - AccessRestricted
+                        - HoldPositionStart
+                        - HoldPositionEnd
+                        - OfficeModeStart
+                        - OfficeModeEnd
+                RegistrationTime:
+                    type: string
+                    format: date-time
+                    example: '2024-09-23T00:00:00'
+                LastUpdate:
+                    type: string
+                    format: date-time
+                    default: "<current time>"
+                    example: '2024-09-23T00:00:00'
+            type: object
+        RoleMeta:
+            title: RoleMeta
+            description: Additional data of the Role schema which will only be returned
+                when getting roles and `includes` is not empty.
+            properties:
+                permissionNames:
+                    description: A list of related permission names which will only be included
+                        if the `includes` parameter contains 'permissions'. The values can be
+                        used to lookup permissions in the top-level `includes` list.
+                    type: array
+                    items:
+                        "$ref": "#/components/schemas/Permission/properties/name"
+            type: object
+        Role:
+            title: Role
+            description: A role of the Pronto 3 web application.
+            required:
+                - name
+            properties:
+                name:
+                    description: The identifier in the client's system.
+                    type: string
+                    maxLength: 191
+                    example: Customer application manager
+                description:
+                    description: Can be used to briefly explain the role's responsibilities
+                        and purpose.
+                    type: string
+                    default: ''
+                    maxLength: 191
+                    example: Responsible for the overall management and operation of the application.
+            type: object
+        User:
+            title: User
+            description: A user of the Pronto 3 web application.
+            required:
+                - username
+                - name
+                - password
+            properties:
+                name:
+                    type: string
+                    maxLength: 191
+                    example: John Doe
+                email:
+                    type: string
+                    format: email
+                    default:
+                    maxLength: 191
+                    example: John.Doe@simac-access.com
+                username:
+                    type: string
+                    maxLength: 191
+                    example: JohnDoe
+                password:
+                    type: string
+                    maxLength: 191
+                    example: 5aesxHqKw&c1#2hHFCZD
+                enabled:
+                    type: boolean
+                    default: true
+            type: object
+        WebProfile:
+            title: WebProfile
+            description: A profile of the Pronto 2 web application. Each profile can have
+                unique permissions. Users always have 1 profile.
+            required:
+                - Id
+            properties:
+                Id:
+                    description: The identifier in the client's system.
+                    type: string
+                    default:
+                    maxLength: 40
+                    example: applicatiebeheerder
+            type: object
+        WebUser:
+            title: WebUser
+            description: A user of the Pronto 2 web application.
+            required:
+                - Id
+                - WebProfileId
+            properties:
+                Id:
+                    description: The identifier in the client's system.
+                    type: string
+                    default:
+                    maxLength: 50
+                    example: JohnDoe
+                WebProfileId:
+                    type: string
+                    maxLength: 40
+                    example: applicatiebeheerder
+                Email:
+                    type: string
+                    format: email
+                    default:
+                    maxLength: 255
+                    example: John.Doe@simac-access.com
+                LastVisitDate:
+                    description: This field is for information only. It can not be updated via
+                        the API.
+                    type: string
+                    format: date-time
+                    default: '1970-01-01T00:00:00'
+                Blocked:
+                    type: boolean
+                    default: false
+                FromTime:
+                    type: string
+                    format: date-time
+                    default: "<current time>"
+                    example: '2021-01-23T00:00:00'
+                UntilTime:
+                    type: string
+                    format: date-time
+                    default:
+            type: object
+    parameters:
+        Page:
+            name: page
+            in: query
+            description: The number that specifies which page of results to fetch.
+            required: false
+            schema:
+                type: integer
+                default: 1
+    securitySchemes:
+        bearerAuth:
+            type: http
+            name: bearerAuth
+            in: header
+            scheme: bearer

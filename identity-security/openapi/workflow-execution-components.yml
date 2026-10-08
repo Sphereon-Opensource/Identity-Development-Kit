@@ -1,0 +1,551 @@
+openapi: 3.0.4
+info:
+  title: Workflow Execution Components
+  version: 0.1.0
+  description: >-
+    Domain schemas and parameters for the workflow execution API — starting a form-backed
+    workflow execution, reading its live state, and listing/completing its parked human tasks.
+paths: {}
+components:
+
+  parameters:
+
+    WorkflowExecutionId:
+      name: workflowExecutionId
+      in: path
+      required: true
+      description: >-
+        Engine-assigned identifier of the workflow execution, as returned by
+        `POST /executions` in `WorkflowExecutionStarted.workflowExecutionId` and in the
+        `Location` header.
+
+
+        The charset is closed under percent-decoding — RFC 3986 §2.3 *unreserved* plus `:`, a legal
+        `pchar` — so an id that satisfies it addresses one path segment byte-identically however
+        many decodes it passes through. The server enforces the same rule on both sides of the
+        surface (`WorkflowExecutionId.isAddressableSegment`): it refuses to mint a `Location` it
+        could not resolve, and rejects an unusable id on read with 400. Published here so a
+        generated client can refuse one before the call.
+      schema:
+        type: string
+        pattern: '^[A-Za-z0-9\-._~:]+$'
+      example: form-acme-9a7c1f22-0b2b-4c8b-9c1a-1f0d3d3a7b21
+
+    CorrelationKey:
+      name: correlationKey
+      in: path
+      required: true
+      description: >-
+        Resolved correlation key of the parked HUMAN task inside the execution. Addresses WHICH
+        task is being completed, so an execution that has already moved on to a later HUMAN node
+        cannot have an earlier node's submission applied to it. Obtained from
+        `WorkflowExecutionStarted.correlationKey` or from `PendingHumanTask.correlationKey`.
+
+
+        Same charset as `workflowExecutionId`, and for the same reason: the key is rendered
+        server-side from a template authored on the definition, comes back on the start response,
+        and goes back out as one path segment here. A key carrying `/`, `%`, `?` or `#` would not
+        survive that round trip, so the server refuses to mint one — at start time, before the
+        binding is written, rather than handing the caller an address it could never use.
+      schema:
+        type: string
+        pattern: '^[A-Za-z0-9\-._~:]+$'
+      example: form-acme-9a7c1f22-0b2b-4c8b-9c1a-1f0d3d3a7b21::review
+
+  schemas:
+
+    # -------------------------------------------------------------------------
+    # Start
+    # -------------------------------------------------------------------------
+
+    StartWorkflowExecutionRequest:
+      type: object
+      # Unknown properties are REFUSED, not ignored, and the schema says so because the server
+      # behaves that way: the body is decoded with a strict `Json` that throws on an unknown key,
+      # answering 400 ILLEGAL_ARGUMENT_ERROR. Without `additionalProperties: false` a generated
+      # client would be free to add a field this schema permits and be rejected by the server that
+      # published it.
+      additionalProperties: false
+      description: >-
+        Request to start a workflow execution that is driven by a form session. The server binds
+        the supplied form session to the execution's first HUMAN task, so that submitting the form
+        completes that task.
+
+
+        **References and keys only.** The body names what to start and which form session drives
+        it. It carries no disclosure policy: which form fields a completion may publish into the
+        workflow variable scope is declared on the published definition's HUMAN node
+        (`WorkflowHumanNode.submissionFields` in the authoring API), never here. A submission lands
+        verbatim in durable workflow history, so what may be disclosed is a property of the
+        workflow that was published and reviewed — a caller able to widen it per start request
+        would defeat the allow-list entirely.
+      required:
+        - definitionKey
+        - humanTaskId
+        - formSessionId
+      properties:
+        # Deliberately an unconstrained string, with no `format: uuid`. Production definition
+        # keys are URNs: `catalog.v0.1.0.json:12` pins
+        # `urn:vdx:model-pack:company-authority:workflow`, `verify-workflow-pack.mjs:72` asserts
+        # that exact value, `uc1-journey-plan.v0.1.0.json:24` expects it back from the create
+        # door, and every form definition key in `published-definitions.v0.1.0.json` is a URN too.
+        # `WorkflowAuthoringServiceImpl.kt:82` happens to mint `Uuid.random().toString()` for
+        # definitions created through the REST door and ignores a client-supplied key, but nothing
+        # in Kotlin, the store or the compiler constrains the field — so `format: uuid` would be an
+        # unenforced overclaim that a code generator turns into a UUID-typed client field, breaking
+        # the model-pack journey.
+        definitionKey:
+          type: string
+          description: >-
+            Key of the published workflow definition family to start. Same value the workflow
+            authoring API exposes as `definitionKey`; an opaque string, in practice either a URN
+            or a UUID depending on how the definition was published.
+          # A URN, not the UUID this example used to show. Production keys are URNs — the model
+          # pack pins `urn:vdx:model-pack:company-authority:workflow` — and a cookbook copying a
+          # UUID example cannot start UC-1. The UUID form is still legal; see the note above.
+          example: urn:vdx:model-pack:company-authority:workflow
+        humanTaskId:
+          type: string
+          description: >-
+            Identifier of the HUMAN node in the definition that the form session is bound to. The
+            execution parks at this node and is completed by the form submission.
+          example: review
+        formSessionId:
+          type: string
+          format: uuid
+          description: >-
+            Identifier of the form session that supplies the submission for `humanTaskId`. The
+            session must belong to the authenticated tenant.
+          example: 9a7c1f22-0b2b-4c8b-9c1a-1f0d3d3a7b21
+        entryPort:
+          type: string
+          description: >-
+            Optional entry port of the definition's start node. Omit to use the definition's
+            default entry.
+          example: default
+        input:
+          type: object
+          additionalProperties: true
+          default: {}
+          description: >-
+            Initial workflow variable scope. Defaults to an empty object.
+
+
+            `formSessionId` and `workflowExecutionId` are reserved: the server seeds both from the
+            resolved session and the execution id it mints, and a body carrying either is rejected
+            with 400 rather than silently overwritten. Overwriting would let a correlation-key
+            expression reading `${formSessionId}` render against a value the caller believed it had
+            supplied.
+
+
+            **Not filtered by the human task's field allow-list, and deliberately so.** The
+            allow-list governs the COMPLETION channel, where a third party filled in a form and the
+            definition decides what of that may enter durable workflow history. `input` carries what
+            this caller typed, into this caller's own tenant's history: filtering a principal's own
+            data out of its own execution protects nobody, so the asymmetry is settled rather than
+            outstanding.
+
+
+            What is open here is INTEGRITY, not disclosure. A property name in this object can
+            collide with a variable the published definition's own expressions read — a
+            correlation-key template is exactly such a reader — so a caller has some influence over
+            the scope the definition evaluates against. Two consequences worth naming: the rendered
+            correlation key is validated for addressability, which is where that influence is
+            currently caught; and seeding a name the human-task completion also carries (for
+            instance `caseStreamVersion`) makes a later `preconditions` assertion about it an
+            assertion about a value the caller itself supplied at start. A general answer —
+            definition-declared input variables, everything else namespaced away from the
+            definition's own scope — is a recorded follow-up.
+          example:
+            caseReference: CASE-2026-0142
+
+    WorkflowExecutionStarted:
+      type: object
+      description: Acknowledgement of a started, form-bound workflow execution.
+      required:
+        - workflowExecutionId
+        - formSessionId
+        - humanTaskId
+        - correlationKey
+      properties:
+        workflowExecutionId:
+          type: string
+          description: Engine-assigned identifier of the started execution.
+          example: form-acme-9a7c1f22-0b2b-4c8b-9c1a-1f0d3d3a7b21
+        formSessionId:
+          type: string
+          format: uuid
+          description: The form session bound to the execution's HUMAN task, echoed from the request.
+          example: 9a7c1f22-0b2b-4c8b-9c1a-1f0d3d3a7b21
+        humanTaskId:
+          type: string
+          description: The HUMAN node the form session is bound to, echoed from the request.
+          example: review
+        correlationKey:
+          type: string
+          description: >-
+            Correlation key addressing the parked HUMAN task. Use it as the `correlationKey` path
+            value on the completion operation.
+          example: form-acme-9a7c1f22-0b2b-4c8b-9c1a-1f0d3d3a7b21::review
+
+    # -------------------------------------------------------------------------
+    # Read
+    # -------------------------------------------------------------------------
+
+    WorkflowExecutionStatus:
+      type: string
+      description: >-
+        Lifecycle status of a workflow execution. `COMPLETED`, `FAILED`, `CANCELLED`, `EXPIRED`,
+        `DEAD_LETTERED` and `COMPENSATED` are terminal; the remainder are not. Temporal's
+        engine-specific TERMINATED and TIMED_OUT states are deliberately represented as FAILED.
+        An engine status unknown to this server version fails the read as unavailable instead of
+        being represented as PENDING, so clients do not poll indefinitely on invented state.
+      enum:
+        - PENDING
+        - SCHEDULED
+        - RUNNING
+        - COMPLETED
+        - FAILED
+        - CANCELLED
+        - EXPIRED
+        - RETRYING
+        - DEAD_LETTERED
+        - COMPENSATED
+      example: RUNNING
+
+    # A wire DTO mapped from the internal `ExecutionView` projection — deliberately NOT a
+    # one-to-one publication of it.
+    #
+    # Dropped on purpose:
+    #   * `commandId`   — holds the engine's workflow-type name, not a ServiceCommand id.
+    #                     Publishing it under that name would make it look addressable.
+    #   * `tenantId`, `principalId` — the caller's own session already fixes both; a read of
+    #                     another tenant's execution answers 404 rather than disclosing them.
+    #   * `idempotencyKey`, `orderingKey`, `priority`, `attempt`, `executionSequence`,
+    #     `scheduledAt` — populated only by the durable-scheduler handle, never by the workflow
+    #                     engine behind this door, so they would be permanently null on the wire.
+    #   * `correlationId`, `errorCode`, `errorMessage` — same reason, and the same rule applied
+    #                     consistently: `TemporalWorkflowEngine.describe` constructs the view from
+    #                     exactly eight fields and leaves these three on their `null` defaults, so
+    #                     a client would be coding a failure-rendering path against values that are
+    #                     null even on a failed execution. FOLLOW-UP: surface the engine's failure
+    #                     cause on the execution view, then publish `errorCode`/`errorMessage` here
+    #                     — an additive, non-breaking change once there is something to put in them.
+    #
+    # The terminal port is the ONE field here that is not part of the lifecycle projection: the
+    # engine's execution view has no such field, so `exitPort` below is read out of the completed
+    # workflow's own result. Only the port name is published; the result payload it comes from is
+    # excluded like every other payload byte.
+    WorkflowExecution:
+      type: object
+      description: >-
+        Live state of a single workflow execution, as the engine reports it, plus the boundary port
+        a completed one exited through. Carries no workflow variables, no input/output payloads and
+        no failure detail. Anonymous, missing, unattributed and foreign execution ids all return the
+        same not-found response over HTTP and binary transports, without disclosing existence.
+        `exitPort` is a port NAME read out of the workflow's result, never the result itself.
+      required:
+        - workflowExecutionId
+        - status
+        - submittedAt
+      properties:
+        workflowExecutionId:
+          type: string
+          description: Engine-assigned identifier of the execution.
+          example: form-acme-9a7c1f22-0b2b-4c8b-9c1a-1f0d3d3a7b21
+        status:
+          $ref: '#/components/schemas/WorkflowExecutionStatus'
+        parentExecutionId:
+          type: string
+          nullable: true
+          description: >-
+            Identifier of the parent execution when this one was started as a sub-flow. OMITTED for
+            a top-level execution — the server does not serialize its null-valued optional fields,
+            so a client must treat "absent" and "null" alike here.
+        submittedAt:
+          type: string
+          format: date-time
+          description: When the execution was submitted to the engine.
+          example: '2026-09-08T09:12:44Z'
+        startedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: >-
+            When the engine began running the execution.
+
+
+            **Equal to `submittedAt` on the workflow engine behind this door, always.** Temporal
+            admits and starts an execution in one server call, so there is no queued-but-not-started
+            interval for it to report and the field is a passthrough of the same instant. Do not
+            compute a queue latency from the pair, and do not read a present value as evidence that
+            the wait was zero. Nullable because the projection is shared with a scheduler-backed
+            producer that does distinguish the two.
+          example: '2026-09-08T09:12:44Z'
+        completedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: >-
+            When the execution reached a terminal status. Omitted while it is still running — see
+            `parentExecutionId` on absent versus null.
+        exitPort:
+          type: string
+          nullable: true
+          description: >-
+            The OUTPUT boundary port the workflow's walk ended on: the terminal port, e.g. `PERMIT`
+            or `DENY` for an access decision.
+
+
+            This is the port name off the definition's OUTPUT node SIGNATURE — the same vocabulary
+            `entryPort` uses on the start operation, and deliberately so: a workflow's INPUT and
+            OUTPUT ports are its published contract, stable across authoring renames, whereas the
+            node ids that carry them (`permitted`, `denied`, `blocked` in the UC-1 pack) are
+            authoring-internal and may be renamed without changing what the workflow promises. A
+            client branching on this value branches on the signature.
+
+
+            Read from the completed workflow's own result and NOT from the execution's lifecycle
+            state, which carries no such field. Only the port name is published; the result payload
+            it is read out of never crosses this door.
+
+
+            OMITTED in three situations a client cannot tell apart, and must not try to: the
+            execution is still running, so no port exists yet; it closed without completing (failed,
+            cancelled, terminated), so it never produced one; or it completed by running out of
+            out-edges rather than through an explicit exit node, which the engine itself reports as
+            no port. Absence therefore means "no terminal port to report", never "the port is
+            unknown to this server". A server that cannot currently read the result of an execution
+            it knows completed answers 503, not an absent port, so this list stays exhaustive.
+          example: PERMIT
+
+    # -------------------------------------------------------------------------
+    # Human tasks
+    # -------------------------------------------------------------------------
+
+    PendingHumanTask:
+      type: object
+      description: >-
+        A HUMAN task currently parked in the execution, awaiting a submission.
+      required:
+        - taskId
+        - correlationKey
+        - tenantId
+        - parkedAt
+      properties:
+        taskId:
+          type: string
+          description: Identifier of the parked HUMAN node within the workflow definition.
+          example: review
+        correlationKey:
+          type: string
+          description: >-
+            Resolved correlation key addressing this parked task; use it as the `correlationKey`
+            path value on the completion operation.
+          example: form-acme-9a7c1f22-0b2b-4c8b-9c1a-1f0d3d3a7b21::review
+        tenantId:
+          type: string
+          description: >-
+            The execution's business tenant — exactly what a completion's tenant is compared
+            against.
+          example: acme
+        parkedAt:
+          type: string
+          format: date-time
+          description: >-
+            When the task parked. RFC 3339, the same encoding `WorkflowExecution` uses for its
+            lifecycle instants; the engine's own message carries epoch milliseconds and the door
+            converts.
+          example: '2026-09-08T09:12:44Z'
+        expiresAt:
+          type: string
+          format: date-time
+          description: >-
+            When the wait gives up and routes its `expired` port. OMITTED when the engine has no
+            deadline for the task, never sent as `null`.
+          example: '2026-09-09T09:12:44Z'
+        formSessionId:
+          type: string
+          description: >-
+            The form session backing this task, the value `CompleteHumanTaskRequest.formSessionId`
+            must carry. Resolved from the binding a start through this API wrote, not from the
+            engine, so a task inbox can build the completion body from this listing alone. OMITTED
+            for a task that was parked by a node this API did not start, never sent as `null`.
+          example: 9a7c1f22-0b2b-4c8b-9c1a-1f0d3d3a7b21
+
+    PendingHumanTaskList:
+      type: object
+      description: >-
+        The parked human tasks of one execution. Not paginated: this is a bounded sub-resource of a
+        single execution, so the envelope carries `items` and no `page` object. An execution with
+        nothing parked answers 200 with an empty `items` array.
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          description: The parked human tasks, empty when nothing is parked.
+          items:
+            $ref: '#/components/schemas/PendingHumanTask'
+
+    HumanTaskPrecondition:
+      type: object
+      additionalProperties: false
+      description: >-
+        One assertion about the workflow variable scope as it was when the task parked. All
+        preconditions must hold for the completion to be accepted; a failed assertion leaves the
+        task parked and answers 409 with code `INVALID_STATE`.
+      required:
+        - varPath
+        - expected
+      properties:
+        varPath:
+          type: string
+          description: >-
+            A path in the engine's expression grammar, evaluated against the variable scope captured
+            when the task parked. A path the grammar cannot parse is a 400, not a failed assertion.
+          example: $.caseStreamVersion
+        expected:
+          # `anyOf` of three NULLABLE branches, not `oneOf` of three plain ones. The server admits
+          # JSON null here — the Kotlin type is `JsonPrimitive`, which includes `JsonNull`, and the
+          # EDK precondition contract reasons explicitly about `expected: null` — so a spec that
+          # could not express null would leave a client unable to assert a case the engine
+          # evaluates.
+          #
+          # OpenAPI 3.0 has no `type: "null"`; nullability is the `nullable: true` sibling of a
+          # `type`, exactly as the nullable scalars on `WorkflowExecution` use it. That forces the
+          # keyword INTO the branches, and therefore `anyOf` rather than `oneOf`: a null value
+          # satisfies all three nullable branches at once, which `oneOf`'s exactly-one rule would
+          # reject. Putting `nullable` beside `oneOf` instead is what `redocly lint` refuses
+          # (`nullable-type-sibling`: the `type` field must be defined when `nullable` is used).
+          # The admitted set is unchanged from the reader's point of view: string, number, boolean
+          # or null.
+          anyOf:
+            - type: string
+              nullable: true
+            - type: number
+              nullable: true
+            - type: boolean
+              nullable: true
+          description: >-
+            The JSON primitive the path must currently resolve to, or `null` to assert that the path
+            resolves to JSON null. Comparison is by JSON kind AND content, so the number `3` does not
+            satisfy the string `"3"`. A path the scope does not carry, or one resolving to an object
+            or array, counts as a mismatch — including against `null`, because asserting that a field
+            IS null is an assertion about a document that carries the field at all.
+          example: 7
+
+    HumanTaskBridgeReferences:
+      type: object
+      # Unknown properties are REFUSED, not ignored — see StartWorkflowExecutionRequest. The strict
+      # decoder behind the door throws on an unknown key at any depth.
+      additionalProperties: false
+      description: >-
+        Case-side references a completion carries alongside the form session's own field values.
+
+
+        **References and a version, not form content.** Nothing on a form session holds them: they
+        exist only once something that also knows the case has written the case-action submission
+        and its evidence and read the case stream's version. A HUMAN node whose downstream step
+        reads them therefore declares `completeOnSubmit: false` in the authoring API and is
+        completed through this operation rather than by the form submission alone.
+
+
+        **Every property here passes through the same allow-list a form field value passes
+        through** — `WorkflowHumanNode.submissionFields` on the published definition. A name that
+        list does not carry is dropped and never published. These values reach the identical
+        destination a field value reaches, durable and replayable workflow history, so what may be
+        disclosed stays a property of the reviewed workflow rather than of the caller. Each is sent
+        only when the caller has one; an omitted reference is absent from the submission rather than
+        published as null.
+      properties:
+        submissionRef:
+          $ref: './enterprise-contract-components.yml#/components/schemas/BusinessObjectRef'
+        evidenceRefs:
+          type: array
+          description: >-
+            The evidence submissions written for that case action, in the order the caller minted
+            them. Omitted or empty publishes nothing rather than an empty array.
+          items:
+            $ref: './enterprise-contract-components.yml#/components/schemas/BusinessObjectRef'
+        caseStreamVersion:
+          type: integer
+          format: int64
+          description: >-
+            The case event stream's version as the caller read it. Also what a `preconditions`
+            assertion typically pins, so a completion prepared against a case that has since moved
+            on is refused while the submitter is still there to act on it.
+          example: 7
+
+    CompleteHumanTaskRequest:
+      type: object
+      # Unknown properties are REFUSED, not ignored — see StartWorkflowExecutionRequest. It matters
+      # more here: a caller who believes the body picks the target execution finds out at the first
+      # call instead of silently completing whatever the URL addressed.
+      additionalProperties: false
+      description: >-
+        Body of the human-task completion request. The execution and the parked task are addressed
+        by the URL, so neither `workflowExecutionId` nor `correlationKey` is a property here.
+        The submission itself is never client-supplied: the server rebuilds it from the referenced
+        form session under the allow-list the published definition declares.
+
+
+        `bridge` carries the case-side references the workflow needs and the form session does not
+        hold, merged into the submission under that same definition-declared allow-list.
+        `preconditions` asserts what the parked variable scope must still say for the completion to
+        be accepted; it is evaluated for a node the definition declares `completeOnSubmit: false`,
+        and only for such a node — see the operation description.
+      required:
+        - formSessionId
+      properties:
+        formSessionId:
+          type: string
+          format: uuid
+          description: >-
+            The submitted form session whose allow-listed fields become the task's submission. The
+            session must be submitted already; calling before submission answers 409
+            `INVALID_STATE`.
+          example: 9a7c1f22-0b2b-4c8b-9c1a-1f0d3d3a7b21
+        bridge:
+          $ref: '#/components/schemas/HumanTaskBridgeReferences'
+        preconditions:
+          type: array
+          description: >-
+            Assertions about the parked variable scope that must all hold. Omit or send an empty
+            array to apply the submission unconditionally.
+
+
+            **Accepted only when the addressed HUMAN node declares `completeOnSubmit: false`.** For
+            such a node this operation is the task's only completer, so nothing has claimed the
+            engine-side update id and the server evaluates what the caller sent. A failed assertion
+            answers 409 with code `INVALID_STATE` and leaves the task parked.
+
+
+            For a node that completes on submit, a non-empty array is REFUSED with 400
+            `ILLEGAL_ARGUMENT_ERROR` rather than accepted and skipped. This operation cannot be
+            reached before the submission on such a node — it requires a submitted session, and
+            submitting is what runs the after-submit hook that settles the task — so the engine
+            replays that acknowledgement under the shared update id without running the handler, and
+            the assertions could never be evaluated. Answering 200 there was indistinguishable from
+            an evaluated assertion, on this API and on the wire.
+          items:
+            $ref: '#/components/schemas/HumanTaskPrecondition'
+
+    HumanTaskCompletionAck:
+      type: object
+      description: >-
+        Acknowledgement that a submission was applied to a parked HUMAN task. Both fields echo the
+        task the engine settled; there is no server-assigned submission identity.
+      required:
+        - taskId
+        - correlationKey
+      properties:
+        taskId:
+          type: string
+          description: Identifier of the HUMAN node the submission was applied to.
+          example: review
+        correlationKey:
+          type: string
+          description: Correlation key of the completed task.
+          example: form-acme-9a7c1f22-0b2b-4c8b-9c1a-1f0d3d3a7b21::review
+

@@ -42,14 +42,14 @@ Two entrypoints are provided. Pick the one that matches your situation:
 ./start.sh                                   # Linux / macOS, auto-detect LAN IP, default profile
 ./start.sh https://my.ngrok.app              # Pass external URL
 ./start.sh https://my.ngrok.app haip         # Layer the HAIP conformance profile
-IDK_VERSION=0.25.0 ./start.sh                # Pin a specific release
+IDK_VERSION=<platformVersion> ./start.sh                # Pin (see ../../platform-version.properties)
 EXTERNAL_BASE_URL=http://192.168.1.100:8080 ./start.sh
 ```
 ```cmd
 start.bat                                    REM Windows
 start.bat https://my.ngrok.app
 start.bat https://my.ngrok.app haip          REM HAIP conformance profile
-set IDK_VERSION=0.25.0 && start.bat
+set IDK_VERSION=<platformVersion> && start.bat
 ```
 
 **Contributors iterating on IDK source (local build):**

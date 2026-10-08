@@ -1,0 +1,171 @@
+openapi: 3.0.4
+info:
+  title: Email API
+  version: 0.1.0
+  x-products: [vdx]
+  description: |
+    Send transactional email for a tenant through registered email types, published templates, and managed sender accounts.
+    SMTP is the transport in this release.
+
+    Two endpoints send mail directly: one takes a fully composed message, the other renders a
+    registered template against a string context and sends the result. A diagnostic send exists for
+    confirming an account works end to end. A status endpoint reports whether the tenant has a
+    usable route for a requested email type. Sender accounts are managed by the tenant
+    platform-configuration API, which manages SMTP credentials through the typed
+    sender-account credential flow. SMTP plaintext is write-only, and provider
+    locators or caller-created secret handles are never accepted or returned.
+
+    ## Sending mail
+
+    A raw send carries a registered email type, recipients, subject, and body. Supply an HTML body,
+    a plain-text body, or both. A templated send carries typed variables and lets the catalog resolve
+    published tenant/application content, locale, live branding, and sender routing. A send that the transport accepts responds `202` with the delivery
+    result; a send the transport rejects responds with an error.
+
+    ## Status
+
+    The status endpoint is public and always responds `200`. Its body reports whether the tenant
+    has a usable route for the requested email type and whether the transport is reachable, so callers can gate their own
+    behaviour before attempting a send.
+  license:
+    name: Apache 2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0
+
+servers:
+  - url: https://api.example.com/api/email/v1
+    description: Production server.
+  - url: http://localhost:8080/api/email/v1
+    description: Local development server.
+
+security:
+  - bearer: []
+
+tags:
+  - name: Email
+    description: Send transactional mail and report service status.
+
+paths:
+
+  /status:
+    get:
+      tags: [Email]
+      operationId: getEmailStatus
+      summary: Report email-service configuration and health
+      description: >-
+        Reports whether the calling tenant has a usable route for the requested email type and whether the transport is
+        reachable. Unauthenticated and always `200`; configuration problems are reported in the body,
+        not as an HTTP error.
+      security: []
+      parameters:
+        - name: emailTypeId
+          in: query
+          required: true
+          schema:
+            $ref: '#/components/schemas/EmailTypeId'
+      responses:
+        '200':
+          description: Email-service status for the tenant.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmailStatus'
+
+  /send:
+    post:
+      tags: [Email]
+      operationId: sendEmail
+      summary: Send a raw email
+      description: Resolves one sender for the registered email type and sends the caller-authored message. Provide an HTML body, a plain-text body, or both.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SendEmailRequest'
+      responses:
+        '202':
+          $ref: '#/components/responses/AcceptedDelivery'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /send-templated:
+    post:
+      tags: [Email]
+      operationId: sendTemplatedEmail
+      summary: Resolve a published catalog template and send it
+      description: Validates typed variables, resolves locale and live application or tenant branding, renders the server-controlled shell, and sends through the sender resolved for the registered email type.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SendTemplatedEmailRequest'
+      responses:
+        '202':
+          $ref: '#/components/responses/AcceptedDelivery'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /test-send:
+    post:
+      tags: [Email]
+      operationId: testSendEmail
+      summary: Send a diagnostic email
+      description: Sends a diagnostic message through the explicitly selected account.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TestSendEmailRequest'
+      responses:
+        '202':
+          $ref: '#/components/responses/AcceptedDelivery'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+components:
+  # Shared error/header/pagination components and the bearer scheme live in
+  # ./common-components.yml. Entity, request, and value schemas live in
+  # ./email-components.yml and are re-exported below so operations can reference
+  # them with spec-internal `#/components/schemas/...` refs.
+
+  securitySchemes:
+    bearer:
+      $ref: './common-components.yml#/components/securitySchemes/bearer'
+
+  responses:
+    AcceptedDelivery:
+      description: The message was accepted for delivery.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/EmailDelivery'
+
+  schemas:
+    EmailAddress:
+      $ref: './email-components.yml#/components/schemas/EmailAddress'
+    EmailTypeId:
+      $ref: './email-components.yml#/components/schemas/EmailTypeId'
+    EmailStatus:
+      $ref: './email-components.yml#/components/schemas/EmailStatus'
+    EmailDelivery:
+      $ref: './email-components.yml#/components/schemas/EmailDelivery'
+    SendEmailRequest:
+      $ref: './email-components.yml#/components/schemas/SendEmailRequest'
+    SendTemplatedEmailRequest:
+      $ref: './email-components.yml#/components/schemas/SendTemplatedEmailRequest'
+    TestSendEmailRequest:
+      $ref: './email-components.yml#/components/schemas/TestSendEmailRequest'

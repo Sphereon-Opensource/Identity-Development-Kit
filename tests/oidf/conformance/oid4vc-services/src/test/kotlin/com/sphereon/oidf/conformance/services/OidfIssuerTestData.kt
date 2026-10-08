@@ -14,7 +14,7 @@ import kotlinx.serialization.json.put
 /** Deterministic credential datasets shared by issuer- and wallet-initiated OIDF modules. */
 internal fun oidfIssuerCredentialSubjectData(credentialConfigurationId: String): JsonObject =
     when (credentialConfigurationId) {
-        "Mdl" ->
+        "Mdl" -> {
             buildJsonObject {
                 put("org.iso.18013.5.1.family_name", "Mustermann")
                 put("org.iso.18013.5.1.given_name", "Erika")
@@ -39,14 +39,20 @@ internal fun oidfIssuerCredentialSubjectData(credentialConfigurationId: String):
                 )
                 put("org.iso.18013.5.1.un_distinguishing_sign", "NL")
             }
-        "EuPid" ->
+        }
+
+        "EuPid" -> {
             buildJsonObject {
                 put("given_name", "Erika")
                 put("family_name", "Mustermann")
                 put("birth_date", "1990-01-15")
                 put("age_over_18", true)
             }
-        else -> JsonObject(emptyMap())
+        }
+
+        else -> {
+            JsonObject(emptyMap())
+        }
     }
 
 private const val OIDF_MINIMAL_PNG_BASE64 =

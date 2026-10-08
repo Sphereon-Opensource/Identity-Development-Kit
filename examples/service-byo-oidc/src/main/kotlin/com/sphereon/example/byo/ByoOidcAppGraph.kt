@@ -20,7 +20,6 @@ import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.DependencyGraph
 import dev.zacsweers.metro.Named
 import dev.zacsweers.metro.Provides
-import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.createGraphFactory
 
 /**
@@ -49,7 +48,7 @@ abstract class ByoOidcAppGraph : AbstractAppGraph() {
             @Provides @Named("version") version: String,
             @Provides rootScopeProvider: RootScopeProvider,
             // Supplied to DefaultIdpRegistry at AppScope construction time.
-            @Provides @SingleIn(AppScope::class) jwtValidationConfig: JwtValidationConfig,
+            @Provides jwtValidationConfig: JwtValidationConfig,
         ): ByoOidcAppGraph
     }
 }

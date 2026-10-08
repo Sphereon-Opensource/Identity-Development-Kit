@@ -161,5 +161,4 @@ internal class OidfVerifierModuleExecutor(
         }
 }
 
-private fun Map<String, String>.toJsonObject() =
-    kotlinx.serialization.json.JsonObject(mapValues { (_, value) -> kotlinx.serialization.json.JsonPrimitive(value) })
+private fun Map<String, String>.toJsonObject() = kotlinx.serialization.json.JsonObject(mapValues { (_, value) -> kotlinx.serialization.json.JsonPrimitive(value) })

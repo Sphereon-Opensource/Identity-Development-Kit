@@ -1,0 +1,4027 @@
+openapi: 3.0.4
+info:
+  title: Forms API Components
+  version: 0.2.0
+  description: Entity schemas, enums, and path/query/header parameters for the Forms REST Server API.
+paths: {}
+components:
+  parameters:
+    IfMatch:
+      name: If-Match
+      in: header
+      required: false
+      description: |
+        Optimistic-concurrency token carrying the expected session [revision] as a strong
+        validator (RFC 7232). Mismatch returns `412 Precondition Failed` with code
+        `OPTIMISTIC_LOCK_CONFLICT`. Successful mutating responses echo the new revision back via
+        the `ETag` response header.
+      schema:
+        type: string
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      description: |
+        Caller-supplied idempotency key, scoped to the operation it is sent on. Repeating a request
+        under the same key returns the original result instead of applying it again; reusing the key
+        with a different request body returns `409` with code `IDEMPOTENCY_KEY_CONFLICT`.
+
+        A replayed result is re-read at replay time, so it reflects the session as it stands. When
+        the session has moved past the revision the original result was produced at, the recorded
+        result no longer answers the request and `409` with code `IDEMPOTENCY_REPLAY_EXPIRED` is
+        returned rather than a stale body.
+
+        This absorbs retries; it does not serialize concurrent callers. Two requests genuinely in
+        flight at once are separated by `If-Match`, not by this header.
+      schema:
+        type: string
+    FormId:
+      name: formId
+      in: path
+      required: true
+      description: Identifier of the form definition.
+      schema:
+        type: string
+        format: uuid
+    CorrelationId:
+      name: correlationId
+      in: path
+      required: true
+      description: Identifies one credential presentation exchange, as returned when it was started.
+      schema:
+        type: string
+
+    EvidenceId:
+      name: evidenceId
+      in: path
+      required: true
+      description: Identifier of one evidence attachment, as returned when it was uploaded.
+      schema:
+        type: string
+        format: uuid
+
+    EvidenceGrantId:
+      name: grantId
+      in: query
+      required: false
+      description: |
+        The single-use upload grant carried in a `RequireEvidence` prompt's `uploadUri`. Sending the
+        upload to that address as given is sufficient; the same value may be sent in the request
+        body instead. When both are present, the body wins.
+      schema:
+        type: string
+        format: uuid
+
+    SessionId:
+      name: sessionId
+      in: path
+      required: true
+      description: Identifier of the form session.
+      schema:
+        type: string
+        format: uuid
+    StepId:
+      name: stepId
+      in: path
+      required: true
+      description: Identifier of the step that owns the action.
+      schema:
+        type: string
+        format: uuid
+    StepIndex:
+      name: stepIndex
+      in: path
+      required: true
+      description: Zero-based step index within the resolved form.
+      schema:
+        type: integer
+        minimum: 0
+    ActionId:
+      name: actionId
+      in: path
+      required: true
+      description: Identifier of the step action.
+      schema:
+        type: string
+        format: uuid
+    EventAfterSequence:
+      name: afterSequence
+      in: query
+      description: Return events strictly after this `sequence` value.
+      schema:
+        type: integer
+        format: int64
+        minimum: 0
+    EventLimit:
+      name: limit
+      in: query
+      description: Maximum number of events to return. Clamped to `[1, 1000]`. Defaults to `100`.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 1000
+        default: 100
+    FilterNameContains:
+      name: nameContains
+      in: query
+      description: Case-insensitive substring match against the form name.
+      schema:
+        type: string
+    FilterStatus:
+      name: status
+      in: query
+      description: Filter by lifecycle status.
+      schema:
+        $ref: '#/components/schemas/FormStatus'
+    FilterKind:
+      name: kind
+      in: query
+      description: Filter by form kind.
+      schema:
+        $ref: '#/components/schemas/FormKind'
+    FilterDataProductId:
+      name: dataProductId
+      in: query
+      description: Filter to forms bound to the given data product.
+      schema:
+        type: string
+        format: uuid
+    Limit:
+      name: limit
+      in: query
+      description: Maximum number of items to return. Clamped to `[1, 100]`. Defaults to `20`.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+    Offset:
+      name: offset
+      in: query
+      description: Number of items to skip. Mutually exclusive with `page`/`size` style.
+      schema:
+        type: integer
+        minimum: 0
+        default: 0
+    Sort:
+      name: sort
+      in: query
+      description: Field name to sort by. Defaults to `createdAt`.
+      schema:
+        type: string
+        default: createdAt
+    SortDirection:
+      name: sortDirection
+      in: query
+      description: Sort direction.
+      schema:
+        type: string
+        enum: [ASC, DESC]
+        default: DESC
+
+  schemas:
+    FormStatus:
+      type: string
+      description: Lifecycle status of a [FormDefinition].
+      enum: [DRAFT, PUBLISHED]
+
+    FormKind:
+      type: string
+      description: The purpose or mode of a [FormDefinition].
+      enum:
+        - STANDALONE
+        - CREDENTIAL_VERIFICATION
+        - CREDENTIAL_ISSUANCE
+        - CREDENTIAL_REVIEW
+        - PROCEDURE
+
+    FormSessionStatus:
+      type: string
+      description: Lifecycle status of a [FormSession]. Terminal states are `SUBMITTED` and `CANCELLED`.
+      enum:
+        - IN_PROGRESS
+        - COMPLETED
+        - SUBMITTED
+        - CANCELLED
+
+    FormSessionPhase:
+      type: string
+      description: Operational phase of a [FormSession]. Independent of [FormSessionStatus].
+      enum:
+        - CAPTURING
+        - VALIDATING_FIELD
+        - VALIDATING_STEP
+        - NAVIGATING
+        - RUNNING_ACTION
+        - APPLYING_ACTION_EFFECTS
+        - SUBMITTING
+        - SUBMITTED
+        - FAILED
+        - CANCELLED
+
+    FormActionStatus:
+      type: string
+      description: Lifecycle status of a single step action within a session.
+      enum: [PENDING, IN_PROGRESS, COMPLETED, FAILED, CANCELLED]
+
+    FormAuthoringMode:
+      type: string
+      description: |
+        Whether a form is free-form (field shape authored directly, no data product) or pinned to a
+        published data-product version.
+      enum:
+        - FREE_FORM
+        - DATA_PRODUCT_BOUND
+
+    FormPresentation:
+      type: string
+      description: How a resolved form is presented to the end user by the renderer.
+      enum:
+        - CLASSIC
+        - WIZARD
+        - CONVERSATIONAL
+
+    DataProductRef:
+      $ref: './semantic-model-authoring-components.yml#/components/schemas/DataProductRef'
+
+    FormSemanticBinding:
+      type: object
+      description: Form-level semantic binding metadata. Present only on DATA_PRODUCT_BOUND forms.
+      required: [dataProductRef]
+      properties:
+        dataProductRef:
+          $ref: '#/components/schemas/DataProductRef'
+        channelId:
+          type: string
+          format: uuid
+          nullable: true
+        channelVersion:
+          type: integer
+          format: int64
+          nullable: true
+        resolvedDataProductSnapshot:
+          type: object
+          allOf:
+            - $ref: './semantic-model-authoring-components.yml#/components/schemas/ResolvedDataProduct'
+          nullable: true
+          description: |
+            Read-only. The resolved data product the form was published against, frozen at publish
+            time. Absent on DRAFT forms, which resolve against the current set; present on every
+            PUBLISHED data-product-bound form, so a later revision of the data product cannot change what a
+            live form renders, validates or submits.
+
+            Server-assigned: a value supplied on create or update is ignored. Re-pinning a form to a
+            newer set version is done by creating a new form version and publishing it.
+
+    FormFieldSemanticBinding:
+      type: object
+      description: |
+        Field-level mapping from a form field to a traversal entry inside the form's pinned
+        data product. Present only on fields of a `DATA_PRODUCT_BOUND` form.
+
+        Relationship traversal paths are first-class and are never flattened into a display string
+        for identity.
+      required: [dataProductRef, roleRef]
+      properties:
+        dataProductRef:
+          allOf:
+            - $ref: '#/components/schemas/DataProductRef'
+          type: object
+          description: |
+            The pinned set version this mapping resolves against. Must equal the form-level
+            `semanticBinding.dataProductRef`.
+        roleRef:
+          type: string
+          description: The role/profile reference selecting how the data product is traversed.
+        path:
+          type: array
+          description: Relationship traversal path to the bound entry.
+          items:
+            type: string
+        sourceEntity:
+          type: string
+          nullable: true
+          description: Optional source entity the traversal originates from.
+
+    FormSourceMode:
+      type: string
+      description: How a source-backed field consumes its bound attribute source value.
+      enum:
+        - READ_ONLY
+        - PREFILL_EDITABLE
+        - LOOKUP
+        - HIDDEN_SYSTEM
+
+    FormSourceLookupInput:
+      type: object
+      description: |
+        One lookup input for a [FormSourceBinding] in `LOOKUP` mode: binds the value of an existing
+        form field to a named lookup key the source resolves with.
+      required: [lookupKey, fromFieldPath]
+      properties:
+        lookupKey:
+          type: string
+          description: The source-defined key name (e.g. `email`, `employee_id`).
+        fromFieldPath:
+          allOf:
+            - $ref: '#/components/schemas/AttributePath'
+          type: string
+          description: The form field whose value supplies the key.
+
+    FormSourceBinding:
+      type: object
+      description: |
+        Field-level binding to an attribute source. Absence means the field is plain user input.
+
+        Source secrets, transport configuration, credentials, and raw provider configuration are
+        never part of this contract and are never returned to a renderer or editor.
+      required: [sourceId, mode]
+      properties:
+        sourceId:
+          type: string
+          description: Opaque id of the bound attribute source.
+        sourceVersion:
+          type: string
+          nullable: true
+          description: Immutable source definition version required by governed resolvers.
+        mode:
+          $ref: '#/components/schemas/FormSourceMode'
+        lookupInputs:
+          type: array
+          description: Key bindings used when `mode` is `LOOKUP`.
+          items:
+            $ref: '#/components/schemas/FormSourceLookupInput'
+        sourceAttributePath:
+          type: string
+          nullable: true
+          description: Optional source-native attribute path projected onto this field.
+
+    FormThemeRef:
+      type: object
+      description: Reference to the theme a form renders with, plus optional design-token overrides.
+      required: [themeId]
+      properties:
+        themeId:
+          type: string
+        tokenOverrides:
+          type: object
+          additionalProperties:
+            type: string
+
+    FormDefinition:
+      type: object
+      description: |
+        A versioned form definition carrying its element tree, optional steps, conditions,
+        validation rules, and step actions.
+
+        **Single-page vs stepped.** A form's body is the `content` element tree, which materializes
+        to one implicit step. A stepped (wizard) form additionally carries a non-empty `steps` array,
+        each step a page with its own `content`; an empty `steps` array means single-page.
+
+        How a form sources its field metadata is determined by `authoringMode`:
+        `DATA_PRODUCT_BOUND` forms pin one published data product (via `semanticBinding.dataProductRef`,
+        mirrored by `dataProductId`) and inherit its metadata; `FREE_FORM` forms pin no set —
+        `dataProductId` and `semanticBinding` are both absent — and author field shape directly.
+      required:
+        - id
+        - tenantId
+        - name
+        - version
+        - kind
+        - authoringMode
+        - content
+        - status
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: |
+            Identifier of the form, stable for its whole life. Editing a form never mints a new one,
+            so a reference to a form stays valid across every version of it.
+        tenantId:
+          type: string
+        name:
+          type: string
+        version:
+          type: integer
+          format: int32
+          minimum: 1
+          description: |
+            Which version this representation carries. Assigned by the service and monotonic from 1;
+            it is never supplied on create or update.
+        description:
+          type: string
+          nullable: true
+        kind:
+          $ref: '#/components/schemas/FormKind'
+        authoringMode:
+          $ref: '#/components/schemas/FormAuthoringMode'
+        dataProductId:
+          type: string
+          format: uuid
+          nullable: true
+        semanticBinding:
+          allOf:
+            - $ref: '#/components/schemas/FormSemanticBinding'
+          type: object
+          nullable: true
+        presentation:
+          allOf:
+            - $ref: '#/components/schemas/FormPresentation'
+          type: string
+          nullable: true
+        themeRef:
+          allOf:
+            - $ref: '#/components/schemas/FormThemeRef'
+          type: object
+          nullable: true
+        content:
+          type: array
+          description: The form's element tree. The whole form when `steps` is empty.
+          items:
+            $ref: '#/components/schemas/FormElement'
+        steps:
+          type: array
+          description: Ordered pages for a stepped form. Empty means single-page.
+          items:
+            $ref: '#/components/schemas/FormStepDefinition'
+        actions:
+          type: array
+          description: |
+            The work the form gates on, for a single-page form. A step is a way of paging a form,
+            not a thing that owns work, so a form declares its actions here and they are carried
+            onto the single implicit page at runtime. Mutually exclusive with per-step actions:
+            declare an action on a step only to gate navigation past that step, and a request
+            carrying both is rejected with `ACTIONS_AND_STEPS_BOTH_PRESENT`.
+          items:
+            $ref: '#/components/schemas/FormAction'
+        reusable:
+          type: boolean
+          default: false
+          description: Whether this form may be embedded by another form as a reusable reference.
+        status:
+          $ref: '#/components/schemas/FormStatus'
+        policyResourceKey:
+          type: string
+          nullable: true
+        credentialBindings:
+          type: array
+          items:
+            $ref: '#/components/schemas/FormCredentialBinding'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        createdById:
+          type: string
+          nullable: true
+          description: Principal subject (OIDC sub, DID, service-account name, ...) that created the record. Opaque string, NOT a UUID.
+        updatedById:
+          type: string
+          nullable: true
+        approvedById:
+          type: string
+          nullable: true
+        approvedAt:
+          type: string
+          format: date-time
+          nullable: true
+        deletedAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    FormStepDefinition:
+      type: object
+      description: |
+        A step (page) within a [FormDefinition]. Carries its own element tree plus optional
+        step-level access policy and step actions.
+      required: [id, formId, name, labels, sortOrder, content, actions]
+      properties:
+        id:
+          type: string
+          format: uuid
+        formId:
+          type: string
+          format: uuid
+        name:
+          type: string
+        labels:
+          type: object
+          description: Locale-keyed label map (BCP-47 locale -> display string).
+          additionalProperties:
+            type: string
+        descriptions:
+          type: object
+          description: Locale-keyed description map (BCP-47 locale -> display string).
+          additionalProperties:
+            type: string
+        sortOrder:
+          type: integer
+        required:
+          type: boolean
+          default: true
+          description: |
+            Whether the step gates submission. A required step (the default) must be completed
+            before the form can be submitted; an optional step (`false`) is skippable and never
+            blocks submission — its mandatory fields and actions are excluded from the form-level
+            completion gate, though values that are filled in still validate.
+        content:
+          type: array
+          items:
+            $ref: '#/components/schemas/FormElement'
+        actions:
+          type: array
+          items:
+            $ref: '#/components/schemas/FormAction'
+        policyResourceKey:
+          type: string
+          nullable: true
+
+    FormElement:
+      description: |
+        A node in a form's element tree: a field leaf, a layout container holding more elements, or
+        a reference to another form embedded by this one. A tagged variant identified by the `type`
+        discriminator.
+
+        Layout is a presentation concern only — a field still binds by its `attributePath`
+        regardless of where it sits in the tree.
+      oneOf:
+        - $ref: '#/components/schemas/FormFieldElement'
+        - $ref: '#/components/schemas/FormGroupElement'
+        - $ref: '#/components/schemas/FormHorizontalElement'
+        - $ref: '#/components/schemas/FormVerticalElement'
+        - $ref: '#/components/schemas/FormEmbeddedElement'
+      discriminator:
+        propertyName: type
+        mapping:
+          field: '#/components/schemas/FormFieldElement'
+          group: '#/components/schemas/FormGroupElement'
+          horizontal: '#/components/schemas/FormHorizontalElement'
+          vertical: '#/components/schemas/FormVerticalElement'
+          embeddedFormRef: '#/components/schemas/FormEmbeddedElement'
+
+    FormFieldElement:
+      type: object
+      description: A field control as a leaf in the element tree.
+      required: [type, field]
+      properties:
+        type:
+          type: string
+          enum: [field]
+        field:
+          $ref: '#/components/schemas/FormFieldDefinition'
+
+    FormGroupElement:
+      type: object
+      description: |
+        A labelled container grouping related elements. Subsumes the section concept: a group is
+        simply a container with labels and an optional cross-field requirement condition.
+      required: [type, id, children]
+      properties:
+        type:
+          type: string
+          enum: [group]
+        id:
+          type: string
+          format: uuid
+        labels:
+          type: object
+          description: Locale-keyed label map (BCP-47 locale -> display string).
+          additionalProperties:
+            type: string
+        descriptions:
+          type: object
+          description: Locale-keyed description map (BCP-47 locale -> display string).
+          additionalProperties:
+            type: string
+        requirementCondition:
+          allOf:
+            - $ref: '#/components/schemas/FieldCondition'
+          type: object
+          nullable: true
+        visibilityCondition:
+          allOf:
+            - $ref: '#/components/schemas/FieldCondition'
+          type: object
+          nullable: true
+        children:
+          type: array
+          items:
+            $ref: '#/components/schemas/FormElement'
+
+    FormHorizontalElement:
+      type: object
+      description: An unlabelled container laying its children out side by side (a row).
+      required: [type, id, children]
+      properties:
+        type:
+          type: string
+          enum: [horizontal]
+        id:
+          type: string
+          format: uuid
+        visibilityCondition:
+          allOf:
+            - $ref: '#/components/schemas/FieldCondition'
+          type: object
+          nullable: true
+        children:
+          type: array
+          items:
+            $ref: '#/components/schemas/FormElement'
+
+    FormVerticalElement:
+      type: object
+      description: An unlabelled container laying its children out one above the other (a column).
+      required: [type, id, children]
+      properties:
+        type:
+          type: string
+          enum: [vertical]
+        id:
+          type: string
+          format: uuid
+        visibilityCondition:
+          allOf:
+            - $ref: '#/components/schemas/FieldCondition'
+          type: object
+          nullable: true
+        children:
+          type: array
+          items:
+            $ref: '#/components/schemas/FormElement'
+
+    FormEmbeddedElement:
+      type: object
+      description: |
+        A reference to another (reusable) form embedded at this position. On resolution the
+        referenced form's elements are inlined under a labelled group carrying this element's
+        visibility condition.
+      required: [type, id, formRef]
+      properties:
+        type:
+          type: string
+          enum: [embeddedFormRef]
+        id:
+          type: string
+          format: uuid
+        formRef:
+          $ref: '#/components/schemas/FormRef'
+        titleOverride:
+          type: object
+          description: Locale-keyed title replacing the referenced form's name on the inlined group.
+          additionalProperties:
+            type: string
+        visibilityCondition:
+          allOf:
+            - $ref: '#/components/schemas/FieldCondition'
+          type: object
+          nullable: true
+
+    FormRef:
+      type: object
+      description: |
+        A reference to a reusable form. Points at the referenced form's `id`, which is stable across
+        versions; `version` picks the concrete version and is snapshotted at resolution.
+      required: [targetFormId, version]
+      properties:
+        targetFormId:
+          type: string
+          format: uuid
+        version:
+          $ref: '#/components/schemas/VersionSelector'
+        bindingPrefix:
+          type: string
+          nullable: true
+          description: |
+            Path prefix applied to the referenced form's field paths on resolution, so the same form
+            can be embedded more than once without its fields colliding.
+
+    VersionSelector:
+      description: Which version of a referenced form to resolve. A tagged variant identified by `type`.
+      oneOf:
+        - $ref: '#/components/schemas/VersionSelectorPinned'
+        - $ref: '#/components/schemas/VersionSelectorLatestPublished'
+      discriminator:
+        propertyName: type
+        mapping:
+          Pinned: '#/components/schemas/VersionSelectorPinned'
+          LatestPublished: '#/components/schemas/VersionSelectorLatestPublished'
+
+    VersionSelectorPinned:
+      type: object
+      description: Resolve exactly the given form version. The only selector an embedded reference accepts.
+      required: [type, version]
+      properties:
+        type:
+          type: string
+          enum: [Pinned]
+        version:
+          type: integer
+          format: int32
+          minimum: 1
+
+    VersionSelectorLatestPublished:
+      type: object
+      description: |
+        Resolve whichever version of the form is currently published. Not accepted for an embedded
+        reference — expansion requires a pinned version.
+      required: [type]
+      properties:
+        type:
+          type: string
+          enum: [LatestPublished]
+
+    FormFieldDefinition:
+      type: object
+      description: |
+        A field, identified by `attributePath` and carrying authoring-time overrides (widget hint,
+        mandatory flag, default value, read-only, conditions). Appears in a form's element tree
+        wrapped in a [FormFieldElement].
+
+        In a `DATA_PRODUCT_BOUND` form the path resolves against the form's pinned data product,
+        which supplies the field's type, cardinality, and entry codes. In a `FREE_FORM` form there
+        is no set to resolve against and the field carries its own shape.
+      required: [id, attributePath, sortOrder, validationRules]
+      properties:
+        id:
+          type: string
+          format: uuid
+        attributePath:
+          $ref: '#/components/schemas/AttributePath'
+        sortOrder:
+          type: integer
+        validationRules:
+          type: array
+          items:
+            $ref: '#/components/schemas/FieldValidationRule'
+        defaultValue:
+          allOf:
+            - $ref: '#/components/schemas/FieldValue'
+          type: object
+          nullable: true
+        placeholders:
+          type: object
+          additionalProperties:
+            type: string
+        visibilityCondition:
+          allOf:
+            - $ref: '#/components/schemas/FieldCondition'
+          type: object
+          nullable: true
+        qualificationCondition:
+          allOf:
+            - $ref: '#/components/schemas/FieldCondition'
+          type: object
+          nullable: true
+        disqualificationBehavior:
+          $ref: '#/components/schemas/DisqualificationBehavior'
+        readOnly:
+          type: boolean
+          default: false
+        widgetHintOverride:
+          allOf:
+            - $ref: '#/components/schemas/AttributeWidgetHint'
+          type: string
+          nullable: true
+        mandatoryOverride:
+          $ref: '#/components/schemas/MandatoryOverride'
+        policyResourceKey:
+          type: string
+          nullable: true
+          description: |
+            Per-field access-policy binding. When absent the field falls back to the enclosing
+            step's or form's key.
+        requiredCondition:
+          allOf:
+            - $ref: '#/components/schemas/FieldCondition'
+          type: object
+          nullable: true
+          description: When present, the field is mandatory whenever this condition evaluates true.
+        shape:
+          allOf:
+            - $ref: '#/components/schemas/FormFieldShape'
+          type: object
+          nullable: true
+          description: Self-contained field shape. Present on FREE_FORM fields.
+        semanticBinding:
+          allOf:
+            - $ref: '#/components/schemas/FormFieldSemanticBinding'
+          type: object
+          nullable: true
+          description: |
+            Per-field mapping into the form's pinned data product. Present only on
+            fields of a DATA_PRODUCT_BOUND form.
+        sourceBinding:
+          allOf:
+            - $ref: '#/components/schemas/FormSourceBinding'
+          type: object
+          nullable: true
+          description: |
+            Binding to an attribute source that supplies or looks up this field's value. Absent
+            means the field is plain user input.
+
+    ResolvedForm:
+      type: object
+      description: |
+        Runtime tree of a resolved form: steps and elements filtered by access policy with
+        labels collapsed to the requested locale. Hidden fields, hidden steps, and
+        unauthorized actions are omitted from this tree by construction, they never reach
+        the client.
+      required: [id, formDefinitionId, name, kind, locale, steps]
+      properties:
+        id:
+          type: string
+          format: uuid
+        formDefinitionId:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        kind:
+          $ref: '#/components/schemas/FormKind'
+        locale:
+          type: string
+          description: BCP-47 locale the form's labels were collapsed to during resolution.
+        steps:
+          type: array
+          items:
+            $ref: '#/components/schemas/ResolvedFormStep'
+        credentialBindings:
+          type: array
+          description: |
+            INPUT credential bindings carried into the runtime so the step-action start/complete
+            commands can resolve them from `session.resolvedForm` alone.
+          items:
+            $ref: '#/components/schemas/FormCredentialBinding'
+
+    ResolvedFormStep:
+      type: object
+      description: |
+        A step within a [ResolvedForm]. Elements and actions hidden by policy are omitted
+        from this tree by construction.
+      required: [id, name, label, sortOrder, content, actions]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        label:
+          type: string
+        description:
+          type: string
+          nullable: true
+        sortOrder:
+          type: integer
+        required:
+          type: boolean
+          default: true
+          description: |
+            Whether the step gates submission; an optional step (`false`) is non-blocking. Mirrors
+            [FormStepDefinition] `required`.
+        content:
+          type: array
+          items:
+            $ref: '#/components/schemas/ResolvedFormElement'
+        actions:
+          type: array
+          items:
+            $ref: '#/components/schemas/FormAction'
+
+    ResolvedFormElement:
+      description: |
+        A node in a resolved step's element tree. Mirrors [FormElement] minus the embedded-form
+        variant — embedded references are inlined into a group during resolution, so they never
+        reach the client. A tagged variant identified by the `type` discriminator.
+      oneOf:
+        - $ref: '#/components/schemas/ResolvedFormFieldElement'
+        - $ref: '#/components/schemas/ResolvedFormGroup'
+        - $ref: '#/components/schemas/ResolvedFormHorizontal'
+        - $ref: '#/components/schemas/ResolvedFormVertical'
+      discriminator:
+        propertyName: type
+        mapping:
+          field: '#/components/schemas/ResolvedFormFieldElement'
+          group: '#/components/schemas/ResolvedFormGroup'
+          horizontal: '#/components/schemas/ResolvedFormHorizontal'
+          vertical: '#/components/schemas/ResolvedFormVertical'
+
+    ResolvedFormFieldElement:
+      type: object
+      required: [type, field]
+      properties:
+        type:
+          type: string
+          enum: [field]
+        field:
+          $ref: '#/components/schemas/ResolvedFormField'
+
+    ResolvedFormGroup:
+      type: object
+      description: A labelled container in a resolved step. Hidden children are omitted by construction.
+      required: [type, id, children]
+      properties:
+        type:
+          type: string
+          enum: [group]
+        id:
+          type: string
+          format: uuid
+        label:
+          type: string
+          nullable: true
+        description:
+          type: string
+          nullable: true
+        requirementCondition:
+          allOf:
+            - $ref: '#/components/schemas/FieldCondition'
+          type: object
+          nullable: true
+        visibilityCondition:
+          allOf:
+            - $ref: '#/components/schemas/FieldCondition'
+          type: object
+          nullable: true
+        children:
+          type: array
+          items:
+            $ref: '#/components/schemas/ResolvedFormElement'
+
+    ResolvedFormHorizontal:
+      type: object
+      description: A row container in a resolved step.
+      required: [type, id, children]
+      properties:
+        type:
+          type: string
+          enum: [horizontal]
+        id:
+          type: string
+          format: uuid
+        visibilityCondition:
+          allOf:
+            - $ref: '#/components/schemas/FieldCondition'
+          type: object
+          nullable: true
+        children:
+          type: array
+          items:
+            $ref: '#/components/schemas/ResolvedFormElement'
+
+    ResolvedFormVertical:
+      type: object
+      description: A column container in a resolved step.
+      required: [type, id, children]
+      properties:
+        type:
+          type: string
+          enum: [vertical]
+        id:
+          type: string
+          format: uuid
+        visibilityCondition:
+          allOf:
+            - $ref: '#/components/schemas/FieldCondition'
+          type: object
+          nullable: true
+        children:
+          type: array
+          items:
+            $ref: '#/components/schemas/ResolvedFormElement'
+
+    ResolvedFormField:
+      type: object
+      description: |
+        A field within a resolved step's element tree. Carries the merged semantic-attribute /
+        form-override / policy view of the field as seen by the renderer. Labels are
+        already collapsed to the requested locale.
+      required:
+        - id
+        - attributePath
+        - label
+        - valueKind
+        - widgetHint
+        - mandatory
+        - cardinality
+        - validationRules
+        - accessMode
+        - disqualificationBehavior
+        - sortOrder
+      properties:
+        entryCodeOptionsAvailable:
+          type: boolean
+          default: true
+        entryCodeScheme:
+          type: string
+          nullable: true
+        id:
+          type: string
+          format: uuid
+        attributePath:
+          $ref: '#/components/schemas/AttributePath'
+        label:
+          type: string
+        description:
+          type: string
+          nullable: true
+        valueKind:
+          $ref: '#/components/schemas/AttributeValueKind'
+        widgetHint:
+          $ref: '#/components/schemas/AttributeWidgetHint'
+        mandatory:
+          type: boolean
+        cardinality:
+          $ref: '#/components/schemas/AttributeCardinality'
+        formatHint:
+          type: string
+          nullable: true
+        entryCodes:
+          type: array
+          items:
+            type: string
+        entryCodeLabels:
+          type: object
+          additionalProperties:
+            type: string
+        unit:
+          type: string
+          nullable: true
+        placeholder:
+          type: string
+          nullable: true
+        defaultValue:
+          allOf:
+            - $ref: '#/components/schemas/FieldValue'
+          type: object
+          nullable: true
+        validationRules:
+          type: array
+          items:
+            $ref: '#/components/schemas/FieldValidationRule'
+        accessMode:
+          $ref: '#/components/schemas/FieldAccessMode'
+        visibilityCondition:
+          allOf:
+            - $ref: '#/components/schemas/FieldCondition'
+          type: object
+          nullable: true
+        qualificationCondition:
+          allOf:
+            - $ref: '#/components/schemas/FieldCondition'
+          type: object
+          nullable: true
+        requiredCondition:
+          allOf:
+            - $ref: '#/components/schemas/FieldCondition'
+          type: object
+          nullable: true
+          description: |
+            When present, the field is mandatory whenever this condition evaluates true, in
+            addition to the static `mandatory` flag. A runtime axis, re-evaluated on every value
+            change like `visibilityCondition` and `qualificationCondition`.
+        disqualificationBehavior:
+          $ref: '#/components/schemas/DisqualificationBehavior'
+        sortOrder:
+          type: integer
+        fieldSemanticBinding:
+          allOf:
+            - $ref: '#/components/schemas/FormFieldSemanticBinding'
+          type: object
+          nullable: true
+          description: |
+            Per-field mapping into the form's pinned data product. Present only on
+            fields of a DATA_PRODUCT_BOUND form.
+        sourceBinding:
+          allOf:
+            - $ref: '#/components/schemas/FormSourceBinding'
+          type: object
+          nullable: true
+          description: |
+            Binding to an attribute source that supplies or looks up this field's value. Absent
+            means the field is plain user input.
+
+    FieldValue:
+      description: |
+        Tagged-variant field value. Each variant carries the typed payload for one
+        [AttributeValueKind] / cardinality / reference shape. The variant is identified by a
+        `type` discriminator on the wire.
+      oneOf:
+        - $ref: '#/components/schemas/FieldValueAbsent'
+        - $ref: '#/components/schemas/FieldValueText'
+        - $ref: '#/components/schemas/FieldValueExpression'
+        - $ref: '#/components/schemas/FieldValueNumber'
+        - $ref: '#/components/schemas/FieldValueBool'
+        - $ref: '#/components/schemas/FieldValueDate'
+        - $ref: '#/components/schemas/FieldValueDateTime'
+        - $ref: '#/components/schemas/FieldValueObject'
+        - $ref: '#/components/schemas/FieldValueCode'
+        - $ref: '#/components/schemas/FieldValueMulti'
+        - $ref: '#/components/schemas/FieldValueEvidenceRef'
+        - $ref: '#/components/schemas/FieldValueCredentialRef'
+        - $ref: '#/components/schemas/FieldValueArtifactRef'
+      discriminator:
+        propertyName: type
+        mapping:
+          Absent: '#/components/schemas/FieldValueAbsent'
+          Text: '#/components/schemas/FieldValueText'
+          Expression: '#/components/schemas/FieldValueExpression'
+          Number: '#/components/schemas/FieldValueNumber'
+          Bool: '#/components/schemas/FieldValueBool'
+          Date: '#/components/schemas/FieldValueDate'
+          DateTime: '#/components/schemas/FieldValueDateTime'
+          Object: '#/components/schemas/FieldValueObject'
+          Code: '#/components/schemas/FieldValueCode'
+          Multi: '#/components/schemas/FieldValueMulti'
+          EvidenceRef: '#/components/schemas/FieldValueEvidenceRef'
+          CredentialRef: '#/components/schemas/FieldValueCredentialRef'
+          ArtifactRef: '#/components/schemas/FieldValueArtifactRef'
+
+    FieldValueObject:
+      type: object
+      description: |
+        A structured JSON value authored as a whole — a DCQL query, a grants object, a claims map.
+        Carried as an object rather than a stringified one, so a consumer that can only render
+        scalars treats it as text.
+      required: [type, value]
+      properties:
+        type:
+          type: string
+          enum: [Object]
+        value:
+          type: object
+          additionalProperties: true
+
+    FieldValueAbsent:
+      type: object
+      description: Sentinel for an unset field. No value has been supplied.
+      required: [type]
+      properties:
+        type:
+          type: string
+          enum: [Absent]
+
+    FieldValueText:
+      type: object
+      description: A plain text value (maps to STRING / PICKLIST / free-form text inputs).
+      required: [type, value]
+      properties:
+        type:
+          type: string
+          enum: [Text]
+        value:
+          type: string
+
+    FieldValueExpression:
+      type: object
+      description: An unevaluated workflow expression prefill, distinct from literal text.
+      required: [type, expression]
+      properties:
+        type:
+          type: string
+          enum: [Expression]
+        expression:
+          type: string
+
+    FieldValueNumber:
+      type: object
+      description: A numeric value.
+      required: [type, value]
+      properties:
+        type:
+          type: string
+          enum: [Number]
+        value:
+          type: number
+          format: double
+
+    FieldValueBool:
+      type: object
+      description: A boolean value.
+      required: [type, value]
+      properties:
+        type:
+          type: string
+          enum: [Bool]
+        value:
+          type: boolean
+
+    FieldValueDate:
+      type: object
+      description: A date without time component (ISO-8601 `YYYY-MM-DD`).
+      required: [type, value]
+      properties:
+        type:
+          type: string
+          enum: [Date]
+        value:
+          type: string
+          format: date
+
+    FieldValueDateTime:
+      type: object
+      description: An instant in time (ISO-8601 timestamp with offset).
+      required: [type, value]
+      properties:
+        type:
+          type: string
+          enum: [DateTime]
+        value:
+          type: string
+          format: date-time
+
+    FieldValueCode:
+      type: object
+      description: A coded value drawn from a controlled vocabulary (entry code / SKOS concept).
+      required: [type, code]
+      properties:
+        type:
+          type: string
+          enum: [Code]
+        code:
+          type: string
+        scheme:
+          type: string
+          nullable: true
+
+    FieldValueMulti:
+      type: object
+      description: Multiple values for a LIST-cardinality attribute. Element order is preserved.
+      required: [type, values]
+      properties:
+        type:
+          type: string
+          enum: [Multi]
+        values:
+          type: array
+          items:
+            $ref: '#/components/schemas/FieldValue'
+
+    FieldValueEvidenceRef:
+      type: object
+      description: |
+        A reference to an evidence attachment. The payload itself is stored out-of-band; only
+        the reference flows through the session.
+      required: [type, evidenceId, mediaType]
+      properties:
+        type:
+          type: string
+          enum: [EvidenceRef]
+        evidenceId:
+          type: string
+          format: uuid
+        mediaType:
+          type: string
+          description: IANA media type of the referenced artifact (e.g. `application/pdf`).
+
+    FieldValueCredentialRef:
+      type: object
+      description: A reference to a credential presented by the subject.
+      required: [type, credentialId, format]
+      properties:
+        type:
+          type: string
+          enum: [CredentialRef]
+        credentialId:
+          type: string
+        format:
+          $ref: './wallet-credential-components.yml#/components/schemas/CredentialFormat'
+
+    FieldValueArtifactRef:
+      type: object
+      description: A reference to an artifact produced by a `ProduceArtifact` step action.
+      required: [type, artifactId, kind]
+      properties:
+        type:
+          type: string
+          enum: [ArtifactRef]
+        artifactId:
+          type: string
+          format: uuid
+        kind:
+          $ref: '#/components/schemas/ArtifactKind'
+
+    FieldValidationError:
+      type: object
+      description: A single validation error against a field.
+      required: [code, message, source]
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        source:
+          $ref: '#/components/schemas/FieldValidationSource'
+        details:
+          type: object
+          additionalProperties:
+            type: string
+
+    FieldTargetedServerError:
+      type: object
+      description: A server-side error targeted at a specific field path.
+      required: [fieldPath, errors]
+      properties:
+        fieldPath:
+          type: string
+        errors:
+          type: array
+          items:
+            $ref: '#/components/schemas/FieldValidationError'
+
+    FormActionResult:
+      description: |
+        Tagged-variant result produced by a completed step action. The variant tag must match
+        the declared `FormAction` variant on the resolved form. The variant is identified by a
+        `type` discriminator on the wire.
+      oneOf:
+        - $ref: '#/components/schemas/FormActionResultCredentialReceived'
+        - $ref: '#/components/schemas/FormActionResultEvidenceAttached'
+        - $ref: '#/components/schemas/FormActionResultSignatureOrSealApplied'
+        - $ref: '#/components/schemas/FormActionResultPolicyEvaluated'
+        - $ref: '#/components/schemas/FormActionResultArtifactProduced'
+        - $ref: '#/components/schemas/FormActionResultConnectorFieldsProduced'
+      discriminator:
+        propertyName: type
+        mapping:
+          CredentialReceived: '#/components/schemas/FormActionResultCredentialReceived'
+          EvidenceAttached: '#/components/schemas/FormActionResultEvidenceAttached'
+          SignatureOrSealApplied: '#/components/schemas/FormActionResultSignatureOrSealApplied'
+          PolicyEvaluated: '#/components/schemas/FormActionResultPolicyEvaluated'
+          ArtifactProduced: '#/components/schemas/FormActionResultArtifactProduced'
+          ConnectorFieldsProduced: '#/components/schemas/FormActionResultConnectorFieldsProduced'
+
+    FormActionResultCredentialReceived:
+      type: object
+      description: Outcome of a `RequestCredential` action, a credential presentation was received.
+      required: [type, credentialRef]
+      properties:
+        type:
+          type: string
+          enum: [CredentialReceived]
+        credentialRef:
+          $ref: '#/components/schemas/FieldValue'
+        receivedClaims:
+          type: object
+          nullable: true
+          additionalProperties:
+            $ref: '#/components/schemas/FieldValue'
+        presentedCredential:
+          allOf:
+            - $ref: '#/components/schemas/PresentedCredentialClaims'
+          type: object
+          nullable: true
+          description: |
+            Raw presented credential payload. When non-null the credential bridge projects
+            claims onto form attributes and fills `receivedClaims` / `receivedClaimProvenance`.
+        receivedClaimProvenance:
+          type: object
+          description: |
+            Per-attribute provenance keyed by the form attribute path that received the
+            value. Used by the side-effect engine to lock written fields with
+            CREDENTIAL_PRESENTATION.
+          additionalProperties:
+            $ref: '#/components/schemas/CredentialClaimProvenance'
+
+    FormActionResultEvidenceAttached:
+      type: object
+      description: Outcome of a `RequireEvidence` action, an evidence attachment was accepted.
+      required: [type, evidenceRef]
+      properties:
+        type:
+          type: string
+          enum: [EvidenceAttached]
+        evidenceRef:
+          $ref: '#/components/schemas/FieldValue'
+        description:
+          type: string
+          nullable: true
+
+    FormActionResultSignatureOrSealApplied:
+      type: object
+      description: Outcome of a `RequireSignatureOrSeal` action, a signature or seal was produced.
+      required: [type, kind, assuranceLevel, signatureLocator]
+      properties:
+        type:
+          type: string
+          enum: [SignatureOrSealApplied]
+        kind:
+          $ref: '#/components/schemas/SignatureOrSealKind'
+        assuranceLevel:
+          $ref: '#/components/schemas/AssuranceLevel'
+        signerSubject:
+          type: string
+          nullable: true
+        signatureLocator:
+          type: string
+
+    FormActionResultPolicyEvaluated:
+      type: object
+      description: Outcome of a `PolicyGate` action, the policy engine returned a decision.
+      required: [type, decision]
+      properties:
+        type:
+          type: string
+          enum: [PolicyEvaluated]
+        decision:
+          $ref: '#/components/schemas/PolicyDecision'
+        reason:
+          type: string
+          nullable: true
+
+    FormActionResultArtifactProduced:
+      type: object
+      description: Outcome of a `ProduceArtifact` action, an artifact was produced and is retrievable by reference.
+      required: [type, artifactRef]
+      properties:
+        type:
+          type: string
+          enum: [ArtifactProduced]
+        artifactRef:
+          $ref: '#/components/schemas/FieldValue'
+
+    FormActionResultConnectorFieldsProduced:
+      type: object
+      description: |
+        Outcome of a `ConnectorLookup` action, the connector invocation produced form field
+        values keyed by form field path. The action's declared side effects control which
+        produced values are written into the session field-value map.
+      required: [type]
+      properties:
+        type:
+          type: string
+          enum: [ConnectorFieldsProduced]
+        producedFieldValues:
+          type: object
+          default: {}
+          additionalProperties:
+            $ref: '#/components/schemas/FieldValue'
+
+    FormActionPrompt:
+      description: |
+        Tagged-variant prompt returned when starting a step action. Variants: `None`,
+        `PresentationRequest`, `EvidenceUpload`, `SignatureChallenge`, `ArtifactHandle`. The
+        variant is identified by a `type` discriminator on the wire.
+      oneOf:
+        - $ref: '#/components/schemas/FormActionPromptNone'
+        - $ref: '#/components/schemas/FormActionPromptPresentationRequest'
+        - $ref: '#/components/schemas/FormActionPromptEvidenceUpload'
+        - $ref: '#/components/schemas/FormActionPromptSignatureChallenge'
+        - $ref: '#/components/schemas/FormActionPromptArtifactHandle'
+      discriminator:
+        propertyName: type
+        mapping:
+          None: '#/components/schemas/FormActionPromptNone'
+          PresentationRequest: '#/components/schemas/FormActionPromptPresentationRequest'
+          EvidenceUpload: '#/components/schemas/FormActionPromptEvidenceUpload'
+          SignatureChallenge: '#/components/schemas/FormActionPromptSignatureChallenge'
+          ArtifactHandle: '#/components/schemas/FormActionPromptArtifactHandle'
+
+    FormActionPromptNone:
+      type: object
+      description: No client-facing prompt, the action ran synchronously or awaits server-side orchestration.
+      required: [type]
+      properties:
+        type:
+          type: string
+          enum: [None]
+
+    FormActionPromptPresentationRequest:
+      type: object
+      description: A verifiable-presentation request URI the wallet consumes.
+      required: [type, requestUri]
+      properties:
+        type:
+          type: string
+          enum: [PresentationRequest]
+        requestUri:
+          type: string
+        nonce:
+          type: string
+          nullable: true
+
+    FormActionPromptEvidenceUpload:
+      type: object
+      description: Where and how to upload an evidence attachment.
+      required: [type, uploadUri]
+      properties:
+        type:
+          type: string
+          enum: [EvidenceUpload]
+        uploadUri:
+          type: string
+          description: |
+            Root-relative address of the session's evidence upload endpoint. Carries a scoped,
+            expiring, single-use upload grant as its `grantId` query parameter; send that value as
+            the upload request's `grantId`. Completing the action only accepts evidence uploaded
+            under this grant.
+        acceptedMediaTypes:
+          type: array
+          description: Media types the upload will be accepted as, from the target field's accept list. Empty means unrestricted.
+          items:
+            type: string
+
+    FormActionPromptSignatureChallenge:
+      type: object
+      description: The challenge / document-to-sign reference for a signature/seal step action.
+      required: [type, challenge]
+      properties:
+        type:
+          type: string
+          enum: [SignatureChallenge]
+        challenge:
+          type: string
+        hashAlgorithm:
+          type: string
+          nullable: true
+
+    FormActionPromptArtifactHandle:
+      type: object
+      description: Where the produced artifact can be retrieved once ready.
+      required: [type, locator]
+      properties:
+        type:
+          type: string
+          enum: [ArtifactHandle]
+        locator:
+          type: string
+
+    StepValidationErrors:
+      type: object
+      description: |
+        Map from field path to the list of validation error messages produced by `validateStep`.
+        Empty map when the step is valid.
+      additionalProperties:
+        type: array
+        items:
+          type: string
+
+    FieldValidationErrors:
+      type: array
+      description: |
+        Validation error messages produced by `validateField`. Empty array when the field is
+        valid.
+      items:
+        type: string
+
+    FormSession:
+      type: object
+      description: |
+        Runtime form session for the headless engine. Tracks the user's progress through a
+        [ResolvedForm] including current step, field values, validation errors, per-field
+        runtime states, per-action lifecycle states, operational phase, and progress.
+      required:
+        - id
+        - tenantId
+        - formDefinitionId
+        - resolvedForm
+        - currentStepIndex
+        - fieldValues
+        - fieldErrors
+        - fieldRuntimeStates
+        - formActionStates
+        - phaseState
+        - progress
+        - status
+        - createdAt
+        - updatedAt
+        - revision
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenantId:
+          type: string
+        actorPrincipalId:
+          type: string
+          nullable: true
+          description: |
+            Opaque principal subject of the actor that created the session. Frozen at
+            session creation; downstream step-action and policy evaluation use this rather
+            than the current request execution context. Never parsed as a UUID.
+        actorRoles:
+          type: array
+          items:
+            type: string
+          description: Role identifiers carried by the creating actor at session creation. Frozen for the session's lifetime.
+        formDefinitionId:
+          type: string
+          format: uuid
+        resolvedForm:
+          $ref: '#/components/schemas/ResolvedForm'
+        currentStepIndex:
+          type: integer
+          minimum: 0
+        fieldValues:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/FieldValue'
+        fieldErrors:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string
+        fieldRuntimeStates:
+          type: object
+          description: Per-field runtime state keyed by attribute path.
+          additionalProperties:
+            $ref: '#/components/schemas/FieldRuntimeState'
+        formActionStates:
+          type: object
+          description: Per-step-action execution state keyed by action id (UUID string).
+          additionalProperties:
+            $ref: '#/components/schemas/FormActionState'
+        phaseState:
+          $ref: '#/components/schemas/FormSessionPhaseState'
+        progress:
+          $ref: '#/components/schemas/FormSessionProgress'
+        status:
+          $ref: '#/components/schemas/FormSessionStatus'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        revision:
+          type: integer
+          format: int64
+          minimum: 0
+
+    FormSessionPhaseState:
+      type: object
+      description: |
+        Operational phase, last operation, and recoverable failure snapshot. Independent of
+        session status: a session can have `status = IN_PROGRESS` while `phase = FAILED`,
+        representing a recoverable validation failure that the next accepted user update clears.
+      required: [phase]
+      properties:
+        phase:
+          $ref: '#/components/schemas/FormSessionPhase'
+        operation:
+          allOf:
+            - $ref: '#/components/schemas/FormSessionOperation'
+          type: string
+          nullable: true
+        activeStepIndex:
+          type: integer
+          nullable: true
+        activeActionId:
+          type: string
+          format: uuid
+          nullable: true
+        reasons:
+          type: array
+          items:
+            type: string
+        fieldErrors:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              $ref: '#/components/schemas/FieldValidationError'
+        startedAt:
+          type: string
+          format: date-time
+          nullable: true
+        updatedAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    FormSessionProgress:
+      type: object
+      description: Snapshot of step/field/action progress, recomputed after every session mutation.
+      properties:
+        currentStepIndex:
+          type: integer
+          default: 0
+        currentStepNumber:
+          type: integer
+          default: 1
+        totalSteps:
+          type: integer
+          default: 0
+        isFirstStep:
+          type: boolean
+          default: true
+        isLastStep:
+          type: boolean
+          default: true
+        completedStepCount:
+          type: integer
+          default: 0
+        currentStep:
+          $ref: '#/components/schemas/FormStepProgress'
+        steps:
+          type: array
+          items:
+            $ref: '#/components/schemas/FormStepProgress'
+        totalFields:
+          type: integer
+          default: 0
+        qualifiedFields:
+          type: integer
+          default: 0
+        visibleFields:
+          type: integer
+          default: 0
+        requiredFields:
+          type: integer
+          default: 0
+        completedRequiredFields:
+          type: integer
+          default: 0
+        validFields:
+          type: integer
+          default: 0
+        invalidFields:
+          type: integer
+          default: 0
+        dirtyFields:
+          type: integer
+          default: 0
+        totalRequiredActions:
+          type: integer
+          default: 0
+        completedRequiredActions:
+          type: integer
+          default: 0
+        overallCompletionRatio:
+          type: number
+          format: double
+          default: 0
+        complete:
+          type: boolean
+          default: false
+
+    FormStepProgress:
+      type: object
+      description: Per-step progress within a [FormSessionProgress].
+      properties:
+        stepIndex:
+          type: integer
+          default: 0
+        stepNumber:
+          type: integer
+          default: 1
+        totalFields:
+          type: integer
+          default: 0
+        qualifiedFields:
+          type: integer
+          default: 0
+        visibleFields:
+          type: integer
+          default: 0
+        requiredFields:
+          type: integer
+          default: 0
+        completedRequiredFields:
+          type: integer
+          default: 0
+        validFields:
+          type: integer
+          default: 0
+        invalidFields:
+          type: integer
+          default: 0
+        unspecifiedFields:
+          type: integer
+          default: 0
+        dirtyFields:
+          type: integer
+          default: 0
+        requiredActions:
+          type: integer
+          default: 0
+        completedRequiredActions:
+          type: integer
+          default: 0
+        completionRatio:
+          type: number
+          format: double
+          default: 0
+        complete:
+          type: boolean
+          default: false
+
+    FormSessionFieldSnapshot:
+      type: object
+      description: Per-field client snapshot (path, value, runtime state, errors).
+      required: [path, value, runtimeState]
+      properties:
+        path:
+          type: string
+        value:
+          $ref: '#/components/schemas/FieldValue'
+        runtimeState:
+          $ref: '#/components/schemas/FieldRuntimeState'
+        errors:
+          type: array
+          items:
+            type: string
+
+    FormSessionCommandCapability:
+      type: string
+      description: |
+        A mutating operation a form session supports. Advertises which commands a session will
+        accept in its current state, so a client can enable or disable the matching affordance
+        without probing.
+      enum:
+        - UPDATE_FIELD_VALUES
+        - VALIDATE_FIELD
+        - VALIDATE_STEP
+        - NAVIGATE_TO_STEP
+        - START_ACTION
+        - COMPLETE_ACTION
+        - CANCEL_ACTION
+        - SUBMIT_FORM
+        - CANCEL_SESSION
+
+    FormSessionSnapshot:
+      type: object
+      description: |
+        Client-oriented snapshot of a [FormSession]. Carries state, progress, allowed commands,
+        and revision. Snapshots omit raw field values, fetch the full session for those.
+      required:
+        - sessionId
+        - tenantId
+        - formDefinitionId
+        - status
+        - phaseState
+        - currentStepIndex
+        - progress
+        - fields
+        - allowedCommands
+        - revision
+        - updatedAt
+      properties:
+        sessionId:
+          type: string
+          format: uuid
+        tenantId:
+          type: string
+        formDefinitionId:
+          type: string
+          format: uuid
+        status:
+          $ref: '#/components/schemas/FormSessionStatus'
+        phaseState:
+          $ref: '#/components/schemas/FormSessionPhaseState'
+        currentStepIndex:
+          type: integer
+          minimum: 0
+        currentStepId:
+          type: string
+          format: uuid
+          nullable: true
+        progress:
+          $ref: '#/components/schemas/FormSessionProgress'
+        fields:
+          type: array
+          items:
+            $ref: '#/components/schemas/FormSessionFieldSnapshot'
+        allowedCommands:
+          type: array
+          items:
+            $ref: '#/components/schemas/FormSessionCommandCapability'
+        revision:
+          type: integer
+          format: int64
+          minimum: 0
+        updatedAt:
+          type: string
+          format: date-time
+
+    FormSessionEventType:
+      type: string
+      description: |
+        The kind of a record in a session's append-only event log. Every state transition of a
+        session appends exactly one event of the matching type.
+      enum:
+        - SESSION_CREATED
+        - FIELD_VALUES_UPDATED
+        - FIELD_VALIDATED
+        - STEP_VALIDATED
+        - STEP_NAVIGATED
+        - STEP_ACTION_STARTED
+        - STEP_ACTION_COMPLETED
+        - STEP_ACTION_CANCELLED
+        - ACTION_EFFECTS_APPLIED
+        - SERVER_FIELD_ERRORS_APPLIED
+        - FORM_SUBMITTED
+        - SESSION_CANCELLED
+        - SESSION_FAILED
+
+    FormSessionEvent:
+      type: object
+      description: Append-only session event. Metadata carries identifiers and counts only, never field values, claims, signatures, or evidence payloads.
+      required: [id, tenantId, sessionId, sequence, type, metadata, occurredAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenantId:
+          type: string
+        sessionId:
+          type: string
+          format: uuid
+        sequence:
+          type: integer
+          format: int64
+          minimum: 0
+        type:
+          $ref: '#/components/schemas/FormSessionEventType'
+        actorId:
+          type: string
+          nullable: true
+          description: Principal subject that triggered the event. Opaque string, NOT a UUID.
+        metadata:
+          type: object
+          additionalProperties:
+            type: string
+        occurredAt:
+          type: string
+          format: date-time
+
+    FormSessionDiff:
+      type: object
+      description: Per-mutation diff between a session's prior and post revisions.
+      required:
+        - beforeRevision
+        - afterRevision
+        - changedFieldPaths
+        - changedRuntimeStatePaths
+        - changedErrorPaths
+        - progressChanged
+        - phaseChanged
+        - statusChanged
+      properties:
+        beforeRevision:
+          type: integer
+          format: int64
+          minimum: 0
+        afterRevision:
+          type: integer
+          format: int64
+          minimum: 0
+        changedFieldPaths:
+          type: array
+          items:
+            type: string
+        changedRuntimeStatePaths:
+          type: array
+          items:
+            type: string
+        changedErrorPaths:
+          type: array
+          items:
+            type: string
+        progressChanged:
+          type: boolean
+        phaseChanged:
+          type: boolean
+        statusChanged:
+          type: boolean
+
+    FormSessionMutationResult:
+      type: object
+      description: Returned by mutating session commands that compute a per-field diff (e.g. `updateFieldValues`).
+      required: [session, snapshot, diff]
+      properties:
+        session:
+          $ref: '#/components/schemas/FormSession'
+        snapshot:
+          $ref: '#/components/schemas/FormSessionSnapshot'
+        diff:
+          $ref: '#/components/schemas/FormSessionDiff'
+
+    CredentialClaimPath:
+      type: object
+      description: |
+        Path of a single claim inside a presented or issued credential. Stored as an
+        explicit list of segments so namespace-style claim keys (e.g. mDL `org.iso.18013.5.1`)
+        round-trip without ambiguity. Do NOT serialize as a dot-separated string.
+      required: [segments]
+      properties:
+        segments:
+          type: array
+          minItems: 1
+          items:
+            type: string
+
+    FormAttributeMapping:
+      type: object
+      description: |
+        Direction-agnostic mapping between a form attribute path and a credential claim path.
+      required: [attributePath, claimPath]
+      properties:
+        attributePath:
+          type: string
+          description: The form attribute path this mapping references.
+        claimPath:
+          $ref: '#/components/schemas/CredentialClaimPath'
+        semanticTermUris:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+        required:
+          type: boolean
+          default: false
+        priority:
+          type: integer
+          default: 0
+
+    FormCredentialBinding:
+      oneOf:
+        - $ref: '#/components/schemas/FormCredentialBindingInput'
+        - $ref: '#/components/schemas/FormCredentialBindingOutput'
+      discriminator:
+        propertyName: type
+        mapping:
+          INPUT: '#/components/schemas/FormCredentialBindingInput'
+          OUTPUT: '#/components/schemas/FormCredentialBindingOutput'
+
+    FormCredentialBindingOutput:
+      type: object
+      description: |
+        Output-credential binding. A `ProduceArtifact(CREDENTIAL)` step action selects the
+        OUTPUT binding by `bindingId` to map current session values onto a credential subject
+        and trigger issuance. `credentialConfigurationId` and `outputVocabularyId` are required.
+      required: [type, id, credentialType, credentialConfigurationId, outputVocabularyId, mappings]
+      properties:
+        type:
+          type: string
+          enum: [OUTPUT]
+        id:
+          type: string
+        credentialType:
+          type: string
+        credentialConfigurationId:
+          type: string
+        outputVocabularyId:
+          type: string
+          format: uuid
+        issuerId:
+          type: string
+          nullable: true
+        credentialFormat:
+          allOf:
+            - $ref: './wallet-credential-components.yml#/components/schemas/CredentialFormat'
+          nullable: true
+        acceptedVocabularyIds:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+            format: uuid
+        mappings:
+          type: array
+          items:
+            $ref: '#/components/schemas/FormAttributeMapping'
+
+    PresentedCredentialClaim:
+      type: object
+      description: One claim extracted from a presented credential, ready for mapping.
+      required: [path, value]
+      properties:
+        path:
+          $ref: '#/components/schemas/CredentialClaimPath'
+        value:
+          $ref: '#/components/schemas/FieldValue'
+        semanticTermUris:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+
+    PresentedCredentialClaims:
+      type: object
+      description: Set of claims extracted from a single presented credential.
+      required: [credentialType, credentialFormat, claims]
+      properties:
+        bindingId:
+          type: string
+          nullable: true
+        credentialType:
+          type: string
+        credentialFormat:
+          $ref: './wallet-credential-components.yml#/components/schemas/CredentialFormat'
+        vocabularyId:
+          type: string
+          format: uuid
+          nullable: true
+        claims:
+          type: array
+          items:
+            $ref: '#/components/schemas/PresentedCredentialClaim'
+
+    CredentialClaimProvenance:
+      type: object
+      description: |
+        Provenance metadata attached to a form attribute value when it came from a verified
+        credential presentation.
+      required: [bindingId, credentialType, credentialFormat, credentialId, claimPath]
+      properties:
+        bindingId:
+          type: string
+        credentialType:
+          type: string
+        credentialFormat:
+          $ref: './wallet-credential-components.yml#/components/schemas/CredentialFormat'
+        credentialId:
+          type: string
+        claimPath:
+          $ref: '#/components/schemas/CredentialClaimPath'
+        semanticTermUris:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+
+    FieldValueProvenanceSource:
+      type: string
+      description: The originating source of a field value.
+      enum: [DEFAULT, USER, ACTION_SIDE_EFFECT, CREDENTIAL_PRESENTATION, SYSTEM]
+
+    FieldValueProvenance:
+      type: object
+      description: Provenance information attached to a runtime field value.
+      required: [source]
+      properties:
+        source:
+          $ref: '#/components/schemas/FieldValueProvenanceSource'
+        credential:
+          allOf:
+            - $ref: '#/components/schemas/CredentialClaimProvenance'
+          type: object
+          nullable: true
+        attribute:
+          allOf:
+            - $ref: './oid4vci-issuer-components.yml#/components/schemas/AttributeRecord'
+          type: object
+          nullable: true
+          description: Server-resolved attribute value and its canonical source provenance.
+
+    FieldLockReason:
+      type: string
+      description: |
+        Reason a field is locked at runtime. Locked fields reject user writes; only the
+        action that originally locked the field (or a server-side write authorized by
+        policy) may modify the value.
+      enum: [CREDENTIAL_PRESENTATION, SERVER_POLICY]
+
+    AttributePath:
+      type: string
+      description: |
+        Stringified attribute path (segments joined by `.`). E.g. `person.firstName` or
+        `address.street`. Treat as opaque on the wire; the semantic-attributes layer parses
+        and validates the segment structure.
+
+    AttributeValueKind:
+      type: string
+      description: |
+        The fundamental data type of a semantic attribute's value. Maps to OCA capture
+        base attribute types, except `OBJECT`: OCA models nested structure as separate
+        attributes, so `OBJECT` covers the attributes that carry a whole JSON document in a
+        single value. A consumer that can only render scalars treats it as text.
+      enum:
+        - STRING
+        - NUMBER
+        - BOOLEAN
+        - BINARY
+        - DATE_TIME
+        - DATE
+        - TIME
+        - REFERENCE
+        - ARRAY
+        - OBJECT
+        - UNKNOWN
+
+    AttributeWidgetHint:
+      type: string
+      description: The renderer-facing widget hint for an attribute.
+      enum:
+        - TEXT_INPUT
+        - TEXT_AREA
+        - PICKLIST
+        - CHECKBOX
+        - RADIO_GROUP
+        - DATE_PICKER
+        - TIME_PICKER
+        - DATE_TIME_PICKER
+        - FILE_UPLOAD
+        - SIGNATURE
+        - HIDDEN
+
+    AttributeCardinality:
+      type: object
+      description: |
+        Occurrence constraints as a min/max pair, both optional: an absent `min` means no lower
+        bound, an absent `max` means no upper bound. `{min: 1, max: 1}` is exactly-one,
+        `{min: 0, max: 1}` optional, `{min: 1, max: null}` one-or-more.
+      properties:
+        min:
+          type: integer
+          nullable: true
+        max:
+          type: integer
+          nullable: true
+
+    FormFieldShape:
+      type: object
+      description: |
+        Self-contained presentation/typing shape of a free-form field, authored on the field itself
+        rather than projected from a data product.
+      required: [valueKind, widgetHint]
+      properties:
+        valueKind:
+          $ref: '#/components/schemas/AttributeValueKind'
+        widgetHint:
+          $ref: '#/components/schemas/AttributeWidgetHint'
+        labels:
+          type: object
+          description: Locale-keyed display labels.
+          additionalProperties:
+            type: string
+        descriptions:
+          type: object
+          description: Locale-keyed help text.
+          additionalProperties:
+            type: string
+        mandatory:
+          type: boolean
+          default: false
+        cardinality:
+          $ref: '#/components/schemas/AttributeCardinality'
+        formatHint:
+          type: string
+          nullable: true
+        entryCodes:
+          type: array
+          description: Allowed value codes for constrained fields.
+          items:
+            type: string
+        entryCodeLabels:
+          type: object
+          description: Locale-keyed labels per entry code (outer key locale, inner key code).
+          additionalProperties:
+            type: object
+            additionalProperties:
+              type: string
+        unit:
+          type: string
+          nullable: true
+
+    FieldAccessMode:
+      type: string
+      description: |
+        Runtime field access mode of a field present in a [ResolvedForm]. Two-valued on
+        the wire, fields hidden by policy are omitted from the resolved tree entirely.
+      enum:
+        - EDITABLE
+        - READ_ONLY
+
+    MandatoryOverride:
+      type: string
+      description: |
+        Per-form override of a canonical attribute's `mandatory` flag. `INHERIT` falls
+        through to the canonical attribute value; `MANDATORY` / `OPTIONAL` force the
+        outcome for this form only.
+      enum:
+        - INHERIT
+        - MANDATORY
+        - OPTIONAL
+
+    DisqualificationBehavior:
+      type: string
+      description: |
+        How the engine treats a field whose qualification condition fails. `HIDE_*`
+        removes the field from the visible tree; `DISABLE_*` leaves it visible but
+        read-only.
+      enum:
+        - HIDE_KEEP_VALUE
+        - HIDE_RESET_TO_DEFAULT
+        - HIDE_CLEAR_VALUE
+        - DISABLE_KEEP_VALUE
+        - DISABLE_RESET_TO_DEFAULT
+        - DISABLE_CLEAR_VALUE
+
+    ArtifactKind:
+      type: string
+      description: Kind of artifact a `ProduceArtifact` step action mints.
+      enum:
+        - CREDENTIAL
+        - PDF
+        - EVIDENCE
+        - DOSSIER
+        - AUDIT_RECORD
+
+    AssuranceLevel:
+      type: string
+      description: eIDAS-style assurance level for a signature or seal.
+      enum:
+        - SIMPLE
+        - ADVANCED
+        - QUALIFIED
+
+    SignatureOrSealKind:
+      type: string
+      description: Whether a signature/seal step produces a personal signature or an organisational seal.
+      enum:
+        - SIGNATURE
+        - SEAL
+
+    PolicyDecision:
+      type: string
+      description: Outcome of evaluating a synchronous policy gate.
+      enum:
+        - ALLOW
+        - DENY
+        - NOT_APPLICABLE
+
+    FieldValidationSource:
+      type: string
+      description: Source of a validation error (local UI checks vs server-issued).
+      enum:
+        - LOCAL
+        - REMOTE
+
+    FormSessionOperation:
+      type: string
+      description: The session-mutating operation that last updated the phase state.
+      enum:
+        - CREATE_SESSION
+        - GET_SESSION
+        - UPDATE_FIELD_VALUES
+        - VALIDATE_FIELD
+        - VALIDATE_STEP
+        - NAVIGATE_TO_STEP
+        - START_ACTION
+        - COMPLETE_ACTION
+        - CANCEL_ACTION
+        - SUBMIT_FORM
+        - CANCEL_SESSION
+        - APPLY_SERVER_FIELD_ERRORS
+        - APPLY_ACTION_EFFECTS
+
+    FieldRuntimeState:
+      type: object
+      description: |
+        Runtime state of a single form field within a session. Carried alongside the
+        field's value map; tracks qualification, visibility, validation state, and
+        per-source errors.
+      required: [path, qualified, visible, disabled]
+      properties:
+        path:
+          type: string
+        qualified:
+          type: boolean
+        visible:
+          type: boolean
+        disabled:
+          type: boolean
+        required:
+          type: boolean
+          default: false
+          description: |
+            Whether the field is currently required: either its static mandatory flag, or a
+            [ResolvedFormField] `requiredCondition` that evaluates true against the current values.
+            Re-evaluated on every value change like `qualified` and `visible`.
+        touched:
+          type: boolean
+          default: false
+        dirty:
+          type: boolean
+          default: false
+        invalidated:
+          type: boolean
+          default: false
+        localValidationState:
+          $ref: '#/components/schemas/FieldValidationState'
+        remoteValidationState:
+          $ref: '#/components/schemas/FieldValidationState'
+        localErrors:
+          type: array
+          items:
+            $ref: '#/components/schemas/FieldValidationError'
+        remoteErrors:
+          type: array
+          items:
+            $ref: '#/components/schemas/FieldValidationError'
+        lastUpdatedBy:
+          $ref: '#/components/schemas/FieldUpdateSource'
+        locked:
+          type: boolean
+          default: false
+          description: |
+            When true the field rejects user writes regardless of [FieldAccessMode]. Set by
+            the credential-prefill side effect and by server-policy lock decisions.
+        lockReason:
+          allOf:
+            - $ref: '#/components/schemas/FieldLockReason'
+          type: string
+          nullable: true
+        valueProvenance:
+          allOf:
+            - $ref: '#/components/schemas/FieldValueProvenance'
+          type: object
+          nullable: true
+
+    FieldValidationState:
+      type: string
+      description: Validation state of a single field.
+      enum:
+        - UNSPECIFIED
+        - VALIDATING
+        - VALID
+        - INVALID
+
+    FieldUpdateSource:
+      type: string
+      description: Operation that last mutated a [FieldRuntimeState].
+      enum:
+        - INITIAL
+        - USER
+        - INVALIDATION
+        - REMOTE_VALIDATION
+        - STEP_VALIDATION
+        - SUBMIT_VALIDATION
+        - ACTION_SIDE_EFFECT
+        - SYSTEM_DISQUALIFICATION
+        - CREDENTIAL_PRESENTATION
+
+    FormActionState:
+      type: object
+      description: |
+        Per-action session state, keyed by step-action id in
+        [FormSession.formActionStates]. Carries the lifecycle status, the produced result
+        when completed, timing, and any error message from a failed attempt.
+      required: [actionId, status]
+      properties:
+        actionId:
+          type: string
+          format: uuid
+        status:
+          $ref: '#/components/schemas/FormActionStatus'
+        result:
+          allOf:
+            - $ref: '#/components/schemas/FormActionResult'
+          type: object
+          nullable: true
+        startedAt:
+          type: string
+          format: date-time
+          nullable: true
+        completedAt:
+          type: string
+          format: date-time
+          nullable: true
+        errorMessage:
+          type: string
+          nullable: true
+
+    FieldValidationRule:
+      description: |
+        Tagged-variant declarative validation rule attached to a field. Each variant
+        describes a constraint compiled by the validation engine at runtime.
+      oneOf:
+        - $ref: '#/components/schemas/FieldValidationRuleRequired'
+        - $ref: '#/components/schemas/FieldValidationRuleMinLength'
+        - $ref: '#/components/schemas/FieldValidationRuleMaxLength'
+        - $ref: '#/components/schemas/FieldValidationRulePattern'
+        - $ref: '#/components/schemas/FieldValidationRuleRange'
+        - $ref: '#/components/schemas/FieldValidationRuleEmail'
+        - $ref: '#/components/schemas/FieldValidationRuleUri'
+        - $ref: '#/components/schemas/FieldValidationRuleMediaType'
+        - $ref: '#/components/schemas/FieldValidationRuleCustom'
+      discriminator:
+        propertyName: type
+        mapping:
+          Required: '#/components/schemas/FieldValidationRuleRequired'
+          MinLength: '#/components/schemas/FieldValidationRuleMinLength'
+          MaxLength: '#/components/schemas/FieldValidationRuleMaxLength'
+          Pattern: '#/components/schemas/FieldValidationRulePattern'
+          Range: '#/components/schemas/FieldValidationRuleRange'
+          Email: '#/components/schemas/FieldValidationRuleEmail'
+          Uri: '#/components/schemas/FieldValidationRuleUri'
+          MediaType: '#/components/schemas/FieldValidationRuleMediaType'
+          Custom: '#/components/schemas/FieldValidationRuleCustom'
+
+    FieldValidationRuleRequired:
+      type: object
+      description: The field must have a non-empty value.
+      required: [type]
+      properties:
+        type:
+          type: string
+          enum: [Required]
+        message:
+          type: string
+          nullable: true
+
+    FieldValidationRuleMinLength:
+      type: object
+      description: The field value must have at least `min` characters.
+      required: [type, min]
+      properties:
+        type:
+          type: string
+          enum: [MinLength]
+        min:
+          type: integer
+        message:
+          type: string
+          nullable: true
+
+    FieldValidationRuleMaxLength:
+      type: object
+      description: The field value must have at most `max` characters.
+      required: [type, max]
+      properties:
+        type:
+          type: string
+          enum: [MaxLength]
+        max:
+          type: integer
+        message:
+          type: string
+          nullable: true
+
+    FieldValidationRulePattern:
+      type: object
+      description: The field value must match the given `regex` pattern.
+      required: [type, regex]
+      properties:
+        type:
+          type: string
+          enum: [Pattern]
+        regex:
+          type: string
+        message:
+          type: string
+          nullable: true
+
+    FieldValidationRuleRange:
+      type: object
+      description: The numeric field value must be within the specified `min`..`max` range.
+      required: [type]
+      properties:
+        type:
+          type: string
+          enum: [Range]
+        min:
+          type: number
+          format: double
+          nullable: true
+        max:
+          type: number
+          format: double
+          nullable: true
+        message:
+          type: string
+          nullable: true
+
+    FieldValidationRuleEmail:
+      type: object
+      description: The field value must be a valid email address.
+      required: [type]
+      properties:
+        type:
+          type: string
+          enum: [Email]
+        message:
+          type: string
+          nullable: true
+
+    FieldValidationRuleUri:
+      type: object
+      description: The field value must be a valid URI.
+      required: [type]
+      properties:
+        type:
+          type: string
+          enum: [Uri]
+        message:
+          type: string
+          nullable: true
+
+    FieldValidationRuleMediaType:
+      type: object
+      description: |
+        The field accepts only the listed media types. Subtype wildcards (`image/*`) are honoured,
+        and an empty list places no restriction.
+
+        This is the accept list an evidence upload is checked against. It is read from the field
+        server-side rather than sent with the upload, and the content is verified against its own
+        bytes, so a file renamed to match an accepted type is still refused.
+      required:
+        - type
+        - allowed
+      properties:
+        type:
+          type: string
+          enum:
+            - MediaType
+        allowed:
+          type: array
+          items:
+            type: string
+          description: Accepted media types, e.g. `application/pdf` or `image/*`.
+        message:
+          type: string
+          nullable: true
+
+    FieldValidationRuleCustom:
+      type: object
+      description: A custom validation rule identified by `validatorId` with optional parameters.
+      required: [type, validatorId]
+      properties:
+        type:
+          type: string
+          enum: [Custom]
+        validatorId:
+          type: string
+        params:
+          type: object
+          nullable: true
+          additionalProperties:
+            type: string
+        message:
+          type: string
+          nullable: true
+
+    FieldCondition:
+      description: |
+        Tagged-variant boolean expression over field values. Evaluated by the condition
+        evaluator against current session values. Comparison variants carry typed
+        [FieldValue] operands.
+      oneOf:
+        - $ref: '#/components/schemas/FieldConditionEquals'
+        - $ref: '#/components/schemas/FieldConditionNotEmpty'
+        - $ref: '#/components/schemas/FieldConditionContains'
+        - $ref: '#/components/schemas/FieldConditionGreaterThan'
+        - $ref: '#/components/schemas/FieldConditionLessThan'
+        - $ref: '#/components/schemas/FieldConditionAnd'
+        - $ref: '#/components/schemas/FieldConditionOr'
+        - $ref: '#/components/schemas/FieldConditionNot'
+      discriminator:
+        propertyName: type
+        mapping:
+          Equals: '#/components/schemas/FieldConditionEquals'
+          NotEmpty: '#/components/schemas/FieldConditionNotEmpty'
+          Contains: '#/components/schemas/FieldConditionContains'
+          GreaterThan: '#/components/schemas/FieldConditionGreaterThan'
+          LessThan: '#/components/schemas/FieldConditionLessThan'
+          And: '#/components/schemas/FieldConditionAnd'
+          Or: '#/components/schemas/FieldConditionOr'
+          Not: '#/components/schemas/FieldConditionNot'
+
+    FieldConditionEquals:
+      type: object
+      description: True when the field at `fieldPath` has a value equal to `value`.
+      required: [type, fieldPath, value]
+      properties:
+        type:
+          type: string
+          enum: [Equals]
+        fieldPath:
+          $ref: '#/components/schemas/AttributePath'
+        value:
+          $ref: '#/components/schemas/FieldValue'
+
+    FieldConditionNotEmpty:
+      type: object
+      description: True when the field at `fieldPath` has any value other than `Absent`.
+      required: [type, fieldPath]
+      properties:
+        type:
+          type: string
+          enum: [NotEmpty]
+        fieldPath:
+          $ref: '#/components/schemas/AttributePath'
+
+    FieldConditionContains:
+      type: object
+      description: True when the field at `fieldPath` contains `value`.
+      required: [type, fieldPath, value]
+      properties:
+        type:
+          type: string
+          enum: [Contains]
+        fieldPath:
+          $ref: '#/components/schemas/AttributePath'
+        value:
+          $ref: '#/components/schemas/FieldValue'
+
+    FieldConditionGreaterThan:
+      type: object
+      description: True when the numeric/temporal value at `fieldPath` is strictly greater than `value`.
+      required: [type, fieldPath, value]
+      properties:
+        type:
+          type: string
+          enum: [GreaterThan]
+        fieldPath:
+          $ref: '#/components/schemas/AttributePath'
+        value:
+          $ref: '#/components/schemas/FieldValue'
+
+    FieldConditionLessThan:
+      type: object
+      description: True when the numeric/temporal value at `fieldPath` is strictly less than `value`.
+      required: [type, fieldPath, value]
+      properties:
+        type:
+          type: string
+          enum: [LessThan]
+        fieldPath:
+          $ref: '#/components/schemas/AttributePath'
+        value:
+          $ref: '#/components/schemas/FieldValue'
+
+    FieldConditionAnd:
+      type: object
+      description: True when all `conditions` evaluate to true.
+      required: [type, conditions]
+      properties:
+        type:
+          type: string
+          enum: [And]
+        conditions:
+          type: array
+          items:
+            $ref: '#/components/schemas/FieldCondition'
+
+    FieldConditionOr:
+      type: object
+      description: True when at least one of `conditions` evaluates to true.
+      required: [type, conditions]
+      properties:
+        type:
+          type: string
+          enum: [Or]
+        conditions:
+          type: array
+          items:
+            $ref: '#/components/schemas/FieldCondition'
+
+    FieldConditionNot:
+      type: object
+      description: True when `condition` evaluates to false.
+      required: [type, condition]
+      properties:
+        type:
+          type: string
+          enum: [Not]
+        condition:
+          $ref: '#/components/schemas/FieldCondition'
+
+    FormAction:
+      description: |
+        Tagged union of step-action variants. Each variant carries the configuration the
+        runtime needs to launch the action and (where asynchronous) await its result.
+      oneOf:
+        - $ref: '#/components/schemas/FormActionRequestCredential'
+        - $ref: '#/components/schemas/FormActionRequireEvidence'
+        - $ref: '#/components/schemas/FormActionRequireSignatureOrSeal'
+        - $ref: '#/components/schemas/FormActionPolicyGate'
+        - $ref: '#/components/schemas/FormActionProduceArtifact'
+        - $ref: '#/components/schemas/FormActionConnectorLookup'
+        - $ref: '#/components/schemas/FormActionConnectorExport'
+      discriminator:
+        propertyName: type
+        mapping:
+          RequestCredential: '#/components/schemas/FormActionRequestCredential'
+          RequireEvidence: '#/components/schemas/FormActionRequireEvidence'
+          RequireSignatureOrSeal: '#/components/schemas/FormActionRequireSignatureOrSeal'
+          PolicyGate: '#/components/schemas/FormActionPolicyGate'
+          ProduceArtifact: '#/components/schemas/FormActionProduceArtifact'
+          ConnectorLookup: '#/components/schemas/FormActionConnectorLookup'
+          ConnectorExport: '#/components/schemas/FormActionConnectorExport'
+
+    FormActionRequestCredential:
+      type: object
+      description: Requests a credential presentation from the subject's wallet.
+      required: [type, id, credentialType]
+      properties:
+        type:
+          type: string
+          enum: [RequestCredential]
+        id:
+          type: string
+          format: uuid
+        required:
+          type: boolean
+          default: true
+        credentialType:
+          type: string
+        bindingId:
+          type: string
+          nullable: true
+        sideEffects:
+          type: array
+          default: []
+          description: Declarative effects applied to the form session when this action completes.
+          items:
+            $ref: '#/components/schemas/FormActionSideEffect'
+
+    FormActionRequireEvidence:
+      type: object
+      description: Requires the subject to attach evidence (e.g. document upload).
+      required: [type, id, evidenceType]
+      properties:
+        type:
+          type: string
+          enum: [RequireEvidence]
+        id:
+          type: string
+          format: uuid
+        required:
+          type: boolean
+          default: true
+        evidenceType:
+          type: string
+        description:
+          type: string
+          nullable: true
+        sideEffects:
+          type: array
+          default: []
+          description: Declarative effects applied to the form session when this action completes.
+          items:
+            $ref: '#/components/schemas/FormActionSideEffect'
+
+    FormActionRequireSignatureOrSeal:
+      type: object
+      description: Requires a signature or seal at the specified assurance level.
+      required: [type, id, kind, assuranceLevel]
+      properties:
+        type:
+          type: string
+          enum: [RequireSignatureOrSeal]
+        id:
+          type: string
+          format: uuid
+        required:
+          type: boolean
+          default: true
+        kind:
+          $ref: '#/components/schemas/SignatureOrSealKind'
+        assuranceLevel:
+          $ref: '#/components/schemas/AssuranceLevel'
+        sideEffects:
+          type: array
+          default: []
+          description: Declarative effects applied to the form session when this action completes.
+          items:
+            $ref: '#/components/schemas/FormActionSideEffect'
+
+    FormActionPolicyGate:
+      type: object
+      description: Synchronous policy evaluation gate.
+      required: [type, id, policyId]
+      properties:
+        type:
+          type: string
+          enum: [PolicyGate]
+        id:
+          type: string
+          format: uuid
+        required:
+          type: boolean
+          default: true
+        policyId:
+          type: string
+        description:
+          type: string
+          nullable: true
+        sideEffects:
+          type: array
+          default: []
+          description: Declarative effects applied to the form session when this action completes.
+          items:
+            $ref: '#/components/schemas/FormActionSideEffect'
+
+    FormActionProduceArtifact:
+      type: object
+      description: Produces a governed artifact (credential, PDF, evidence record, dossier, audit record).
+      required: [type, id, artifactKind]
+      properties:
+        type:
+          type: string
+          enum: [ProduceArtifact]
+        id:
+          type: string
+          format: uuid
+        required:
+          type: boolean
+          default: true
+        artifactKind:
+          $ref: '#/components/schemas/ArtifactKind'
+        templateId:
+          type: string
+          nullable: true
+        bindingId:
+          type: string
+          nullable: true
+          description: |
+            Selects the OUTPUT credential binding when `artifactKind = CREDENTIAL`. Required
+            for credential artifacts; must be null for other artifact kinds until a
+            non-credential binding feature is designed.
+        sideEffects:
+          type: array
+          default: []
+          description: Declarative effects applied to the form session when this action completes.
+          items:
+            $ref: '#/components/schemas/FormActionSideEffect'
+
+    FormActionConnectorLookup:
+      type: object
+      description: |
+        Synchronous connector-backed lookup that enriches the form session with values from an
+        external system. The runtime resolves the FORM-surface connector invocation binding for
+        this action by owner reference `formDefinitionId:stepId:actionId` at the
+        FORM_FIELD_LOOKUP stage and applies the produced field values through the action's
+        declared side effects.
+      required: [type, id]
+      properties:
+        type:
+          type: string
+          enum: [ConnectorLookup]
+        id:
+          type: string
+          format: uuid
+        required:
+          type: boolean
+          default: true
+        sideEffects:
+          type: array
+          default: []
+          description: Declarative effects applied to the form session when this action completes.
+          items:
+            $ref: '#/components/schemas/FormActionSideEffect'
+
+    FormActionConnectorExport:
+      type: object
+      description: |
+        Connector-backed export of the submitted form values to an external destination. The
+        action is not started interactively; the runtime dispatches it after a successful form
+        submit, resolving the FORM-surface connector invocation binding for this action by owner
+        reference `formDefinitionId:stepId:actionId` at the FORM_SUBMIT stage. Defaults to
+        `required: false` because the action completes on submit, not during the step.
+      required: [type, id]
+      properties:
+        type:
+          type: string
+          enum: [ConnectorExport]
+        id:
+          type: string
+          format: uuid
+        required:
+          type: boolean
+          default: false
+          description: |
+            Step-gating flag shared by all step actions. ConnectorExport is dispatched by
+            the submit itself and never runs during the step, so it has nothing to gate:
+            `false` is the only valid value and an explicit `true` fails authoring validation.
+        sideEffects:
+          type: array
+          default: []
+          description: Declarative effects applied to the form session when this action completes.
+          items:
+            $ref: '#/components/schemas/FormActionSideEffect'
+
+    FormActionSideEffect:
+      description: |
+        Tagged union of declarative side effects attached to a [FormAction]. When the action
+        completes with a matching result, the side-effect engine writes the projected payload
+        into the form session's field-value map.
+      oneOf:
+        - $ref: '#/components/schemas/FormActionSideEffectApplyReceivedCredentialClaims'
+        - $ref: '#/components/schemas/FormActionSideEffectWriteCredentialReference'
+        - $ref: '#/components/schemas/FormActionSideEffectWriteEvidenceReference'
+        - $ref: '#/components/schemas/FormActionSideEffectWriteArtifactReference'
+        - $ref: '#/components/schemas/FormActionSideEffectWriteSignatureLocator'
+        - $ref: '#/components/schemas/FormActionSideEffectWritePolicyDecision'
+        - $ref: '#/components/schemas/FormActionSideEffectApplyConnectorProducedFields'
+      discriminator:
+        propertyName: type
+        mapping:
+          ApplyReceivedCredentialClaims: '#/components/schemas/FormActionSideEffectApplyReceivedCredentialClaims'
+          WriteCredentialReference: '#/components/schemas/FormActionSideEffectWriteCredentialReference'
+          WriteEvidenceReference: '#/components/schemas/FormActionSideEffectWriteEvidenceReference'
+          WriteArtifactReference: '#/components/schemas/FormActionSideEffectWriteArtifactReference'
+          WriteSignatureLocator: '#/components/schemas/FormActionSideEffectWriteSignatureLocator'
+          WritePolicyDecision: '#/components/schemas/FormActionSideEffectWritePolicyDecision'
+          ApplyConnectorProducedFields: '#/components/schemas/FormActionSideEffectApplyConnectorProducedFields'
+
+    FormActionSideEffectApplyReceivedCredentialClaims:
+      type: object
+      description: |
+        Project selected received credential claims into the form session field-value map.
+        Each target path must appear in the received claims map; missing keys are rejected
+        only when `requireAllTargets` is true.
+      required: [type, targetFieldPaths]
+      properties:
+        type:
+          type: string
+          enum: [ApplyReceivedCredentialClaims]
+        targetFieldPaths:
+          type: array
+          uniqueItems: true
+          items:
+            $ref: '#/components/schemas/AttributePath'
+        requireAllTargets:
+          type: boolean
+          default: false
+
+    FormActionSideEffectWriteCredentialReference:
+      type: object
+      description: Write the produced credential reference into the target field.
+      required: [type, targetFieldPath]
+      properties:
+        type:
+          type: string
+          enum: [WriteCredentialReference]
+        targetFieldPath:
+          $ref: '#/components/schemas/AttributePath'
+
+    FormActionSideEffectWriteEvidenceReference:
+      type: object
+      description: Write the produced evidence reference into the target field.
+      required: [type, targetFieldPath]
+      properties:
+        type:
+          type: string
+          enum: [WriteEvidenceReference]
+        targetFieldPath:
+          $ref: '#/components/schemas/AttributePath'
+
+    FormActionSideEffectWriteArtifactReference:
+      type: object
+      description: Write the produced artifact reference into the target field.
+      required: [type, targetFieldPath]
+      properties:
+        type:
+          type: string
+          enum: [WriteArtifactReference]
+        targetFieldPath:
+          $ref: '#/components/schemas/AttributePath'
+
+    FormActionSideEffectWriteSignatureLocator:
+      type: object
+      description: Write the signature or seal locator string into the target field.
+      required: [type, targetFieldPath]
+      properties:
+        type:
+          type: string
+          enum: [WriteSignatureLocator]
+        targetFieldPath:
+          $ref: '#/components/schemas/AttributePath'
+
+    FormActionSideEffectWritePolicyDecision:
+      type: object
+      description: Write the policy decision name into the target field.
+      required: [type, targetFieldPath]
+      properties:
+        type:
+          type: string
+          enum: [WritePolicyDecision]
+        targetFieldPath:
+          $ref: '#/components/schemas/AttributePath'
+
+    FormActionSideEffectApplyConnectorProducedFields:
+      type: object
+      description: |
+        Project selected connector-produced field values into the form session field-value map.
+        Each target path must appear in the produced field values map; missing keys are rejected
+        only when `requireAllTargets` is true.
+      required: [type, targetFieldPaths]
+      properties:
+        type:
+          type: string
+          enum: [ApplyConnectorProducedFields]
+        targetFieldPaths:
+          type: array
+          uniqueItems: true
+          items:
+            $ref: '#/components/schemas/AttributePath'
+        requireAllTargets:
+          type: boolean
+          default: false
+    FormCredentialBindingInput:
+      type: object
+      description: |
+        Presented-credential binding. Multiple INPUT bindings on the same form may target the
+        same form attribute from different credential types, the runtime picks the binding
+        matching the actually presented credential.
+      required: [type, id, credentialType, mappings]
+      properties:
+        type:
+          type: string
+          enum: [INPUT]
+        id:
+          type: string
+        credentialType:
+          type: string
+        credentialFormat:
+          allOf:
+            - $ref: './wallet-credential-components.yml#/components/schemas/CredentialFormat'
+          nullable: true
+        acceptedVocabularyIds:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+            format: uuid
+        mappings:
+          type: array
+          items:
+            $ref: '#/components/schemas/FormAttributeMapping'
+
+    FormAuthoringModePolicy:
+      type: string
+      description: |
+        Which authoring modes a tenant permits for new form versions.
+
+        Licensing decides whether governed authoring is *available*; this decides whether free-form
+        authoring is still *allowed alongside it*. A tenant that has governed its attributes can set
+        `SEMANTIC_ONLY` so an author cannot retype a governed attribute as an ungoverned free-form
+        field and bypass the classification, retention and residency rules that ride on it.
+
+        Constrains authoring only: existing published forms of either mode keep resolving and running,
+        so tightening the policy never breaks a live form.
+      enum: [FREE_FORM_ALLOWED, SEMANTIC_ONLY]
+
+    FormAuthoringCapabilities:
+      type: object
+      description: |
+        What form authoring this tenant may currently do. Read-only and ungated.
+      required: [semanticLicensed, modePolicy, allowedModes, publishedSetsAvailable]
+      properties:
+        semanticLicensed:
+          type: boolean
+          description: Whether governed (data-product-bound) authoring is available to this tenant.
+        modePolicy:
+          $ref: '#/components/schemas/FormAuthoringModePolicy'
+        allowedModes:
+          type: array
+          description: |
+            Every mode that may be authored right now.
+
+            May legitimately be empty: a `SEMANTIC_ONLY` tenant whose governed authoring is
+            unavailable can author nothing. That is a configuration problem to surface, not a reason
+            to fall back to free-form.
+          items:
+            $ref: '#/components/schemas/FormAuthoringMode'
+        publishedSetsAvailable:
+          type: boolean
+          description: |
+            True only when a governed mode is offerable AND at least one published data product
+            exists. Prevents offering governed authoring into an empty set picker.
+
+    ResolvedFieldGovernance:
+      type: object
+      description: |
+        The governance a field inherits from the data-product member it binds to, projected read-only
+        for rendering and for downstream policy, audit and retention.
+
+        Absent on free-form fields — a different statement from "governed with nothing set". Carries
+        overlay values verbatim rather than pre-rendered badges, so a consumer's badge vocabulary can
+        change without a wire change. Never carries source configuration or secrets.
+      properties:
+        sensitive:
+          type: boolean
+          description: The value must be masked when displayed.
+        classification:
+          type: object
+          allOf:
+            - $ref: '#/components/schemas/AttributeClassification'
+          nullable: true
+        processing:
+          type: object
+          allOf:
+            - $ref: '#/components/schemas/AttributeProcessing'
+          nullable: true
+        residency:
+          type: object
+          allOf:
+            - $ref: '#/components/schemas/AttributeResidency'
+          nullable: true
+        assurance:
+          type: object
+          allOf:
+            - $ref: '#/components/schemas/AttributeAssurance'
+          nullable: true
+        sdPolicy:
+          type: string
+          allOf:
+            - $ref: './semantic-model-authoring-components.yml#/components/schemas/SdPolicy'
+          nullable: true
+
+    AttributeClassification:
+      type: object
+      properties:
+        label:
+          type: string
+          nullable: true
+        impact:
+          type: object
+          allOf:
+            - $ref: '#/components/schemas/CiaImpact'
+          nullable: true
+        pii:
+          type: boolean
+          nullable: true
+        specialCategory:
+          type: object
+          allOf:
+            - $ref: '#/components/schemas/AttributeSpecialCategory'
+          nullable: true
+
+    CiaImpact:
+      type: object
+      required: [confidentiality, integrity, availability]
+      properties:
+        confidentiality:
+          type: string
+        integrity:
+          type: string
+        availability:
+          type: string
+
+    AttributeSpecialCategory:
+      type: object
+      required: [type, dpv]
+      properties:
+        type:
+          type: string
+        dpv:
+          type: string
+
+    AttributeProcessing:
+      type: object
+      required: [purposes, operations]
+      properties:
+        purposes:
+          type: array
+          items:
+            $ref: '#/components/schemas/AttributeProcessingPurpose'
+        operations:
+          type: array
+          items:
+            type: string
+
+    AttributeProcessingPurpose:
+      type: object
+      required: [purpose]
+      properties:
+        purpose:
+          type: string
+        legalBasis:
+          type: string
+          nullable: true
+        article9Condition:
+          type: string
+          nullable: true
+          description: |
+            The GDPR Article 9(2) condition permitting processing of a special-category attribute.
+            Present when the attribute holds special-category data under a GDPR-bound jurisdiction.
+        necessary:
+          type: boolean
+          nullable: true
+        retention:
+          type: object
+          allOf:
+            - $ref: '#/components/schemas/AttributeRetention'
+          nullable: true
+
+    AttributeRetention:
+      type: object
+      required: [duration]
+      properties:
+        duration:
+          type: string
+        trigger:
+          type: string
+          nullable: true
+        basisCategory:
+          type: string
+          nullable: true
+        action:
+          type: string
+          nullable: true
+
+    AttributeResidency:
+      type: object
+      required: [allowed, denied]
+      properties:
+        allowed:
+          type: array
+          items:
+            type: string
+        denied:
+          type: array
+          items:
+            type: string
+        localizationRequired:
+          type: boolean
+          nullable: true
+        transfer:
+          type: object
+          allOf:
+            - $ref: '#/components/schemas/AttributeTransfer'
+          nullable: true
+
+    AttributeTransfer:
+      type: object
+      required: [mechanism]
+      properties:
+        mechanism:
+          type: string
+        tiaRequired:
+          type: boolean
+          nullable: true
+
+    AttributeAssurance:
+      type: object
+      properties:
+        loa:
+          type: string
+          nullable: true
+        attestationType:
+          type: string
+          nullable: true
+        authenticSourceRef:
+          type: string
+          nullable: true
+
+    SemanticPaletteEntry:
+      type: object
+      description: |
+        One governed attribute available for authoring: the flat projection of an data-product member.
+
+        Identified by `(roleRef, path)`, never by `path` alone — a data product spanning several profile roles
+        can expose the same leaf under each, with different labels, codes and governance.
+      required: [roleRef, path, sourceEntity, valueKind, widgetHint, mandatory, externalCodeTable]
+      properties:
+        roleRef:
+          type: string
+          description: The profile role this member is exposed under.
+        path:
+          type: array
+          items:
+            type: string
+        sourceEntity:
+          type: string
+          description: The entity that declares the attribute.
+        viaRelationship:
+          type: string
+          nullable: true
+          description: |
+            The relationship traversed to reach the attribute. Without it, two identically-named
+            leaves reached through different relationships are indistinguishable.
+        valueKind:
+          $ref: '#/components/schemas/AttributeValueKind'
+        widgetHint:
+          $ref: '#/components/schemas/AttributeWidgetHint'
+        mandatory:
+          type: boolean
+        cardinality:
+          $ref: '#/components/schemas/AttributeCardinality'
+        entryCodes:
+          type: array
+          items:
+            type: string
+        entryCodeLabels:
+          type: object
+          description: locale -> code -> label.
+          additionalProperties:
+            type: object
+            additionalProperties:
+              type: string
+        externalCodeTable:
+          type: boolean
+          description: |
+            True when the codes live in an external code table, so `entryCodes` is empty *because they
+            are elsewhere* — not because the domain is open.
+        formatHint:
+          type: string
+          nullable: true
+        unit:
+          type: string
+          nullable: true
+        labels:
+          type: object
+          additionalProperties:
+            type: string
+        descriptions:
+          type: object
+          additionalProperties:
+            type: string
+        governance:
+          type: object
+          allOf:
+            - $ref: '#/components/schemas/ResolvedFieldGovernance'
+          nullable: true
+
+    SemanticPalette:
+      type: object
+      description: The governed attributes one data product exposes, for form authoring.
+      required: [dataProductId, dataProductVersion, entries]
+      properties:
+        dataProductId:
+          type: string
+          format: uuid
+        dataProductVersion:
+          type: integer
+          format: int64
+        entries:
+          type: array
+          items:
+            $ref: '#/components/schemas/SemanticPaletteEntry'
+
+    FormSemanticViolation:
+      description: |
+        One reason a governed form is not compatible with its pinned data product. The variant is
+        identified by a `type` discriminator on the wire, and each variant carries only the operands
+        that reason needs.
+      oneOf:
+        - $ref: '#/components/schemas/FormSemanticViolationSelectionNotInDataProduct'
+        - $ref: '#/components/schemas/FormSemanticViolationWidgetIncompatible'
+        - $ref: '#/components/schemas/FormSemanticViolationRequiredLoosened'
+        - $ref: '#/components/schemas/FormSemanticViolationEntryCodesWidened'
+        - $ref: '#/components/schemas/FormSemanticViolationCardinalityWidened'
+        - $ref: '#/components/schemas/FormSemanticViolationSensitivityDowngraded'
+        - $ref: '#/components/schemas/FormSemanticViolationUnpublishedDataProductVersion'
+        - $ref: '#/components/schemas/FormSemanticViolationDataProductVersionDrift'
+        - $ref: '#/components/schemas/FormSemanticViolationAmbiguousSelection'
+        - $ref: '#/components/schemas/FormSemanticViolationDuplicateSelection'
+        - $ref: '#/components/schemas/FormSemanticViolationEmbeddedFormNotGoverned'
+        - $ref: '#/components/schemas/FormSemanticViolationEmbeddedFormDataProductMismatch'
+        - $ref: '#/components/schemas/FormSemanticViolationFieldDataProductMismatch'
+      discriminator:
+        propertyName: type
+        mapping:
+          SelectionNotInDataProduct: '#/components/schemas/FormSemanticViolationSelectionNotInDataProduct'
+          WidgetIncompatible: '#/components/schemas/FormSemanticViolationWidgetIncompatible'
+          RequiredLoosened: '#/components/schemas/FormSemanticViolationRequiredLoosened'
+          EntryCodesWidened: '#/components/schemas/FormSemanticViolationEntryCodesWidened'
+          CardinalityWidened: '#/components/schemas/FormSemanticViolationCardinalityWidened'
+          SensitivityDowngraded: '#/components/schemas/FormSemanticViolationSensitivityDowngraded'
+          UnpublishedDataProductVersion: '#/components/schemas/FormSemanticViolationUnpublishedDataProductVersion'
+          DataProductVersionDrift: '#/components/schemas/FormSemanticViolationDataProductVersionDrift'
+          AmbiguousSelection: '#/components/schemas/FormSemanticViolationAmbiguousSelection'
+          DuplicateSelection: '#/components/schemas/FormSemanticViolationDuplicateSelection'
+          EmbeddedFormNotGoverned: '#/components/schemas/FormSemanticViolationEmbeddedFormNotGoverned'
+          EmbeddedFormDataProductMismatch: '#/components/schemas/FormSemanticViolationEmbeddedFormDataProductMismatch'
+          FieldDataProductMismatch: '#/components/schemas/FormSemanticViolationFieldDataProductMismatch'
+
+    FormSemanticViolationSelectionNotInDataProduct:
+      type: object
+      description: The field names a `(roleRef, path)` selection the pinned set does not expose.
+      required: [type, roleRef, path]
+      properties:
+        type:
+          type: string
+          enum: [SelectionNotInDataProduct]
+        roleRef:
+          type: string
+        path:
+          type: array
+          items:
+            type: string
+        authoringId:
+          type: string
+          nullable: true
+          description: |
+            The caller-supplied correlation id of the offending field, echoed so an editor can
+            navigate to it by id. Absent for form-level violations.
+
+    FormSemanticViolationWidgetIncompatible:
+      type: object
+      description: The field's effective widget cannot render the bound attribute's value kind.
+      required: [type, roleRef, path, widget, valueKind]
+      properties:
+        type:
+          type: string
+          enum: [WidgetIncompatible]
+        roleRef:
+          type: string
+        path:
+          type: array
+          items:
+            type: string
+        widget:
+          $ref: '#/components/schemas/AttributeWidgetHint'
+        valueKind:
+          $ref: '#/components/schemas/AttributeValueKind'
+        authoringId:
+          type: string
+          nullable: true
+          description: |
+            The caller-supplied correlation id of the offending field, echoed so an editor can
+            navigate to it by id. Absent for form-level violations.
+
+    FormSemanticViolationRequiredLoosened:
+      type: object
+      description: The data product marks the attribute mandatory but the form allows it to be left empty.
+      required: [type, roleRef, path]
+      properties:
+        type:
+          type: string
+          enum: [RequiredLoosened]
+        roleRef:
+          type: string
+        path:
+          type: array
+          items:
+            type: string
+        authoringId:
+          type: string
+          nullable: true
+          description: |
+            The caller-supplied correlation id of the offending field, echoed so an editor can
+            navigate to it by id. Absent for form-level violations.
+
+    FormSemanticViolationEntryCodesWidened:
+      type: object
+      description: The form offers entry codes the data product's closed code list does not contain.
+      required: [type, roleRef, path, addedCodes]
+      properties:
+        type:
+          type: string
+          enum: [EntryCodesWidened]
+        roleRef:
+          type: string
+        path:
+          type: array
+          items:
+            type: string
+        addedCodes:
+          type: array
+          items:
+            type: string
+        authoringId:
+          type: string
+          nullable: true
+          description: |
+            The caller-supplied correlation id of the offending field, echoed so an editor can
+            navigate to it by id. Absent for form-level violations.
+
+    FormSemanticViolationCardinalityWidened:
+      type: object
+      description: The form accepts fewer occurrences than the data product's minimum, or more than its maximum.
+      required: [type, roleRef, path]
+      properties:
+        type:
+          type: string
+          enum: [CardinalityWidened]
+        roleRef:
+          type: string
+        path:
+          type: array
+          items:
+            type: string
+        setMin:
+          type: integer
+          nullable: true
+        setMax:
+          type: integer
+          nullable: true
+        formMin:
+          type: integer
+          nullable: true
+        formMax:
+          type: integer
+          nullable: true
+        authoringId:
+          type: string
+          nullable: true
+          description: |
+            The caller-supplied correlation id of the offending field, echoed so an editor can
+            navigate to it by id. Absent for form-level violations.
+
+    FormSemanticViolationSensitivityDowngraded:
+      type: object
+      description: The form authors a sensitive attribute in a way that defeats its masking.
+      required: [type, roleRef, path]
+      properties:
+        type:
+          type: string
+          enum: [SensitivityDowngraded]
+        roleRef:
+          type: string
+        path:
+          type: array
+          items:
+            type: string
+        authoringId:
+          type: string
+          nullable: true
+          description: |
+            The caller-supplied correlation id of the offending field, echoed so an editor can
+            navigate to it by id. Absent for form-level violations.
+
+    FormSemanticViolationUnpublishedDataProductVersion:
+      type: object
+      description: A layer in the data product's catalog, profile and set chain is not published at the pinned version.
+      required: [type, layer, id, version, status]
+      properties:
+        type:
+          type: string
+          enum: [UnpublishedDataProductVersion]
+        layer:
+          $ref: '#/components/schemas/SemanticLayer'
+        id:
+          type: string
+          description: Identifier of the layer that is not published at the pinned version.
+        version:
+          type: integer
+          format: int64
+        status:
+          type: string
+          description: The status that layer is in instead of PUBLISHED.
+        authoringId:
+          type: string
+          nullable: true
+          description: |
+            The caller-supplied correlation id of the offending field, echoed so an editor can
+            navigate to it by id. Absent for form-level violations.
+
+    FormSemanticViolationDataProductVersionDrift:
+      type: object
+      description: The data product has moved past the version the form pins.
+      required: [type, pinnedVersion, currentVersion]
+      properties:
+        type:
+          type: string
+          enum: [DataProductVersionDrift]
+        pinnedVersion:
+          type: integer
+          format: int64
+        currentVersion:
+          type: integer
+          format: int64
+        authoringId:
+          type: string
+          nullable: true
+          description: |
+            The caller-supplied correlation id of the offending field, echoed so an editor can
+            navigate to it by id. Absent for form-level violations.
+
+    FormSemanticViolationAmbiguousSelection:
+      type: object
+      description: |
+        A field with no explicit binding whose attribute path is exposed by two or more roles, so
+        the path alone does not identify one set member.
+      required: [type, attributePath, roleRefs]
+      properties:
+        type:
+          type: string
+          enum: [AmbiguousSelection]
+        attributePath:
+          type: string
+        roleRefs:
+          type: array
+          items:
+            type: string
+          description: Every role exposing that attribute path. Empty when none could be determined.
+        authoringId:
+          type: string
+          nullable: true
+          description: |
+            The caller-supplied correlation id of the offending field, echoed so an editor can
+            navigate to it by id. Absent for form-level violations.
+
+    FormSemanticViolationDuplicateSelection:
+      type: object
+      description: Two or more fields bind to the same `(roleRef, path)` set member.
+      required: [type, roleRef, path, fieldCount]
+      properties:
+        type:
+          type: string
+          enum: [DuplicateSelection]
+        roleRef:
+          type: string
+        path:
+          type: array
+          items:
+            type: string
+        fieldCount:
+          type: integer
+          description: How many fields bind to that set member.
+        authoringId:
+          type: string
+          nullable: true
+          description: |
+            The caller-supplied correlation id of the offending field, echoed so an editor can
+            navigate to it by id. Absent for form-level violations.
+
+    FormSemanticViolationEmbeddedFormNotGoverned:
+      type: object
+      description: A governed form embeds a reusable form that is not itself governed.
+      required: [type, targetFormId, targetAuthoringMode]
+      properties:
+        type:
+          type: string
+          enum: [EmbeddedFormNotGoverned]
+        targetFormId:
+          type: string
+          description: The embedded form this violation is about.
+        targetAuthoringMode:
+          $ref: '#/components/schemas/FormAuthoringMode'
+        authoringId:
+          type: string
+          nullable: true
+          description: |
+            The caller-supplied correlation id of the offending field, echoed so an editor can
+            navigate to it by id. Absent for form-level violations.
+
+    FormSemanticViolationEmbeddedFormDataProductMismatch:
+      type: object
+      description: |
+        A governed form embeds a governed reusable form pinned to a different set, or to a different
+        version of the same set.
+      required: [type, targetFormId, expectedDataProductId, expectedDataProductVersion]
+      properties:
+        type:
+          type: string
+          enum: [EmbeddedFormDataProductMismatch]
+        targetFormId:
+          type: string
+          description: The embedded form this violation is about.
+        expectedDataProductId:
+          type: string
+          format: uuid
+          description: The data product this form is pinned to.
+        expectedDataProductVersion:
+          type: integer
+          format: int64
+        actualDataProductId:
+          type: string
+          format: uuid
+          nullable: true
+          description: The data product the embedded form is pinned to, if any.
+        actualDataProductVersion:
+          type: integer
+          format: int64
+          nullable: true
+        authoringId:
+          type: string
+          nullable: true
+          description: |
+            The caller-supplied correlation id of the offending field, echoed so an editor can
+            navigate to it by id. Absent for form-level violations.
+
+    FormSemanticViolationFieldDataProductMismatch:
+      type: object
+      description: |
+        A field's binding names a different set version than the form is pinned to. Resolution keys on
+        `(roleRef, path)`, so the field still resolves against the pinned set while its declared
+        provenance says otherwise.
+      required: [type, attributePath, expectedDataProductId, expectedDataProductVersion, actualDataProductId, actualDataProductVersion]
+      properties:
+        type:
+          type: string
+          enum: [FieldDataProductMismatch]
+        attributePath:
+          type: string
+        expectedDataProductId:
+          type: string
+          format: uuid
+          description: The data product this form is pinned to.
+        expectedDataProductVersion:
+          type: integer
+          format: int64
+        actualDataProductId:
+          type: string
+          format: uuid
+          description: The data product the field binding names instead.
+        actualDataProductVersion:
+          type: integer
+          format: int64
+        authoringId:
+          type: string
+          nullable: true
+          description: |
+            The caller-supplied correlation id of the offending field, echoed so an editor can
+            navigate to it by id. Absent for form-level violations.
+
+    SemanticLayer:
+      type: string
+      description: The layer of the semantic chain an `UnpublishedDataProductVersion` violation refers to.
+      enum:
+        - CATALOG
+        - PROFILE
+        - SET
+
+    CheckedSelection:
+      type: object
+      description: |
+        One field/attribute pair that passed every compatibility check. Identified by the field's
+        `attributePath` — its stable form-local value key — because the check runs over authoring
+        input, where fields have no persisted id.
+      required: [attributePath, roleRef, sourceEntity, path]
+      properties:
+        attributePath:
+          type: string
+        roleRef:
+          type: string
+        sourceEntity:
+          type: string
+        path:
+          type: array
+          items:
+            type: string
+        authoringId:
+          type: string
+          nullable: true
+
+    FormSemanticCompatibility:
+      description: |
+        The outcome of checking a governed form against its pinned data product. The variant is
+        identified by a `type` discriminator on the wire.
+      oneOf:
+        - $ref: '#/components/schemas/FormSemanticCompatibilityCompatible'
+        - $ref: '#/components/schemas/FormSemanticCompatibilityIncompatible'
+      discriminator:
+        propertyName: type
+        mapping:
+          Compatible: '#/components/schemas/FormSemanticCompatibilityCompatible'
+          Incompatible: '#/components/schemas/FormSemanticCompatibilityIncompatible'
+
+    FormSemanticCompatibilityCompatible:
+      type: object
+      description: |
+        The form is compatible with its pinned set. Carries the checked selections so a caller that
+        records which governed attributes the form consumes does not have to re-derive them.
+      required: [type, checkedSelections]
+      properties:
+        type:
+          type: string
+          enum: [Compatible]
+        checkedSelections:
+          type: array
+          items:
+            $ref: '#/components/schemas/CheckedSelection'
+
+    FormSemanticCompatibilityIncompatible:
+      type: object
+      description: The form is not compatible with its pinned set. Carries every reason why.
+      required: [type, violations]
+      properties:
+        type:
+          type: string
+          enum: [Incompatible]
+        violations:
+          type: array
+          items:
+            $ref: '#/components/schemas/FormSemanticViolation'
+
+    UploadEvidenceRequest:
+      type: object
+      description: |
+        One evidence attachment for a session. The accept list and the size limit are read
+        server-side — from the upload grant named by `grantId`, or from the authored field named by
+        `fieldPath` — never from the client. At least one of `grantId` or `fieldPath` must be
+        present; when both are sent, `grantId` takes precedence and `fieldPath` is ignored.
+      required: [filename, mediaType, content]
+      anyOf:
+        - required: [grantId]
+        - required: [fieldPath]
+      properties:
+        filename:
+          type: string
+          description: The name as the person attaching it knows the file. Never treated as the type.
+        mediaType:
+          type: string
+          description: The type the client believes the content is. Checked against the content itself.
+        content:
+          type: string
+          format: byte
+          description: Base64-encoded file content. Bounded at 10 MB decoded.
+        fieldPath:
+          type: string
+          description: |
+            Attribute path of the field an inline upload is for. Its `MediaType` validation rule is
+            the accept list the content is checked against. Required when no `grantId` is given.
+        grantId:
+          type: string
+          format: uuid
+          description: |
+            The single-use upload grant carried in a `RequireEvidence` prompt's `uploadUri` (as its
+            `grantId` query parameter). The grant fixes the accept list and size limit at the
+            moment the action started, expires shortly after it is issued, and authorizes exactly
+            one upload within its own session and tenant. Completing the action only accepts
+            evidence uploaded under the grant that action minted.
+
+    UploadEvidenceResponse:
+      type: object
+      description: The stored attachment, as the form field will carry it.
+      required: [evidenceId, mediaType, filename, sizeBytes]
+      properties:
+        evidenceId:
+          type: string
+          format: uuid
+        mediaType:
+          type: string
+          description: The type detected from the content, which may differ from the one declared.
+        filename:
+          type: string
+        sizeBytes:
+          type: integer
+          format: int64
+
+    StartCredentialRequestInput:
+      type: object
+      description: Starts a credential presentation request for a session.
+      required: [credentialType]
+      properties:
+        credentialType:
+          type: string
+          description: Matched against the form's INPUT credential bindings.
+        bindingId:
+          type: string
+          description: Disambiguates when several INPUT bindings share a credential type.
+
+    StartCredentialRequestResponse:
+      type: object
+      required: [walletUri, correlationId]
+      properties:
+        walletUri:
+          type: string
+          description: Deep link for the wallet to open; the same string a QR code encodes.
+        correlationId:
+          type: string
+          description: Identifies this exchange. Poll the status endpoint with it.
+
+    CredentialRequestStatusResponse:
+      type: object
+      required: [correlationId, status, received]
+      properties:
+        correlationId:
+          type: string
+        status:
+          type: string
+          description: Lower-cased verification status as reported by the verifier.
+          enum:
+            - authorization_request_created
+            - authorization_request_retrieved
+            - authorization_response_received
+            - authorization_response_verified
+            - error
+        received:
+          type: boolean
+          description: True once the wallet has presented and the presentation verified.
+        claims:
+          type: object
+          additionalProperties:
+            type: string
+          description: Flattened claims across every presented credential.
+        error:
+          type: string
+          nullable: true
+          description: |
+            Verifier-reported failure, when the exchange did not succeed. Explicitly `null` while
+            the exchange is still running.
+        presentedCredential:
+          type: object
+          allOf:
+            - $ref: '#/components/schemas/PresentedCredentialClaims'
+          nullable: true
+          description: Explicitly `null` until the wallet has presented and the presentation verified.
+
+    DownloadEvidenceResponse:
+      type: object
+      description: One attachment read back from a session's evidence, content included.
+      required: [evidenceId, mediaType, filename, sizeBytes, content]
+      properties:
+        evidenceId:
+          type: string
+          format: uuid
+        mediaType:
+          type: string
+          description: The type detected from the content when it was accepted.
+        filename:
+          type: string
+        sizeBytes:
+          type: integer
+          format: int64
+        content:
+          type: string
+          format: byte
+          description: Base64-encoded file content, the same representation it was uploaded in.

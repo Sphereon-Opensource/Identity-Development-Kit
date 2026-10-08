@@ -109,8 +109,7 @@ internal class OidfVerifierWalletDriver(
                                 "${stack.publicBaseUrl}/api/oid4vp/v1/testing/instances/" +
                                     "${pathSegment(stack.verifierInstanceId)}/actions/create-auth-request",
                             ),
-                        )
-                        .timeout(Duration.ofSeconds(30))
+                        ).timeout(Duration.ofSeconds(30))
                         .header("Content-Type", "application/json")
                         .POST(HttpRequest.BodyPublishers.ofString(createBody))
                         .build(),
@@ -144,7 +143,12 @@ internal class OidfVerifierWalletDriver(
         val statusResponse =
             send(
                 client = productClient,
-                request = HttpRequest.newBuilder(resolvedStatusUri).timeout(Duration.ofSeconds(30)).GET().build(),
+                request =
+                    HttpRequest
+                        .newBuilder(resolvedStatusUri)
+                        .timeout(Duration.ofSeconds(30))
+                        .GET()
+                        .build(),
                 label = "read verifier result",
             )
         require(statusResponse.statusCode() == 200) {
@@ -160,7 +164,7 @@ internal class OidfVerifierWalletDriver(
                 buildJsonArray {
                     add(
                         when (credentialFormat) {
-                            "sd_jwt_vc" ->
+                            "sd_jwt_vc" -> {
                                 buildJsonObject {
                                     put("id", "pid_credential")
                                     put("format", "dc+sd-jwt")
@@ -178,8 +182,9 @@ internal class OidfVerifierWalletDriver(
                                         },
                                     )
                                 }
+                            }
 
-                            "iso_mdl" ->
+                            "iso_mdl" -> {
                                 buildJsonObject {
                                     put("id", "my_credential")
                                     put("format", "mso_mdoc")
@@ -189,19 +194,34 @@ internal class OidfVerifierWalletDriver(
                                         buildJsonArray {
                                             add(
                                                 buildJsonObject {
-                                                    put("path", buildJsonArray { add(MDL_NAMESPACE); add("family_name") })
+                                                    put(
+                                                        "path",
+                                                        buildJsonArray {
+                                                            add(MDL_NAMESPACE)
+                                                            add("family_name")
+                                                        }
+                                                    )
                                                 },
                                             )
                                             add(
                                                 buildJsonObject {
-                                                    put("path", buildJsonArray { add(MDL_NAMESPACE); add("given_name") })
+                                                    put(
+                                                        "path",
+                                                        buildJsonArray {
+                                                            add(MDL_NAMESPACE)
+                                                            add("given_name")
+                                                        }
+                                                    )
                                                 },
                                             )
                                         },
                                     )
                                 }
+                            }
 
-                            else -> error("Unsupported verifier credential format: $credentialFormat")
+                            else -> {
+                                error("Unsupported verifier credential format: $credentialFormat")
+                            }
                         },
                     )
                 },
@@ -241,7 +261,6 @@ internal class OidfVerifierWalletDriver(
         const val MDL_DOCTYPE = "org.iso.18013.5.1.mDL"
         const val MDL_NAMESPACE = "org.iso.18013.5.1"
 
-        fun pathSegment(value: String): String =
-            URLEncoder.encode(value, java.nio.charset.StandardCharsets.UTF_8).replace("+", "%20")
+        fun pathSegment(value: String): String = URLEncoder.encode(value, java.nio.charset.StandardCharsets.UTF_8).replace("+", "%20")
     }
 }

@@ -1,0 +1,3575 @@
+openapi: 3.0.4
+info:
+  title: KMS REST Server API
+  version: 0.1.0
+  description: |
+    The Key Management System (KMS) REST API lets an application manage cryptographic keys
+    and perform raw signing operations without handling private key material directly. A key
+    provider is a configured backend that holds and operates on keys: a software (in-memory
+    or persisted) provider, AWS KMS, or Azure Key Vault. The API lets you inspect the
+    configured key providers; generate keys, register existing provider keys, import
+    externally supplied keys, and list or look up keys by alias or kid (key id); resolve a
+    public key (for example from a JWK, kid, X.509 chain, or DID) through a key resolver
+    service; and create and verify raw detached signatures over arbitrary bytes using a
+    managed key.
+
+    Keys are addressed either by a chosen `alias` (for example `my-signing-key`) or by their
+    generated `kid` (for example `00-qTBov6GxjPSuMNxnk876cMP0JKjbwl4ZyN_sY2tE`). Every key
+    belongs to exactly one provider, identified by a `providerId` such as `testsoftware`.
+    Signing input and signature bytes are carried as base64-encoded strings on the wire.
+
+    Keys are isolated per tenant, so a key generated for one tenant is never visible to
+    another.
+servers:
+  - url: http://localhost:8080/api/kms/v1
+    description: Development server
+tags:
+  - name: Providers
+    description: >
+      Inspect configured key providers and manage the keys held by a specific provider
+      (list, generate, import, get, delete under /providers/{providerId}).
+  - name: KMS
+    description: >
+      Provider-agnostic key operations across all of the tenant's providers
+      (list, generate, import, register, get, delete under /keys).
+  - name: Resolvers
+    description: >
+      Inspect key resolver services and resolve a public key from a reference such as a
+      JWK, kid, X.509 chain, or DID.
+  - name: Signatures
+    description: Create and verify raw (detached) cryptographic signatures using a managed key.
+  - name: Capabilities
+    description: Inspect provider capabilities and select providers by capability criteria.
+  - name: Encryption
+    description: Encrypt, decrypt, wrap, unwrap, and perform key agreement using managed keys.
+  - name: Certificates
+    description: Generate CSRs, issue X.509 certificates, and manage certificate stores.
+  - name: Lifecycle
+    description: Manage provider and key lifecycle state and run due lifecycle checks.
+  - name: Assignments
+    description: Manage service and party assignments for KMS key aliases.
+  - name: Rotations
+    description: Preview, run, schedule, and inspect KMS key rotations.
+security:
+  - bearer: [ ]
+paths:
+  /providers:
+    get:
+      tags: [ Providers ]
+      summary: List configured key providers
+      description: >
+        Returns every non-internal key provider that is configured and available for
+        the calling tenant. Providers are configured server-side (for example a
+        `SOFTWARE`, `AWS_KMS`, or `AZURE_KEYVAULT` provider); this endpoint does not create them.
+        Internal system providers such as `license` and `platform` are intentionally
+        hidden from this regular KMS REST surface.
+        Use the returned `providerId` (for example `testsoftware`) to scope key
+        operations to a specific provider.
+      operationId: listKeyProviders
+      responses:
+        '200':
+          description: A list of Key Provider configurations.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListKeyProvidersResponse'
+              example:
+                providers:
+                  - providerId: "testsoftware"
+                    type: "SOFTWARE"
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+#    post:
+#      tags: [ Providers ]
+#      summary: Create a new Key Provider
+#      operationId: createKeyProvider
+#      requestBody:
+#        $ref: '#/components/requestBodies/CreateKeyProviderRequest'
+#      responses:
+#        '201':
+#          description: Key Provider created successfully.
+#          content:
+#            application/json:
+#              schema:
+#                $ref: '#/components/schemas/KeyProviderResponse'
+#        '400':
+#          $ref: '#/components/responses/BadRequest'
+#        '500':
+#          $ref: '#/components/responses/InternalServerError'
+
+  /providers/{providerId}:
+    parameters:
+      - $ref: '#/components/parameters/ProviderId'
+    get:
+      tags: [ Providers ]
+      summary: Get key provider details
+      description: >
+        Returns the configuration details of a single key provider identified by its
+        `providerId` path parameter (for example `testsoftware`). Returns 404 if no
+        provider with that id is configured for the calling tenant, or if the provider
+        is an internal system provider such as `license` or `platform`.
+      operationId: getKeyProvider
+      responses:
+        '200':
+          description: Key Provider details retrieved successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KeyProviderResponse'
+              example:
+                providerId: "testsoftware"
+                type: "SOFTWARE"
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+#    put:
+#      tags: [ Providers ]
+#      summary: Update Key Provider configuration
+#      operationId: updateKeyProvider
+#      requestBody:
+#        $ref: '#/components/requestBodies/UpdateKeyProviderRequest'
+#      responses:
+#        '200':
+#          description: Key Provider updated successfully.
+#          content:
+#            application/json:
+#              schema:
+#                $ref: '#/components/schemas/KeyProviderResponse'
+#        '400':
+#          $ref: '#/components/responses/BadRequest'
+#        '404':
+#          $ref: '#/components/responses/NotFound'
+#        '500':
+#          $ref: '#/components/responses/InternalServerError'
+#    delete:
+#      tags: [ Providers ]
+#      summary: Delete Key Provider
+#      operationId: deleteKeyProvider
+#      responses:
+#        '204':
+#          description: Key Provider deleted successfully.
+#        '404':
+#          $ref: '#/components/responses/NotFound'
+#        '500':
+#          $ref: '#/components/responses/InternalServerError'
+
+  /providers/{providerId}/keys:
+    parameters:
+      - $ref: '#/components/parameters/ProviderId'
+    get:
+      tags: [ Providers ]
+      summary: List all managed cryptographic keys for a provider
+      description: >
+        Lists the keys managed by the provider identified by `providerId`. Only key
+        metadata is returned (alias, kid, algorithm, type); private key material is
+        never included. Returns 404 if the provider id is unknown for the calling
+        tenant or if it is an internal system provider such as `license` or `platform`.
+        Results are scoped to the calling tenant only.
+      operationId: providerListKeys
+      responses:
+        '200':
+          description: A list of all managed keys
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListKeysResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    post:
+      tags: [ Providers ]
+      summary: Generate a new key in a provider
+      description: >
+        Generates a new key inside the provider identified by `providerId`. The
+        request body selects the signature algorithm (for example `ECDSA_SHA256`), and
+        optionally an `alias`, intended `use` (`sig`/`enc`), and `keyOperations`. If no
+        alias is given the provider assigns one. The response contains the generated key
+        pair including its `kid`, `alias`, and the public JWK. Returns 404 if the
+        provider id is unknown, or 400 if the requested algorithm is not supported.
+      operationId: providerGenerateKey
+      requestBody:
+        $ref: '#/components/requestBodies/GenerateKeyRequest'
+      responses:
+        '201':
+          description: Key generated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenerateKeyResponse'
+              examples:
+                generatedSigningKey:
+                  $ref: '#/components/examples/GenerateSigningKeyResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /providers/{providerId}/keys/import:
+    parameters:
+      - $ref: '#/components/parameters/ProviderId'
+    post:
+      tags: [ Providers ]
+      summary: Import externally supplied key material into a provider
+      description: >
+        Imports a key that you already hold (its key material is supplied in the request
+        body as a JWK) into the provider identified by `providerId`. The body must carry
+        a fully resolved `keyInfo` (the `key` JWK is required). Returns 404 if the
+        provider id is unknown, or 400 if the supplied keyInfo is invalid.
+      operationId: providerImportKey
+      requestBody:
+        $ref: '#/components/requestBodies/ImportKeyRequest'
+      responses:
+        '201':
+          description: Key imported successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImportKeyResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /providers/{providerId}/keys/{aliasOrKid}:
+    parameters:
+      - $ref: '#/components/parameters/ProviderId'
+      - $ref: '#/components/parameters/AliasOrKid'
+    get:
+      tags: [ Providers ]
+      summary: Get a specific managed key by alias or kid
+      description: >
+        Looks up a single key in the provider identified by `providerId`. The
+        `aliasOrKid` path parameter may be either the key's alias (for example
+        `my-signing-key`) or its kid (for example
+        `00-qTBov6GxjPSuMNxnk876cMP0JKjbwl4ZyN_sY2tE`). Returns 404 if the provider id
+        is unknown or no key matches the alias or kid in that provider.
+      operationId: providerGetKey
+      responses:
+        '200':
+          description: The managed key for the specified provider
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GetKeyResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    #    put:
+    #      tags: [ Providers ]
+    #      summary: Update a stored key (reserved for future use)
+    #      operationId: updateKey
+    #      requestBody:
+    #        $ref: '#/components/requestBodies/UpdateKeyRequest'
+    #      responses:
+    #        '200':
+    #          description: Key updated successfully
+    #          content:
+    #            application/json:
+    #              schema:
+    #                $ref: '#/components/schemas/ManagedKeyInfo'
+    #        '400':
+    #          $ref: '#/components/responses/BadRequest'
+    #        '404':
+    #          $ref: '#/components/responses/NotFound'
+    #        '500':
+    #          $ref: '#/components/responses/InternalServerError'
+    delete:
+      tags: [ Providers ]
+      summary: Delete a key from a provider
+      description: >
+        Permanently removes the key identified by `aliasOrKid` from the provider
+        identified by `providerId`. The `aliasOrKid` may be the key's alias or its kid.
+        Returns 204 with no body on success, or 404 if the provider id is unknown or no
+        matching key exists. Returns 409 when the key protects active or rollback-retained
+        secrets, has an active assignment, or participates in a migration. There is no force-delete
+        path for an in-use key.
+      operationId: providerDeleteKey
+      responses:
+        '204':
+          description: Key deleted successfully
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+#  /providers/{providerId}/signatures/simple:
+#    parameters:
+#      - $ref: '#/components/parameters/ProviderId'
+#    post:
+#      tags: [ Signatures ]
+#      summary: Create a digital signature
+#      operationId: createSimpleSignature
+#      requestBody:
+#        $ref: '#/components/requestBodies/CreateSimpleSignatureRequest'
+#      responses:
+#        '201':
+#          description: Signature created successfully
+#          content:
+#            application/json:
+#              schema:
+#                $ref: '#/components/schemas/SignOutput'
+#        '400':
+#          $ref: '#/components/responses/BadRequest'
+#        '404':
+#          $ref: '#/components/responses/NotFound'
+#        '500':
+#          $ref: '#/components/responses/InternalServerError'
+#
+#  /providers/{providerId}/signatures/simple/verify:
+#    parameters:
+#      - $ref: '#/components/parameters/ProviderId'
+#    post:
+#      tags: [ Signatures ]
+#      summary: Verify a digital signature
+#      operationId: isValidSimpleSignature
+#      requestBody:
+#        $ref: '#/components/requestBodies/VerifySimpleSignatureRequest'
+#      responses:
+#        '200':
+#          description: Signature verification performed successfully
+#          content:
+#            application/json:
+#              schema:
+#                $ref: '#/components/schemas/SignatureVerificationResponse'
+#        '400':
+#          $ref: '#/components/responses/BadRequest'
+#        '500':
+#          $ref: '#/components/responses/InternalServerError'
+
+  /capabilities:
+    get:
+      tags: [ Capabilities ]
+      summary: List provider capabilities
+      description: >
+        Returns the capability report for every configured provider. Disabled providers
+        are excluded by default.
+      operationId: listCapabilities
+      parameters:
+        - name: includeDisabled
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: false
+          description: Include disabled providers in the capability report.
+      responses:
+        '200':
+          description: Capabilities for configured providers.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListCapabilitiesResponse'
+              example:
+                providers:
+                  - providerId: "testsoftware"
+                    capabilities:
+                      providerId: "testsoftware"
+                      providerType: "software"
+                      storageTypes: [ "PERSISTENT", "EPHEMERAL" ]
+                      supportsKeyImport: true
+                      supportsKeyExport: true
+                      exposePrivateKeys: false
+                      operations:
+                        - operation: "GENERATE_KEY"
+                          supported: true
+                          signatureAlgorithms: [ "ECDSA_SHA256", "ED25519" ]
+                        - operation: "ENCRYPT"
+                          supported: true
+                          contentEncryptionAlgorithms: [ "A128GCM", "A256GCM" ]
+                        - operation: "WRAP_KEY"
+                          supported: true
+                          keyWrapAlgorithms: [ "A128KW", "A256KW" ]
+                      supportedKeyTypes: [ "EC", "OKP", "RSA", "OCT" ]
+                      supportedCurves: [ "P-256", "P-384", "Ed25519", "X25519" ]
+                      supportedCryptoAlgorithms: [ "ECDSA", "ED25519", "X25519", "RSA" ]
+                      supportedDigestAlgorithms: [ "SHA256", "SHA384", "SHA512" ]
+                      signatureAlgorithms: [ "ECDSA_SHA256", "ED25519", "RSA_SHA256" ]
+                      contentEncryptionAlgorithms: [ "A128GCM", "A256GCM" ]
+                      supportsX509: true
+                      supportsAttestation: false
+                      supportsHardwareBacking: false
+                      supportsPublicKeyResolution: true
+                      resolutionMethods: [ "kid", "key_alias", "jwk" ]
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /providers/{providerId}/capabilities:
+    parameters:
+      - $ref: '#/components/parameters/ProviderId'
+    get:
+      tags: [ Capabilities ]
+      summary: Get capabilities for one provider
+      operationId: getProviderCapabilities
+      responses:
+        '200':
+          description: Capabilities for the requested provider.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProviderCapabilitiesResponse'
+              example:
+                providerId: "testsoftware"
+                capabilities:
+                  providerId: "testsoftware"
+                  providerType: "software"
+                  storageTypes: [ "PERSISTENT" ]
+                  supportsKeyImport: true
+                  supportsKeyExport: true
+                  exposePrivateKeys: false
+                  operations:
+                    - operation: "SIGN"
+                      supported: true
+                      signatureAlgorithms: [ "ECDSA_SHA256", "ED25519" ]
+                    - operation: "ENCRYPT"
+                      supported: true
+                      contentEncryptionAlgorithms: [ "A256GCM" ]
+                  supportedKeyTypes: [ "EC", "OKP", "OCT" ]
+                  supportedCurves: [ "P-256", "Ed25519", "X25519" ]
+                  supportedCryptoAlgorithms: [ "ECDSA", "ED25519", "X25519" ]
+                  supportedDigestAlgorithms: [ "SHA256", "SHA512" ]
+                  signatureAlgorithms: [ "ECDSA_SHA256", "ED25519" ]
+                  contentEncryptionAlgorithms: [ "A256GCM" ]
+                  supportsX509: true
+                  supportsAttestation: false
+                  supportsHardwareBacking: false
+                  supportsPublicKeyResolution: true
+                  resolutionMethods: [ "kid", "key_alias", "jwk" ]
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /providers/query:
+    post:
+      tags: [ Capabilities ]
+      summary: Query matching providers
+      description: Returns all providers matching the supplied capability criteria.
+      operationId: queryProviders
+      requestBody:
+        $ref: '#/components/requestBodies/ProviderQueryRequest'
+      responses:
+        '200':
+          description: Matching providers.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QueryProvidersResponse'
+              example:
+                matches:
+                  - providerId: "testsoftware"
+                    matchScore: 100
+                    capabilities:
+                      providerId: "testsoftware"
+                      providerType: "software"
+                      storageTypes: [ "PERSISTENT" ]
+                      supportsKeyImport: true
+                      supportsKeyExport: true
+                      exposePrivateKeys: false
+                      operations:
+                        - operation: "ENCRYPT"
+                          supported: true
+                          contentEncryptionAlgorithms: [ "A256GCM" ]
+                      supportedKeyTypes: [ "OCT" ]
+                      supportedCurves: [ ]
+                      supportedCryptoAlgorithms: [ "HMAC" ]
+                      supportedDigestAlgorithms: [ "SHA256" ]
+                      signatureAlgorithms: [ "HMAC_SHA256" ]
+                      contentEncryptionAlgorithms: [ "A256GCM" ]
+                      supportsX509: true
+                      supportsAttestation: false
+                      supportsHardwareBacking: false
+                      supportsPublicKeyResolution: true
+                      resolutionMethods: [ "kid", "key_alias" ]
+                totalProviders: 2
+                matchCount: 1
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /providers/query/best:
+    post:
+      tags: [ Capabilities ]
+      summary: Query the best matching provider
+      description: Returns the best provider matching the supplied capability criteria.
+      operationId: queryBestProvider
+      requestBody:
+        $ref: '#/components/requestBodies/ProviderQueryRequest'
+      responses:
+        '200':
+          description: Best matching provider, or null if no provider matches.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QueryBestProviderResponse'
+              example:
+                match:
+                  providerId: "testsoftware"
+                  matchScore: 100
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /encryption/encrypt:
+    post:
+      tags: [ Encryption ]
+      summary: Encrypt data
+      operationId: encrypt
+      requestBody:
+        $ref: '#/components/requestBodies/EncryptRequest'
+      responses:
+        '200':
+          description: Encrypted data and AEAD parameters.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EncryptResponse'
+              example:
+                ciphertext: "8rj9iBf2Vv5uQmE="
+                iv: "QkM0hQDUzC7Vqvut"
+                authTag: "t6YF2+0M0vO7vKq9Qh7uQg=="
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /encryption/decrypt:
+    post:
+      tags: [ Encryption ]
+      summary: Decrypt data
+      operationId: decrypt
+      requestBody:
+        $ref: '#/components/requestBodies/DecryptRequest'
+      responses:
+        '200':
+          description: Decrypted plaintext.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DecryptResponse'
+              example:
+                plaintext: "aGVsbG8="
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /encryption/wrap:
+    post:
+      tags: [ Encryption ]
+      summary: Wrap a key
+      operationId: wrapKey
+      requestBody:
+        $ref: '#/components/requestBodies/WrapKeyRequest'
+      responses:
+        '200':
+          description: Wrapped key material.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WrapKeyResponse'
+              example:
+                wrappedKey: "q83vEj6GTdS3BzN9vdS6F4x1j9p5vQ=="
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /encryption/unwrap:
+    post:
+      tags: [ Encryption ]
+      summary: Unwrap a key
+      operationId: unwrapKey
+      requestBody:
+        $ref: '#/components/requestBodies/UnwrapKeyRequest'
+      responses:
+        '200':
+          description: Unwrapped key material.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnwrapKeyResponse'
+              example:
+                unwrappedKey: "MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTIzNDU2Nzg5MDE="
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /encryption/key-agreement:
+    post:
+      tags: [ Encryption ]
+      summary: Perform key agreement
+      operationId: performKeyAgreement
+      requestBody:
+        $ref: '#/components/requestBodies/KeyAgreementRequest'
+      responses:
+        '200':
+          description: Derived shared secret.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KeyAgreementResponse'
+              example:
+                sharedSecret: "oN1hJdAhtf3SW+pm1da4DyxLSFhP0YE6FnW9EeYk7rk="
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /certificates/csr:
+    post:
+      tags: [ Certificates ]
+      summary: Generate a certificate signing request
+      operationId: generateCertificateSigningRequest
+      requestBody:
+        $ref: '#/components/requestBodies/GenerateCertificateSigningRequestRequest'
+      responses:
+        '200':
+          description: Certificate signing request.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CertificateSigningRequestResponse'
+              example:
+                der: "ZXhhbXBsZS1jc3ItZGVyLWJ5dGVz"
+                commonName: "adapter-test.example.com"
+                organization: "Example Organization"
+                organizationalUnit: "Identity KMS"
+                locality: "Enschede"
+                state: "Overijssel"
+                country: "NL"
+                email: "security@example.com"
+                serialNumber: 42
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /certificates/issue:
+    post:
+      tags: [ Certificates ]
+      summary: Issue a certificate
+      operationId: issueCertificate
+      requestBody:
+        $ref: '#/components/requestBodies/IssueCertificateRequest'
+      responses:
+        '200':
+          description: Issued certificate.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CertificateResponse'
+              example:
+                certificate: "ZXhhbXBsZS1jZXJ0aWZpY2F0ZS1kZXItYnl0ZXM="
+                keyInfo:
+                  key:
+                    kty: "EC"
+                    kid: "00-qTBov6GxjPSuMNxnk876cMP0JKjbwl4ZyN_sY2tE"
+                    crv: "P-256"
+                    x: "HFL67WWh6PYWKOy1mzt9Y2ANs-CWFIyVtouR-Jx_mAM"
+                    y: "9f_1x7fwUuEbEwxSNTYE3jQF-zForWpKkEMpiUp1MNI"
+                  kid: "00-qTBov6GxjPSuMNxnk876cMP0JKjbwl4ZyN_sY2tE"
+                  alias: "tls-issuer-key"
+                  providerId: "testsoftware"
+                  signatureAlgorithm: "ECDSA_SHA256"
+                  keyVisibility: "PUBLIC"
+                  keyEncoding: "JOSE"
+                  keyType: "EC"
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /certificates/issue-from-csr:
+    post:
+      tags: [ Certificates ]
+      summary: Issue a certificate from a CSR
+      operationId: issueCertificateFromCsr
+      requestBody:
+        $ref: '#/components/requestBodies/IssueCertificateFromCsrRequest'
+      responses:
+        '200':
+          description: Issued certificate.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CertificateResponse'
+              example:
+                certificate: "ZXhhbXBsZS1jZXJ0aWZpY2F0ZS1kZXItYnl0ZXM="
+                keyInfo:
+                  key:
+                    kty: "EC"
+                    kid: "00-qTBov6GxjPSuMNxnk876cMP0JKjbwl4ZyN_sY2tE"
+                    crv: "P-256"
+                    x: "HFL67WWh6PYWKOy1mzt9Y2ANs-CWFIyVtouR-Jx_mAM"
+                    y: "9f_1x7fwUuEbEwxSNTYE3jQF-zForWpKkEMpiUp1MNI"
+                  kid: "00-qTBov6GxjPSuMNxnk876cMP0JKjbwl4ZyN_sY2tE"
+                  alias: "tls-subject-key"
+                  providerId: "testsoftware"
+                  signatureAlgorithm: "ECDSA_SHA256"
+                  keyVisibility: "PUBLIC"
+                  keyEncoding: "JOSE"
+                  keyType: "EC"
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /certificates/register:
+    post:
+      tags: [ Certificates ]
+      summary: Register a tenant-owned certificate reference
+      description: >-
+        Registers a provider-native certificate reference or stored public certificate material.
+        Registration does not create/import key material. The stored_public_material source
+        requires certificateChain, a non-empty list of Base64-encoded DER certificates, and
+        rejects provider-native material. The provider_native source requires certificateChain to
+        be omitted and resolves the certificate from provider capability. The
+        key_certificate_chain kind requires linkedKeyAlias or linkedKeyKid and binds the leaf
+        public key. providerCertificateId is optional and identifies a provider certificate when
+        supplied. Externally managed DELETE removes only the EDK reference. The provider resource
+        remains untouched. For a provider-native certificate reached through a platform-shared
+        Azure Key Vault provider, the native certificate must carry `sphereon-tenant-id` set to
+        the authenticated tenant id. AWS KMS has no provider-native certificate object API.
+        Registration never changes a certificate reference that is already known. Registering the
+        same alias again with the same provider, kind, source, linked key, providerCertificateId
+        and certificate material (the exact certificate chain bytes for stored_public_material, the
+        provider's current certificate for provider_native) is idempotent and returns the existing
+        reference with 201. Any other registration of a known alias returns 409 with a message
+        naming the difference, and changes nothing. A platform-managed certificate cannot be
+        registered as an external reference and also returns 409.
+      operationId: registerCertificateReference
+      requestBody:
+        $ref: '#/components/requestBodies/RegisterCertificateReferenceRequest'
+      responses:
+        '201':
+          description: >-
+            Certificate reference registered successfully, or the existing reference when an
+            identical registration is repeated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CertificateReferenceResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: >-
+            The alias is already registered with a different kind, source, linked key,
+            providerCertificateId or certificate material, the certificate is platform managed, the
+            provider certificate is registered under another alias, or the certificate leaf does not
+            match the linked key. Nothing is changed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /certificate-references:
+    get:
+      tags: [ Certificates ]
+      summary: List persisted tenant certificate references
+      description: >-
+        Lists only references in the authenticated tenant index. It never enumerates a provider's
+        certificate inventory and returns public certificate and relationship metadata only.
+      operationId: listCertificateReferences
+      parameters:
+        - name: providerId
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: kind
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/CertificateReferenceKind'
+        - name: source
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/CertificateReferenceSource'
+      responses:
+        '200':
+          description: Persisted tenant certificate references.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CertificateReferencesResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /certificate-references/{id}:
+    get:
+      tags: [ Certificates ]
+      summary: Get persisted tenant certificate-reference metadata
+      description: >-
+        Returns one public metadata projection from the authenticated tenant reference index.
+      operationId: getCertificateReference
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Persisted certificate-reference metadata.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CertificateReferenceSummary'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /certificates:
+    get:
+      tags: [ Certificates ]
+      summary: List trusted certificate aliases
+      operationId: listTrustedCertificateAliases
+      parameters:
+        - name: providerId
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Optional provider whose certificate store should be used.
+      responses:
+        '200':
+          description: Trusted certificate aliases.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CertificateAliasesResponse'
+              example:
+                aliases: [ "root-ca", "issuer-ca" ]
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /certificates/{alias}:
+    parameters:
+      - name: alias
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: providerId
+        in: query
+        required: false
+        schema:
+          type: string
+        description: Optional provider whose certificate store should be used.
+    get:
+      tags: [ Certificates ]
+      summary: Get a trusted certificate
+      operationId: getTrustedCertificate
+      responses:
+        '200':
+          description: Trusted certificate.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CertificateBytesResponse'
+              example:
+                certificate: "ZXhhbXBsZS1jZXJ0aWZpY2F0ZS1kZXItYnl0ZXM="
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    post:
+      tags: [ Certificates ]
+      summary: Store a trusted certificate
+      operationId: storeTrustedCertificate
+      requestBody:
+        $ref: '#/components/requestBodies/StoreCertificateRequest'
+      responses:
+        '201':
+          description: Trusted certificate stored.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CertificateBytesResponse'
+              example:
+                certificate: "ZXhhbXBsZS1jZXJ0aWZpY2F0ZS1kZXItYnl0ZXM="
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    delete:
+      tags: [ Certificates ]
+      summary: Delete a trusted certificate
+      description: >-
+        Deletes the EDK certificate reference. Externally managed DELETE removes only the EDK
+        reference. The provider resource remains untouched. Repeating DELETE for an already
+        deleted externally managed local reference is idempotent and returns 204. Platform-managed
+        behavior remains backward compatible with the existing provider and key-store deletion rules.
+      operationId: deleteTrustedCertificate
+      responses:
+        '204':
+          description: Trusted certificate deleted.
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /certificate-chains:
+    get:
+      tags: [ Certificates ]
+      summary: List certificate-chain aliases
+      operationId: listCertificateChainAliases
+      parameters:
+        - name: providerId
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Optional provider whose certificate store should be used.
+      responses:
+        '200':
+          description: Certificate-chain aliases.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CertificateAliasesResponse'
+              example:
+                aliases: [ "issuer-chain", "wallet-trust-chain" ]
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /certificate-chains/{alias}:
+    parameters:
+      - name: alias
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: providerId
+        in: query
+        required: false
+        schema:
+          type: string
+        description: Optional provider whose certificate store should be used.
+    get:
+      tags: [ Certificates ]
+      summary: Get a certificate chain
+      operationId: getCertificateChain
+      responses:
+        '200':
+          description: Certificate chain.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CertificateChainResponse'
+              example:
+                certificates:
+                  - "ZXhhbXBsZS1jZXJ0aWZpY2F0ZS1kZXItYnl0ZXM="
+                  - "ZXhhbXBsZS1yb290LWNlcnRpZmljYXRlLWRlci1ieXRlcw=="
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    post:
+      tags: [ Certificates ]
+      summary: Store a certificate chain
+      description: >
+        Associates the supplied leaf-to-root certificate chain with the key identified by the
+        path alias. When that key already exists in the selected provider, omit keyInfo or supply
+        public-only key metadata; private key material is neither required nor accepted for the
+        association. The provider must expose certificate-store support.
+      operationId: storeCertificateChain
+      requestBody:
+        $ref: '#/components/requestBodies/StoreCertificateChainRequest'
+      responses:
+        '201':
+          description: Certificate chain stored.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CertificateChainResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    delete:
+      tags: [ Certificates ]
+      summary: Delete a certificate chain
+      description: >-
+        Deletes the EDK certificate-chain reference. Externally managed DELETE removes only the
+        EDK reference. The provider resource remains untouched. Repeating DELETE for an already
+        deleted externally managed local reference is idempotent and returns 204. Platform-managed
+        behavior remains backward compatible with the existing provider and key-store deletion rules.
+      operationId: deleteCertificateChain
+      responses:
+        '204':
+          description: Certificate chain deleted.
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /signatures/raw/create:
+    post:
+      tags: [ Signatures ]
+      summary: Create a raw signature
+      description: >
+        Produces a raw (detached) cryptographic signature over the supplied bytes using a
+        managed key. The request body identifies the key with a `keyInfo` (by `providerId`
+        plus either `alias` or `kid`) and carries the bytes to sign in `input` as a
+        base64-encoded string; the signature algorithm is taken from the resolved key. The
+        response returns the signature bytes, base64-encoded; only the signature is returned,
+        not the input. Pass the same `input` and `keyInfo` to `/signatures/raw/verify`.
+        Returns 400 if the key cannot be found.
+      operationId: createRawSignature
+      requestBody:
+        $ref: '#/components/requestBodies/CreateRawSignatureRequest'
+      responses:
+        '201':
+          description: Signature created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateRawSignatureResponse'
+              example:
+                signature: "ZXhhbXBsZS1zaWduYXR1cmUtYnl0ZXM="
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /signatures/raw/verify:
+    post:
+      tags: [ Signatures ]
+      summary: Verify a raw signature
+      description: >
+        Verifies a raw (detached) signature against the original bytes using a managed
+        key. The request body carries the `keyInfo` identifying the verifying key, the
+        original bytes in `input` (base64), and the candidate `signature` (base64). The
+        response is `{ "isValid": true }` when the signature matches and
+        `{ "isValid": false }` when it does not (for example when the input was tampered
+        with). Verification failures due to a wrong signature return 200 with
+        `isValid: false`, not an error status. Returns 400 only for malformed input.
+      operationId: isValidRawSignature
+      requestBody:
+        $ref: '#/components/requestBodies/VerifyRawSignatureRequest'
+      responses:
+        '200':
+          description: Signature verification performed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VerifyRawSignatureResponse'
+              example:
+                isValid: true
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /resolvers:
+    get:
+      tags: [ Resolvers ]
+      summary: List all configured key resolvers
+      description: >
+        Returns every key resolver configured for the calling tenant. A key resolver turns
+        a key reference (a JWK, kid, X.509 chain, or DID) into a concrete public key. Each
+        resolver advertises which identifier methods and key types it supports. The default
+        deployment exposes a resolver with id `jose_cose_resolver`.
+      operationId: listResolvers
+      responses:
+        '200':
+          description: A list of Key Resolver configurations.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListResolversResponse'
+              example:
+                resolvers:
+                  - resolverId: "jose_cose_resolver"
+                    supportedIdentifierMethods: [ "JWK", "KID", "COSE_KEY", "X5C", "DID" ]
+                    supportedKeyTypes: [ "EC", "RSA", "OKP" ]
+
+  /resolvers/{resolverId}:
+    parameters:
+      - $ref: '#/components/parameters/ResolverId'
+    get:
+      tags: [ Resolvers ]
+      summary: Get key resolver details
+      description: >
+        Returns the configuration of a single key resolver identified by its
+        `resolverId` path parameter (for example `jose_cose_resolver`), including the
+        identifier methods and key types it supports. Returns 404 if no resolver with
+        that id is configured for the calling tenant.
+      operationId: getResolver
+      responses:
+        '200':
+          description: Key Resolver details retrieved successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KeyResolver'
+              example:
+                resolverId: "jose_cose_resolver"
+                supportedIdentifierMethods: [ "JWK", "KID", "COSE_KEY", "X5C", "DID" ]
+                supportedKeyTypes: [ "EC", "RSA", "OKP" ]
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /resolvers/{resolverId}/resolve:
+    parameters:
+      - $ref: '#/components/parameters/ResolverId'
+    post:
+      tags: [ Resolvers ]
+      summary: Resolve a public key
+      description: >
+        Resolves a public key through the resolver identified by `resolverId` (for
+        example `jose_cose_resolver`). The request body carries a `keyInfo` reference to
+        resolve, an optional `identifierMethod` (for example `JWK`, `KID`, `DID`,
+        `X5C`) hinting how to interpret it, optional `trustedCerts`, and an optional
+        `verifyX509CertificateChain` flag. The response is a fully resolved key whose
+        public `key` JWK is guaranteed to be present. Returns 404 if the resolver id is
+        unknown, or 400 if the key reference cannot be resolved.
+      operationId: resolveKey
+      requestBody:
+        $ref: '#/components/requestBodies/ResolvePublicKeyRequest'
+      responses:
+        '200':
+          description: Key resolved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResolvedKeyInfo'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /keys:
+    get:
+      tags: [ KMS ]
+      summary: List all managed cryptographic keys across all providers
+      description: >
+        Lists key metadata across every provider configured for the calling tenant.
+        Only metadata is returned (alias, kid, algorithm, type); private key material is
+        never included. Pass the optional `providerId` query parameter to restrict the
+        listing to a single provider. Results are scoped to the calling tenant only.
+      operationId: listKeys
+      parameters:
+        - name: providerId
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Optional provider ID to filter keys by provider.
+          example: "testsoftware"
+      responses:
+        '200':
+          description: A list of all managed keys
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListKeysResponse'
+              example:
+                keyInfos:
+                  - kid: "00-qTBov6GxjPSuMNxnk876cMP0JKjbwl4ZyN_sY2tE"
+                    alias: "my-signing-key"
+                    providerId: "testsoftware"
+                    signatureAlgorithm: "ECDSA_SHA256"
+                    keyVisibility: "PUBLIC"
+                    keyEncoding: "JOSE"
+                    keyType: "EC"
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    post:
+      tags: [ KMS ]
+      summary: Generate a new key (provider chosen from body or default)
+      description: >
+        Generates a new key. The request body selects the signature algorithm
+        (for example `ECDSA_SHA256`) and may optionally include an `alias`, `use`,
+        `keyOperations`, and a `providerId`. If `providerId` is omitted the default
+        provider is used. The response contains the generated key pair including its
+        `kid`, `alias`, and the public JWK. Returns 400 if the requested algorithm or
+        provider is not available.
+      operationId: generateKey
+      requestBody:
+        $ref: '#/components/requestBodies/GenerateKeyGlobalRequest'
+      responses:
+        '201':
+          description: Key generated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenerateKeyResponse'
+              example:
+                keyPair:
+                  kid: "00-qTBov6GxjPSuMNxnk876cMP0JKjbwl4ZyN_sY2tE"
+                  providerId: "testsoftware"
+                  alias: "my-signing-key"
+                  jose:
+                    publicJwk:
+                      kty: "EC"
+                      kid: "00-qTBov6GxjPSuMNxnk876cMP0JKjbwl4ZyN_sY2tE"
+                      crv: "P-256"
+                      x: "HFL67WWh6PYWKOy1mzt9Y2ANs-CWFIyVtouR-Jx_mAM"
+                      y: "9f_1x7fwUuEbEwxSNTYE3jQF-zForWpKkEMpiUp1MNI"
+                  cose:
+                    publicCoseKey:
+                      kty: 2
+                      crv: 1
+                      x: "HFL67WWh6PYWKOy1mzt9Y2ANs-CWFIyVtouR-Jx_mAM"
+                      y: "9f_1x7fwUuEbEwxSNTYE3jQF-zForWpKkEMpiUp1MNI"
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /keys/import:
+    post:
+      tags: [ KMS ]
+      summary: Import externally supplied key material (provider taken from keyInfo)
+      description: >
+        Imports a key you already hold into the KMS. The target provider is taken from
+        the `providerId` inside the body's `keyInfo` (for example `testsoftware`), and
+        the alias likewise comes from `keyInfo.alias`. The body must carry a fully
+        resolved `keyInfo` (the `key` JWK is required). Returns 400 if the keyInfo is
+        missing required fields or names an unknown provider.
+      operationId: importKey
+      requestBody:
+        $ref: '#/components/requestBodies/ImportKeyByInfoRequest'
+      responses:
+        '201':
+          description: Key imported successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImportKeyResponse'
+              example:
+                keyInfo:
+                  key:
+                    kty: "EC"
+                    kid: "00-qTBov6GxjPSuMNxnk876cMP0JKjbwl4ZyN_sY2tE"
+                    crv: "P-256"
+                    x: "HFL67WWh6PYWKOy1mzt9Y2ANs-CWFIyVtouR-Jx_mAM"
+                    y: "9f_1x7fwUuEbEwxSNTYE3jQF-zForWpKkEMpiUp1MNI"
+                  kid: "00-qTBov6GxjPSuMNxnk876cMP0JKjbwl4ZyN_sY2tE"
+                  alias: "my-signing-key"
+                  providerId: "testsoftware"
+                  signatureAlgorithm: "ECDSA_SHA256"
+                  keyVisibility: "PUBLIC"
+                  keyEncoding: "JOSE"
+                  keyType: "EC"
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /keys/register:
+    post:
+      tags: [ KMS ]
+      summary: Register an existing provider key for platform use
+      description: >
+        Explicitly onboards a key that already exists inside a provider into the
+        platform's persistent key reference store, so the platform can discover and use
+        it later. The body identifies the key by its `providerId` and exact provider-native
+        `alias`, with an optional canonical `kid`. EDK stores that alias unchanged in the
+        authenticated tenant's reference index; it does not add the backing-alias prefix used
+        for platform-managed generated or imported keys. When the provider is a platform-shared
+        AWS or Azure resource, the native key must carry `sphereon-tenant-id` set to the
+        authenticated tenant id; the assignment is checked again before later use. A tenant-owned
+        provider does not require that shared-provider tag. Registration does not create/import key
+        material; the key must already live in the named provider. The response confirms registration and echoes the
+        alias, providerId, and kid. Returns 400 if the provider or key cannot be found.
+        Registration never changes the ownership of a key that is already known. Registering the
+        same external key again with the same provider, alias, kid (version) and public key material
+        is idempotent and returns the existing registration with 201. Any other registration of an
+        already known key (a platform-managed key, the same key under a different alias, a different
+        kid or version, or different public key material) returns 409 and changes nothing.
+      operationId: registerKeyReference
+      requestBody:
+        $ref: '#/components/requestBodies/RegisterKeyReferenceRequest'
+      responses:
+        '201':
+          description: Key reference registered successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegisterKeyReferenceResponse'
+              example:
+                registered: true
+                alias: "my-signing-key"
+                providerId: "testsoftware"
+                kid: "00-qTBov6GxjPSuMNxnk876cMP0JKjbwl4ZyN_sY2tE"
+                origin: external
+                controlMode: externally_managed
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /keys/{aliasOrKid}:
+    parameters:
+      - $ref: '#/components/parameters/AliasOrKid'
+      - name: providerId
+        in: query
+        required: false
+        schema:
+          type: string
+        description: Optional provider ID to restrict the lookup to a single provider.
+        example: "testsoftware"
+    get:
+      tags: [ KMS ]
+      summary: Get a specific managed key by alias or kid
+      description: >
+        Looks up a single key across the calling tenant's providers by its alias or kid.
+        The `aliasOrKid` path parameter may be the alias (for example
+        `my-signing-key`) or the kid (for example
+        `00-qTBov6GxjPSuMNxnk876cMP0JKjbwl4ZyN_sY2tE`). Pass the optional `providerId`
+        query parameter to disambiguate when the same alias exists in more than one
+        provider. Returns 404 if no matching key is found.
+      operationId: getKey
+      responses:
+        '200':
+          description: The managed key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GetKeyResponse'
+              example:
+                keyInfo:
+                  key:
+                    kty: "EC"
+                    kid: "00-qTBov6GxjPSuMNxnk876cMP0JKjbwl4ZyN_sY2tE"
+                    crv: "P-256"
+                    x: "HFL67WWh6PYWKOy1mzt9Y2ANs-CWFIyVtouR-Jx_mAM"
+                    y: "9f_1x7fwUuEbEwxSNTYE3jQF-zForWpKkEMpiUp1MNI"
+                  kid: "00-qTBov6GxjPSuMNxnk876cMP0JKjbwl4ZyN_sY2tE"
+                  alias: "my-signing-key"
+                  providerId: "testsoftware"
+                  signatureAlgorithm: "ECDSA_SHA256"
+                  keyVisibility: "PUBLIC"
+                  keyEncoding: "JOSE"
+                  keyType: "EC"
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    delete:
+      tags: [ KMS ]
+      summary: Delete a key from the key store by alias or kid
+      description: >
+        Removes the EDK key reference identified by `aliasOrKid` (its alias or kid). For an
+        externally managed reference, Externally managed DELETE removes only the EDK reference.
+        The provider resource remains untouched. Repeating DELETE for an already deleted externally
+        managed local reference is idempotent and returns 204. Platform-managed behavior remains
+        backward compatible: deletion continues to follow the existing provider and key-store
+        deletion rules. Pass the optional `providerId` query parameter to scope the deletion to a
+        single provider. Returns 204 with no body on success, or 404 if no matching key exists.
+        Returns 409 when the key protects active or rollback-retained secrets, has an active
+        assignment, or participates in a migration. There is no force-delete path for an in-use key.
+      operationId: deleteKey
+      responses:
+        '204':
+          description: Key deleted successfully
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+components:
+  securitySchemes:
+    bearer:
+      $ref: './common-components.yml#/components/securitySchemes/bearer'
+  parameters:
+    # -- Re-exported path parameters from kms-components.yml --
+    ProviderId:
+      $ref: './kms-components.yml#/components/parameters/ProviderId'
+    AliasOrKid:
+      $ref: './kms-components.yml#/components/parameters/AliasOrKid'
+    ResolverId:
+      $ref: './kms-components.yml#/components/parameters/ResolverId'
+    KmsTenantId:
+      name: tenantId
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Target tenant id for the KMS instance operation.
+      style: simple
+      example: "tenant-001"
+    KeyAlias:
+      name: keyAlias
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Key alias within the selected KMS provider.
+      style: simple
+      example: "as-signing"
+    AssignmentId:
+      name: assignmentId
+      in: path
+      required: true
+      schema:
+        type: string
+      description: KMS key assignment id.
+      style: simple
+      example: "assignment-001"
+  examples:
+    GenerateSigningKeyRequest:
+      summary: Generate a tenant signing key
+      value:
+        alias: "my-signing-key"
+        use: "sig"
+        alg: "ECDSA_SHA256"
+        keyOperations: [ "sign" ]
+    GenerateSigningKeyResponse:
+      summary: Generated tenant signing key
+      value:
+        keyPair:
+          kid: "00-qTBov6GxjPSuMNxnk876cMP0JKjbwl4ZyN_sY2tE"
+          providerId: "testsoftware"
+          alias: "my-signing-key"
+          jose:
+            publicJwk:
+              kty: "EC"
+              kid: "00-qTBov6GxjPSuMNxnk876cMP0JKjbwl4ZyN_sY2tE"
+              alg: "ES256"
+              use: "sig"
+              crv: "P-256"
+              x: "HFL67WWh6PYWKOy1mzt9Y2ANs-CWFIyVtouR-Jx_mAM"
+              y: "9f_1x7fwUuEbEwxSNTYE3jQF-zForWpKkEMpiUp1MNI"
+          cose:
+            publicCoseKey:
+              kty: 2
+              crv: 1
+              alg: -7
+              x: "HFL67WWh6PYWKOy1mzt9Y2ANs-CWFIyVtouR-Jx_mAM"
+              y: "9f_1x7fwUuEbEwxSNTYE3jQF-zForWpKkEMpiUp1MNI"
+  requestBodies:
+    GenerateKeyRequest:
+      description: Request body for generating a new key in a specific provider.
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/GenerateKey'
+          examples:
+            generateSigningKey:
+              $ref: '#/components/examples/GenerateSigningKeyRequest'
+
+    CreateRawSignatureRequest:
+      description: >
+        Request body for creating a raw signature. `keyInfo` identifies the signing key by
+        `providerId` plus either `alias` or `kid` (the same way the server looks the key up);
+        the signature algorithm is taken from the resolved key. `input` is the base64-encoded
+        payload to sign. The example signs the bytes of the string "hello" (base64 `aGVsbG8=`).
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/CreateRawSignature'
+          example:
+            keyInfo:
+              providerId: "testsoftware"
+              alias: "my-signing-key"
+            input: "aGVsbG8="
+
+    VerifyRawSignatureRequest:
+      description: >
+        Request body for verifying a raw signature. `keyInfo` identifies the verifying key by
+        `providerId` plus either `alias` or `kid`, `input` is the base64-encoded original
+        payload, and `signature` is the base64-encoded signature returned by the create
+        endpoint. The signature value below is illustrative; use the value returned for your
+        own key and input.
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/VerifyRawSignature'
+          example:
+            keyInfo:
+              providerId: "testsoftware"
+              alias: "my-signing-key"
+            input: "aGVsbG8="
+            signature: "ZXhhbXBsZS1zaWduYXR1cmUtYnl0ZXM="
+
+    ImportKeyRequest:
+      description: >
+        Request body for importing externally supplied key material into a provider. The
+        `keyInfo.key` JWK carries the actual key material (the example below imports a
+        P-256 EC key).
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ImportKey'
+          example:
+            keyInfo:
+              key:
+                kty: "EC"
+                kid: "00-qTBov6GxjPSuMNxnk876cMP0JKjbwl4ZyN_sY2tE"
+                use: "sig"
+                key_ops: [ "sign" ]
+                crv: "P-256"
+                x: "HFL67WWh6PYWKOy1mzt9Y2ANs-CWFIyVtouR-Jx_mAM"
+                y: "9f_1x7fwUuEbEwxSNTYE3jQF-zForWpKkEMpiUp1MNI"
+                d: "P_4YEyuDj4aA4IVYVku4dm3BoDReFTKVsBwb1utoWCQ"
+              kid: "00-qTBov6GxjPSuMNxnk876cMP0JKjbwl4ZyN_sY2tE"
+              alias: "my-signing-key"
+              providerId: "testsoftware"
+              signatureAlgorithm: "ECDSA_SHA256"
+              keyVisibility: "PUBLIC"
+              keyEncoding: "JOSE"
+              keyType: "EC"
+
+    ResolvePublicKeyRequest:
+      description: >
+        Request body for resolving a public key. `keyInfo` carries only the reference to
+        resolve, never the key material itself (resolution is what produces the key). For a
+        managed key that is the `providerId` plus either `alias` or `kid`; for an external
+        key it can be an X.509 chain in `x5c` or a DID. `identifierMethod` optionally hints
+        how to interpret the reference. The example resolves a managed key by its `alias`.
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ResolvePublicKey'
+          example:
+            keyInfo:
+              providerId: "testsoftware"
+              alias: "my-signing-key"
+
+    ImportKeyByInfoRequest:
+      description: >
+        Request body for importing externally supplied key material where the target provider
+        and alias are taken from the body's `keyInfo` (`keyInfo.providerId` and
+        `keyInfo.alias`) rather than from the URL.
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ImportKey'
+          example:
+            keyInfo:
+              key:
+                kty: "EC"
+                kid: "00-qTBov6GxjPSuMNxnk876cMP0JKjbwl4ZyN_sY2tE"
+                use: "sig"
+                key_ops: [ "sign" ]
+                crv: "P-256"
+                x: "HFL67WWh6PYWKOy1mzt9Y2ANs-CWFIyVtouR-Jx_mAM"
+                y: "9f_1x7fwUuEbEwxSNTYE3jQF-zForWpKkEMpiUp1MNI"
+                d: "P_4YEyuDj4aA4IVYVku4dm3BoDReFTKVsBwb1utoWCQ"
+              kid: "00-qTBov6GxjPSuMNxnk876cMP0JKjbwl4ZyN_sY2tE"
+              alias: "my-signing-key"
+              providerId: "testsoftware"
+              signatureAlgorithm: "ECDSA_SHA256"
+              keyVisibility: "PUBLIC"
+              keyEncoding: "JOSE"
+              keyType: "EC"
+
+    GenerateKeyGlobalRequest:
+      description: >
+        Request body for generating a key without targeting a provider in the URL. The
+        optional `providerId` chooses the provider; if omitted the default provider is
+        used.
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/GenerateKeyGlobal'
+          example:
+            alias: "my-signing-key"
+            use: "sig"
+            alg: "ECDSA_SHA256"
+            keyOperations: [ "sign" ]
+            providerId: "testsoftware"
+
+    RegisterKeyReferenceRequest:
+      description: >-
+        Request body for registering an existing provider key for platform use. Alias is the exact
+        provider-native alias and is stored unchanged in the tenant reference index. The optional
+        kid selects the provider key when alias lookup is insufficient. Registration does not
+        create/import key material. For a platform-shared AWS or Azure provider, the native key
+        must have `sphereon-tenant-id` set to the authenticated tenant id.
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/RegisterKeyReferenceRequest'
+          examples:
+            softwareProvider:
+              summary: Register an existing key in a tenant-owned provider
+              value:
+                providerId: "software"
+                alias: "issuer-signing-key"
+                kid: "issuer-signing-key-v1"
+            azureKeyVault:
+              summary: Register an existing key in a shared Azure Key Vault provider
+              value:
+                providerId: "azure-key-vault"
+                alias: "issuer-signing-key"
+                kid: "issuer-signing-key-v1"
+
+    RegisterCertificateReferenceRequest:
+      description: >-
+        Request body for registering a tenant-owned certificate reference. The source selects the
+        material mode: stored_public_material requires certificateChain, while provider_native
+        requires certificateChain to be omitted. A key_certificate_chain requires linkedKeyAlias
+        or linkedKeyKid. A provider-native certificate reached through a platform-shared Azure Key
+        Vault provider must have `sphereon-tenant-id` set to the authenticated tenant id.
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/CertificateReferenceRegistrationRequest'
+          examples:
+            storedPublicChain:
+              summary: Register a locally stored public certificate chain
+              value:
+                providerId: "software"
+                alias: "issuer-signing-chain"
+                kind: "key_certificate_chain"
+                source: "stored_public_material"
+                linkedKeyAlias: "issuer-signing-key"
+                certificateChain:
+                  - "Q2VydGlmaWNhdGUtREVSLWJ5dGVz"
+            azureKeyVaultCertificate:
+              summary: Register a provider-native Azure Key Vault certificate
+              value:
+                providerId: "azure-key-vault"
+                alias: "issuer-signing-certificate"
+                providerCertificateId: "issuer-signing-certificate-v1"
+                kind: "trusted_certificate"
+                source: "provider_native"
+
+    ProviderQueryRequest:
+      description: Request body for querying providers by capability.
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ProviderQuery'
+          example:
+            operation: "ENCRYPT"
+            contentEncryptionAlgorithm: "A256GCM"
+            providerType: "software"
+
+    EncryptRequest:
+      description: Request body for encrypting bytes.
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/EncryptRequest'
+          example:
+            keyInfo:
+              providerId: "testsoftware"
+              alias: "encryption-key"
+            plaintext: "aGVsbG8="
+            algorithm: "A256GCM"
+
+    DecryptRequest:
+      description: Request body for decrypting bytes.
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/DecryptRequest'
+          example:
+            keyInfo:
+              providerId: "testsoftware"
+              alias: "encryption-key"
+            ciphertext: "8rj9iBf2Vv5uQmE="
+            algorithm: "A256GCM"
+            iv: "QkM0hQDUzC7Vqvut"
+            authTag: "t6YF2+0M0vO7vKq9Qh7uQg=="
+
+    WrapKeyRequest:
+      description: Request body for wrapping key material.
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/WrapKeyRequest'
+          example:
+            wrappingKeyInfo:
+              providerId: "testsoftware"
+              alias: "key-wrap-key"
+            keyToWrap: "MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTIzNDU2Nzg5MDE="
+            algorithm: "A256KW"
+
+    UnwrapKeyRequest:
+      description: Request body for unwrapping key material.
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/UnwrapKeyRequest'
+          example:
+            unwrappingKeyInfo:
+              providerId: "testsoftware"
+              alias: "key-wrap-key"
+            wrappedKey: "q83vEj6GTdS3BzN9vdS6F4x1j9p5vQ=="
+            algorithm: "A256KW"
+
+    KeyAgreementRequest:
+      description: Request body for deriving a shared secret.
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/KeyAgreementRequest'
+          example:
+            privateKeyInfo:
+              providerId: "testsoftware"
+              alias: "holder-x25519-private"
+            publicKeyInfo:
+              key:
+                kty: "OKP"
+                crv: "X25519"
+                x: "hSDwCYkwp1R0i33ctD73Wg2_Og0mOBr066SpjqqbTmo"
+              kid: "peer-x25519-public"
+              providerId: "testsoftware"
+              keyVisibility: "PUBLIC"
+              keyEncoding: "JOSE"
+              keyType: "OKP"
+            algorithm: "ECDH_ES"
+            keyDataLen: 256
+
+    GenerateCertificateSigningRequestRequest:
+      description: Request body for generating a certificate signing request.
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/GenerateCertificateSigningRequestRequest'
+          example:
+            subjectKeyInfo:
+              key:
+                kty: "EC"
+                kid: "00-qTBov6GxjPSuMNxnk876cMP0JKjbwl4ZyN_sY2tE"
+                use: "sig"
+                key_ops: [ "sign" ]
+                crv: "P-256"
+                x: "HFL67WWh6PYWKOy1mzt9Y2ANs-CWFIyVtouR-Jx_mAM"
+                y: "9f_1x7fwUuEbEwxSNTYE3jQF-zForWpKkEMpiUp1MNI"
+                d: "P_4YEyuDj4aA4IVYVku4dm3BoDReFTKVsBwb1utoWCQ"
+              kid: "00-qTBov6GxjPSuMNxnk876cMP0JKjbwl4ZyN_sY2tE"
+              alias: "tls-subject-key"
+              providerId: "testsoftware"
+              signatureAlgorithm: "ECDSA_SHA256"
+              keyVisibility: "PRIVATE"
+              keyEncoding: "JOSE"
+              keyType: "EC"
+            subject:
+              commonName: "adapter-test.example.com"
+              organizationName: "Example Organization"
+              organizationUnit: "Identity KMS"
+              locality: "Enschede"
+              state: "Overijssel"
+              country: "NL"
+              email: "security@example.com"
+            serialNumber: 42
+
+    IssueCertificateRequest:
+      description: Request body for issuing a certificate.
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/IssueCertificateRequest'
+          example:
+            issuerKeyInfo:
+              providerId: "testsoftware"
+              alias: "root-ca-key"
+            issuer:
+              commonName: "Example Organization Test Root CA 2026"
+              organizationName: "Example Organization"
+              country: "NL"
+            subjectKeyInfo:
+              key:
+                kty: "EC"
+                kid: "00-qTBov6GxjPSuMNxnk876cMP0JKjbwl4ZyN_sY2tE"
+                crv: "P-256"
+                x: "HFL67WWh6PYWKOy1mzt9Y2ANs-CWFIyVtouR-Jx_mAM"
+                y: "9f_1x7fwUuEbEwxSNTYE3jQF-zForWpKkEMpiUp1MNI"
+              kid: "00-qTBov6GxjPSuMNxnk876cMP0JKjbwl4ZyN_sY2tE"
+              alias: "tls-subject-key"
+              providerId: "testsoftware"
+              signatureAlgorithm: "ECDSA_SHA256"
+              keyVisibility: "PUBLIC"
+              keyEncoding: "JOSE"
+              keyType: "EC"
+            subject:
+              commonName: "adapter-test.example.com"
+              organizationName: "Example Organization"
+              country: "NL"
+            serialNumber: 43
+            notBefore: "2026-06-12T00:00:00"
+            notAfter: "2027-06-12T00:00:00"
+
+    IssueCertificateFromCsrRequest:
+      description: Request body for issuing a certificate from a CSR.
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/IssueCertificateFromCsrRequest'
+          example:
+            issuerKeyInfo:
+              providerId: "testsoftware"
+              alias: "root-ca-key"
+            issuer:
+              commonName: "Example Organization Test Root CA 2026"
+              organizationName: "Example Organization"
+              country: "NL"
+            subjectKeyInfo:
+              key:
+                kty: "EC"
+                kid: "00-qTBov6GxjPSuMNxnk876cMP0JKjbwl4ZyN_sY2tE"
+                crv: "P-256"
+                x: "HFL67WWh6PYWKOy1mzt9Y2ANs-CWFIyVtouR-Jx_mAM"
+                y: "9f_1x7fwUuEbEwxSNTYE3jQF-zForWpKkEMpiUp1MNI"
+              kid: "00-qTBov6GxjPSuMNxnk876cMP0JKjbwl4ZyN_sY2tE"
+              alias: "tls-subject-key"
+              providerId: "testsoftware"
+              signatureAlgorithm: "ECDSA_SHA256"
+              keyVisibility: "PUBLIC"
+              keyEncoding: "JOSE"
+              keyType: "EC"
+            csr:
+              der: "ZXhhbXBsZS1jc3ItZGVyLWJ5dGVz"
+              commonName: "adapter-test.example.com"
+              organization: "Example Organization"
+              organizationalUnit: "Identity KMS"
+              locality: "Enschede"
+              state: "Overijssel"
+              country: "NL"
+              email: "security@example.com"
+              serialNumber: 42
+            serialNumber: 44
+            notBefore: "2026-06-12T00:00:00"
+            notAfter: "2027-06-12T00:00:00"
+
+    StoreCertificateRequest:
+      description: Request body for storing a trusted certificate.
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/StoreCertificateRequest'
+          example:
+            certificate: "ZXhhbXBsZS1jZXJ0aWZpY2F0ZS1kZXItYnl0ZXM="
+
+    StoreCertificateChainRequest:
+      description: >-
+        Request body for associating a certificate chain with a key alias. When the alias already
+        holds a key, send `certificates` alone: the key is resolved by the path alias and its
+        private material is preserved. `keyInfo` carries public metadata for a new alias only, and
+        private JWK member `d` must never be submitted. Keys held in a cloud provider are addressed
+        through the certificate-reference operations instead.
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/StoreCertificateChainRequest'
+          example:
+            certificates:
+              - "ZXhhbXBsZS1jZXJ0aWZpY2F0ZS1kZXItYnl0ZXM="
+              - "ZXhhbXBsZS1yb290LWNlcnRpZmljYXRlLWRlci1ieXRlcw=="
+
+  responses:
+    BadRequest:
+      description: Bad request due to invalid input parameters or request body.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+    NotFound:
+      description: The requested resource was not found.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+    Conflict:
+      description: >
+        The requested operation conflicts with the current KMS lifecycle state, active
+        assignments, deletion protection, or migration/rotation state.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+    InternalServerError:
+      description: An unexpected error occurred on the server.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+  schemas:
+    # -- Re-exported entity schemas from kms-components.yml --
+    ResourceOwnershipScope:
+      type: string
+      description: Operational ownership scope for tenant-managed infrastructure resources.
+      enum:
+        - PLATFORM
+        - TENANT
+        - APPLICATION
+        - SERVICE
+
+    KmsProviderLifecycleStatus:
+      type: string
+      description: Lifecycle status for a KMS provider.
+      enum:
+        - ACTIVE
+        - DEGRADED
+        - MAINTENANCE
+        - MIGRATING
+        - DEPRECATED
+        - RETIRED
+
+    KmsKeyLifecycleStatus:
+      type: string
+      description: Lifecycle status for a KMS key or rotation record.
+      enum:
+        - ACTIVE
+        - ROTATING
+        - ROTATED
+        - REVOKED
+        - DEPRECATED
+
+    KmsKeyAssignmentStatus:
+      type: string
+      description: Lifecycle status for a key assignment.
+      enum:
+        - ACTIVE
+        - ROTATED
+        - REVOKED
+        - INACTIVE
+
+    KmsProviderLifecycleMetadata:
+      type: object
+      description: Lifecycle metadata for a KMS provider instance.
+      required:
+        - tenantId
+        - providerId
+        - status
+        - protectedSystemProvider
+      properties:
+        tenantId:
+          type: string
+          example: "tenant-001"
+        providerId:
+          type: string
+          example: "software"
+        classification:
+          $ref: '#/components/schemas/ResourceOwnershipScope'
+        status:
+          $ref: '#/components/schemas/KmsProviderLifecycleStatus'
+        protectedSystemProvider:
+          type: boolean
+          description: Whether deletion is protected by system-provider policy.
+          example: true
+        updatedAt:
+          type: string
+          format: date-time
+          nullable: true
+          example: "2026-06-18T10:15:30Z"
+
+    UpsertKmsProviderLifecycleMetadataArgs:
+      type: object
+      description: Request body for updating provider lifecycle metadata. Path parameters supply tenant and provider ids.
+      properties:
+        classification:
+          $ref: '#/components/schemas/ResourceOwnershipScope'
+        status:
+          $ref: '#/components/schemas/KmsProviderLifecycleStatus'
+        protectedSystemProvider:
+          type: boolean
+          nullable: true
+
+    KmsKeyLifecycleMetadata:
+      type: object
+      description: Lifecycle metadata for a KMS key.
+      required:
+        - tenantId
+        - providerId
+        - keyAlias
+        - status
+      properties:
+        tenantId:
+          type: string
+          example: "tenant-001"
+        providerId:
+          type: string
+          example: "software"
+        keyAlias:
+          type: string
+          example: "as-signing"
+        classification:
+          $ref: '#/components/schemas/ResourceOwnershipScope'
+        status:
+          $ref: '#/components/schemas/KmsKeyLifecycleStatus'
+        revokeAt:
+          type: string
+          format: date-time
+          nullable: true
+          example: "2026-12-18T10:15:30Z"
+        rotateAt:
+          type: string
+          format: date-time
+          nullable: true
+          example: "2026-09-18T10:15:30Z"
+        rotationInterval:
+          type: string
+          nullable: true
+          description: ISO-8601 duration used for recurring rotation.
+          example: "P3M"
+        rotatedFrom:
+          type: string
+          nullable: true
+          description: Source key alias when this key was created by rotation.
+          example: "as-signing-20260618101530"
+        rotatedTo:
+          type: string
+          nullable: true
+          description: Replacement key alias after rotation.
+          example: "as-signing-20260918101530"
+        targetProviderId:
+          type: string
+          nullable: true
+          description: Target provider id for scheduled cross-KMS rotation.
+          example: "azure-key-vault"
+        updatedAt:
+          type: string
+          format: date-time
+          nullable: true
+          example: "2026-06-18T10:15:30Z"
+
+    UpsertKmsKeyLifecycleMetadataArgs:
+      type: object
+      description: Request body for updating key lifecycle metadata. Path parameters supply tenant, provider, and key alias.
+      properties:
+        classification:
+          $ref: '#/components/schemas/ResourceOwnershipScope'
+        status:
+          $ref: '#/components/schemas/KmsKeyLifecycleStatus'
+        revokeAt:
+          type: string
+          format: date-time
+          nullable: true
+        rotateAt:
+          type: string
+          format: date-time
+          nullable: true
+        rotationInterval:
+          type: string
+          nullable: true
+          description: ISO-8601 duration used for recurring rotation.
+          example: "P3M"
+        rotatedFrom:
+          type: string
+          nullable: true
+        rotatedTo:
+          type: string
+          nullable: true
+        targetProviderId:
+          type: string
+          nullable: true
+
+    KmsKeyAssignment:
+      type: object
+      description: Assignment linking a KMS key alias to a service and optional software party.
+      required:
+        - assignmentId
+        - tenantId
+        - providerId
+        - keyAlias
+        - classification
+        - purpose
+        - status
+      properties:
+        assignmentId:
+          type: string
+          example: "assignment-001"
+        tenantId:
+          type: string
+          example: "tenant-001"
+        providerId:
+          type: string
+          example: "software"
+        keyAlias:
+          type: string
+          example: "as-signing"
+        classification:
+          $ref: '#/components/schemas/ResourceOwnershipScope'
+        serviceType:
+          type: string
+          nullable: true
+          example: "oauth2-as"
+        serviceInstance:
+          type: string
+          nullable: true
+          example: "as-main"
+        partyId:
+          type: string
+          nullable: true
+          example: "party-issuer-001"
+        relationshipType:
+          type: string
+          nullable: true
+          example: "SOFTWARE_SERVICE"
+        purpose:
+          type: string
+          example: "as-signing"
+        validFrom:
+          type: string
+          format: date-time
+          nullable: true
+          example: "2026-06-18T10:15:30Z"
+        validUntil:
+          type: string
+          format: date-time
+          nullable: true
+          example: "2026-12-18T10:15:30Z"
+        status:
+          $ref: '#/components/schemas/KmsKeyAssignmentStatus'
+        targetProviderId:
+          type: string
+          nullable: true
+          example: "azure-key-vault"
+        createdAt:
+          type: string
+          format: date-time
+          nullable: true
+          example: "2026-06-18T10:15:30Z"
+        updatedAt:
+          type: string
+          format: date-time
+          nullable: true
+          example: "2026-06-18T10:15:30Z"
+
+    AssignKmsKeyArgs:
+      type: object
+      description: Request body for assigning a key. Path parameters supply tenant, provider, and key alias.
+      required:
+        - classification
+        - purpose
+      properties:
+        classification:
+          $ref: '#/components/schemas/ResourceOwnershipScope'
+        serviceType:
+          type: string
+          nullable: true
+        serviceInstance:
+          type: string
+          nullable: true
+        partyId:
+          type: string
+          nullable: true
+        relationshipType:
+          type: string
+          nullable: true
+        purpose:
+          type: string
+        validFrom:
+          type: string
+          format: date-time
+          nullable: true
+        validUntil:
+          type: string
+          format: date-time
+          nullable: true
+
+    UnassignKmsKeyArgs:
+      type: object
+      description: Request body for updating an assignment status. Path parameters supply tenant and assignment ids.
+      properties:
+        status:
+          allOf:
+            - $ref: '#/components/schemas/KmsKeyAssignmentStatus'
+          default: INACTIVE
+
+    ListKmsKeyAssignmentsResult:
+      type: object
+      required:
+        - assignments
+      properties:
+        assignments:
+          type: array
+          items:
+            $ref: '#/components/schemas/KmsKeyAssignment'
+
+    KmsKeyRef:
+      type: object
+      description: Reference to a managed KMS key.
+      required:
+        - providerId
+        - keyAlias
+      properties:
+        providerId:
+          type: string
+          example: "software"
+        keyAlias:
+          type: string
+          example: "as-signing"
+
+    KmsKeyRotationRecord:
+      type: object
+      description: Record of a same-provider rotation or cross-provider migration rotation.
+      required:
+        - rotationId
+        - tenantId
+        - oldKey
+        - newKey
+        - targetProviderId
+        - status
+      properties:
+        rotationId:
+          type: string
+          example: "rotation-001"
+        tenantId:
+          type: string
+          example: "tenant-001"
+        oldKey:
+          $ref: '#/components/schemas/KmsKeyRef'
+        newKey:
+          $ref: '#/components/schemas/KmsKeyRef'
+        targetProviderId:
+          type: string
+          example: "azure-key-vault"
+        rotatedAssignments:
+          type: array
+          items:
+            type: string
+          example: [ "assignment-001" ]
+        createdAssignments:
+          type: array
+          items:
+            type: string
+          example: [ "assignment-002" ]
+        rotationInterval:
+          type: string
+          nullable: true
+          description: ISO-8601 duration used for recurring rotation.
+          example: "P3M"
+        rotateAt:
+          type: string
+          format: date-time
+          nullable: true
+          example: "2026-09-18T10:15:30Z"
+        status:
+          $ref: '#/components/schemas/KmsKeyLifecycleStatus'
+        createdAt:
+          type: string
+          format: date-time
+          nullable: true
+          example: "2026-06-18T10:15:30Z"
+        updatedAt:
+          type: string
+          format: date-time
+          nullable: true
+          example: "2026-06-18T10:15:30Z"
+
+    RotateKmsKeyArgs:
+      type: object
+      description: Request body for immediate key rotation. Path parameters supply tenant, provider, and key alias.
+      properties:
+        targetProviderId:
+          type: string
+          nullable: true
+          description: Target provider for cross-KMS rotation. If omitted, the current provider is used.
+          example: "azure-key-vault"
+        baseAlias:
+          type: string
+          nullable: true
+          description: Base alias used when the server generates a timestamped replacement alias.
+          example: "as-signing"
+        newAlias:
+          type: string
+          nullable: true
+          description: Explicit alias for the replacement key.
+          example: "as-signing-20260918101530"
+        rotationInterval:
+          type: string
+          nullable: true
+          description: ISO-8601 duration to carry forward for recurring rotation.
+          example: "P3M"
+
+    RotateKmsKeyResult:
+      type: object
+      required:
+        - rotation
+        - oldAssignments
+        - newAssignments
+      properties:
+        rotation:
+          $ref: '#/components/schemas/KmsKeyRotationRecord'
+        oldAssignments:
+          type: array
+          items:
+            $ref: '#/components/schemas/KmsKeyAssignment'
+        newAssignments:
+          type: array
+          items:
+            $ref: '#/components/schemas/KmsKeyAssignment'
+
+    PreviewKmsKeyRotationResult:
+      type: object
+      required:
+        - tenantId
+        - oldKey
+        - plannedNewKey
+        - targetProviderId
+        - oldAssignments
+        - newAssignments
+        - serviceConfigMutations
+      properties:
+        tenantId:
+          type: string
+          example: "tenant-001"
+        oldKey:
+          $ref: '#/components/schemas/KmsKeyRef'
+        plannedNewKey:
+          $ref: '#/components/schemas/KmsKeyRef'
+        targetProviderId:
+          type: string
+          description: Provider where the replacement key would be created.
+          example: "azure-key-vault"
+        rotationInterval:
+          type: string
+          nullable: true
+          description: ISO-8601 duration that would be carried forward for recurring rotation.
+          example: "P3M"
+        oldAssignments:
+          type: array
+          items:
+            $ref: '#/components/schemas/KmsKeyAssignment'
+        newAssignments:
+          type: array
+          items:
+            $ref: '#/components/schemas/KmsKeyAssignment'
+        serviceConfigMutations:
+          type: array
+          description: Service configuration writes or clears that would be applied by immediate rotation.
+          items:
+            $ref: '#/components/schemas/KmsServiceConfigMutationPreview'
+
+    KmsServiceConfigMutationPreview:
+      type: object
+      required:
+        - key
+      properties:
+        key:
+          type: string
+          description: Tenant configuration key that would be changed.
+          example: "oauth2.servers.default.signing-key.kid"
+        value:
+          type: string
+          nullable: true
+          description: Replacement value to write, when this is a set mutation.
+          example: "as-signing-20260918101530"
+        clearOnlyIfCurrentValue:
+          type: string
+          nullable: true
+          description: Current value that must match before the key is cleared.
+          example: "as-signing"
+        removeListValue:
+          type: string
+          nullable: true
+          description: Delimited list member that would be removed.
+          example: "issuer-signing"
+        replaceListCurrentValue:
+          type: string
+          nullable: true
+          description: Delimited list member that would be replaced.
+          example: "issuer-signing"
+        replaceListReplacementValue:
+          type: string
+          nullable: true
+          description: Replacement delimited list member.
+          example: "issuer-signing-20260918101530"
+
+    ListKmsKeyRotationsResult:
+      type: object
+      required:
+        - rotations
+      properties:
+        rotations:
+          type: array
+          items:
+            $ref: '#/components/schemas/KmsKeyRotationRecord'
+
+    ScheduleKmsKeyRotationArgs:
+      type: object
+      description: Request body for scheduling key rotation. Path parameters supply tenant, provider, and key alias.
+      required:
+        - rotateAt
+      properties:
+        rotateAt:
+          type: string
+          format: date-time
+          example: "2026-09-18T10:15:30Z"
+        rotationInterval:
+          type: string
+          nullable: true
+          description: ISO-8601 duration used for recurring rotation.
+          example: "P3M"
+        targetProviderId:
+          type: string
+          nullable: true
+          description: Target provider for scheduled cross-KMS rotation.
+          example: "azure-key-vault"
+
+    RunDueKmsKeyLifecycleChecksResult:
+      type: object
+      required:
+        - rotations
+        - revokedKeys
+        - revokedAssignments
+      properties:
+        rotations:
+          type: array
+          items:
+            $ref: '#/components/schemas/KmsKeyRotationRecord'
+        revokedKeys:
+          type: array
+          items:
+            $ref: '#/components/schemas/KmsKeyRef'
+        revokedAssignments:
+          type: array
+          items:
+            type: string
+
+    AwsClientConfiguration:
+      $ref: './kms-components.yml#/components/schemas/AwsClientConfiguration'
+    AwsKmsSetting:
+      $ref: './kms-components.yml#/components/schemas/AwsKmsSetting'
+    AzureClientSecretCredentialOpts:
+      $ref: './kms-components.yml#/components/schemas/AzureClientSecretCredentialOpts'
+    AzureCredentialOpts:
+      $ref: './kms-components.yml#/components/schemas/AzureCredentialOpts'
+    AzureKeyVaultSetting:
+      $ref: './kms-components.yml#/components/schemas/AzureKeyVaultSetting'
+    CoseKeyPair:
+      $ref: './kms-components.yml#/components/schemas/CoseKeyPair'
+    CreateRawSignature:
+      description: Request body for creating a raw signature.
+      type: object
+      required:
+        - keyInfo
+        - input
+      properties:
+        keyInfo:
+          $ref: '#/components/schemas/KeyInfo'
+        input:
+          type: string
+          format: byte
+          description: The bytes to sign, base64-encoded. The example is the string "hello".
+          example: "aGVsbG8="
+
+    CryptoAlg:
+      $ref: './kms-components.yml#/components/schemas/CryptoAlg'
+    Curve:
+      $ref: './kms-components.yml#/components/schemas/Curve'
+    DigestAlg:
+      $ref: './kms-components.yml#/components/schemas/DigestAlg'
+    ErrorResponse:
+      type: object
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: string
+          description: Error code identifying the type of error.
+          example: "NOT_FOUND"
+        message:
+          type: string
+          description: Human-readable error message.
+          example: "No key found for alias or kid '00-qTBov6GxjPSuMNxnk876cMP0JKjbwl4ZyN_sY2tE'"
+        details:
+          type: object
+          description: Additional error details.
+          additionalProperties: true
+
+    KmsProviderOperation:
+      type: string
+      enum:
+        - IMPORT_KEY
+        - EXPORT_KEY
+        - GENERATE_KEY
+        - DELETE_KEY
+        - SIGN
+        - VERIFY
+        - SIGN_DIGEST
+        - VERIFY_DIGEST
+        - ENCRYPT
+        - DECRYPT
+        - WRAP_KEY
+        - UNWRAP_KEY
+        - KEY_AGREEMENT
+        - ECDH_DERIVE_RAW_X
+        - ECDH_DERIVE_KDF
+        - EC_POINT_MULTIPLY
+        - GENERATE_CERTIFICATE
+        - IMPORT_CERTIFICATE
+        - X509_CHAIN_VALIDATION
+        - GENERATE_MAC
+        - VERIFY_MAC
+        - HARDWARE_BACKED
+        - ATTESTATION
+        - KEY_ATTESTATION
+        - GET_CERTIFICATE
+        - GET_CERTIFICATE_CHAIN
+        - REGISTER_KEY_REFERENCE
+
+    KeyStorageType:
+      type: string
+      enum:
+        - NONE
+        - EPHEMERAL
+        - PERSISTENT
+        - HARDWARE
+
+    ContentEncryptionAlgorithm:
+      type: string
+      enum:
+        - A128GCM
+        - A192GCM
+        - A256GCM
+        - A128CBC_HS256
+        - A192CBC_HS384
+        - A256CBC_HS512
+      example: A256GCM
+
+    KeyWrapAlgorithm:
+      type: string
+      enum:
+        - RSA1_5
+        - RSA_OAEP
+        - RSA_OAEP_256
+        - RSA_OAEP_384
+        - RSA_OAEP_512
+        - A128KW
+        - A192KW
+        - A256KW
+        - A128GCMKW
+        - A192GCMKW
+        - A256GCMKW
+        - DIR
+      example: A256KW
+
+    KeyAgreementAlgorithm:
+      type: string
+      enum:
+        - ECDH_ES
+        - ECDH_ES_A128KW
+        - ECDH_ES_A192KW
+        - ECDH_ES_A256KW
+      example: ECDH_ES
+
+    OperationCapability:
+      type: object
+      description: Support statement for one KMS operation on a provider.
+      required:
+        - operation
+        - supported
+      properties:
+        operation:
+          $ref: '#/components/schemas/KmsProviderOperation'
+        supported:
+          type: boolean
+          description: Whether this provider supports the operation.
+          example: true
+        signatureAlgorithms:
+          type: array
+          items:
+            $ref: '#/components/schemas/SignatureAlgorithm'
+        contentEncryptionAlgorithms:
+          type: array
+          items:
+            $ref: '#/components/schemas/ContentEncryptionAlgorithm'
+        keyWrapAlgorithms:
+          type: array
+          items:
+            $ref: '#/components/schemas/KeyWrapAlgorithm'
+        keyAgreementAlgorithms:
+          type: array
+          items:
+            $ref: '#/components/schemas/KeyAgreementAlgorithm'
+        notes:
+          type: string
+          description: Optional provider-specific limitations or implementation notes.
+          example: "AES-GCM content encryption is backed by the provider key store."
+
+    ProviderCapabilities:
+      type: object
+      description: Full capability report for a KMS provider.
+      required:
+        - providerId
+        - providerType
+        - storageTypes
+        - supportsKeyImport
+        - supportsKeyExport
+        - exposePrivateKeys
+        - operations
+        - supportedKeyTypes
+        - supportedCurves
+        - supportedCryptoAlgorithms
+        - supportedDigestAlgorithms
+        - signatureAlgorithms
+        - contentEncryptionAlgorithms
+        - supportsX509
+        - supportsAttestation
+        - supportsHardwareBacking
+        - supportsPublicKeyResolution
+        - resolutionMethods
+      properties:
+        providerId:
+          type: string
+          description: Stable identifier of the provider.
+          example: "testsoftware"
+        providerType:
+          type: string
+          description: Provider implementation type.
+          example: "software"
+        storageTypes:
+          type: array
+          items:
+            $ref: '#/components/schemas/KeyStorageType'
+        supportsKeyImport:
+          type: boolean
+        supportsKeyExport:
+          type: boolean
+        exposePrivateKeys:
+          type: boolean
+        operations:
+          type: array
+          items:
+            $ref: '#/components/schemas/OperationCapability'
+        supportedKeyTypes:
+          type: array
+          items:
+            $ref: '#/components/schemas/KeyType'
+        supportedCurves:
+          type: array
+          items:
+            $ref: '#/components/schemas/Curve'
+        supportedCryptoAlgorithms:
+          type: array
+          items:
+            $ref: '#/components/schemas/CryptoAlg'
+        supportedDigestAlgorithms:
+          type: array
+          items:
+            $ref: '#/components/schemas/DigestAlg'
+        signatureAlgorithms:
+          type: array
+          items:
+            $ref: '#/components/schemas/SignatureAlgorithm'
+        contentEncryptionAlgorithms:
+          type: array
+          items:
+            $ref: '#/components/schemas/ContentEncryptionAlgorithm'
+        supportsX509:
+          type: boolean
+        supportsAttestation:
+          type: boolean
+        supportsHardwareBacking:
+          type: boolean
+        supportsPublicKeyResolution:
+          type: boolean
+        resolutionMethods:
+          type: array
+          items:
+            type: string
+
+    ProviderCapabilitiesResponse:
+      type: object
+      description: Capability report wrapper keyed by provider ID.
+      required:
+        - providerId
+        - capabilities
+      properties:
+        providerId:
+          type: string
+          example: "testsoftware"
+        capabilities:
+          $ref: '#/components/schemas/ProviderCapabilities'
+
+    ListCapabilitiesResponse:
+      type: object
+      description: Capability reports for all configured KMS providers.
+      required:
+        - providers
+      properties:
+        providers:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProviderCapabilitiesResponse'
+
+    ProviderQuery:
+      type: object
+      description: Criteria used to select KMS providers by operation, algorithm, storage, and security requirements.
+      properties:
+        operation:
+          $ref: '#/components/schemas/KmsProviderOperation'
+        cryptoAlgorithm:
+          $ref: '#/components/schemas/CryptoAlg'
+        digestAlgorithm:
+          $ref: '#/components/schemas/DigestAlg'
+        signatureAlgorithm:
+          $ref: '#/components/schemas/SignatureAlgorithm'
+        contentEncryptionAlgorithm:
+          $ref: '#/components/schemas/ContentEncryptionAlgorithm'
+        curve:
+          $ref: '#/components/schemas/Curve'
+        keyType:
+          $ref: '#/components/schemas/KeyType'
+        storageType:
+          $ref: '#/components/schemas/KeyStorageType'
+        requiresHardwareBacking:
+          type: boolean
+          default: false
+          description: Require the provider to store keys in hardware-backed storage.
+          example: false
+        requiresAttestation:
+          type: boolean
+          default: false
+          description: Require the provider to support key attestation.
+          example: false
+        requiresKeyExport:
+          type: boolean
+          default: false
+          description: Require private or symmetric key export support.
+          example: false
+        requiresKeyImport:
+          type: boolean
+          default: false
+          description: Require externally supplied key material import support.
+          example: true
+        identifierMethod:
+          $ref: '#/components/schemas/IdentifierMethod'
+        providerType:
+          type: string
+          description: Optional provider implementation type filter.
+          example: "software"
+
+    ProviderMatch:
+      type: object
+      description: Provider selected by a capability query.
+      required:
+        - providerId
+        - matchScore
+      properties:
+        providerId:
+          type: string
+          example: "testsoftware"
+        capabilities:
+          $ref: '#/components/schemas/ProviderCapabilities'
+        matchScore:
+          type: integer
+          format: int32
+          default: 100
+          description: Relative match quality. Higher is better.
+          example: 100
+
+    QueryProvidersResponse:
+      type: object
+      description: Result set for a provider capability query.
+      required:
+        - matches
+        - totalProviders
+        - matchCount
+      properties:
+        matches:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProviderMatch'
+        totalProviders:
+          type: integer
+          format: int32
+          description: Number of providers evaluated.
+          example: 2
+        matchCount:
+          type: integer
+          format: int32
+          description: Number of providers matching the query.
+          example: 1
+
+    QueryBestProviderResponse:
+      type: object
+      properties:
+        match:
+          $ref: '#/components/schemas/ProviderMatch'
+
+    EncryptRequest:
+      type: object
+      description: Request to encrypt plaintext bytes with a KMS-managed key.
+      required:
+        - keyInfo
+        - plaintext
+        - algorithm
+      properties:
+        keyInfo:
+          $ref: '#/components/schemas/KeyInfo'
+        plaintext:
+          type: string
+          format: byte
+          description: Plaintext bytes to encrypt, base64-encoded. Example is "hello".
+          example: "aGVsbG8="
+        algorithm:
+          $ref: '#/components/schemas/ContentEncryptionAlgorithm'
+        additionalAuthenticatedData:
+          type: string
+          format: byte
+          description: Optional additional authenticated data for AEAD algorithms, base64-encoded.
+          example: "dGVuYW50PWFjbWU="
+
+    EncryptResponse:
+      type: object
+      description: Ciphertext and AEAD parameters produced by encryption.
+      required:
+        - ciphertext
+        - iv
+        - authTag
+      properties:
+        ciphertext:
+          type: string
+          format: byte
+          description: Encrypted bytes, base64-encoded.
+          example: "8rj9iBf2Vv5uQmE="
+        iv:
+          type: string
+          format: byte
+          description: Initialization vector or nonce, base64-encoded.
+          example: "QkM0hQDUzC7Vqvut"
+        authTag:
+          type: string
+          format: byte
+          description: Authentication tag for AEAD algorithms, base64-encoded.
+          example: "t6YF2+0M0vO7vKq9Qh7uQg=="
+
+    DecryptRequest:
+      type: object
+      description: Request to decrypt ciphertext bytes with a KMS-managed key.
+      required:
+        - keyInfo
+        - ciphertext
+        - algorithm
+        - iv
+        - authTag
+      properties:
+        keyInfo:
+          $ref: '#/components/schemas/KeyInfo'
+        ciphertext:
+          type: string
+          format: byte
+          description: Ciphertext bytes to decrypt, base64-encoded.
+          example: "8rj9iBf2Vv5uQmE="
+        algorithm:
+          $ref: '#/components/schemas/ContentEncryptionAlgorithm'
+        iv:
+          type: string
+          format: byte
+          description: Initialization vector or nonce returned by encryption, base64-encoded.
+          example: "QkM0hQDUzC7Vqvut"
+        authTag:
+          type: string
+          format: byte
+          description: Authentication tag returned by encryption, base64-encoded.
+          example: "t6YF2+0M0vO7vKq9Qh7uQg=="
+        additionalAuthenticatedData:
+          type: string
+          format: byte
+          description: Optional AEAD additional authenticated data, base64-encoded. Must match the value used for encryption.
+          example: "dGVuYW50PWFjbWU="
+
+    DecryptResponse:
+      type: object
+      description: Decrypted plaintext bytes.
+      required:
+        - plaintext
+      properties:
+        plaintext:
+          type: string
+          format: byte
+          description: Decrypted plaintext bytes, base64-encoded. Example is "hello".
+          example: "aGVsbG8="
+
+    WrapKeyRequest:
+      type: object
+      description: Request to wrap raw key material with a KMS-managed wrapping key.
+      required:
+        - wrappingKeyInfo
+        - keyToWrap
+        - algorithm
+      properties:
+        wrappingKeyInfo:
+          $ref: '#/components/schemas/KeyInfo'
+        keyToWrap:
+          type: string
+          format: byte
+          description: Raw key material to wrap, base64-encoded.
+          example: "MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTIzNDU2Nzg5MDE="
+        algorithm:
+          $ref: '#/components/schemas/KeyWrapAlgorithm'
+
+    WrapKeyResponse:
+      type: object
+      description: Wrapped key material.
+      required:
+        - wrappedKey
+      properties:
+        wrappedKey:
+          type: string
+          format: byte
+          description: Wrapped key bytes, base64-encoded.
+          example: "q83vEj6GTdS3BzN9vdS6F4x1j9p5vQ=="
+
+    UnwrapKeyRequest:
+      type: object
+      description: Request to unwrap key material with a KMS-managed unwrapping key.
+      required:
+        - unwrappingKeyInfo
+        - wrappedKey
+        - algorithm
+      properties:
+        unwrappingKeyInfo:
+          $ref: '#/components/schemas/KeyInfo'
+        wrappedKey:
+          type: string
+          format: byte
+          description: Wrapped key bytes returned by the wrap operation, base64-encoded.
+          example: "q83vEj6GTdS3BzN9vdS6F4x1j9p5vQ=="
+        algorithm:
+          $ref: '#/components/schemas/KeyWrapAlgorithm'
+
+    UnwrapKeyResponse:
+      type: object
+      description: Unwrapped raw key material.
+      required:
+        - unwrappedKey
+      properties:
+        unwrappedKey:
+          type: string
+          format: byte
+          description: Raw unwrapped key bytes, base64-encoded.
+          example: "MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTIzNDU2Nzg5MDE="
+
+    KeyAgreementRequest:
+      type: object
+      description: Request to derive a shared secret from a private key and peer public key.
+      required:
+        - privateKeyInfo
+        - publicKeyInfo
+        - algorithm
+      properties:
+        privateKeyInfo:
+          $ref: '#/components/schemas/KeyInfo'
+        publicKeyInfo:
+          $ref: '#/components/schemas/KeyInfo'
+        algorithm:
+          $ref: '#/components/schemas/KeyAgreementAlgorithm'
+        keyDataLen:
+          type: integer
+          format: int32
+          description: Desired shared secret length in bits.
+          example: 256
+
+    KeyAgreementResponse:
+      type: object
+      description: Shared secret derived by key agreement.
+      required:
+        - sharedSecret
+      properties:
+        sharedSecret:
+          type: string
+          format: byte
+          description: Derived shared secret bytes, base64-encoded.
+          example: "oN1hJdAhtf3SW+pm1da4DyxLSFhP0YE6FnW9EeYk7rk="
+
+    X509DistinguishedName:
+      type: object
+      description: X.509 subject or issuer distinguished name fields.
+      properties:
+        commonName:
+          type: string
+          example: "adapter-test.example.com"
+        organizationName:
+          type: string
+          example: "Example Organization"
+        organizationUnit:
+          type: string
+          example: "Identity KMS"
+        locality:
+          type: string
+          example: "Enschede"
+        state:
+          type: string
+          example: "Overijssel"
+        country:
+          type: string
+          example: "NL"
+        email:
+          type: string
+          example: "security@example.com"
+
+    GenerateCertificateSigningRequestRequest:
+      type: object
+      description: Request to generate a CSR for a resolved subject key.
+      required:
+        - subjectKeyInfo
+        - subject
+      properties:
+        subjectKeyInfo:
+          $ref: '#/components/schemas/ResolvedKeyInfo'
+        subject:
+          $ref: '#/components/schemas/X509DistinguishedName'
+        serialNumber:
+          type: integer
+          format: int32
+          default: 1
+          example: 42
+
+    CertificateSigningRequestResponse:
+      type: object
+      description: DER-encoded CSR and parsed distinguished name fields.
+      required:
+        - der
+      properties:
+        der:
+          type: string
+          format: byte
+          description: DER-encoded CSR, base64-encoded.
+          example: "ZXhhbXBsZS1jc3ItZGVyLWJ5dGVz"
+        commonName:
+          type: string
+          example: "adapter-test.example.com"
+        organization:
+          type: string
+          example: "Example Organization"
+        organizationalUnit:
+          type: string
+          example: "Identity KMS"
+        locality:
+          type: string
+          example: "Enschede"
+        state:
+          type: string
+          example: "Overijssel"
+        country:
+          type: string
+          example: "NL"
+        email:
+          type: string
+          example: "security@example.com"
+        serialNumber:
+          type: integer
+          format: int32
+          example: 42
+
+    CertificateSigningRequest:
+      type: object
+      description: CSR input used when issuing a certificate from a previously generated CSR.
+      required:
+        - commonName
+        - serialNumber
+        - der
+      properties:
+        commonName:
+          type: string
+          example: "adapter-test.example.com"
+        organization:
+          type: string
+        organizationalUnit:
+          type: string
+        locality:
+          type: string
+        state:
+          type: string
+        country:
+          type: string
+        email:
+          type: string
+        serialNumber:
+          type: integer
+          format: int32
+        der:
+          type: string
+          format: byte
+          description: DER-encoded CSR, base64-encoded.
+          example: "ZXhhbXBsZS1jc3ItZGVyLWJ5dGVz"
+
+    IssueCertificateRequest:
+      type: object
+      description: Request to issue a certificate directly from issuer and subject key information.
+      required:
+        - issuerKeyInfo
+        - issuer
+        - subjectKeyInfo
+        - subject
+        - serialNumber
+      properties:
+        issuerKeyInfo:
+          $ref: '#/components/schemas/KeyInfo'
+        issuer:
+          $ref: '#/components/schemas/X509DistinguishedName'
+        subjectKeyInfo:
+          $ref: '#/components/schemas/ResolvedKeyInfo'
+        subject:
+          $ref: '#/components/schemas/X509DistinguishedName'
+        serialNumber:
+          type: integer
+          format: int32
+          example: 43
+        notBefore:
+          type: string
+          description: Certificate validity start as an ISO local date-time.
+          example: "2026-06-12T00:00:00"
+        notAfter:
+          type: string
+          description: Certificate validity end as an ISO local date-time.
+          example: "2027-06-12T00:00:00"
+
+    IssueCertificateFromCsrRequest:
+      type: object
+      description: Request to issue a certificate using a CSR and issuer key.
+      required:
+        - issuerKeyInfo
+        - issuer
+        - subjectKeyInfo
+        - csr
+      properties:
+        issuerKeyInfo:
+          $ref: '#/components/schemas/KeyInfo'
+        issuer:
+          $ref: '#/components/schemas/X509DistinguishedName'
+        subjectKeyInfo:
+          $ref: '#/components/schemas/ResolvedKeyInfo'
+        csr:
+          $ref: '#/components/schemas/CertificateSigningRequest'
+        serialNumber:
+          type: integer
+          format: int32
+          example: 44
+        notBefore:
+          type: string
+          example: "2026-06-12T00:00:00"
+        notAfter:
+          type: string
+          example: "2027-06-12T00:00:00"
+
+    CertificateResponse:
+      type: object
+      description: Issued certificate and the key information it binds.
+      required:
+        - certificate
+        - keyInfo
+      properties:
+        certificate:
+          type: string
+          format: byte
+          description: DER-encoded certificate, base64-encoded on the wire.
+        keyInfo:
+          $ref: '#/components/schemas/ResolvedKeyInfo'
+
+    StoreCertificateRequest:
+      type: object
+      description: Request to store a trusted DER certificate under the path alias.
+      required:
+        - certificate
+      properties:
+        certificate:
+          type: string
+          format: byte
+          description: DER-encoded certificate, base64-encoded.
+          example: "ZXhhbXBsZS1jZXJ0aWZpY2F0ZS1kZXItYnl0ZXM="
+
+    StoreCertificateChainRequest:
+      type: object
+      description: Request to associate a certificate chain with the key identified by the path alias.
+      required:
+        - certificates
+      properties:
+        certificates:
+          type: array
+          description: Certificate chain ordered from leaf to root. Each item is a DER certificate, base64-encoded.
+          items:
+            type: string
+            format: byte
+            example: "ZXhhbXBsZS1jZXJ0aWZpY2F0ZS1kZXItYnl0ZXM="
+        keyInfo:
+          description: >
+            Public key metadata for an alias that does not exist yet. An existing key is resolved
+            by the path alias and keeps its private material, so this field is omitted in that
+            case. Private key material must never be submitted.
+          allOf:
+            - $ref: '#/components/schemas/ResolvedKeyInfo'
+
+    CertificateBytesResponse:
+      type: object
+      description: A single DER certificate.
+      required:
+        - certificate
+      properties:
+        certificate:
+          type: string
+          format: byte
+          description: DER-encoded certificate, base64-encoded.
+          example: "ZXhhbXBsZS1jZXJ0aWZpY2F0ZS1kZXItYnl0ZXM="
+
+    CertificateChainResponse:
+      type: object
+      description: Certificate chain ordered from leaf to root.
+      required:
+        - certificates
+      properties:
+        certificates:
+          type: array
+          items:
+            type: string
+            format: byte
+            example: "ZXhhbXBsZS1jZXJ0aWZpY2F0ZS1kZXItYnl0ZXM="
+
+    CertificateAliasesResponse:
+      type: object
+      description: Alias names stored in a certificate or certificate-chain store.
+      required:
+        - aliases
+      properties:
+        aliases:
+          type: array
+          items:
+            type: string
+            example: "issuer-chain"
+
+    GenerateKey:
+      type: object
+      description: Parameters for key generation.
+      required: [alias]
+      properties:
+        alias:
+          type: string
+          description: Alias for the generated key.
+          example: "my-alias"
+        use:
+          $ref: '#/components/schemas/JwkUse'
+        keyOperations:
+          type: array
+          items:
+            $ref: '#/components/schemas/KeyOperations'
+        alg:
+          $ref: '#/components/schemas/SignatureAlgorithm'
+
+    JoseKeyPair:
+      $ref: './kms-components.yml#/components/schemas/JoseKeyPair'
+    JwkUse:
+      $ref: './kms-components.yml#/components/schemas/JwkUse'
+    JwkKeyType:
+      $ref: './kms-components.yml#/components/schemas/JwkKeyType'
+    Jwk:
+      $ref: './kms-components.yml#/components/schemas/Jwk'
+    CoseKeyType:
+      $ref: './kms-components.yml#/components/schemas/CoseKeyType'
+    CoseKey:
+      $ref: './kms-components.yml#/components/schemas/CoseKey'
+    Origin:
+      $ref: './kms-components.yml#/components/schemas/Origin'
+    ResourceControlMode:
+      $ref: './kms-components.yml#/components/schemas/ResourceControlMode'
+    CertificateReferenceKind:
+      $ref: './kms-components.yml#/components/schemas/CertificateReferenceKind'
+    CertificateReferenceSource:
+      $ref: './kms-components.yml#/components/schemas/CertificateReferenceSource'
+    CertificateReferenceRegistrationRequest:
+      $ref: './kms-components.yml#/components/schemas/CertificateReferenceRegistrationRequest'
+    CertificateReferenceResponse:
+      $ref: './kms-components.yml#/components/schemas/CertificateReferenceResponse'
+    CertificateReferenceSummary:
+      $ref: './kms-components.yml#/components/schemas/CertificateReferenceSummary'
+    CertificateReferencesResponse:
+      $ref: './kms-components.yml#/components/schemas/CertificateReferencesResponse'
+    KeyInfo:
+      $ref: './kms-components.yml#/components/schemas/KeyInfo'
+    ResolvedKeyInfo:
+      $ref: './kms-components.yml#/components/schemas/ResolvedKeyInfo'
+    ManagedKeyInfo:
+      $ref: './kms-components.yml#/components/schemas/ManagedKeyInfo'
+    KeyProviderType:
+      $ref: './kms-components.yml#/components/schemas/KeyProviderType'
+    KeyOperations:
+      $ref: './kms-components.yml#/components/schemas/KeyOperations'
+    KeyProvider:
+      $ref: './kms-components.yml#/components/schemas/KeyProvider'
+    KeyProviderResponse:
+      description: Response body containing the details of a Key Provider instance.
+      type: object
+      allOf:
+        - $ref: '#/components/schemas/KeyProvider'
+
+    KeyType:
+      $ref: './kms-components.yml#/components/schemas/KeyType'
+    KeyVisibility:
+      $ref: './kms-components.yml#/components/schemas/KeyVisibility'
+    KeyEncoding:
+      $ref: './kms-components.yml#/components/schemas/KeyEncoding'
+    CreateRawSignatureResponse:
+      description: Response body containing the created signature.
+      type: object
+      required:
+        - signature
+      properties:
+        signature:
+          type: string
+          format: byte
+          description: >
+            The created signature, base64-encoded. Pass this value back, together with
+            the same keyInfo and input, to POST /signatures/raw/verify.
+          example: "ZXhhbXBsZS1zaWduYXR1cmUtYnl0ZXM="
+
+    GetKeyResponse:
+      description: Response body containing a managed key.
+      type: object
+      required:
+        - keyInfo
+      properties:
+        keyInfo:
+          $ref: '#/components/schemas/ManagedKeyInfo'
+
+    GenerateKeyResponse:
+      description: Response body containing a generated key pair.
+      type: object
+      required:
+        - keyPair
+      properties:
+        keyPair:
+          $ref: '#/components/schemas/ManagedKeyPair'
+
+    ImportKeyResponse:
+      description: Response body containing an imported key.
+      type: object
+      required:
+        - keyInfo
+      properties:
+        keyInfo:
+          $ref: '#/components/schemas/ManagedKeyInfo'
+
+    RegisterKeyReferenceRequest:
+      description: >-
+        Request body for registering an existing provider key for platform use. Alias is the exact
+        provider-native alias and is stored unchanged in the tenant reference index. The optional
+        kid selects the provider key when alias lookup is insufficient. Registration does not
+        create/import key material. For a platform-shared AWS or Azure provider, the native key
+        must have `sphereon-tenant-id` set to the authenticated tenant id.
+      type: object
+      required:
+        - providerId
+        - alias
+      properties:
+        providerId:
+          type: string
+          description: The provider that holds the key.
+          example: "4895d0cf-2061-41cb-8fd4-13af5724569e"
+        alias:
+          type: string
+          description: Exact alias of the existing key in the provider. EDK stores it unchanged in the authenticated tenant's reference index.
+          example: "my-key-alias"
+        kid:
+          type: string
+          description: Optional kid for the key.
+          example: "did:example:123#key-1"
+
+    RegisterKeyReferenceResponse:
+      description: Response body for a registered key reference.
+      type: object
+      required:
+        - registered
+        - alias
+        - providerId
+      properties:
+        registered:
+          type: boolean
+          description: Whether the key was successfully registered.
+          example: true
+        alias:
+          type: string
+          description: The alias the key was registered under.
+          example: "my-key-alias"
+        providerId:
+          type: string
+          description: The provider that holds the key.
+          example: "4895d0cf-2061-41cb-8fd4-13af5724569e"
+        kid:
+          type: string
+          description: Optional kid for the key.
+          example: "did:example:123#key-1"
+        origin:
+          $ref: '#/components/schemas/Origin'
+        controlMode:
+          $ref: '#/components/schemas/ResourceControlMode'
+
+    ListResolversResponse:
+      description: Response body containing all the resolvers.
+      type: object
+      required:
+        - resolvers
+      properties:
+        resolvers:
+          type: array
+          items:
+            $ref: '#/components/schemas/Resolver'
+
+    ListKeysResponse:
+      description: Response body containing key references (metadata only, no key material).
+      type: object
+      required:
+        - keyInfos
+      properties:
+        keyInfos:
+          type: array
+          items:
+            $ref: '#/components/schemas/KeyInfo'
+
+    ListKeyProvidersResponse:
+      description: Response body containing the details of a Key Provider instance.
+      type: object
+      required:
+        - providers
+      properties:
+        providers:
+          type: array
+          items:
+            $ref: '#/components/schemas/KeyProvider'
+
+    ManagedKeyPair:
+      $ref: './kms-components.yml#/components/schemas/ManagedKeyPair'
+    MaskGenFunction:
+      $ref: './kms-components.yml#/components/schemas/MaskGenFunction'
+    Signature:
+      $ref: './kms-components.yml#/components/schemas/Signature'
+    SignatureAlgorithm:
+      $ref: './kms-components.yml#/components/schemas/SignatureAlgorithm'
+    SignInput:
+      $ref: './kms-components.yml#/components/schemas/SignInput'
+    SignOutput:
+      $ref: './kms-components.yml#/components/schemas/SignOutput'
+    VerifyRawSignatureResponse:
+      description: Response body containing the details of the signature verification.
+      type: object
+      required:
+        - isValid
+      properties:
+        isValid:
+          type: boolean
+          description: Indicates whether the signature is valid or not.
+          example: true
+
+    ImportKey:
+      type: object
+      description: Request body for importing externally supplied key material.
+      required:
+        - keyInfo
+      properties:
+        keyInfo:
+          $ref: '#/components/schemas/ResolvedKeyInfo'
+        certChain:
+          type: array
+          items:
+            type: string
+          description: X.509 certificate chain as base64-encoded DER certificates.
+
+    GenerateKeyGlobal:
+      type: object
+      description: Parameters for global key generation with optional provider specification.
+      allOf:
+        - $ref: '#/components/schemas/GenerateKey'
+        - type: object
+          properties:
+            providerId:
+              type: string
+              description: Optional provider ID. If not specified, the default provider will be used.
+              example: "4895d0cf-2061-41cb-8fd4-13af5724569e"
+
+    ResolvePublicKey:
+      type: object
+      description: Request body for resolving a public key.
+      required:
+        - keyInfo
+      properties:
+        keyInfo:
+          $ref: '#/components/schemas/KeyInfo'
+        identifierMethod:
+          $ref: '#/components/schemas/IdentifierMethod'
+        trustedCerts:
+          type: array
+          items:
+            type: string
+          description: Optional array of trusted certificates (base64-encoded) that may be used in the resolution process.
+        verifyX509CertificateChain:
+          type: boolean
+          description: Optional boolean indicating whether the X.509 certificate chain should be verified.
+          default: false
+
+    VerifyRawSignature:
+      description: Request body for verifying a raw signature.
+      type: object
+      required:
+        - keyInfo
+        - input
+        - signature
+      properties:
+        keyInfo:
+          $ref: '#/components/schemas/KeyInfo'
+        input:
+          type: string
+          format: byte
+          description: The original bytes that were signed, base64-encoded. The example is the string "hello".
+          example: "aGVsbG8="
+        signature:
+          type: string
+          format: byte
+          description: The signature to verify, base64-encoded (as returned by POST /signatures/raw/create).
+          example: "ZXhhbXBsZS1zaWduYXR1cmUtYnl0ZXM="
+
+    Resolver:
+      $ref: './kms-components.yml#/components/schemas/Resolver'
+    KeyResolver:
+      $ref: './kms-components.yml#/components/schemas/KeyResolver'
+    IdentifierMethod:
+      $ref: './kms-components.yml#/components/schemas/IdentifierMethod'

@@ -187,7 +187,11 @@ class OidfIssuerPlanConformanceTest {
         val workspace = checkNotNull(System.getProperty("oidf.sut.workspace"))
         return runCatching {
             val process = ProcessBuilder(listOf("git", "-C", workspace) + args).redirectErrorStream(true).start()
-            val output = process.inputStream.bufferedReader().use { it.readText() }.trim()
+            val output =
+                process.inputStream
+                    .bufferedReader()
+                    .use { it.readText() }
+                    .trim()
             if (process.waitFor() == 0) output else ""
         }.getOrDefault("")
     }

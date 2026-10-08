@@ -1,0 +1,229 @@
+openapi: 3.0.4
+info:
+  title: Enterprise Wallet Recovery API
+  version: 0.1.0
+  x-products: [edk, vdx]
+  description: |
+    Authenticated recovery and portability operations for managed wallet units. New-app recovery
+    preserves the existing Instance/Unit pair. Successor migration creates a distinct pair and
+    exposes only durable process and integrity evidence. Complete-unit backup operations cover all
+    required components, tombstones, policy provenance, and content-key versions.
+servers:
+  - url: https://api.example.com/api/wallet-recovery/v1
+  - url: http://localhost:8080/api/wallet-recovery/v1
+security:
+  - bearer: []
+tags:
+  - name: WalletRecovery
+paths:
+  /newapp/begin:
+    post:
+      tags: [WalletRecovery]
+      summary: Begin fresh-IDV recovery for a new app on the existing wallet pair
+      operationId: beginEnterpriseWalletNewAppRecovery
+      x-command-id: enterprise-wallet.recovery.begin-new-app
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './wallet-recovery-components.yml#/components/schemas/BeginEnterpriseWalletNewAppRecoveryRequest'
+      responses:
+        '200':
+          description: Durable recovery process and authenticator ceremony.
+          content:
+            application/json:
+              schema:
+                $ref: './wallet-recovery-components.yml#/components/schemas/BeginEnterpriseWalletNewAppRecoveryResult'
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+  /newapp/finalize:
+    post:
+      tags: [WalletRecovery]
+      summary: Atomically activate the new app and apply the old-app disposition
+      operationId: finalizeEnterpriseWalletNewAppRecovery
+      x-command-id: enterprise-wallet.recovery.finalize-new-app
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './wallet-recovery-components.yml#/components/schemas/FinalizeEnterpriseWalletNewAppRecoveryRequest'
+      responses:
+        '200':
+          description: Completed recovery process.
+          content:
+            application/json:
+              schema:
+                $ref: './wallet-recovery-components.yml#/components/schemas/EnterpriseWalletNewAppRecoveryProcess'
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+  /successor/begin:
+    post:
+      tags: [WalletRecovery]
+      summary: Begin recovery into a distinct successor wallet pair
+      operationId: beginEnterpriseWalletSuccessorMigration
+      x-command-id: enterprise-wallet.recovery.begin-successor-migration
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './wallet-recovery-components.yml#/components/schemas/BeginEnterpriseWalletSuccessorMigrationRequest'
+      responses:
+        '200':
+          description: Durable successor process and authenticator ceremony.
+          content:
+            application/json:
+              schema:
+                $ref: './wallet-recovery-components.yml#/components/schemas/BeginEnterpriseWalletSuccessorMigrationResult'
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+  /successor/finalize:
+    post:
+      tags: [WalletRecovery]
+      summary: Migrate complete logical state and atomically publish the successor
+      operationId: finalizeEnterpriseWalletSuccessorMigration
+      x-command-id: enterprise-wallet.recovery.finalize-successor-migration
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './wallet-recovery-components.yml#/components/schemas/FinalizeEnterpriseWalletSuccessorMigrationRequest'
+      responses:
+        '200':
+          description: Completed successor process with migration integrity evidence.
+          content:
+            application/json:
+              schema:
+                $ref: './wallet-recovery-components.yml#/components/schemas/EnterpriseWalletSuccessorMigrationProcess'
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+  /backup/capture:
+    post:
+      tags: [WalletRecovery]
+      summary: Capture an atomic complete-unit production backup
+      operationId: captureEnterpriseWalletCompleteUnitBackup
+      x-command-id: enterprise-wallet.recovery.capture-complete-unit-backup
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './wallet-recovery-components.yml#/components/schemas/CaptureEnterpriseWalletCompleteUnitBackupRequest'
+      responses:
+        '200':
+          description: Complete backup manifest bound to one atomic snapshot barrier.
+          content:
+            application/json:
+              schema:
+                $ref: './wallet-recovery-components.yml#/components/schemas/EnterpriseWalletCompleteUnitBackupManifest'
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+  /backup/verify:
+    post:
+      tags: [WalletRecovery]
+      summary: Verify the latest complete-unit production backup
+      operationId: verifyEnterpriseWalletCompleteUnitBackup
+      x-command-id: enterprise-wallet.recovery.verify-complete-unit-backup
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './wallet-recovery-components.yml#/components/schemas/VerifyEnterpriseWalletCompleteUnitBackupRequest'
+      responses:
+        '200':
+          description: Verified backup manifest.
+          content:
+            application/json:
+              schema:
+                $ref: './wallet-recovery-components.yml#/components/schemas/EnterpriseWalletCompleteUnitBackupManifest'
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+  /backup/restore:
+    post:
+      tags: [WalletRecovery]
+      summary: Restore and inspect a complete unit in an isolated failure domain
+      operationId: restoreEnterpriseWalletCompleteUnitBackup
+      x-command-id: enterprise-wallet.recovery.restore-complete-unit-backup
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './wallet-recovery-components.yml#/components/schemas/RestoreEnterpriseWalletCompleteUnitBackupRequest'
+      responses:
+        '200':
+          description: Restored manifest after complete object, tombstone, key-version, and policy checks.
+          content:
+            application/json:
+              schema:
+                $ref: './wallet-recovery-components.yml#/components/schemas/EnterpriseWalletCompleteUnitBackupManifest'
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+  /vault/export:
+    post:
+      tags: [WalletRecovery]
+      summary: Export a recipient-scoped protected vault package
+      operationId: exportEnterpriseWalletVault
+      x-command-id: enterprise-wallet.recovery.export-vault
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './wallet-recovery-components.yml#/components/schemas/VaultExportRequest'
+      responses:
+        '200':
+          description: Protected TDF or BagIt-in-TDF package and signed manifest.
+          content:
+            application/json:
+              schema:
+                $ref: './wallet-recovery-components.yml#/components/schemas/VaultExportResult'
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+  /vault/import:
+    post:
+      tags: [WalletRecovery]
+      summary: Import a verified recipient-scoped protected vault package
+      operationId: importEnterpriseWalletVault
+      x-command-id: enterprise-wallet.recovery.import-vault
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './wallet-recovery-components.yml#/components/schemas/VaultImportRequest'
+      responses:
+        '200':
+          description: Import manifest including key availability and reissuance requirements.
+          content:
+            application/json:
+              schema:
+                $ref: './wallet-recovery-components.yml#/components/schemas/VaultImportManifest'
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+components:
+  securitySchemes:
+    bearer:
+      $ref: './common-components.yml#/components/securitySchemes/bearer'

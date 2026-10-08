@@ -1,0 +1,780 @@
+openapi: 3.0.4
+info:
+  title: Vault API
+  version: 1.0.0
+  x-products: [idk, edk, vdx]
+  description: |
+    Canonical generic Vault API for protected vaults, files, folders, immutable versions,
+    metadata search, policy, grants, and portable export/import. Stable object identity is
+    independent from mutable path bindings. Every mutation carries an operation id,
+    idempotency key, and explicit compare-and-set conditions.
+
+    Plaintext writes are for profiles whose approved provider can protect content at the service
+    boundary. `OWNER_CONTROLLED_ZERO_ACCESS` uses the distinct protected-content endpoints; the
+    client supplies object/version identifiers before encryption so AEAD binds canonical UTF-8 AAD
+    `v1|<utf8Length>:<vaultId>|<utf8Length>:<objectId>|<utf8Length>:<versionId>|<utf8Length>:<profile>|<utf8Length>:<digestAlgorithm>`.
+    Lengths are unsigned decimal byte counts of each following UTF-8 value. Plaintext reads never substitute
+    ciphertext: they return `VAULT_CLIENT_UNWRAP_REQUIRED` when client unwrap is required.
+servers:
+  - url: https://api.example.com/api/vault/v1
+    description: Production server.
+  - url: http://localhost:8080/api/vault/v1
+    description: Local development server.
+security:
+  - bearer: []
+tags:
+  - { name: Vaults, description: Vault lifecycle and policy. }
+  - { name: VaultContents, description: "Files, folders, stable objects, and immutable versions." }
+  - { name: VaultSearch, description: Bounded metadata list and search without opening bodies. }
+  - { name: VaultGrants, description: Provider-neutral grants and policy scopes. }
+  - { name: VaultPortability, description: Recipient-scoped TDF and deterministic BagIt-in-TDF export/import. }
+paths:
+  /vaults:
+    post:
+      tags: [Vaults]
+      operationId: createVault
+      summary: Create a vault
+      parameters:
+        - $ref: '#/components/parameters/OperationId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/Purpose'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: './vault-components.yml#/components/schemas/CreateVaultRequest' }
+      responses:
+        '201':
+          description: Created vault.
+          content:
+            application/json:
+              schema: { $ref: './vault-components.yml#/components/schemas/VaultDescriptor' }
+        '400': { $ref: './vault-components.yml#/components/responses/VaultBadRequest' }
+        '401': { $ref: './vault-components.yml#/components/responses/VaultUnauthorized' }
+        '403': { $ref: './vault-components.yml#/components/responses/VaultForbidden' }
+        '409': { $ref: './vault-components.yml#/components/responses/VaultConflict' }
+        '412': { $ref: './vault-components.yml#/components/responses/VaultPreconditionFailed' }
+        '500': { $ref: './vault-components.yml#/components/responses/VaultErrorResponse' }
+
+  /vaults/{vaultId}:
+    parameters:
+      - $ref: '#/components/parameters/VaultId'
+    get:
+      tags: [Vaults]
+      operationId: getVault
+      summary: Get a vault descriptor
+      parameters:
+        - $ref: '#/components/parameters/OperationId'
+        - $ref: '#/components/parameters/Purpose'
+      responses:
+        '200':
+          description: Vault descriptor.
+          content:
+            application/json:
+              schema: { $ref: './vault-components.yml#/components/schemas/VaultDescriptor' }
+        '401': { $ref: './vault-components.yml#/components/responses/VaultUnauthorized' }
+        '403': { $ref: './vault-components.yml#/components/responses/VaultForbidden' }
+        '404': { $ref: './vault-components.yml#/components/responses/VaultNotFound' }
+        '500': { $ref: './vault-components.yml#/components/responses/VaultErrorResponse' }
+    delete:
+      tags: [Vaults]
+      operationId: deleteVault
+      summary: Delete a vault conditionally
+      parameters:
+        - $ref: '#/components/parameters/OperationId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/Purpose'
+        - $ref: '#/components/parameters/MutationCondition'
+      responses:
+        '200':
+          description: Vault transitioned to its deletion lifecycle state.
+          content:
+            application/json:
+              schema: { $ref: './vault-components.yml#/components/schemas/VaultDescriptor' }
+        '401': { $ref: './vault-components.yml#/components/responses/VaultUnauthorized' }
+        '403': { $ref: './vault-components.yml#/components/responses/VaultForbidden' }
+        '404': { $ref: './vault-components.yml#/components/responses/VaultNotFound' }
+        '412': { $ref: './vault-components.yml#/components/responses/VaultPreconditionFailed' }
+        '500': { $ref: './vault-components.yml#/components/responses/VaultErrorResponse' }
+
+  /vaults/{vaultId}/policy:
+    put:
+      tags: [Vaults]
+      operationId: updateVaultPolicy
+      summary: Replace the vault policy reference
+      parameters:
+        - $ref: '#/components/parameters/VaultId'
+        - $ref: '#/components/parameters/OperationId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/Purpose'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: './vault-components.yml#/components/schemas/UpdatePolicyRequest' }
+      responses:
+        '200':
+          description: Updated vault descriptor.
+          content:
+            application/json:
+              schema: { $ref: './vault-components.yml#/components/schemas/VaultDescriptor' }
+        '400': { $ref: './vault-components.yml#/components/responses/VaultBadRequest' }
+        '401': { $ref: './vault-components.yml#/components/responses/VaultUnauthorized' }
+        '403': { $ref: './vault-components.yml#/components/responses/VaultForbidden' }
+        '404': { $ref: './vault-components.yml#/components/responses/VaultNotFound' }
+        '412': { $ref: './vault-components.yml#/components/responses/VaultPreconditionFailed' }
+        '500': { $ref: './vault-components.yml#/components/responses/VaultErrorResponse' }
+
+  /vaults/{vaultId}/folders:
+    put:
+      tags: [VaultContents]
+      operationId: createVaultFolder
+      summary: Create an explicit folder
+      parameters:
+        - $ref: '#/components/parameters/VaultId'
+        - $ref: '#/components/parameters/OperationId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/Purpose'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: './vault-components.yml#/components/schemas/CreateFolderRequest' }
+      responses:
+        '201':
+          description: Folder and path binding.
+          content:
+            application/json:
+              schema: { $ref: './vault-components.yml#/components/schemas/VaultFolder' }
+        '400': { $ref: './vault-components.yml#/components/responses/VaultBadRequest' }
+        '401': { $ref: './vault-components.yml#/components/responses/VaultUnauthorized' }
+        '403': { $ref: './vault-components.yml#/components/responses/VaultForbidden' }
+        '409': { $ref: './vault-components.yml#/components/responses/VaultConflict' }
+        '412': { $ref: './vault-components.yml#/components/responses/VaultPreconditionFailed' }
+        '500': { $ref: './vault-components.yml#/components/responses/VaultErrorResponse' }
+
+  /vaults/{vaultId}/files:
+    put:
+      tags: [VaultContents]
+      operationId: putVaultPlaintextFile
+      summary: Upload a bounded plaintext file through the inherited protection provider
+      description: >-
+        Rejects OWNER_CONTROLLED_ZERO_ACCESS. That profile must use `/protected-files` so the
+        service never receives plaintext and never bypasses client-controlled protection.
+        application/octet-stream accepts at most 16777216 bytes, enforced while reading, including
+        unknown-length requests. Protection is inherited from the vault. Multipart upload remains
+        unsupported by the current generic HTTP transport. Mutation condition is required for binary upload.
+      parameters:
+        - $ref: '#/components/parameters/VaultId'
+        - $ref: '#/components/parameters/Path'
+        - $ref: '#/components/parameters/OperationId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/Purpose'
+        - $ref: '#/components/parameters/MutationCondition'
+        - name: X-Vault-Content-Type
+          in: header
+          required: false
+          description: Media type persisted as file metadata; defaults to application/octet-stream.
+          schema: { type: string, maxLength: 255, default: application/octet-stream }
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema: { type: string, format: binary, maxLength: 16777216 }
+          multipart/form-data:
+            schema: { $ref: './vault-components.yml#/components/schemas/PlaintextVaultWrite' }
+      responses:
+        '201':
+          description: Created object and immutable first version.
+          content:
+            application/json:
+              schema: { $ref: './vault-components.yml#/components/schemas/VaultObjectRecord' }
+        '200':
+          description: Created a new version of the existing file according to the supplied conditions.
+          content:
+            application/json:
+              schema: { $ref: './vault-components.yml#/components/schemas/VaultObjectRecord' }
+        '400': { $ref: './vault-components.yml#/components/responses/VaultBadRequest' }
+        '401': { $ref: './vault-components.yml#/components/responses/VaultUnauthorized' }
+        '403': { $ref: './vault-components.yml#/components/responses/VaultForbidden' }
+        '409': { $ref: './vault-components.yml#/components/responses/VaultConflict' }
+        '412': { $ref: './vault-components.yml#/components/responses/VaultPreconditionFailed' }
+        '413':
+          description: Request body exceeds the endpoint byte limit.
+        '501':
+          description: Multipart upload is not supported by this transport.
+        '500': { $ref: './vault-components.yml#/components/responses/VaultErrorResponse' }
+    get:
+      tags: [VaultContents]
+      operationId: readVaultPlaintextFileByPath
+      summary: Stream plaintext by mutable path
+      description: Never returns protected bytes as plaintext.
+      parameters:
+        - $ref: '#/components/parameters/VaultId'
+        - $ref: '#/components/parameters/Path'
+        - $ref: '#/components/parameters/VersionIdQuery'
+        - $ref: '#/components/parameters/OperationId'
+        - $ref: '#/components/parameters/Purpose'
+      responses:
+        '200': { $ref: '#/components/responses/VaultPlaintextBytes' }
+        '401': { $ref: './vault-components.yml#/components/responses/VaultUnauthorized' }
+        '403': { $ref: './vault-components.yml#/components/responses/VaultForbidden' }
+        '404': { $ref: './vault-components.yml#/components/responses/VaultNotFound' }
+        '409': { $ref: './vault-components.yml#/components/responses/VaultClientUnwrapRequired' }
+        '500': { $ref: './vault-components.yml#/components/responses/VaultErrorResponse' }
+
+  /vaults/{vaultId}/protected-files:
+    put:
+      tags: [VaultContents]
+      operationId: putVaultProtectedFile
+      summary: Store a client-protected ZERO_ACCESS file
+      description: >-
+        Requires client-selected objectId and versionId before upload. The server validates the
+        canonical AAD binding and atomically rejects identifier collision or reuse.
+      parameters:
+        - $ref: '#/components/parameters/VaultId'
+        - $ref: '#/components/parameters/Path'
+        - $ref: '#/components/parameters/OperationId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/Purpose'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema: { $ref: './vault-components.yml#/components/schemas/ProtectedVaultWrite' }
+      responses:
+        '201':
+          description: Protected object stored without server plaintext access.
+          content:
+            application/json:
+              schema: { $ref: './vault-components.yml#/components/schemas/VaultObjectRecord' }
+        '400': { $ref: './vault-components.yml#/components/responses/VaultBadRequest' }
+        '401': { $ref: './vault-components.yml#/components/responses/VaultUnauthorized' }
+        '403': { $ref: './vault-components.yml#/components/responses/VaultForbidden' }
+        '409': { $ref: './vault-components.yml#/components/responses/VaultConflict' }
+        '412': { $ref: './vault-components.yml#/components/responses/VaultPreconditionFailed' }
+        '500': { $ref: './vault-components.yml#/components/responses/VaultErrorResponse' }
+
+  /vaults/{vaultId}/objects:
+    get:
+      tags: [VaultSearch]
+      operationId: listVaultObjects
+      summary: List path entries
+      parameters:
+        - $ref: '#/components/parameters/VaultId'
+        - $ref: '#/components/parameters/OperationId'
+        - $ref: '#/components/parameters/Purpose'
+        - name: folder
+          in: query
+          schema: { $ref: './vault-components.yml#/components/schemas/VaultPath' }
+        - name: recursive
+          in: query
+          schema: { type: boolean, default: false }
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/PageToken'
+      responses:
+        '200':
+          description: Bounded path-entry page. Object bodies are never opened.
+          content:
+            application/json:
+              schema: { $ref: './vault-components.yml#/components/schemas/VaultPagePathEntries' }
+        '400': { $ref: './vault-components.yml#/components/responses/VaultBadRequest' }
+        '401': { $ref: './vault-components.yml#/components/responses/VaultUnauthorized' }
+        '403': { $ref: './vault-components.yml#/components/responses/VaultForbidden' }
+        '404': { $ref: './vault-components.yml#/components/responses/VaultNotFound' }
+        '500': { $ref: './vault-components.yml#/components/responses/VaultErrorResponse' }
+
+  /vaults/{vaultId}/objects/{objectId}:
+    parameters:
+      - $ref: '#/components/parameters/VaultId'
+      - $ref: '#/components/parameters/ObjectId'
+    get:
+      tags: [VaultContents]
+      operationId: getVaultObject
+      summary: Get object, path binding, and current version metadata
+      parameters:
+        - $ref: '#/components/parameters/OperationId'
+        - $ref: '#/components/parameters/Purpose'
+      responses:
+        '200':
+          description: Object record.
+          content:
+            application/json:
+              schema: { $ref: './vault-components.yml#/components/schemas/VaultObjectRecord' }
+        '401': { $ref: './vault-components.yml#/components/responses/VaultUnauthorized' }
+        '403': { $ref: './vault-components.yml#/components/responses/VaultForbidden' }
+        '404': { $ref: './vault-components.yml#/components/responses/VaultNotFound' }
+        '500': { $ref: './vault-components.yml#/components/responses/VaultErrorResponse' }
+    patch:
+      tags: [VaultContents]
+      operationId: updateVaultObjectMetadata
+      summary: Replace object metadata
+      parameters:
+        - $ref: '#/components/parameters/OperationId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/Purpose'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: './vault-components.yml#/components/schemas/UpdateMetadataRequest' }
+      responses:
+        '200':
+          description: Updated record.
+          content:
+            application/json:
+              schema: { $ref: './vault-components.yml#/components/schemas/VaultObjectRecord' }
+        '400': { $ref: './vault-components.yml#/components/responses/VaultBadRequest' }
+        '401': { $ref: './vault-components.yml#/components/responses/VaultUnauthorized' }
+        '403': { $ref: './vault-components.yml#/components/responses/VaultForbidden' }
+        '404': { $ref: './vault-components.yml#/components/responses/VaultNotFound' }
+        '412': { $ref: './vault-components.yml#/components/responses/VaultPreconditionFailed' }
+        '500': { $ref: './vault-components.yml#/components/responses/VaultErrorResponse' }
+    delete:
+      tags: [VaultContents]
+      operationId: deleteVaultObject
+      summary: Delete a file or folder conditionally
+      parameters:
+        - $ref: '#/components/parameters/OperationId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/Purpose'
+        - $ref: '#/components/parameters/MutationCondition'
+        - name: recursive
+          in: query
+          schema: { type: boolean, default: false }
+      responses:
+        '200':
+          description: Deleted/tombstoned record.
+          content:
+            application/json:
+              schema: { $ref: './vault-components.yml#/components/schemas/VaultObjectRecord' }
+        '401': { $ref: './vault-components.yml#/components/responses/VaultUnauthorized' }
+        '403': { $ref: './vault-components.yml#/components/responses/VaultForbidden' }
+        '404': { $ref: './vault-components.yml#/components/responses/VaultNotFound' }
+        '412': { $ref: './vault-components.yml#/components/responses/VaultPreconditionFailed' }
+        '500': { $ref: './vault-components.yml#/components/responses/VaultErrorResponse' }
+
+  /vaults/{vaultId}/objects/{objectId}/content:
+    get:
+      tags: [VaultContents]
+      operationId: readVaultPlaintextFileById
+      summary: Stream plaintext by stable object identity
+      parameters:
+        - $ref: '#/components/parameters/VaultId'
+        - $ref: '#/components/parameters/ObjectId'
+        - $ref: '#/components/parameters/VersionIdQuery'
+        - $ref: '#/components/parameters/OperationId'
+        - $ref: '#/components/parameters/Purpose'
+      responses:
+        '200': { $ref: '#/components/responses/VaultPlaintextBytes' }
+        '401': { $ref: './vault-components.yml#/components/responses/VaultUnauthorized' }
+        '403': { $ref: './vault-components.yml#/components/responses/VaultForbidden' }
+        '404': { $ref: './vault-components.yml#/components/responses/VaultNotFound' }
+        '409': { $ref: './vault-components.yml#/components/responses/VaultClientUnwrapRequired' }
+        '500': { $ref: './vault-components.yml#/components/responses/VaultErrorResponse' }
+
+  /vaults/{vaultId}/objects/{objectId}/protected-content:
+    get:
+      tags: [VaultContents]
+      operationId: readVaultProtectedFile
+      summary: Stream protected content and its ZERO_ACCESS descriptor
+      description: >-
+        Returns protected bytes, record, plaintext digest/size, package reference, protection
+        parameters, and canonical AAD. This is distinct from plaintext read and never unwraps.
+      parameters:
+        - $ref: '#/components/parameters/VaultId'
+        - $ref: '#/components/parameters/ObjectId'
+        - $ref: '#/components/parameters/VersionIdQuery'
+        - $ref: '#/components/parameters/OperationId'
+        - $ref: '#/components/parameters/Purpose'
+      responses:
+        '200':
+          description: Multipart protected content and descriptor.
+          content:
+            multipart/related:
+              schema: { $ref: './vault-components.yml#/components/schemas/ProtectedVaultRead' }
+        '401': { $ref: './vault-components.yml#/components/responses/VaultUnauthorized' }
+        '403': { $ref: './vault-components.yml#/components/responses/VaultForbidden' }
+        '404': { $ref: './vault-components.yml#/components/responses/VaultNotFound' }
+        '500': { $ref: './vault-components.yml#/components/responses/VaultErrorResponse' }
+
+  /vaults/{vaultId}/objects/{objectId}/versions:
+    parameters:
+      - $ref: '#/components/parameters/VaultId'
+      - $ref: '#/components/parameters/ObjectId'
+    get:
+      tags: [VaultContents]
+      operationId: listVaultObjectVersions
+      summary: List immutable versions
+      parameters:
+        - $ref: '#/components/parameters/OperationId'
+        - $ref: '#/components/parameters/Purpose'
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/PageToken'
+      responses:
+        '200':
+          description: Version page.
+          content:
+            application/json:
+              schema: { $ref: './vault-components.yml#/components/schemas/VaultPageVersions' }
+        '401': { $ref: './vault-components.yml#/components/responses/VaultUnauthorized' }
+        '403': { $ref: './vault-components.yml#/components/responses/VaultForbidden' }
+        '404': { $ref: './vault-components.yml#/components/responses/VaultNotFound' }
+        '500': { $ref: './vault-components.yml#/components/responses/VaultErrorResponse' }
+    post:
+      tags: [VaultContents]
+      operationId: createVaultPlaintextVersion
+      summary: Stream a new plaintext version through an approved provider
+      description: Rejects OWNER_CONTROLLED_ZERO_ACCESS; use `/protected-versions` for that profile.
+      parameters:
+        - $ref: '#/components/parameters/OperationId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/Purpose'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema: { $ref: './vault-components.yml#/components/schemas/PlaintextVaultWrite' }
+      responses:
+        '201':
+          description: New immutable version.
+          content:
+            application/json:
+              schema: { $ref: './vault-components.yml#/components/schemas/VaultObjectVersion' }
+        '400': { $ref: './vault-components.yml#/components/responses/VaultBadRequest' }
+        '401': { $ref: './vault-components.yml#/components/responses/VaultUnauthorized' }
+        '403': { $ref: './vault-components.yml#/components/responses/VaultForbidden' }
+        '404': { $ref: './vault-components.yml#/components/responses/VaultNotFound' }
+        '412': { $ref: './vault-components.yml#/components/responses/VaultPreconditionFailed' }
+        '500': { $ref: './vault-components.yml#/components/responses/VaultErrorResponse' }
+
+  /vaults/{vaultId}/objects/{objectId}/protected-versions:
+    post:
+      tags: [VaultContents]
+      operationId: createVaultProtectedVersion
+      summary: Store a client-protected immutable version
+      description: >-
+        The body objectId must match the path objectId and the new client-selected versionId must
+        be unused. The canonical AAD is validated before the authoritative manifest commit.
+      parameters:
+        - $ref: '#/components/parameters/VaultId'
+        - $ref: '#/components/parameters/ObjectId'
+        - $ref: '#/components/parameters/OperationId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/Purpose'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema: { $ref: './vault-components.yml#/components/schemas/ProtectedVaultWrite' }
+      responses:
+        '201':
+          description: New protected immutable version.
+          content:
+            application/json:
+              schema: { $ref: './vault-components.yml#/components/schemas/VaultObjectVersion' }
+        '400': { $ref: './vault-components.yml#/components/responses/VaultBadRequest' }
+        '401': { $ref: './vault-components.yml#/components/responses/VaultUnauthorized' }
+        '403': { $ref: './vault-components.yml#/components/responses/VaultForbidden' }
+        '404': { $ref: './vault-components.yml#/components/responses/VaultNotFound' }
+        '409': { $ref: './vault-components.yml#/components/responses/VaultConflict' }
+        '412': { $ref: './vault-components.yml#/components/responses/VaultPreconditionFailed' }
+        '500': { $ref: './vault-components.yml#/components/responses/VaultErrorResponse' }
+
+  /vaults/{vaultId}/objects/{objectId}:move:
+    post:
+      tags: [VaultContents]
+      operationId: moveVaultObject
+      summary: Move or rename without changing object identity
+      parameters:
+        - $ref: '#/components/parameters/VaultId'
+        - $ref: '#/components/parameters/ObjectId'
+        - $ref: '#/components/parameters/OperationId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/Purpose'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: './vault-components.yml#/components/schemas/VaultMoveRequest' }
+      responses:
+        '200':
+          description: Record with updated path binding and unchanged object identity.
+          content:
+            application/json:
+              schema: { $ref: './vault-components.yml#/components/schemas/VaultObjectRecord' }
+        '400': { $ref: './vault-components.yml#/components/responses/VaultBadRequest' }
+        '401': { $ref: './vault-components.yml#/components/responses/VaultUnauthorized' }
+        '403': { $ref: './vault-components.yml#/components/responses/VaultForbidden' }
+        '404': { $ref: './vault-components.yml#/components/responses/VaultNotFound' }
+        '409': { $ref: './vault-components.yml#/components/responses/VaultConflict' }
+        '412': { $ref: './vault-components.yml#/components/responses/VaultPreconditionFailed' }
+        '500': { $ref: './vault-components.yml#/components/responses/VaultErrorResponse' }
+
+  /vaults/{vaultId}/objects/{objectId}:copy:
+    post:
+      tags: [VaultContents]
+      operationId: copyVaultObject
+      summary: Copy into a new object identity
+      parameters:
+        - $ref: '#/components/parameters/VaultId'
+        - $ref: '#/components/parameters/ObjectId'
+        - $ref: '#/components/parameters/OperationId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/Purpose'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: './vault-components.yml#/components/schemas/VaultCopyRequest' }
+      responses:
+        '201':
+          description: New copied object record.
+          content:
+            application/json:
+              schema: { $ref: './vault-components.yml#/components/schemas/VaultObjectRecord' }
+        '400': { $ref: './vault-components.yml#/components/responses/VaultBadRequest' }
+        '401': { $ref: './vault-components.yml#/components/responses/VaultUnauthorized' }
+        '403': { $ref: './vault-components.yml#/components/responses/VaultForbidden' }
+        '404': { $ref: './vault-components.yml#/components/responses/VaultNotFound' }
+        '409': { $ref: './vault-components.yml#/components/responses/VaultConflict' }
+        '412': { $ref: './vault-components.yml#/components/responses/VaultPreconditionFailed' }
+        '500': { $ref: './vault-components.yml#/components/responses/VaultErrorResponse' }
+
+  /vaults/{vaultId}/search:
+    post:
+      tags: [VaultSearch]
+      operationId: searchVaultMetadata
+      summary: Search bounded metadata projections
+      description: Implementations must not scan and decrypt object bodies.
+      parameters:
+        - $ref: '#/components/parameters/VaultId'
+        - $ref: '#/components/parameters/OperationId'
+        - $ref: '#/components/parameters/Purpose'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: './vault-components.yml#/components/schemas/VaultSearchQuery' }
+      responses:
+        '200':
+          description: Search-result page.
+          content:
+            application/json:
+              schema: { $ref: './vault-components.yml#/components/schemas/VaultPageSearchHits' }
+        '400': { $ref: './vault-components.yml#/components/responses/VaultBadRequest' }
+        '401': { $ref: './vault-components.yml#/components/responses/VaultUnauthorized' }
+        '403': { $ref: './vault-components.yml#/components/responses/VaultForbidden' }
+        '404': { $ref: './vault-components.yml#/components/responses/VaultNotFound' }
+        '500': { $ref: './vault-components.yml#/components/responses/VaultErrorResponse' }
+
+  /vaults/{vaultId}/grants:
+    parameters:
+      - $ref: '#/components/parameters/VaultId'
+    get:
+      tags: [VaultGrants]
+      operationId: listVaultGrants
+      summary: List grants
+      parameters:
+        - $ref: '#/components/parameters/OperationId'
+        - $ref: '#/components/parameters/Purpose'
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/PageToken'
+      responses:
+        '200':
+          description: Grant page.
+          content:
+            application/json:
+              schema: { $ref: './vault-components.yml#/components/schemas/VaultPageGrants' }
+        '401': { $ref: './vault-components.yml#/components/responses/VaultUnauthorized' }
+        '403': { $ref: './vault-components.yml#/components/responses/VaultForbidden' }
+        '404': { $ref: './vault-components.yml#/components/responses/VaultNotFound' }
+        '500': { $ref: './vault-components.yml#/components/responses/VaultErrorResponse' }
+    put:
+      tags: [VaultGrants]
+      operationId: putVaultGrant
+      summary: Create or replace a grant conditionally
+      parameters:
+        - $ref: '#/components/parameters/OperationId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/Purpose'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: './vault-components.yml#/components/schemas/PutGrantRequest' }
+      responses:
+        '200':
+          description: Stored grant.
+          content:
+            application/json:
+              schema: { $ref: './vault-components.yml#/components/schemas/VaultGrant' }
+        '201':
+          description: Created grant.
+          content:
+            application/json:
+              schema: { $ref: './vault-components.yml#/components/schemas/VaultGrant' }
+        '400': { $ref: './vault-components.yml#/components/responses/VaultBadRequest' }
+        '401': { $ref: './vault-components.yml#/components/responses/VaultUnauthorized' }
+        '403': { $ref: './vault-components.yml#/components/responses/VaultForbidden' }
+        '412': { $ref: './vault-components.yml#/components/responses/VaultPreconditionFailed' }
+        '500': { $ref: './vault-components.yml#/components/responses/VaultErrorResponse' }
+
+  /vaults/{vaultId}/grants/{grantId}:
+    delete:
+      tags: [VaultGrants]
+      operationId: revokeVaultGrant
+      summary: Revoke a grant conditionally
+      parameters:
+        - $ref: '#/components/parameters/VaultId'
+        - name: grantId
+          in: path
+          required: true
+          schema: { type: string }
+        - $ref: '#/components/parameters/OperationId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/Purpose'
+        - $ref: '#/components/parameters/MutationCondition'
+      responses:
+        '200':
+          description: Revoked grant.
+          content:
+            application/json:
+              schema: { $ref: './vault-components.yml#/components/schemas/VaultGrant' }
+        '401': { $ref: './vault-components.yml#/components/responses/VaultUnauthorized' }
+        '403': { $ref: './vault-components.yml#/components/responses/VaultForbidden' }
+        '404': { $ref: './vault-components.yml#/components/responses/VaultNotFound' }
+        '412': { $ref: './vault-components.yml#/components/responses/VaultPreconditionFailed' }
+        '500': { $ref: './vault-components.yml#/components/responses/VaultErrorResponse' }
+
+  /vaults/{vaultId}/exports:
+    post:
+      tags: [VaultPortability]
+      operationId: exportVaultContent
+      summary: Stream a recipient-scoped TDF export
+      description: >-
+        Object export is TDF. Folder/vault export is deterministic BagIt 1.0 carried in TDF.
+        Normal export excludes private keys, PINs, live tokens, cookies, KMS recovery data,
+        secret zones, and unrelated grant topology.
+      parameters:
+        - $ref: '#/components/parameters/VaultId'
+        - $ref: '#/components/parameters/OperationId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/Purpose'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: './vault-components.yml#/components/schemas/VaultExportRequest' }
+      responses:
+        '200':
+          description: Recipient-scoped TDF stream.
+          headers:
+            X-Vault-Export-Id: { schema: { type: string } }
+            X-Vault-Export-Scope: { schema: { $ref: './vault-components.yml#/components/schemas/VaultExportScope' } }
+            Digest: { schema: { type: string } }
+          content:
+            application/tdf:
+              schema: { type: string, format: binary }
+        '400': { $ref: './vault-components.yml#/components/responses/VaultBadRequest' }
+        '401': { $ref: './vault-components.yml#/components/responses/VaultUnauthorized' }
+        '403': { $ref: './vault-components.yml#/components/responses/VaultForbidden' }
+        '404': { $ref: './vault-components.yml#/components/responses/VaultNotFound' }
+        '412': { $ref: './vault-components.yml#/components/responses/VaultPreconditionFailed' }
+        '501': { $ref: './vault-components.yml#/components/responses/VaultUnsupported' }
+        '500': { $ref: './vault-components.yml#/components/responses/VaultErrorResponse' }
+
+  /vaults/{vaultId}/imports:
+    post:
+      tags: [VaultPortability]
+      operationId: importVaultContent
+      summary: Stream and verify a recipient-scoped TDF export
+      parameters:
+        - $ref: '#/components/parameters/VaultId'
+        - $ref: '#/components/parameters/Path'
+        - $ref: '#/components/parameters/OperationId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/Purpose'
+        - $ref: '#/components/parameters/MutationCondition'
+      requestBody:
+        required: true
+        content:
+          application/tdf:
+            schema: { type: string, format: binary }
+      responses:
+        '201':
+          description: Verified import manifest. Missing non-exportable holder keys map to REISSUANCE_REQUIRED.
+          content:
+            application/json:
+              schema: { $ref: './vault-components.yml#/components/schemas/VaultImportManifest' }
+        '400': { $ref: './vault-components.yml#/components/responses/VaultBadRequest' }
+        '401': { $ref: './vault-components.yml#/components/responses/VaultUnauthorized' }
+        '403': { $ref: './vault-components.yml#/components/responses/VaultForbidden' }
+        '409': { $ref: './vault-components.yml#/components/responses/VaultConflict' }
+        '412': { $ref: './vault-components.yml#/components/responses/VaultPreconditionFailed' }
+        '501': { $ref: './vault-components.yml#/components/responses/VaultUnsupported' }
+        '500': { $ref: './vault-components.yml#/components/responses/VaultErrorResponse' }
+
+components:
+  securitySchemes:
+    bearer:
+      $ref: './common-components.yml#/components/securitySchemes/bearer'
+  parameters:
+    VaultId:
+      name: vaultId
+      in: path
+      required: true
+      schema: { $ref: './vault-components.yml#/components/schemas/VaultId' }
+    ObjectId:
+      name: objectId
+      in: path
+      required: true
+      schema: { $ref: './vault-components.yml#/components/schemas/VaultObjectId' }
+    Path:
+      name: path
+      in: query
+      required: true
+      description: Canonical absolute vault path. Hierarchical separators remain ordinary query data.
+      schema: { $ref: './vault-components.yml#/components/schemas/VaultPath' }
+    VersionIdQuery:
+      name: versionId
+      in: query
+      schema: { $ref: './vault-components.yml#/components/schemas/VaultVersionId' }
+    OperationId:
+      name: X-Operation-Id
+      in: header
+      required: true
+      schema: { type: string, minLength: 1, maxLength: 128 }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema: { type: string, minLength: 1, maxLength: 256 }
+    Purpose:
+      name: X-Processing-Purpose
+      in: header
+      schema: { type: string }
+    MutationCondition:
+      name: X-Vault-Mutation-Condition
+      in: header
+      required: true
+      description: UTF-8 JSON serialization of VaultMutationCondition.
+      schema: { type: string }
+    PageSize:
+      name: pageSize
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 1000, default: 100 }
+    PageToken:
+      name: pageToken
+      in: query
+      schema: { type: string }
+  responses:
+    VaultPlaintextBytes:
+      description: Streamed plaintext from an authorized non-ZERO_ACCESS operation.
+      headers:
+        X-Vault-Object-Id: { schema: { $ref: './vault-components.yml#/components/schemas/VaultObjectId' } }
+        X-Vault-Version-Id: { schema: { $ref: './vault-components.yml#/components/schemas/VaultVersionId' } }
+        Digest: { schema: { type: string } }
+      content:
+        application/octet-stream:
+          schema: { type: string, format: binary }

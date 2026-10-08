@@ -1,0 +1,1035 @@
+openapi: 3.0.4
+info:
+  title: Workflow Authoring API
+  version: 0.2.0
+  x-products: [vdx]
+  description: |
+    Design-time authoring API for workflow definitions, step-type catalog + property
+    editor, worker self-registration, and expression authoring support.
+servers:
+  - url: https://{host}/api/workflow/v1
+    variables:
+      host:
+        default: localhost:8080
+security:
+  - bearer: []
+tags:
+  - name: Workflow Definitions
+    description: Authoring workflow definitions — drafts, versions, publish, validate.
+  - name: Step Types
+    description: Server-driven palette and per-step-type property editor. Decision, sub-flow, human-wait, timer, and input/output boundary blocks are node types, not step types. Their palette entries are provided by the designer client, not by this API.
+  - name: Step Type Registry
+    description: Worker self-registration of step-type descriptors.
+  - name: Expressions
+    description: Expression validation and the evaluator capabilities (autocomplete).
+paths:
+
+  # ---------------------------------------------------------------------------
+  # Workflow Definitions
+  # ---------------------------------------------------------------------------
+
+  /definitions:
+    post:
+      tags: [Workflow Definitions]
+      operationId: createWorkflowDefinition
+      summary: Create a new draft workflow definition
+      description: Creates a new definition family and an initial version 1 DRAFT. Idempotent with Idempotency-Key; reusing a key with a different body returns 409 IDEMPOTENCY_KEY_CONFLICT.
+      x-products: [vdx]
+      x-license-protection:
+        entitlementKey: vdx.workflow.definition.create
+        featureKeys: [workflow.designer.v1]
+        deploymentShapePredicates: [packaging=container, environment=production]
+        protectionMode: licensed
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateWorkflowDefinitionInput'
+      responses:
+        '201':
+          description: Draft created.
+          headers:
+            Location:
+              schema: { type: string }
+              description: URI of the created draft version.
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkflowDefinition'
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '500': { $ref: '#/components/responses/Error' }
+    get:
+      tags: [Workflow Definitions]
+      operationId: listWorkflowDefinitions
+      summary: List workflow definition family heads
+      description: Returns the head (highest non-deleted version) of each family matching the filters.
+      x-products: [vdx]
+      x-license-protection:
+        entitlementKey: vdx.workflow.definition.list
+        featureKeys: [workflow.designer.v1]
+        deploymentShapePredicates: [packaging=container, environment=production]
+        protectionMode: licensed
+      parameters:
+        - name: nameContains
+          in: query
+          required: false
+          description: Case-insensitive substring filter on the definition name.
+          schema: { type: string }
+        - name: status
+          in: query
+          required: false
+          description: Filter by head version lifecycle status.
+          schema:
+            $ref: '#/components/schemas/WorkflowDefinitionStatus'
+        - name: tag
+          in: query
+          required: false
+          description: >-
+            Filter to definitions that carry all of the supplied tags, as a single
+            comma-delimited value (`?tag=a,b`). Comma-delimited rather than repeated because the
+            platform request model exposes query parameters single-valued, so a repeated
+            `?tag=a&tag=b` collapses to one value before any handler sees it.
+          schema:
+            type: array
+            items: { type: string }
+          style: form
+          explode: false
+        - $ref: './common-components.yml#/components/parameters/Limit'
+        - $ref: './common-components.yml#/components/parameters/Offset'
+        - $ref: './common-components.yml#/components/parameters/Sort'
+        - $ref: './common-components.yml#/components/parameters/SortDirection'
+      responses:
+        '200':
+          description: Paginated list of definition heads.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkflowDefinitionListResponse'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '500': { $ref: '#/components/responses/Error' }
+
+  # Literal route specificity MUST take priority over the parameterized /definitions/{definitionKey}
+  # route. OpenAPI path-map order is not significant; routers must match the literal independently of order.
+  /definitions/validate:
+    post:
+      tags: [Workflow Definitions]
+      operationId: validateWorkflowDefinition
+      summary: Validate a candidate graph without persisting
+      description: |
+        Validates a workflow graph and returns a WorkflowValidationReport without persisting
+        anything. Returns 200 even when the graph is invalid (check `valid` in the body).
+        Returns 400 only for a malformed request body.
+      x-products: [vdx]
+      x-license-protection:
+        entitlementKey: vdx.workflow.definition.validate
+        featureKeys: [workflow.designer.v1]
+        deploymentShapePredicates: [packaging=container, environment=production]
+        protectionMode: licensed
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ValidateWorkflowDefinitionInput'
+      responses:
+        '200':
+          description: Validation completed (check `valid` field; 200 does not imply valid).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkflowValidationReport'
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '500': { $ref: '#/components/responses/Error' }
+
+  /definitions/{definitionKey}:
+    parameters:
+      - $ref: '#/components/parameters/DefinitionKey'
+    get:
+      tags: [Workflow Definitions]
+      operationId: getWorkflowDefinition
+      summary: Get the head version of a definition family
+      description: Returns the head (highest non-deleted version) of the family with its full graph.
+      x-products: [vdx]
+      x-license-protection:
+        entitlementKey: vdx.workflow.definition.get
+        featureKeys: [workflow.designer.v1]
+        deploymentShapePredicates: [packaging=container, environment=production]
+        protectionMode: licensed
+      responses:
+        '200':
+          description: Definition head retrieved.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkflowDefinition'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/Error' }
+    delete:
+      tags: [Workflow Definitions]
+      operationId: deleteWorkflowDefinition
+      summary: Soft-delete an entire definition family
+      description: Soft-deletes all versions of the family. In-flight workflow runs pinned to published versions are unaffected. The If-Match value is the ETag of the family head.
+      x-products: [vdx]
+      x-license-protection:
+        entitlementKey: vdx.workflow.definition.delete
+        featureKeys: [workflow.designer.v1]
+        deploymentShapePredicates: [packaging=container, environment=production]
+        protectionMode: licensed
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      responses:
+        '204':
+          description: Family deleted.
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '412': { $ref: '#/components/responses/PreconditionFailed' }
+        '500': { $ref: '#/components/responses/Error' }
+
+  /definitions/{definitionKey}/effective:
+    parameters:
+      - $ref: '#/components/parameters/DefinitionKey'
+    get:
+      tags: [Workflow Definitions]
+      operationId: getEffectiveWorkflowDefinition
+      summary: Get the latest published version of a definition family
+      description: Returns the latest PUBLISHED version's full graph in one round-trip (runtime resolution view). Returns 404 if no published version exists.
+      x-products: [vdx]
+      x-license-protection:
+        entitlementKey: vdx.workflow.definition.get-effective
+        featureKeys: [workflow.designer.v1]
+        deploymentShapePredicates: [packaging=container, environment=production]
+        protectionMode: licensed
+      responses:
+        '200':
+          description: Latest published version retrieved.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkflowDefinition'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/Error' }
+
+  /definitions/{definitionKey}/versions:
+    parameters:
+      - $ref: '#/components/parameters/DefinitionKey'
+    get:
+      tags: [Workflow Definitions]
+      operationId: listWorkflowDefinitionVersions
+      summary: List all versions of a definition family
+      description: Returns the version history (all non-deleted versions) of the family, newest first by default.
+      x-products: [vdx]
+      x-license-protection:
+        entitlementKey: vdx.workflow.definition.list-versions
+        featureKeys: [workflow.designer.v1]
+        deploymentShapePredicates: [packaging=container, environment=production]
+        protectionMode: licensed
+      parameters:
+        - $ref: './common-components.yml#/components/parameters/Limit'
+        - $ref: './common-components.yml#/components/parameters/Offset'
+        - $ref: './common-components.yml#/components/parameters/Sort'
+        - $ref: './common-components.yml#/components/parameters/SortDirection'
+      responses:
+        '200':
+          description: Version history retrieved.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkflowDefinitionListResponse'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/Error' }
+
+  /definitions/{definitionKey}/versions/{version}:
+    parameters:
+      - $ref: '#/components/parameters/DefinitionKey'
+      - $ref: '#/components/parameters/Version'
+    get:
+      tags: [Workflow Definitions]
+      operationId: getWorkflowDefinitionVersion
+      summary: Get a specific version of a definition family
+      description: Returns the full graph of an exact (definitionKey, version) pair.
+      x-products: [vdx]
+      x-license-protection:
+        entitlementKey: vdx.workflow.definition.get-version
+        featureKeys: [workflow.designer.v1]
+        deploymentShapePredicates: [packaging=container, environment=production]
+        protectionMode: licensed
+      responses:
+        '200':
+          description: Specific version retrieved.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkflowDefinition'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/Error' }
+    patch:
+      tags: [Workflow Definitions]
+      operationId: updateWorkflowDefinitionDraft
+      summary: Edit a draft workflow definition version
+      description: |
+        Applies a JSON Merge Patch (RFC 7396) to a DRAFT version. Semantics:
+        - A null property value removes that field from the resource.
+        - Array values replace the array wholesale; there is no item-level merge.
+        - Supplying `graph` replaces the entire graph; individual steps or edges cannot
+          be patched in-place.
+
+        The `If-Match` header carrying the current ETag is required. A mismatch returns
+        412 (OPTIMISTIC_LOCK_CONFLICT). A successful update returns 200 with the updated
+        resource and a new ETag. Returns 422 (INVALID_STATE) if the addressed version is
+        not a DRAFT.
+      x-products: [vdx]
+      x-license-protection:
+        entitlementKey: vdx.workflow.definition.update
+        featureKeys: [workflow.designer.v1]
+        deploymentShapePredicates: [packaging=container, environment=production]
+        protectionMode: licensed
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateWorkflowDefinitionInput'
+      responses:
+        '200':
+          description: Draft updated.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkflowDefinition'
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '412': { $ref: '#/components/responses/PreconditionFailed' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+        '500': { $ref: '#/components/responses/Error' }
+    delete:
+      tags: [Workflow Definitions]
+      operationId: deleteWorkflowDefinitionVersion
+      summary: Discard a draft version
+      description: Soft-deletes a DRAFT version. Returns 422 (INVALID_STATE) if the version is not a DRAFT.
+      x-products: [vdx]
+      x-license-protection:
+        entitlementKey: vdx.workflow.definition.delete-version
+        featureKeys: [workflow.designer.v1]
+        deploymentShapePredicates: [packaging=container, environment=production]
+        protectionMode: licensed
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      responses:
+        '204':
+          description: Draft version deleted.
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '412': { $ref: '#/components/responses/PreconditionFailed' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+        '500': { $ref: '#/components/responses/Error' }
+
+  /definitions/{definitionKey}/versions/{version}/actions/publish:
+    parameters:
+      - $ref: '#/components/parameters/DefinitionKey'
+      - $ref: '#/components/parameters/Version'
+    post:
+      tags: [Workflow Definitions]
+      operationId: publishWorkflowDefinitionVersion
+      summary: Publish a draft version to an immutable published version
+      description: |
+        Transitions a DRAFT version to PUBLISHED (immutable). The graph is validated as part
+        of the publish gate. Returns 422 (INVALID_STATE) if the version is not a DRAFT, or if
+        graph validation fails (in which case the response body `details` field contains a
+        WorkflowValidationReport).
+      x-products: [vdx]
+      x-license-protection:
+        entitlementKey: vdx.workflow.definition.publish
+        featureKeys: [workflow.designer.v1]
+        deploymentShapePredicates: [packaging=container, environment=production]
+        protectionMode: licensed
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/IfMatch'
+      responses:
+        '200':
+          description: Version published.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkflowDefinition'
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '412': { $ref: '#/components/responses/PreconditionFailed' }
+        '422':
+          description: Publish rejected — invalid lifecycle state, or the graph failed validation. On validation failure, details carries the structured WorkflowValidationReport.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkflowValidationApiError' }
+        '500': { $ref: '#/components/responses/Error' }
+
+  /definitions/{definitionKey}/versions/{version}/actions/revise:
+    parameters:
+      - $ref: '#/components/parameters/DefinitionKey'
+      - $ref: '#/components/parameters/Version'
+    post:
+      tags: [Workflow Definitions]
+      operationId: reviseWorkflowDefinitionVersion
+      summary: Create a new draft seeded from an existing version
+      description: |
+        Creates a new DRAFT seeded from the specified version (any version, not just the latest).
+        The new draft's `version` = maxVersion + 1 and `basedOnVersion` = the source version.
+        `If-Match` carries the current family-head ETag so two concurrent revise attempts cannot both
+        create a draft. Returns 422 (INVALID_STATE) if a DRAFT already exists for this family.
+      x-products: [vdx]
+      x-license-protection:
+        entitlementKey: vdx.workflow.definition.revise
+        featureKeys: [workflow.designer.v1]
+        deploymentShapePredicates: [packaging=container, environment=production]
+        protectionMode: licensed
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/IfMatch'
+      responses:
+        '201':
+          description: New draft created.
+          headers:
+            Location:
+              schema: { type: string }
+              description: URI of the newly created draft version.
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkflowDefinition'
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '412': { $ref: '#/components/responses/PreconditionFailed' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+        '500': { $ref: '#/components/responses/Error' }
+
+  /definitions/{definitionKey}/versions/{version}/actions/archive:
+    parameters:
+      - $ref: '#/components/parameters/DefinitionKey'
+      - $ref: '#/components/parameters/Version'
+    post:
+      tags: [Workflow Definitions]
+      operationId: archiveWorkflowDefinitionVersion
+      summary: Archive a published version
+      description: |
+        Transitions a PUBLISHED version to ARCHIVED. Archived versions are excluded from
+        new workflow-instance start and from the effective-version resolution, but in-flight
+        runs pinned to this version are unaffected. Returns 422 (INVALID_STATE) if the version
+        is not PUBLISHED.
+      x-products: [vdx]
+      x-license-protection:
+        entitlementKey: vdx.workflow.definition.archive
+        featureKeys: [workflow.designer.v1]
+        deploymentShapePredicates: [packaging=container, environment=production]
+        protectionMode: licensed
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      responses:
+        '200':
+          description: Version archived.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkflowDefinition'
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '412': { $ref: '#/components/responses/PreconditionFailed' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+        '500': { $ref: '#/components/responses/Error' }
+
+  # ---------------------------------------------------------------------------
+  # Step Types: palette + property editor
+  # ---------------------------------------------------------------------------
+
+  /step/types:
+    get:
+      tags: [Step Types]
+      operationId: listStepTypes
+      summary: List ACTIVE step-type descriptors (palette)
+      description: Returns the palette of ACTIVE step-type descriptors matching the filters. DEPRECATED and STALE descriptors are excluded.
+      x-products: [vdx]
+      x-license-protection:
+        entitlementKey: vdx.workflow.steptype.list
+        featureKeys: [workflow.designer.v1]
+        deploymentShapePredicates: [packaging=container, environment=production]
+        protectionMode: licensed
+      parameters:
+        - $ref: '#/components/parameters/Namespace'
+        - name: category
+          in: query
+          required: false
+          description: Filter to step types in a specific palette category.
+          schema: { type: string }
+        - name: kind
+          in: query
+          required: false
+          description: Filter to step types of a specific kind.
+          schema:
+            $ref: '#/components/schemas/StepKind'
+        - name: search
+          in: query
+          required: false
+          description: Free-text filter applied to the step-type name and description.
+          schema: { type: string }
+        - $ref: './common-components.yml#/components/parameters/Limit'
+        - $ref: './common-components.yml#/components/parameters/Offset'
+        - $ref: './common-components.yml#/components/parameters/Sort'
+        - $ref: './common-components.yml#/components/parameters/SortDirection'
+      responses:
+        '200':
+          description: Paginated palette of ACTIVE step types.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StepTypeListResponse'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '500': { $ref: '#/components/responses/Error' }
+
+  /step/types/{stepTypeId}:
+    parameters:
+      - $ref: '#/components/parameters/StepTypeId'
+    get:
+      tags: [Step Types]
+      operationId: getStepType
+      summary: Get the latest ACTIVE descriptor for a step type
+      description: Returns the latest ACTIVE step-type descriptor in the given namespace scope.
+      x-products: [vdx]
+      x-license-protection:
+        entitlementKey: vdx.workflow.steptype.get
+        featureKeys: [workflow.designer.v1]
+        deploymentShapePredicates: [packaging=container, environment=production]
+        protectionMode: licensed
+      parameters:
+        - $ref: '#/components/parameters/Namespace'
+      responses:
+        '200':
+          description: Step-type descriptor retrieved.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StepTypeDescriptor'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/Error' }
+
+  /step/types/{stepTypeId}/versions/{descriptorVersion}:
+    parameters:
+      - $ref: '#/components/parameters/StepTypeId'
+      - $ref: '#/components/parameters/DescriptorVersion'
+    get:
+      tags: [Step Types]
+      operationId: getStepTypeVersion
+      summary: Get a specific version of a step-type descriptor
+      description: Returns the exact (stepTypeId, descriptorVersion) pair with observable lifecycle and liveness timestamps. Resolves DEPRECATED descriptors for existing definitions, validation, and monitoring.
+      x-products: [vdx]
+      x-license-protection:
+        entitlementKey: vdx.workflow.steptype.get-version
+        featureKeys: [workflow.designer.v1]
+        deploymentShapePredicates: [packaging=container, environment=production]
+        protectionMode: licensed
+      parameters:
+        - $ref: '#/components/parameters/Namespace'
+      responses:
+        '200':
+          description: Exact registered step-type descriptor version and lifecycle metadata retrieved.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegisteredStepType'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/Error' }
+
+  /step/types/{stepTypeId}/resolve:
+    parameters:
+      - $ref: '#/components/parameters/StepTypeId'
+    post:
+      tags: [Step Types]
+      operationId: resolveStepTypeForm
+      summary: Resolve the property-editor form for a step type
+      description: |
+        Opens the property editor by resolving a workflow-specific wrapper around ResolvedForm. Supply
+        `currentValues` to prefill the form when editing an existing step instance; omit
+        to receive server-supplied defaults for a new step instance. Authored values use the same
+        AuthoredConfig literal / `$expr` representation as the stored workflow graph.
+      x-products: [vdx]
+      x-license-protection:
+        entitlementKey: vdx.workflow.steptype.resolve-form
+        featureKeys: [workflow.designer.v1]
+        deploymentShapePredicates: [packaging=container, environment=production]
+        protectionMode: licensed
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResolveStepTypeFormInput'
+      responses:
+        '200':
+          description: Resolved property-editor form.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResolvedStepTypeForm'
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/Error' }
+
+  /options/{optionSourceKey}:
+    parameters:
+      - $ref: '#/components/parameters/OptionSourceKey'
+    get:
+      tags: [Step Types]
+      operationId: listDynamicOptions
+      summary: Fetch type-ahead options from a dynamic option source
+      description: |
+        Returns a page of dynamic options for the named option source.
+        Known keys: `workflow.connections`, `workflow.publishedForms`, `workflow.taskQueues`.
+      x-products: [vdx]
+      x-license-protection:
+        entitlementKey: vdx.workflow.option.list
+        featureKeys: [workflow.designer.v1]
+        deploymentShapePredicates: [packaging=container, environment=production]
+        protectionMode: licensed
+      parameters:
+        - name: search
+          in: query
+          required: false
+          description: Free-text filter applied server-side to option labels and values.
+          schema: { type: string }
+        - $ref: './common-components.yml#/components/parameters/Limit'
+        - $ref: './common-components.yml#/components/parameters/Offset'
+        - $ref: './common-components.yml#/components/parameters/Page'
+        - $ref: './common-components.yml#/components/parameters/Size'
+        - $ref: './common-components.yml#/components/parameters/Sort'
+        - $ref: './common-components.yml#/components/parameters/SortDirection'
+      responses:
+        '200':
+          description: Page of dynamic options with canonical pagination metadata.
+          content:
+            application/json:
+              schema:
+                $ref: './workflow-authoring-components.yml#/components/schemas/DynamicOptionPage'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/Error' }
+
+  # ---------------------------------------------------------------------------
+  # Step Type Registry
+  # ---------------------------------------------------------------------------
+
+  /registry/step/types/{stepTypeId}/versions/{descriptorVersion}:
+    parameters:
+      - $ref: '#/components/parameters/StepTypeId'
+      - $ref: '#/components/parameters/DescriptorVersion'
+    put:
+      tags: [Step Type Registry]
+      operationId: registerStepType
+      summary: Register or refresh a step-type descriptor
+      description: |
+        Idempotent upsert keyed by (scope, stepTypeId, descriptorVersion). The path
+        supplies stepTypeId and descriptorVersion. The namespace is supplied via the query
+        parameter (defaults to `default`); the scope (tenant) and lifecycle are
+        derived from the worker token. Returns 201 (INSERTED) on first registration,
+        200 (REFRESHED or UPDATED) on subsequent calls, distinguished by upsertOutcome in
+        the body. Only name, description, and palette changes are cosmetic updates. Any change
+        to binding, kind/family, IO identifiers, terminals, property form, restrictions, defaults,
+        or scope is structural and returns 409 unless descriptorVersion is bumped.
+      x-products: [vdx]
+      x-license-protection:
+        entitlementKey: vdx.workflow.steptype.register
+        featureKeys: [workflow.registry.v1]
+        deploymentShapePredicates: [packaging=container, environment=production]
+        protectionMode: licensed
+      security:
+        - workerOAuth: [steptype.register]
+      parameters:
+        - $ref: '#/components/parameters/Namespace'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterStepTypeInput'
+      responses:
+        '201':
+          description: Descriptor inserted (first registration). upsertOutcome is INSERTED.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StepTypeRegistrationResult'
+        '200':
+          description: Descriptor refreshed or updated. upsertOutcome is REFRESHED or UPDATED.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StepTypeRegistrationResult'
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+        '500': { $ref: '#/components/responses/Error' }
+    delete:
+      tags: [Step Type Registry]
+      operationId: deregisterStepType
+      summary: Deregister a step-type descriptor
+      description: |
+        Soft-deletes the specified (stepTypeId, descriptorVersion) by marking it DEPRECATED.
+        No-op when the id is absent. In-flight workflows that reference the descriptor are
+        unaffected — DEPRECATED descriptors continue to resolve for existing definitions.
+      x-products: [vdx]
+      x-license-protection:
+        entitlementKey: vdx.workflow.steptype.deregister
+        featureKeys: [workflow.registry.v1]
+        deploymentShapePredicates: [packaging=container, environment=production]
+        protectionMode: licensed
+      security:
+        - workerOAuth: [steptype.deregister]
+      parameters:
+        - $ref: '#/components/parameters/Namespace'
+      responses:
+        '204':
+          description: Descriptor deregistered (marked DEPRECATED), or was already absent.
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '500': { $ref: '#/components/responses/Error' }
+
+  # ---------------------------------------------------------------------------
+  # Expressions
+  # ---------------------------------------------------------------------------
+
+  /expressions/validate:
+    post:
+      tags: [Expressions]
+      operationId: validateExpression
+      summary: Validate an expression string
+      description: |
+        Validates an expression string against the evaluator grammar and (optionally) a
+        payload context sample. Returns 200 even when the expression is invalid — check
+        `valid` in the response body. Returns 400 only for a malformed request body.
+      x-products: [vdx]
+      x-license-protection:
+        entitlementKey: vdx.workflow.expression.validate
+        featureKeys: [workflow.designer.v1]
+        deploymentShapePredicates: [packaging=container, environment=production]
+        protectionMode: licensed
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ValidateExpressionInput'
+      responses:
+        '200':
+          description: Validation completed (check `valid` field; 200 does not imply valid).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExpressionValidationResult'
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '500': { $ref: '#/components/responses/Error' }
+
+  /expressions/capabilities:
+    get:
+      tags: [Expressions]
+      operationId: getExpressionCapabilities
+      summary: Get the evaluator capabilities for editor autocomplete
+      description: |
+        Returns the evaluator's available payload variable paths and registered function
+        set for editor autocomplete. Static today (functions list is empty until the
+        evaluator ships); may gain context query parameters in a future revision.
+      x-products: [vdx]
+      x-license-protection:
+        entitlementKey: vdx.workflow.expression.capabilities
+        featureKeys: [workflow.designer.v1]
+        deploymentShapePredicates: [packaging=container, environment=production]
+        protectionMode: licensed
+      responses:
+        '200':
+          description: Evaluator capabilities retrieved.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExpressionCapabilities'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '500': { $ref: '#/components/responses/Error' }
+
+components:
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      description: Caller-supplied Sphereon-standard idempotency key; replaying the same key and body replays the original result, while reusing it with a different body returns 409 IDEMPOTENCY_KEY_CONFLICT.
+      schema:
+        type: string
+    IfMatch:
+      name: If-Match
+      in: header
+      required: true
+      description: Optimistic-concurrency precondition carrying the expected resource revision (strong validator, RFC 7232); a mismatch returns 412.
+      schema: { type: string }
+    # Workflow Definition path parameters
+    DefinitionKey:
+      $ref: './workflow-authoring-components.yml#/components/parameters/DefinitionKey'
+    Version:
+      $ref: './workflow-authoring-components.yml#/components/parameters/Version'
+    # Step Type path/query parameters
+    StepTypeId:
+      $ref: './workflow-authoring-components.yml#/components/parameters/StepTypeId'
+    DescriptorVersion:
+      $ref: './workflow-authoring-components.yml#/components/parameters/DescriptorVersion'
+    Namespace:
+      $ref: './workflow-authoring-components.yml#/components/parameters/Namespace'
+    OptionSourceKey:
+      $ref: './workflow-authoring-components.yml#/components/parameters/OptionSourceKey'
+  headers:
+    ETag:
+      description: Strong entity-tag (RFC 7232) carrying the resource revision; echo back as If-Match.
+      schema:
+        type: string
+      example: '"42"'
+  responses:
+    NotFound:
+      $ref: './common-components.yml#/components/responses/NotFound'
+    ValidationError:
+      $ref: './common-components.yml#/components/responses/ValidationError'
+    Unauthorized:
+      $ref: './common-components.yml#/components/responses/Unauthorized'
+    Forbidden:
+      $ref: './common-components.yml#/components/responses/Forbidden'
+    Conflict:
+      $ref: './common-components.yml#/components/responses/Conflict'
+    Error:
+      $ref: './common-components.yml#/components/responses/Error'
+    PreconditionFailed:
+      description: Optimistic-concurrency precondition failed (If-Match mismatch). code OPTIMISTIC_LOCK_CONFLICT.
+      content:
+        application/json:
+          schema:
+            $ref: './common-components.yml#/components/schemas/ApiError'
+    UnprocessableEntity:
+      description: Business-rule / lifecycle-state violation. code INVALID_STATE.
+      content:
+        application/json:
+          schema:
+            $ref: './common-components.yml#/components/schemas/ApiError'
+  securitySchemes:
+    bearer:
+      $ref: './common-components.yml#/components/securitySchemes/bearer'
+    workerOAuth:
+      type: oauth2
+      description: Worker (service-principal) credentials; the token's scope claim authorizes which step-type scope the worker may write.
+      flows:
+        clientCredentials:
+          tokenUrl: /api/auth/v1/token
+          scopes:
+            steptype.register: Publish a step-type descriptor version in the authorized scope.
+            # Separate from steptype.register on purpose: retiring a descriptor affects definitions
+            # that already resolve it, so a credential that may publish new versions does not
+            # implicitly get to retire them.
+            steptype.deregister: Retire (soft-deprecate) a step-type descriptor version in the authorized scope.
+  schemas:
+    # Enums
+    StepKind:
+      $ref: './workflow-authoring-components.yml#/components/schemas/StepKind'
+    IntegrationFamily:
+      $ref: './workflow-authoring-components.yml#/components/schemas/IntegrationFamily'
+    ExecutionMode:
+      $ref: './workflow-authoring-components.yml#/components/schemas/ExecutionMode'
+    RestrictionMode:
+      $ref: './workflow-authoring-components.yml#/components/schemas/RestrictionMode'
+    StepTypeLifecycle:
+      $ref: './workflow-authoring-components.yml#/components/schemas/StepTypeLifecycle'
+    WorkflowDefinitionStatus:
+      $ref: './workflow-authoring-components.yml#/components/schemas/WorkflowDefinitionStatus'
+    # Cross-spec aliases
+    AttributeValueKind:
+      $ref: './workflow-authoring-components.yml#/components/schemas/AttributeValueKind'
+    AttributeWidgetHint:
+      $ref: './workflow-authoring-components.yml#/components/schemas/AttributeWidgetHint'
+    AttributeCardinalityBounds:
+      $ref: './workflow-authoring-components.yml#/components/schemas/AttributeCardinalityBounds'
+    ResolvedForm:
+      $ref: './workflow-authoring-components.yml#/components/schemas/ResolvedForm'
+    # StepBinding variants
+    StepBinding:
+      $ref: './workflow-authoring-components.yml#/components/schemas/StepBinding'
+    StepBindingSystemCommand:
+      $ref: './workflow-authoring-components.yml#/components/schemas/StepBindingSystemCommand'
+    StepBindingNativeActivity:
+      $ref: './workflow-authoring-components.yml#/components/schemas/StepBindingNativeActivity'
+    # StepTypeDescriptor projection
+    StepTypeScope:
+      $ref: './workflow-authoring-components.yml#/components/schemas/StepTypeScope'
+    StepIoContract:
+      $ref: './workflow-authoring-components.yml#/components/schemas/StepIoContract'
+    PaletteMetadata:
+      $ref: './workflow-authoring-components.yml#/components/schemas/PaletteMetadata'
+    StepPropertyAttribute:
+      $ref: './workflow-authoring-components.yml#/components/schemas/StepPropertyAttribute'
+    StepPropertyForm:
+      $ref: './workflow-authoring-components.yml#/components/schemas/StepPropertyForm'
+    StepTypeDescriptor:
+      $ref: './workflow-authoring-components.yml#/components/schemas/StepTypeDescriptor'
+    # Authored values
+    ExpressionValue:
+      $ref: './workflow-authoring-components.yml#/components/schemas/ExpressionValue'
+    LiteralValue:
+      $ref: './workflow-authoring-components.yml#/components/schemas/LiteralValue'
+    AuthoredConfig:
+      $ref: './workflow-authoring-components.yml#/components/schemas/AuthoredConfig'
+    # Workflow Definition schemas
+    NodeUi:
+      $ref: './workflow-authoring-components.yml#/components/schemas/NodeUi'
+    EdgeUi:
+      $ref: './workflow-authoring-components.yml#/components/schemas/EdgeUi'
+    GraphUi:
+      $ref: './workflow-authoring-components.yml#/components/schemas/GraphUi'
+    WorkflowGraph:
+      $ref: './workflow-authoring-components.yml#/components/schemas/WorkflowGraph'
+    WorkflowNode:
+      $ref: './workflow-authoring-components.yml#/components/schemas/WorkflowNode'
+    WorkflowStepNode:
+      $ref: './workflow-authoring-components.yml#/components/schemas/WorkflowStepNode'
+    WorkflowSubFlowNode:
+      $ref: './workflow-authoring-components.yml#/components/schemas/WorkflowSubFlowNode'
+    WorkflowDecisionNode:
+      $ref: './workflow-authoring-components.yml#/components/schemas/WorkflowDecisionNode'
+    WorkflowHumanNode:
+      $ref: './workflow-authoring-components.yml#/components/schemas/WorkflowHumanNode'
+    WorkflowSignalNode:
+      $ref: './workflow-authoring-components.yml#/components/schemas/WorkflowSignalNode'
+    WorkflowTimerNode:
+      $ref: './workflow-authoring-components.yml#/components/schemas/WorkflowTimerNode'
+    WorkflowTimerCalendar:
+      $ref: './workflow-authoring-components.yml#/components/schemas/WorkflowTimerCalendar'
+    WorkflowWaitBoundSeconds:
+      $ref: './workflow-authoring-components.yml#/components/schemas/WorkflowWaitBoundSeconds'
+    WorkflowDecisionCase:
+      $ref: './workflow-authoring-components.yml#/components/schemas/WorkflowDecisionCase'
+    WorkflowInputNode:
+      $ref: './workflow-authoring-components.yml#/components/schemas/WorkflowInputNode'
+    WorkflowOutputNode:
+      $ref: './workflow-authoring-components.yml#/components/schemas/WorkflowOutputNode'
+    WorkflowDecisionKind:
+      $ref: './workflow-authoring-components.yml#/components/schemas/WorkflowDecisionKind'
+    WorkflowSignature:
+      $ref: './workflow-authoring-components.yml#/components/schemas/WorkflowSignature'
+    WorkflowEdge:
+      $ref: './workflow-authoring-components.yml#/components/schemas/WorkflowEdge'
+    WorkflowEdgeEndpoint:
+      $ref: './workflow-authoring-components.yml#/components/schemas/WorkflowEdgeEndpoint'
+    StepPort:
+      $ref: './workflow-authoring-components.yml#/components/schemas/StepPort'
+    ValidationIssueSeverity:
+      $ref: './workflow-authoring-components.yml#/components/schemas/ValidationIssueSeverity'
+    ValidationIssue:
+      $ref: './workflow-authoring-components.yml#/components/schemas/ValidationIssue'
+    WorkflowValidationReport:
+      $ref: './workflow-authoring-components.yml#/components/schemas/WorkflowValidationReport'
+    WorkflowValidationApiError:
+      $ref: './workflow-authoring-components.yml#/components/schemas/WorkflowValidationApiError'
+    WorkflowDefinition:
+      $ref: './workflow-authoring-components.yml#/components/schemas/WorkflowDefinition'
+    WorkflowDefinitionSummary:
+      $ref: './workflow-authoring-components.yml#/components/schemas/WorkflowDefinitionSummary'
+    WorkflowDefinitionListResponse:
+      $ref: './workflow-authoring-components.yml#/components/schemas/WorkflowDefinitionListResponse'
+    CreateWorkflowDefinitionInput:
+      $ref: './workflow-authoring-components.yml#/components/schemas/CreateWorkflowDefinitionInput'
+    UpdateWorkflowDefinitionInput:
+      $ref: './workflow-authoring-components.yml#/components/schemas/UpdateWorkflowDefinitionInput'
+    ValidateWorkflowDefinitionInput:
+      $ref: './workflow-authoring-components.yml#/components/schemas/ValidateWorkflowDefinitionInput'
+    # Step Types palette
+    StepTypeListResponse:
+      $ref: './workflow-authoring-components.yml#/components/schemas/StepTypeListResponse'
+    ResolveStepTypeFormInput:
+      $ref: './workflow-authoring-components.yml#/components/schemas/ResolveStepTypeFormInput'
+    ResolvedStepTypeForm:
+      $ref: './workflow-authoring-components.yml#/components/schemas/ResolvedStepTypeForm'
+    DynamicOption:
+      $ref: './workflow-authoring-components.yml#/components/schemas/DynamicOption'
+    # Step Type Registry
+    UpsertOutcome:
+      $ref: './workflow-authoring-components.yml#/components/schemas/UpsertOutcome'
+    RegisterStepTypeInput:
+      $ref: './workflow-authoring-components.yml#/components/schemas/RegisterStepTypeInput'
+    RegisteredStepType:
+      $ref: './workflow-authoring-components.yml#/components/schemas/RegisteredStepType'
+    StepTypeRegistrationResult:
+      $ref: './workflow-authoring-components.yml#/components/schemas/StepTypeRegistrationResult'
+    # Expressions
+    ValidateExpressionInput:
+      $ref: './workflow-authoring-components.yml#/components/schemas/ValidateExpressionInput'
+    ExpressionDiagnostic:
+      $ref: './workflow-authoring-components.yml#/components/schemas/ExpressionDiagnostic'
+    ExpressionValidationResult:
+      $ref: './workflow-authoring-components.yml#/components/schemas/ExpressionValidationResult'
+    ExpressionCapabilities:
+      $ref: './workflow-authoring-components.yml#/components/schemas/ExpressionCapabilities'

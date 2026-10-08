@@ -1,0 +1,95 @@
+import com.sphereon.gradle.plugin.configureIosTargetsIfEnabled
+import com.sphereon.gradle.plugin.configureLinuxTargetIfEnabled
+import com.sphereon.gradle.plugin.configureWasmJsTargetIfEnabled
+import org.jetbrains.kotlin.gradle.ExperimentalKotlinGradlePluginApi
+import org.jetbrains.kotlin.gradle.dsl.JsModuleKind
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+
+plugins {
+    alias(sphereonplug.plugins.org.jetbrains.kotlin.multiplatform)
+    alias(sphereonplug.plugins.org.jetbrains.kotlin.plugin.serialization)
+    alias(sphereonplug.plugins.com.android.kotlin.multiplatform.library)
+    alias(sphereonplug.plugins.com.sphereon.gradle.plugin.project.publication)
+    alias(sphereonplug.plugins.dev.zacsweers.metro)
+    id("maven-publish")
+}
+metro {
+}
+
+kotlin {
+    kotlin.applyDefaultHierarchyTemplate()
+
+    jvm {
+        @OptIn(ExperimentalKotlinGradlePluginApi::class)
+        compilerOptions {
+            jvmTarget.set(JvmTarget.JVM_17)
+        }
+    }
+
+    androidLibrary {
+        namespace = "com.sphereon.mdoc.datatransfer.api"
+        compileSdk = 35
+        compilerOptions {
+            jvmTarget.set(JvmTarget.JVM_17)
+        }
+    }
+
+    configureIosTargetsIfEnabled()
+    configureLinuxTargetIfEnabled()
+
+    run {
+        val kmpTargets = (System.getProperty("kmp.targets") ?: "jvm").split(",").map { it.trim().lowercase() }
+        if ("all" in kmpTargets || "js" in kmpTargets) {
+            js {
+                compilerOptions {
+                    moduleKind = JsModuleKind.MODULE_ES
+                    target = "es2015"
+                }
+                browser { testTask { enabled = false } }
+                nodejs { testTask { useMocha { timeout = "60000" } } }
+                binaries.library()
+                generateTypeScriptDefinitions()
+            }
+        }
+    }
+
+    configureWasmJsTargetIfEnabled {
+        nodejs()
+        binaries.library()
+        generateTypeScriptDefinitions()
+    }
+
+    sourceSets {
+        val commonMain by getting {
+            dependencies {
+                api(if (rootProject.findProperty("idk.consumeCoreAsArtifacts") == "true") "com.sphereon.idk:lib-core-api-public:$version" else project(":lib-core-api-public"))
+                api(if (rootProject.findProperty("idk.consumeCoreAsArtifacts") == "true") "com.sphereon.idk:lib-cbor-public:$version" else project(":lib-cbor-public"))
+                api(if (rootProject.findProperty("idk.consumeIdentitySecurityAsArtifacts") == "true") "com.sphereon.idk:lib-crypto-core-public:$version" else project(":lib-crypto-core-public"))
+                api(projects.libMdocCorePublic)
+
+                // DI dependencies for impl classes
+                implementation(libs.bundles.app.platform.di)
+
+                implementation(sphereonlib.org.jetbrains.kotlinx.coroutines.core)
+                implementation(sphereonlib.org.jetbrains.kotlinx.serialization.cbor)
+                implementation(sphereonlib.dev.whyoleg.cryptography.core)
+            }
+        }
+
+        val commonTest by getting {
+            dependencies {
+                implementation(kotlin("test"))
+                implementation(if (rootProject.findProperty("idk.consumeCoreAsArtifacts") == "true") "com.sphereon.idk:lib-core-api-default:$version" else project(":lib-core-api-default"))
+                implementation(sphereonlib.org.jetbrains.kotlinx.coroutines.test)
+            }
+        }
+
+        val jvmMain by getting {
+            dependencies {
+            }
+        }
+
+        // androidMain: no platform-specific config needed (created by hierarchy template when Android target enabled)
+        // iosMain: no platform-specific config needed (created by hierarchy template when iOS targets enabled)
+    }
+}

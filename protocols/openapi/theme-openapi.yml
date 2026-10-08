@@ -1,0 +1,1348 @@
+openapi: 3.0.4
+info:
+  title: Theme API
+  version: 0.1.0
+  x-products: [edk, vdx]
+  description: |
+    Tenant branding and theming API. Tenants brand every product surface from one system:
+    a simple brand (app name, colors, logos, favicon, tagline) set once at tenant level,
+    full design tokens for pixel control, and per-application overrides for every deployed
+    instance the tenant runs. Applications have features, and features declare named design
+    elements (a sign-in logo, a background, a tagline) that are bindable at tenant scope or
+    per application, optionally per variant.
+
+    Resolution endpoints are public (`security: []`) so pre-auth surfaces such as a login
+    page can fetch their own theme. The tenant path segment is validated against the tenant
+    registry; an unknown tenant is a 404. There is never a default tenant fallback, and
+    headers are never authoritative for tenancy. A known tenant with no definitions resolves
+    to system defaults with `fallback=true` and `X-Theme-Fallback: true`.
+
+    Resolution and stylesheet GETs return a strong `ETag` and honor `If-None-Match` with 304.
+servers:
+  - url: https://api.example.com/api/theme/v1
+    description: Production server.
+  - url: http://localhost:8080/api/theme/v1
+    description: Local development server.
+security:
+  - bearer: []
+tags:
+  - name: ThemeResolution
+    description: Public theme, CSS, and feature resolution, plus the cross-domain branding context.
+  - name: ThemeBrand
+    description: The tenant simple brand and sparse per-application brand overrides.
+  - name: ThemeApplications
+    description: Registry of the tenant's deployed, brandable application instances.
+  - name: ThemeFeatures
+    description: Brandable features a product type declares, built-in and custom.
+  - name: ThemeElements
+    description: Design element bindings at tenant scope or per application, optionally per variant.
+  - name: ThemeDefinitions
+    description: Theme definition CRUD with validation, undo, restore, and history.
+  - name: ThemeTokens
+    description: Direct token editing against the canonical definitions.
+  - name: ThemeStylesheets
+    description: Tenant and per-application custom CSS stylesheets.
+  - name: ThemeAdministration
+    description: Palette generation, tenant theme seeding, and cache purge operations.
+paths:
+
+  # ---- Public resolution ----------------------------------------------------
+
+  /resolved:
+    get:
+      tags: [ThemeResolution]
+      summary: Resolve the theme for a registered public host
+      operationId: resolveHostTheme
+      x-command-id: theme.rest-resolution.resolve-host
+      security: []
+      description: |
+        Resolves the tenant exclusively from the request Host and an active issuer or
+        verifier public-endpoint binding. Unknown, disabled, ambiguous, or cross-tenant
+        hosts return 404. No tenant identifier is accepted in this route.
+      parameters:
+        - $ref: './theme-components.yml#/components/parameters/VariantQuery'
+        - $ref: './theme-components.yml#/components/parameters/ApplicationIdQuery'
+        - $ref: './theme-components.yml#/components/parameters/ResolutionModeQuery'
+        - $ref: './theme-components.yml#/components/parameters/IfNoneMatchHeader'
+      responses:
+        '200':
+          description: Resolved theme for the registered request host.
+          content:
+            application/json:
+              schema:
+                $ref: './theme-components.yml#/components/schemas/ResolvedTheme'
+        '304':
+          description: Cached theme is still current.
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /resolved/css:
+    get:
+      tags: [ThemeResolution]
+      summary: Resolve theme CSS for a registered public host
+      operationId: resolveHostThemeCss
+      x-command-id: theme.rest-resolution.css-host
+      security: []
+      description: Host-resolved CSS companion to `GET /resolved`.
+      parameters:
+        - $ref: './theme-components.yml#/components/parameters/VariantQuery'
+        - $ref: './theme-components.yml#/components/parameters/ApplicationIdQuery'
+        - $ref: './theme-components.yml#/components/parameters/ResolutionModeQuery'
+        - $ref: './theme-components.yml#/components/parameters/IfNoneMatchHeader'
+      responses:
+        '200':
+          description: Resolved theme as CSS custom properties.
+          content:
+            text/css:
+              schema:
+                type: string
+        '304':
+          description: Cached CSS is still current.
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /{tenant}/resolved:
+    parameters:
+      - $ref: './theme-components.yml#/components/parameters/TenantPath'
+    get:
+      tags: [ThemeResolution]
+      summary: Resolve theme
+      operationId: resolveTheme
+      x-command-id: theme.rest-resolution.resolve
+      security: []
+      description: |
+        Resolves the effective theme for a tenant, optionally scoped to a registered
+        application and variant. Later scopes win: SYSTEM < PRODUCT < TENANT < APPLICATION
+        < PRINCIPAL; the PRODUCT and APPLICATION layers apply only when `applicationId` is
+        supplied. Returns 404 for an unknown tenant; a known tenant with no definitions
+        resolves to system defaults with `fallback=true` and `X-Theme-Fallback: true`.
+      parameters:
+        - $ref: './theme-components.yml#/components/parameters/VariantQuery'
+        - $ref: './theme-components.yml#/components/parameters/ApplicationIdQuery'
+        - $ref: './theme-components.yml#/components/parameters/ResolutionModeQuery'
+        - $ref: './theme-components.yml#/components/parameters/IfNoneMatchHeader'
+      responses:
+        '200':
+          description: Resolved theme.
+          headers:
+            ETag:
+              description: Strong ETag over the resolved tokens and applied layers.
+              schema:
+                type: string
+            X-Theme-Fallback:
+              description: True when the tenant has no definitions and system defaults were served.
+              schema:
+                type: boolean
+          content:
+            application/json:
+              schema:
+                $ref: './theme-components.yml#/components/schemas/ResolvedTheme'
+        '304':
+          description: Cached theme is still current.
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /{tenant}/resolved/css:
+    parameters:
+      - $ref: './theme-components.yml#/components/parameters/TenantPath'
+    get:
+      tags: [ThemeResolution]
+      summary: Resolve theme CSS
+      operationId: resolveThemeCss
+      x-command-id: theme.rest-resolution.css
+      security: []
+      description: |
+        Resolves the effective theme and returns it as CSS custom properties. Same
+        parameters and tenant semantics as `GET /{tenant}/resolved`.
+      parameters:
+        - $ref: './theme-components.yml#/components/parameters/VariantQuery'
+        - $ref: './theme-components.yml#/components/parameters/ApplicationIdQuery'
+        - $ref: './theme-components.yml#/components/parameters/ResolutionModeQuery'
+        - $ref: './theme-components.yml#/components/parameters/IfNoneMatchHeader'
+      responses:
+        '200':
+          description: Resolved theme as CSS custom properties.
+          headers:
+            ETag:
+              description: Strong ETag over the resolved tokens and applied layers.
+              schema:
+                type: string
+            X-Theme-Fallback:
+              description: True when the tenant has no definitions and system defaults were served.
+              schema:
+                type: boolean
+          content:
+            text/css:
+              schema:
+                type: string
+        '304':
+          description: Cached CSS is still current.
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /{tenant}/applications/{applicationId}/features/{featureId}/resolved:
+    parameters:
+      - $ref: './theme-components.yml#/components/parameters/TenantPath'
+      - $ref: './theme-components.yml#/components/parameters/ApplicationIdPath'
+      - $ref: './theme-components.yml#/components/parameters/FeatureIdPath'
+    get:
+      tags: [ThemeResolution]
+      summary: Resolve a feature for an application
+      operationId: resolveApplicationFeature
+      x-command-id: theme.rest-feature.resolve
+      security: []
+      description: |
+        Resolves the design elements of one feature for a registered application: what a
+        running application fetches for itself. Per element, the first match wins:
+        application binding (variant, then common), tenant binding (variant, then common),
+        product default, element default, then the element's fallback token key; a required
+        element that resolves to nothing is listed in `missingRequired`.
+      parameters:
+        - $ref: './theme-components.yml#/components/parameters/VariantQuery'
+        - $ref: './theme-components.yml#/components/parameters/IfNoneMatchHeader'
+      responses:
+        '200':
+          description: Resolved feature elements.
+          headers:
+            ETag:
+              description: Strong ETag over the resolved element values and origins.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: './theme-components.yml#/components/schemas/ResolvedFeature'
+        '304':
+          description: Cached feature resolution is still current.
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /{tenant}/products/{productType}/features/{featureId}/resolved:
+    parameters:
+      - $ref: './theme-components.yml#/components/parameters/TenantPath'
+      - $ref: './theme-components.yml#/components/parameters/ProductTypePath'
+      - $ref: './theme-components.yml#/components/parameters/FeatureIdPath'
+    get:
+      tags: [ThemeResolution]
+      summary: Resolve a feature at product level
+      operationId: resolveProductFeature
+      x-command-id: theme.rest-feature.resolve-product
+      security: []
+      description: |
+        Resolves the design elements of one feature at tenant level for a product type,
+        without an application override layer: the defaults every application of this
+        product inherits.
+      parameters:
+        - $ref: './theme-components.yml#/components/parameters/VariantQuery'
+        - $ref: './theme-components.yml#/components/parameters/IfNoneMatchHeader'
+      responses:
+        '200':
+          description: Resolved feature elements.
+          headers:
+            ETag:
+              description: Strong ETag over the resolved element values and origins.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: './theme-components.yml#/components/schemas/ResolvedFeature'
+        '304':
+          description: Cached feature resolution is still current.
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  # ---- Stylesheets ------------------------------------------------------------
+
+  /{tenant}/stylesheet:
+    parameters:
+      - $ref: './theme-components.yml#/components/parameters/TenantPath'
+    get:
+      tags: [ThemeStylesheets]
+      summary: Get the tenant stylesheet
+      operationId: getTenantStylesheet
+      x-command-id: theme.rest-stylesheet.serve
+      security: []
+      description: Serves the tenant's custom CSS stylesheet. Returns 404 for an unknown tenant or when no stylesheet is set.
+      parameters:
+        - $ref: './theme-components.yml#/components/parameters/IfNoneMatchHeader'
+      responses:
+        '200':
+          description: The tenant stylesheet.
+          headers:
+            ETag:
+              schema:
+                type: string
+          content:
+            text/css:
+              schema:
+                type: string
+        '304':
+          description: Cached stylesheet is still current.
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+    put:
+      tags: [ThemeStylesheets]
+      summary: Set the tenant stylesheet
+      operationId: setTenantStylesheet
+      x-command-id: theme.rest-stylesheet.set
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './theme-components.yml#/components/schemas/StylesheetInput'
+      responses:
+        '204':
+          description: The stylesheet was stored.
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+    delete:
+      tags: [ThemeStylesheets]
+      summary: Delete the tenant stylesheet
+      operationId: deleteTenantStylesheet
+      x-command-id: theme.rest-stylesheet.delete
+      responses:
+        '204':
+          description: The stylesheet was deleted.
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /{tenant}/applications/{applicationId}/stylesheet:
+    parameters:
+      - $ref: './theme-components.yml#/components/parameters/TenantPath'
+      - $ref: './theme-components.yml#/components/parameters/ApplicationIdPath'
+    get:
+      tags: [ThemeStylesheets]
+      summary: Get an application stylesheet
+      operationId: getApplicationStylesheet
+      x-command-id: theme.rest-stylesheet.serve-application
+      security: []
+      description: Serves the custom CSS stylesheet of one registered application. Returns 404 for an unknown tenant or application, or when no stylesheet is set.
+      parameters:
+        - $ref: './theme-components.yml#/components/parameters/IfNoneMatchHeader'
+      responses:
+        '200':
+          description: The application stylesheet.
+          headers:
+            ETag:
+              schema:
+                type: string
+          content:
+            text/css:
+              schema:
+                type: string
+        '304':
+          description: Cached stylesheet is still current.
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+    put:
+      tags: [ThemeStylesheets]
+      summary: Set an application stylesheet
+      operationId: setApplicationStylesheet
+      x-command-id: theme.rest-stylesheet.set-application
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './theme-components.yml#/components/schemas/StylesheetInput'
+      responses:
+        '204':
+          description: The stylesheet was stored.
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+    delete:
+      tags: [ThemeStylesheets]
+      summary: Delete an application stylesheet
+      operationId: deleteApplicationStylesheet
+      x-command-id: theme.rest-stylesheet.delete-application
+      responses:
+        '204':
+          description: The stylesheet was deleted.
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  # ---- Brand ------------------------------------------------------------------
+
+  /{tenant}/brand:
+    parameters:
+      - $ref: './theme-components.yml#/components/parameters/TenantPath'
+    get:
+      tags: [ThemeBrand]
+      summary: Get the tenant brand
+      operationId: getBrand
+      x-command-id: theme.rest-brand.get
+      responses:
+        '200':
+          description: The tenant brand.
+          content:
+            application/json:
+              schema:
+                $ref: './theme-components.yml#/components/schemas/BrandOutput'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+    put:
+      tags: [ThemeBrand]
+      summary: Set the tenant brand
+      operationId: setBrand
+      x-command-id: theme.rest-brand.set
+      description: >-
+        Applies the tenant brand and regenerates the palette tokens in the canonical tenant
+        definitions, preserving power overrides. Simple and advanced modes compose because
+        they target the same definitions.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './theme-components.yml#/components/schemas/BrandInput'
+      responses:
+        '200':
+          description: The updated tenant brand.
+          content:
+            application/json:
+              schema:
+                $ref: './theme-components.yml#/components/schemas/BrandOutput'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /{tenant}/applications/{applicationId}/brand:
+    parameters:
+      - $ref: './theme-components.yml#/components/parameters/TenantPath'
+      - $ref: './theme-components.yml#/components/parameters/ApplicationIdPath'
+    get:
+      tags: [ThemeBrand]
+      summary: Get an application brand
+      operationId: getApplicationBrand
+      x-command-id: theme.rest-brand.get-application
+      responses:
+        '200':
+          description: The application brand override.
+          content:
+            application/json:
+              schema:
+                $ref: './theme-components.yml#/components/schemas/BrandOutput'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+    put:
+      tags: [ThemeBrand]
+      summary: Set an application brand
+      operationId: setApplicationBrand
+      x-command-id: theme.rest-brand.set-application
+      description: >-
+        Applies a sparse brand override for one registered application. Set properties
+        override the tenant brand for this application; omitted properties keep cascading
+        from the tenant default.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './theme-components.yml#/components/schemas/ApplicationBrandInput'
+      responses:
+        '200':
+          description: The updated application brand.
+          content:
+            application/json:
+              schema:
+                $ref: './theme-components.yml#/components/schemas/BrandOutput'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+    delete:
+      tags: [ThemeBrand]
+      summary: Delete an application brand
+      operationId: deleteApplicationBrand
+      x-command-id: theme.rest-brand.delete-application
+      description: Removes the application's brand override so it cascades from the tenant brand again.
+      responses:
+        '204':
+          description: The application brand override was deleted.
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  # ---- Applications registry ---------------------------------------------------
+
+  /{tenant}/applications:
+    parameters:
+      - $ref: './theme-components.yml#/components/parameters/TenantPath'
+    get:
+      tags: [ThemeApplications]
+      summary: List applications
+      operationId: listApplications
+      x-command-id: theme.rest-application.list
+      description: >-
+        Returns every brandable application the tenant runs, as a plain array:
+        platform-managed instances merged from the platform instance registries plus
+        applications registered through this API.
+      responses:
+        '200':
+          description: The tenant's applications.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: './theme-components.yml#/components/schemas/Application'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+    post:
+      tags: [ThemeApplications]
+      summary: Register an application
+      operationId: registerApplication
+      x-command-id: theme.rest-application.register
+      description: Registers an external application (a self-hosted portal, a mobile app) as a brandable instance.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './theme-components.yml#/components/schemas/ApplicationInput'
+      responses:
+        '201':
+          description: The registered application.
+          content:
+            application/json:
+              schema:
+                $ref: './theme-components.yml#/components/schemas/Application'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /{tenant}/applications/{applicationId}:
+    parameters:
+      - $ref: './theme-components.yml#/components/parameters/TenantPath'
+      - $ref: './theme-components.yml#/components/parameters/ApplicationIdPath'
+    get:
+      tags: [ThemeApplications]
+      summary: Get an application
+      operationId: getApplication
+      x-command-id: theme.rest-application.get
+      responses:
+        '200':
+          description: The application.
+          content:
+            application/json:
+              schema:
+                $ref: './theme-components.yml#/components/schemas/Application'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+    put:
+      tags: [ThemeApplications]
+      summary: Update an application
+      operationId: updateApplication
+      x-command-id: theme.rest-application.update
+      description: Updates a registered application. Platform-managed instances are read-only here and return 409.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './theme-components.yml#/components/schemas/ApplicationInput'
+      responses:
+        '200':
+          description: The updated application.
+          content:
+            application/json:
+              schema:
+                $ref: './theme-components.yml#/components/schemas/Application'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '409':
+          $ref: './common-components.yml#/components/responses/Conflict'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+    delete:
+      tags: [ThemeApplications]
+      summary: Delete an application
+      operationId: deleteApplication
+      x-command-id: theme.rest-application.delete
+      description: Deletes a registered application. Platform-managed instances are read-only here and return 409.
+      responses:
+        '204':
+          description: The application was deleted.
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '409':
+          $ref: './common-components.yml#/components/responses/Conflict'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  # ---- Features -----------------------------------------------------------------
+
+  /{tenant}/products/{productType}/features:
+    parameters:
+      - $ref: './theme-components.yml#/components/parameters/TenantPath'
+      - $ref: './theme-components.yml#/components/parameters/ProductTypePath'
+    get:
+      tags: [ThemeFeatures]
+      summary: List features
+      operationId: listFeatures
+      x-command-id: theme.rest-feature.list
+      description: Returns the brandable features of a product type as a plain array, built-in and custom.
+      responses:
+        '200':
+          description: The product's features.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: './theme-components.yml#/components/schemas/FeatureDefinition'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+    post:
+      tags: [ThemeFeatures]
+      summary: Create a custom feature
+      operationId: createFeature
+      x-command-id: theme.rest-feature.create
+      description: Registers a custom feature, as published by user-built workflows, forms, and portal pages.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './theme-components.yml#/components/schemas/FeatureInput'
+      responses:
+        '201':
+          description: The created feature.
+          content:
+            application/json:
+              schema:
+                $ref: './theme-components.yml#/components/schemas/FeatureDefinition'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /{tenant}/products/{productType}/features/{featureId}:
+    parameters:
+      - $ref: './theme-components.yml#/components/parameters/TenantPath'
+      - $ref: './theme-components.yml#/components/parameters/ProductTypePath'
+      - $ref: './theme-components.yml#/components/parameters/FeatureIdPath'
+    get:
+      tags: [ThemeFeatures]
+      summary: Get a feature
+      operationId: getFeature
+      x-command-id: theme.rest-feature.get
+      responses:
+        '200':
+          description: The feature.
+          content:
+            application/json:
+              schema:
+                $ref: './theme-components.yml#/components/schemas/FeatureDefinition'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+    put:
+      tags: [ThemeFeatures]
+      summary: Update a custom feature
+      operationId: updateFeature
+      x-command-id: theme.rest-feature.update
+      description: Updates a custom feature. Built-in features are read-only and return 409.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './theme-components.yml#/components/schemas/FeatureInput'
+      responses:
+        '200':
+          description: The updated feature.
+          content:
+            application/json:
+              schema:
+                $ref: './theme-components.yml#/components/schemas/FeatureDefinition'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '409':
+          $ref: './common-components.yml#/components/responses/Conflict'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+    delete:
+      tags: [ThemeFeatures]
+      summary: Delete a custom feature
+      operationId: deleteFeature
+      x-command-id: theme.rest-feature.delete
+      description: Deletes a custom feature. Built-in features are read-only and return 409.
+      responses:
+        '204':
+          description: The feature was deleted.
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '409':
+          $ref: './common-components.yml#/components/responses/Conflict'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  # ---- Design element bindings ----------------------------------------------------
+
+  /{tenant}/products/{productType}/features/{featureId}/elements:
+    parameters:
+      - $ref: './theme-components.yml#/components/parameters/TenantPath'
+      - $ref: './theme-components.yml#/components/parameters/ProductTypePath'
+      - $ref: './theme-components.yml#/components/parameters/FeatureIdPath'
+    get:
+      tags: [ThemeElements]
+      summary: List element bindings
+      operationId: listElementBindings
+      x-command-id: theme.rest-element.list
+      description: >-
+        Returns the stored design element bindings of a feature as a plain array. Without
+        filters, all bindings are returned; `applicationId` and `variant` narrow to one slot.
+      parameters:
+        - $ref: './theme-components.yml#/components/parameters/ApplicationIdQuery'
+        - $ref: './theme-components.yml#/components/parameters/VariantQuery'
+      responses:
+        '200':
+          description: The stored element bindings.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: './theme-components.yml#/components/schemas/ElementBinding'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /{tenant}/products/{productType}/features/{featureId}/elements/{elementId}:
+    parameters:
+      - $ref: './theme-components.yml#/components/parameters/TenantPath'
+      - $ref: './theme-components.yml#/components/parameters/ProductTypePath'
+      - $ref: './theme-components.yml#/components/parameters/FeatureIdPath'
+      - $ref: './theme-components.yml#/components/parameters/ElementIdPath'
+    put:
+      tags: [ThemeElements]
+      summary: Set an element binding
+      operationId: setElementBinding
+      x-command-id: theme.rest-element.set
+      description: >-
+        Binds a value to a design element at tenant scope (`applicationId` absent: the
+        default for every application of the product) or application scope, optionally per
+        variant. The `applicationId` and `variant` query parameters select the exact
+        binding slot. Exactly one of `asset` or `text` is set, matching the element kind.
+      parameters:
+        - $ref: './theme-components.yml#/components/parameters/ApplicationIdQuery'
+        - $ref: './theme-components.yml#/components/parameters/VariantQuery'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './theme-components.yml#/components/schemas/ElementBindingInput'
+      responses:
+        '200':
+          description: The stored element binding.
+          content:
+            application/json:
+              schema:
+                $ref: './theme-components.yml#/components/schemas/ElementBinding'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+    delete:
+      tags: [ThemeElements]
+      summary: Delete an element binding
+      operationId: deleteElementBinding
+      x-command-id: theme.rest-element.delete
+      description: >-
+        Removes the binding at the exact slot selected by the `applicationId` and `variant`
+        query parameters, so resolution falls through to the next layer.
+      parameters:
+        - $ref: './theme-components.yml#/components/parameters/ApplicationIdQuery'
+        - $ref: './theme-components.yml#/components/parameters/VariantQuery'
+      responses:
+        '204':
+          description: The element binding was deleted.
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  # ---- Theme definitions -----------------------------------------------------------
+
+  /{tenant}/definitions:
+    parameters:
+      - $ref: './theme-components.yml#/components/parameters/TenantPath'
+    get:
+      tags: [ThemeDefinitions]
+      summary: List theme definitions
+      operationId: listThemeDefinitions
+      x-command-id: theme.rest-definition.list
+      description: Returns the tenant's theme definitions matching the optional filters, as a plain array.
+      parameters:
+        - $ref: './theme-components.yml#/components/parameters/ScopeQuery'
+        - $ref: './theme-components.yml#/components/parameters/ProductTypeQuery'
+        - $ref: './theme-components.yml#/components/parameters/ApplicationIdQuery'
+        - $ref: './theme-components.yml#/components/parameters/VariantQuery'
+      responses:
+        '200':
+          description: The matching theme definitions.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: './theme-components.yml#/components/schemas/ThemeDefinition'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+    post:
+      tags: [ThemeDefinitions]
+      summary: Create a theme definition
+      operationId: createThemeDefinition
+      x-command-id: theme.rest-definition.create
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './theme-components.yml#/components/schemas/ThemeDefinitionInput'
+      responses:
+        '201':
+          description: The created theme definition.
+          content:
+            application/json:
+              schema:
+                $ref: './theme-components.yml#/components/schemas/ThemeDefinition'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /{tenant}/definitions/validate:
+    parameters:
+      - $ref: './theme-components.yml#/components/parameters/TenantPath'
+    post:
+      tags: [ThemeDefinitions]
+      summary: Validate a theme definition
+      operationId: validateThemeDefinition
+      x-command-id: theme.rest-definition.validate
+      description: Validates a theme definition without saving it, including the scope key rules (PRODUCT requires `productType`, APPLICATION requires `applicationId`, other scopes carry neither).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './theme-components.yml#/components/schemas/ThemeDefinitionInput'
+      responses:
+        '200':
+          description: The validation result.
+          content:
+            application/json:
+              schema:
+                $ref: './theme-components.yml#/components/schemas/ThemeValidationResult'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /{tenant}/definitions/{themeId}:
+    parameters:
+      - $ref: './theme-components.yml#/components/parameters/TenantPath'
+      - $ref: './theme-components.yml#/components/parameters/ThemeIdPath'
+    get:
+      tags: [ThemeDefinitions]
+      summary: Get a theme definition
+      operationId: getThemeDefinition
+      x-command-id: theme.rest-definition.get
+      responses:
+        '200':
+          description: The theme definition.
+          content:
+            application/json:
+              schema:
+                $ref: './theme-components.yml#/components/schemas/ThemeDefinition'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+    put:
+      tags: [ThemeDefinitions]
+      summary: Update a theme definition
+      operationId: updateThemeDefinition
+      x-command-id: theme.rest-definition.update
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './theme-components.yml#/components/schemas/ThemeDefinitionInput'
+      responses:
+        '200':
+          description: The updated theme definition.
+          content:
+            application/json:
+              schema:
+                $ref: './theme-components.yml#/components/schemas/ThemeDefinition'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+    delete:
+      tags: [ThemeDefinitions]
+      summary: Delete a theme definition
+      operationId: deleteThemeDefinition
+      x-command-id: theme.rest-definition.delete
+      responses:
+        '204':
+          description: The theme definition was deleted.
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /{tenant}/definitions/{themeId}/undo:
+    parameters:
+      - $ref: './theme-components.yml#/components/parameters/TenantPath'
+      - $ref: './theme-components.yml#/components/parameters/ThemeIdPath'
+    post:
+      tags: [ThemeDefinitions]
+      summary: Undo a theme definition update
+      operationId: undoThemeDefinition
+      x-command-id: theme.rest-definition.undo
+      description: Undoes the last update to a theme definition, or reverts to the version given in the body.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: './theme-components.yml#/components/schemas/UndoThemeInput'
+      responses:
+        '200':
+          description: The restored theme definition with the version transition.
+          content:
+            application/json:
+              schema:
+                $ref: './theme-components.yml#/components/schemas/UndoThemeOutput'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /{tenant}/definitions/{themeId}/restore:
+    parameters:
+      - $ref: './theme-components.yml#/components/parameters/TenantPath'
+      - $ref: './theme-components.yml#/components/parameters/ThemeIdPath'
+    post:
+      tags: [ThemeDefinitions]
+      summary: Restore a deleted theme definition
+      operationId: restoreThemeDefinition
+      x-command-id: theme.rest-definition.restore
+      description: Restores a soft-deleted theme definition.
+      responses:
+        '200':
+          description: The restored theme definition.
+          content:
+            application/json:
+              schema:
+                $ref: './theme-components.yml#/components/schemas/RestoreThemeOutput'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /{tenant}/definitions/{themeId}/history:
+    parameters:
+      - $ref: './theme-components.yml#/components/parameters/TenantPath'
+      - $ref: './theme-components.yml#/components/parameters/ThemeIdPath'
+    get:
+      tags: [ThemeDefinitions]
+      summary: Get theme definition history
+      operationId: getThemeDefinitionHistory
+      x-command-id: theme.rest-definition.history
+      description: Returns the version history of a theme definition as a plain array, newest first.
+      responses:
+        '200':
+          description: The definition's history entries.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: './theme-components.yml#/components/schemas/ThemeHistoryEntry'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  # ---- Tokens ----------------------------------------------------------------------
+
+  /{tenant}/tokens:
+    parameters:
+      - $ref: './theme-components.yml#/components/parameters/TenantPath'
+    get:
+      tags: [ThemeTokens]
+      summary: Get the editable token set
+      operationId: getTokens
+      x-command-id: theme.rest-token.get
+      description: >-
+        Returns the editable token set with effective values for the addressed
+        `(scope, variant, applicationId)` combination: tenant scope by default,
+        application scope when `applicationId` is given.
+      parameters:
+        - $ref: './theme-components.yml#/components/parameters/VariantQuery'
+        - $ref: './theme-components.yml#/components/parameters/ApplicationIdQuery'
+      responses:
+        '200':
+          description: The editable token set.
+          content:
+            application/json:
+              schema:
+                $ref: './theme-components.yml#/components/schemas/TokenSetOutput'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+    patch:
+      tags: [ThemeTokens]
+      summary: Patch tokens
+      operationId: patchTokens
+      x-command-id: theme.rest-token.patch
+      description: >-
+        Upserts and removes tokens in the canonical definition for the addressed
+        `(scope, variant, applicationId)` combination. Composes with the brand endpoints,
+        which write the same canonical definitions.
+      parameters:
+        - $ref: './theme-components.yml#/components/parameters/VariantQuery'
+        - $ref: './theme-components.yml#/components/parameters/ApplicationIdQuery'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './theme-components.yml#/components/schemas/TokenPatchRequest'
+      responses:
+        '200':
+          description: The token set after the patch.
+          content:
+            application/json:
+              schema:
+                $ref: './theme-components.yml#/components/schemas/TokenSetOutput'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  # ---- Operations ---------------------------------------------------------------------
+
+  /palette/generate:
+    post:
+      tags: [ThemeAdministration]
+      summary: Generate a palette
+      operationId: generatePalette
+      x-command-id: theme.rest-palette.generate
+      description: Generates a Material Design 3 tonal palette from a seed color.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './theme-components.yml#/components/schemas/GeneratePaletteInput'
+      responses:
+        '200':
+          description: The generated palette.
+          content:
+            application/json:
+              schema:
+                $ref: './theme-components.yml#/components/schemas/GeneratePaletteOutput'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /{tenant}/seed:
+    parameters:
+      - $ref: './theme-components.yml#/components/parameters/TenantPath'
+    post:
+      tags: [ThemeAdministration]
+      summary: Seed default themes
+      operationId: seedTheme
+      x-command-id: theme.rest-seed.create
+      description: Seeds the default theme definitions for a tenant.
+      responses:
+        '200':
+          description: The seeding result.
+          content:
+            application/json:
+              schema:
+                $ref: './theme-components.yml#/components/schemas/SeedThemeOutput'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /{tenant}/branding/context:
+    parameters:
+      - $ref: './theme-components.yml#/components/parameters/TenantPath'
+    get:
+      tags: [ThemeResolution]
+      summary: Resolve branding context
+      operationId: resolveBrandingContext
+      x-command-id: theme.rest-branding.resolve
+      description: Resolves the tenant's branding as a flat, template-friendly key/value context, for cross-domain use such as email templates.
+      parameters:
+        - $ref: './theme-components.yml#/components/parameters/VariantQuery'
+        - $ref: './theme-components.yml#/components/parameters/ApplicationIdQuery'
+      responses:
+        '200':
+          description: Template-friendly branding context.
+          content:
+            application/json:
+              schema:
+                $ref: './theme-components.yml#/components/schemas/ResolveBrandingContextOutput'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /cache/purge:
+    post:
+      tags: [ThemeAdministration]
+      summary: Purge the theme cache
+      operationId: purgeThemeCache
+      x-command-id: theme.rest-cache.purge
+      description: Purges the theme resolution cache, for one tenant or globally. Platform admin operation.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: './theme-components.yml#/components/schemas/PurgeCacheInput'
+      responses:
+        '200':
+          description: The purge result.
+          content:
+            application/json:
+              schema:
+                $ref: './theme-components.yml#/components/schemas/PurgeCacheOutput'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+components:
+  securitySchemes:
+    bearer:
+      $ref: './common-components.yml#/components/securitySchemes/bearer'

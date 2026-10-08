@@ -1,26 +1,29 @@
 /*
- * (c) 2026 Sphereon International B.V.
- * Test-only binding that forces SphereonAsBridge (in-process) over HttpAsBridge
- * when both are on the classpath.
+ * Copyright 2026 Sphereon International B.V.
+ * Test-only public accessor for the production in-process authorization-server bridge.
  */
 package com.sphereon.openid.oid4vci.integration
 
 import com.sphereon.di.session.SessionScope
 import com.sphereon.openid.oid4vci.issuer.bridge.Oid4vciAuthorizationServerBridge
 import com.sphereon.openid.oid4vci.issuer.impl.bridge.SphereonAsBridge
-import com.sphereon.openid.oid4vci.issuer.impl.http.HttpAsBridge
-import dev.zacsweers.metro.ContributesBinding
-import dev.zacsweers.metro.Inject
-import dev.zacsweers.metro.SingleIn
-import dev.zacsweers.metro.binding
+import dev.zacsweers.metro.ContributesTo
+import kotlin.test.Test
+import kotlin.test.assertIs
+import kotlin.test.assertSame
 
-/**
- * In tests, we want the in-process AS bridge (SphereonAsBridge) rather than HttpAsBridge
- * which tries to connect to localhost:8080. This binding replaces HttpAsBridge.
- */
-@Inject
-@SingleIn(SessionScope::class)
-@ContributesBinding(SessionScope::class, binding = binding<Oid4vciAuthorizationServerBridge>(), replaces = [HttpAsBridge::class])
-class TestInProcessAsBridge(
-    private val delegate: SphereonAsBridge,
-) : Oid4vciAuthorizationServerBridge by delegate
+@ContributesTo(SessionScope::class)
+interface InProcessAsBridgeTestGraph {
+    val oid4vciAuthorizationServerBridge: Oid4vciAuthorizationServerBridge
+}
+
+class InProcessAsBridgeCompositionTest {
+    @Test
+    fun publicBridgeSelectsTheSameProductionInProcessAuthority() {
+        val ctx = Oid4vciTestContext(this)
+        val graph = ctx.session.graph as InProcessAsBridgeTestGraph
+        val bridge = graph.oid4vciAuthorizationServerBridge
+        assertIs<SphereonAsBridge>(bridge)
+        assertSame(bridge, graph.oid4vciAuthorizationServerBridge)
+    }
+}

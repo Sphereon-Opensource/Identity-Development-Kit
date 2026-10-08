@@ -1,0 +1,35 @@
+import com.sphereon.gradle.plugin.configureIosTargetsIfEnabled
+plugins {
+    alias(sphereonplug.plugins.org.jetbrains.kotlin.multiplatform)
+    alias(sphereonplug.plugins.org.jetbrains.kotlin.plugin.serialization)
+    alias(sphereonplug.plugins.com.android.kotlin.multiplatform.library)
+    alias(sphereonplug.plugins.com.sphereon.gradle.plugin.project.publication)
+    id("maven-publish")
+}
+
+kotlin {
+    kotlin.applyDefaultHierarchyTemplate()
+    jvm()
+
+    androidLibrary {
+        namespace = "com.sphereon.mdoc.transport.ble"
+        compileSdk = 35
+    }
+
+    configureIosTargetsIfEnabled()
+
+    sourceSets {
+        val commonMain by getting {
+            dependencies {
+                // Transport core abstractions
+                api(projects.libMdocCorePublic)
+
+                // BLE platform dependencies
+                api(if (rootProject.findProperty("idk.consumeInfrastructureAsArtifacts") == "true") "com.sphereon.idk:lib-data-link-ble-public:$version" else project(":lib-data-link-ble-public"))
+
+                // Coroutines
+                implementation(sphereonlib.org.jetbrains.kotlinx.coroutines.core)
+            }
+        }
+    }
+}

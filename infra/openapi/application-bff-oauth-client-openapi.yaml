@@ -1,0 +1,462 @@
+openapi: 3.0.4
+info:
+  title: Application BFF OAuth Client API
+  version: 1.0.0
+  x-products: [edk, vdx]
+  description: |
+    Workload-only transport for browser-facing backend-for-frontend OAuth client state.
+    The platform remains an OAuth client; it does not create authorization-server
+    sessions, codes, or tokens. Browser clients retain only an opaque owner handle.
+    OAuth transactions and token sets remain encrypted in the platform application
+    database. Every operation requires an authenticated client_credentials workload
+    token with the deployment-configured exact issuer, client id, single audience,
+    and single scope.
+servers:
+  - url: https://platform.example.com/api/platform/internal/v1/bff/oauth-client
+tags:
+  - name: BffOAuthClient
+    description: Backend-for-frontend OAuth client operations.
+security:
+  - workloadBearer: []
+paths:
+  /start:
+    post:
+      tags: [BffOAuthClient]
+      operationId: startBffOAuthAuthorization
+      summary: Start an OAuth authorization transaction
+      description: |
+        Resolves the canonical testing-console AS/client binding for the selected
+        issuer or verifier instance. If ownerHandle is absent, creates a new opaque
+        browser owner handle. The authorization state, nonce, PKCE verifier, metadata,
+        and binding remain backend-side.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StartBffOAuthRequest'
+      responses:
+        '200':
+          description: Authorization transaction created.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+            Pragma:
+              $ref: '#/components/headers/NoCache'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StartBffOAuthResponse'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /complete:
+    post:
+      tags: [BffOAuthClient]
+      operationId: completeBffOAuthAuthorization
+      summary: Complete an OAuth authorization response
+      description: |
+        Atomically consumes the one-time state, validates the exact RFC 9207 response
+        issuer, redirect URI, nonce, selected binding, ID token, and signed access
+        token, then attaches or replaces the selected resource grant. The owner handle is
+        recovered from encrypted server-side state correlation, so no browser cookie is
+        required on a cross-site form_post callback.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CompleteBffOAuthRequest'
+      responses:
+        '200':
+          description: OAuth client grant stored.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+            Pragma:
+              $ref: '#/components/headers/NoCache'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CompleteBffOAuthResponse'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /status:
+    post:
+      tags: [BffOAuthClient]
+      operationId: getBffOAuthStatus
+      summary: Get one exact resource grant
+      description: Returns only the grant bound to the registered public origin, resource kind, instance, and opaque owner.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StatusBffOAuthRequest'
+      responses:
+        '200':
+          description: Exact-resource OAuth client grant status.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+            Pragma:
+              $ref: '#/components/headers/NoCache'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BffOAuthGrantStatus'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/GrantUnavailable'
+  /resolve:
+    post:
+      tags: [BffOAuthClient]
+      operationId: resolveBffOAuthAccessToken
+      summary: Resolve a short-lived access token
+      description: |
+        Returns only a currently valid short-lived access token to the authenticated
+        BFF. Refresh is performed backend-side and cross-node serialized. Refresh
+        tokens and ID tokens are never returned.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResolveBffOAuthRequest'
+      responses:
+        '200':
+          description: Valid short-lived access token.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+            Pragma:
+              $ref: '#/components/headers/NoCache'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResolveBffOAuthResponse'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /revoke:
+    post:
+      tags: [BffOAuthClient]
+      operationId: revokeBffOAuthGrant
+      summary: Revoke one exact resource grant
+      description: Revokes only the grant bound to the registered public origin, resource kind, instance, and opaque owner.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RevokeBffOAuthRequest'
+      responses:
+        '200':
+          description: Revocation completed.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+            Pragma:
+              $ref: '#/components/headers/NoCache'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RevokeBffOAuthResponse'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+components:
+  securitySchemes:
+    workloadBearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Exact configured platform-issued client_credentials token.
+  headers:
+    NoStore:
+      description: Sensitive OAuth client responses are never cacheable.
+      schema:
+        type: string
+        enum: [no-store]
+    NoCache:
+      description: Legacy cache prevention.
+      schema:
+        type: string
+        enum: [no-cache]
+  responses:
+    InvalidRequest:
+      description: Invalid request or OAuth client operation.
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/NoStore'
+        Pragma:
+          $ref: '#/components/headers/NoCache'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/OAuthClientError'
+    Unauthorized:
+      description: Missing or invalid workload identity.
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/NoStore'
+        Pragma:
+          $ref: '#/components/headers/NoCache'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/OAuthClientError'
+    Forbidden:
+      description: Workload token does not have the exact required scope.
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/NoStore'
+        Pragma:
+          $ref: '#/components/headers/NoCache'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/OAuthClientError'
+    Conflict:
+      description: One-time state replay, concurrent refresh, or predecessor conflict.
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/NoStore'
+        Pragma:
+          $ref: '#/components/headers/NoCache'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/OAuthClientError'
+    GrantUnavailable:
+      description: The exact portal OAuth grant is absent, expired, or revoked.
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/NoStore'
+        Pragma:
+          $ref: '#/components/headers/NoCache'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/OAuthClientError'
+  schemas:
+    BffOAuthResourceKind:
+      type: string
+      enum: [ISSUER, VERIFIER]
+    BffOAuthResponseMode:
+      type: string
+      enum: [QUERY, FORM_POST]
+    OpaqueOwnerHandle:
+      type: string
+      minLength: 32
+      maxLength: 512
+      description: Opaque high-entropy browser handle. Its keyed digest indexes owner grants; the raw value exists only in encrypted, short-lived callback correlation state.
+    PublicBaseUrl:
+      type: string
+      format: uri
+      description: Exact canonical public base URL for one registered instance, consisting of a secure origin plus its optional canonical route prefix. Query, fragment, credentials, traversal, and unregistered host/path combinations are rejected.
+    StartBffOAuthRequest:
+      type: object
+      additionalProperties: false
+      required: [publicBaseUrl, resourceKind, instanceId, redirectUri, responseMode]
+      properties:
+        ownerHandle:
+          $ref: '#/components/schemas/OpaqueOwnerHandle'
+        publicBaseUrl:
+          $ref: '#/components/schemas/PublicBaseUrl'
+        resourceKind:
+          $ref: '#/components/schemas/BffOAuthResourceKind'
+        instanceId:
+          type: string
+          minLength: 1
+        redirectUri:
+          type: string
+          format: uri
+        responseMode:
+          $ref: '#/components/schemas/BffOAuthResponseMode'
+        surface:
+          type: string
+          enum: [testing-console, catalog-console]
+          description: Developer-console surface that owns this grant. Isolates catalog-console from testing-console when they share an instance.
+    StartBffOAuthResponse:
+      type: object
+      additionalProperties: false
+      required: [ownerHandle, authorizationUrl, expiresAt]
+      properties:
+        ownerHandle:
+          $ref: '#/components/schemas/OpaqueOwnerHandle'
+        authorizationUrl:
+          type: string
+          format: uri
+        expiresAt:
+          type: string
+          format: date-time
+    CompleteBffOAuthRequest:
+      type: object
+      additionalProperties: false
+      required: [publicBaseUrl, resourceKind, instanceId, callbackUrl]
+      properties:
+        publicBaseUrl:
+          $ref: '#/components/schemas/PublicBaseUrl'
+        resourceKind:
+          $ref: '#/components/schemas/BffOAuthResourceKind'
+        instanceId:
+          type: string
+          minLength: 1
+        callbackUrl:
+          type: string
+          format: uri
+          description: Exact callback URL containing the authorization response.
+        callbackFormBody:
+          type: string
+          nullable: true
+          description: Raw form_post body when response_mode is form_post.
+        surface:
+          type: string
+          enum: [testing-console, catalog-console]
+          description: Developer-console surface that owns this grant. Isolates catalog-console from testing-console when they share an instance.
+    CompleteBffOAuthResponse:
+      type: object
+      additionalProperties: false
+      required: [ownerHandle, grant]
+      properties:
+        ownerHandle:
+          $ref: '#/components/schemas/OpaqueOwnerHandle'
+        grant:
+          $ref: '#/components/schemas/BffOAuthGrantStatus'
+    BffOAuthGrantStatus:
+      type: object
+      additionalProperties: false
+      required: [resourceKind, instanceId, issuer, scopes, expiresAt]
+      properties:
+        resourceKind:
+          $ref: '#/components/schemas/BffOAuthResourceKind'
+        instanceId:
+          type: string
+        issuer:
+          type: string
+          format: uri
+        scopes:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+        expiresAt:
+          type: string
+          format: date-time
+    StatusBffOAuthRequest:
+      type: object
+      additionalProperties: false
+      required: [ownerHandle, publicBaseUrl, resourceKind, instanceId]
+      properties:
+        ownerHandle:
+          $ref: '#/components/schemas/OpaqueOwnerHandle'
+        publicBaseUrl:
+          $ref: '#/components/schemas/PublicBaseUrl'
+        resourceKind:
+          $ref: '#/components/schemas/BffOAuthResourceKind'
+        instanceId:
+          type: string
+          minLength: 1
+        surface:
+          type: string
+          enum: [testing-console, catalog-console]
+          description: Developer-console surface that owns this grant. Isolates catalog-console from testing-console when they share an instance.
+    ResolveBffOAuthRequest:
+      type: object
+      additionalProperties: false
+      required: [ownerHandle, publicBaseUrl, resourceKind, instanceId]
+      properties:
+        ownerHandle:
+          $ref: '#/components/schemas/OpaqueOwnerHandle'
+        publicBaseUrl:
+          $ref: '#/components/schemas/PublicBaseUrl'
+        resourceKind:
+          $ref: '#/components/schemas/BffOAuthResourceKind'
+        instanceId:
+          type: string
+          minLength: 1
+        surface:
+          type: string
+          enum: [testing-console, catalog-console]
+          description: Developer-console surface that owns this grant. Isolates catalog-console from testing-console when they share an instance.
+    ResolveBffOAuthResponse:
+      type: object
+      additionalProperties: false
+      required: [accessToken, tokenType, expiresAt, audience]
+      properties:
+        accessToken:
+          type: string
+          minLength: 1
+        tokenType:
+          type: string
+          enum: [Bearer]
+        expiresAt:
+          type: string
+          format: date-time
+        audience:
+          type: string
+          minLength: 1
+        resource:
+          type: string
+          format: uri
+          nullable: true
+    RevokeBffOAuthRequest:
+      type: object
+      additionalProperties: false
+      required: [ownerHandle, publicBaseUrl, resourceKind, instanceId]
+      properties:
+        ownerHandle:
+          $ref: '#/components/schemas/OpaqueOwnerHandle'
+        publicBaseUrl:
+          $ref: '#/components/schemas/PublicBaseUrl'
+        resourceKind:
+          $ref: '#/components/schemas/BffOAuthResourceKind'
+        instanceId:
+          type: string
+          minLength: 1
+        surface:
+          type: string
+          enum: [testing-console, catalog-console]
+          description: Developer-console surface that owns this grant. Isolates catalog-console from testing-console when they share an instance.
+    RevokeBffOAuthResponse:
+      type: object
+      additionalProperties: false
+      required: [revoked]
+      properties:
+        revoked:
+          type: boolean
+    OAuthClientError:
+      type: object
+      additionalProperties: false
+      required: [error]
+      properties:
+        error:
+          type: string
+          enum: [invalid_request, unauthorized, insufficient_scope, grant_unavailable, oauth_client_operation_failed]

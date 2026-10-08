@@ -1,0 +1,581 @@
+openapi: 3.0.4
+info:
+  title: Enterprise Wallet Recovery Components
+  version: 0.1.0
+  description: Complete recovery-process, backup, migration, passkey, and protected-vault schemas.
+paths: {}
+components:
+  schemas:
+    WalletChannel:
+      type: string
+      enum: [WEB, MOBILE]
+    WalletAppRuntime:
+      type: string
+      enum: [WEB, MOBILE, DESKTOP, HEADLESS]
+    EnterpriseWalletRecoveryOldAppDisposition:
+      type: string
+      enum: [RETAIN_ALL, REVOKE_SELECTED, REVOKE_LOST, REVOKE_ALL_FOR_COMPROMISE]
+    EnterpriseWalletNewAppRecoveryState:
+      type: string
+      enum: [AUTHENTICATOR_STARTED, COMPLETED]
+    EnterpriseWalletSuccessorReason:
+      type: string
+      enum: [DELIBERATE_MIGRATION, COMPROMISE, TERMINAL_REVOCATION, SEPARATE_WALLET, PORTABLE_MIGRATION]
+    EnterpriseWalletSourceUnitDisposition:
+      type: string
+      enum: [RETAIN, SUSPEND, REVOKE]
+    EnterpriseWalletSuccessorMigrationState:
+      type: string
+      enum: [AUTHENTICATOR_STARTED, DATA_MIGRATED, COMPLETED]
+    EnterpriseWalletMigrationTransferMode:
+      type: string
+      enum: [WSCD_CONFINED_INTERNAL, PORTABLE_MIGRATION_OBJECT]
+    EnterpriseWalletMigrationExcludedSecret:
+      type: string
+      enum:
+        - WALLET_PRIVATE_KEY
+        - RAW_PIN
+        - REUSABLE_PIN_DERIVED_SECRET
+        - APP_PASSKEY_PRIVATE_KEY
+        - DOCUMENT_ENCRYPTION_KEY
+        - GENERIC_HSM_SIGNING_PRIVILEGE
+    PasskeyCeremonyOptions:
+      type: object
+      additionalProperties: false
+      required:
+        - challengeId
+        - challenge
+        - rpId
+        - rpName
+        - allowedOrigins
+        - userVerification
+        - attestationPolicy
+        - allowedTransports
+        - level3PrfEnabled
+        - expiresAt
+        - credentialIds
+      properties:
+        challengeId: { type: string, minLength: 1 }
+        challenge: { type: string, minLength: 1, writeOnly: true }
+        rpId: { type: string, minLength: 1 }
+        rpName: { type: string, minLength: 1 }
+        allowedOrigins:
+          type: array
+          uniqueItems: true
+          items: { type: string, format: uri }
+        userVerification: { type: string, enum: [required, preferred, discouraged] }
+        attestationPolicy: { type: string, enum: [none, indirect, direct, enterprise] }
+        allowedTransports:
+          type: array
+          uniqueItems: true
+          items: { type: string }
+        level3PrfEnabled: { type: boolean }
+        expiresAt: { type: string, format: date-time }
+        credentialIds:
+          type: array
+          uniqueItems: true
+          items: { type: string }
+    BeginEnterpriseManagedWalletAuthenticatorResult:
+      type: object
+      additionalProperties: false
+      required: [ceremonyRef, walletInstanceId, walletUnitId, appRegistrationId, allocationEvidenceRef, options]
+      properties:
+        ceremonyRef: { type: string, minLength: 1 }
+        walletInstanceId: { type: string, minLength: 1 }
+        walletUnitId: { type: string, minLength: 1 }
+        appRegistrationId: { type: string, minLength: 1 }
+        allocationEvidenceRef: { type: string, minLength: 1 }
+        options:
+          $ref: '#/components/schemas/PasskeyCeremonyOptions'
+    EnterpriseWalletBackupHealthState:
+      type: string
+      enum: [HEALTHY, STALE, UNVERIFIED, MISSING, INVALID]
+    EnterpriseWalletBackupHealth:
+      type: object
+      additionalProperties: false
+      required: [walletUnitId, state]
+      properties:
+        walletUnitId: { type: string, minLength: 1 }
+        state:
+          $ref: '#/components/schemas/EnterpriseWalletBackupHealthState'
+        backupVersion: { type: integer, format: int64, minimum: 1, nullable: true }
+        manifestDigest: { type: string, pattern: '^sha256:[0-9a-f]{64}$', nullable: true }
+        lastVerifiedAtEpochSeconds: { type: integer, format: int64, minimum: 1, nullable: true }
+        lastRestoreDrillAtEpochSeconds: { type: integer, format: int64, minimum: 1, nullable: true }
+        reasonCode: { type: string, minLength: 1, nullable: true }
+    BeginEnterpriseWalletNewAppRecoveryRequest:
+      type: object
+      additionalProperties: false
+      required: [recoveryProcessRef, freshIdvEvidenceRef, choiceRef, channel, runtime, disposition, occurredAtEpochSeconds]
+      properties:
+        recoveryProcessRef: { type: string, minLength: 1 }
+        freshIdvEvidenceRef: { type: string, minLength: 1, writeOnly: true }
+        choiceRef: { type: string, minLength: 1 }
+        channel:
+          $ref: '#/components/schemas/WalletChannel'
+        runtime:
+          $ref: '#/components/schemas/WalletAppRuntime'
+        disposition:
+          $ref: '#/components/schemas/EnterpriseWalletRecoveryOldAppDisposition'
+        oldAppRegistrationIds:
+          type: array
+          uniqueItems: true
+          items: { type: string, minLength: 1 }
+        occurredAtEpochSeconds: { type: integer, format: int64, minimum: 1 }
+    FinalizeEnterpriseWalletNewAppRecoveryRequest:
+      type: object
+      additionalProperties: false
+      required: [recoveryProcessRef, occurredAtEpochSeconds]
+      properties:
+        recoveryProcessRef: { type: string, minLength: 1 }
+        occurredAtEpochSeconds: { type: integer, format: int64, minimum: 1 }
+    EnterpriseWalletNewAppRecoveryProcess:
+      type: object
+      additionalProperties: false
+      required:
+        - tenantId
+        - recoveryProcessRef
+        - freshIdvEvidenceRef
+        - choiceRef
+        - provisioningRef
+        - accountRef
+        - walletInstanceId
+        - walletUnitId
+        - channel
+        - runtime
+        - authenticator
+        - backupHealth
+        - disposition
+        - preExistingAppRegistrationIds
+        - requestedOldAppRegistrationIds
+        - state
+        - createdAtEpochSeconds
+      properties:
+        tenantId: { type: string, minLength: 1 }
+        recoveryProcessRef: { type: string, minLength: 1 }
+        freshIdvEvidenceRef: { type: string, minLength: 1 }
+        choiceRef: { type: string, minLength: 1 }
+        provisioningRef: { type: string, minLength: 1 }
+        accountRef: { type: string, minLength: 1 }
+        walletInstanceId: { type: string, minLength: 1 }
+        walletUnitId: { type: string, minLength: 1 }
+        channel:
+          $ref: '#/components/schemas/WalletChannel'
+        runtime:
+          $ref: '#/components/schemas/WalletAppRuntime'
+        authenticator:
+          $ref: '#/components/schemas/BeginEnterpriseManagedWalletAuthenticatorResult'
+        backupHealth:
+          $ref: '#/components/schemas/EnterpriseWalletBackupHealth'
+        disposition:
+          $ref: '#/components/schemas/EnterpriseWalletRecoveryOldAppDisposition'
+        preExistingAppRegistrationIds:
+          type: array
+          uniqueItems: true
+          items: { type: string, minLength: 1 }
+        requestedOldAppRegistrationIds:
+          type: array
+          uniqueItems: true
+          items: { type: string, minLength: 1 }
+        state:
+          $ref: '#/components/schemas/EnterpriseWalletNewAppRecoveryState'
+        createdAtEpochSeconds: { type: integer, format: int64, minimum: 1 }
+        completedAtEpochSeconds: { type: integer, format: int64, minimum: 1, nullable: true }
+    BeginEnterpriseWalletNewAppRecoveryResult:
+      type: object
+      additionalProperties: false
+      required: [process, authenticator, backupHealth]
+      properties:
+        process:
+          $ref: '#/components/schemas/EnterpriseWalletNewAppRecoveryProcess'
+        authenticator:
+          $ref: '#/components/schemas/BeginEnterpriseManagedWalletAuthenticatorResult'
+        backupHealth:
+          $ref: '#/components/schemas/EnterpriseWalletBackupHealth'
+    BeginEnterpriseWalletSuccessorMigrationRequest:
+      type: object
+      additionalProperties: false
+      required: [recoveryProcessRef, freshIdvEvidenceRef, sourceChoiceRef, channel, runtime, reason, sourceDisposition, occurredAtEpochSeconds]
+      properties:
+        recoveryProcessRef: { type: string, minLength: 1 }
+        freshIdvEvidenceRef: { type: string, minLength: 1, writeOnly: true }
+        sourceChoiceRef: { type: string, minLength: 1 }
+        channel:
+          $ref: '#/components/schemas/WalletChannel'
+        runtime:
+          $ref: '#/components/schemas/WalletAppRuntime'
+        reason:
+          $ref: '#/components/schemas/EnterpriseWalletSuccessorReason'
+        sourceDisposition:
+          $ref: '#/components/schemas/EnterpriseWalletSourceUnitDisposition'
+        occurredAtEpochSeconds: { type: integer, format: int64, minimum: 1 }
+    FinalizeEnterpriseWalletSuccessorMigrationRequest:
+      type: object
+      additionalProperties: false
+      required: [recoveryProcessRef, occurredAtEpochSeconds]
+      properties:
+        recoveryProcessRef: { type: string, minLength: 1 }
+        occurredAtEpochSeconds: { type: integer, format: int64, minimum: 1 }
+    EnterpriseWalletLogicalMigrationEvidence:
+      type: object
+      additionalProperties: false
+      required:
+        - migrationRef
+        - migrationObjectRef
+        - migrationObjectFormat
+        - migrationObjectDigest
+        - sourceWalletInstanceId
+        - sourceWalletUnitId
+        - targetWalletInstanceId
+        - targetWalletUnitId
+        - transferMode
+        - migratedObjectCount
+        - migratedHistoryEntryCount
+        - sourceTombstoneManifestVersion
+        - targetTombstoneManifestVersion
+        - reissuanceRequiredCredentialRefs
+        - excludedSecrets
+        - wscdConfined
+        - plaintextExposedToApplication
+        - completeLogicalDataset
+        - tombstonesPreserved
+        - policyProvenancePreserved
+        - targetObjectsUsable
+        - targetCryptographicDomainDistinct
+        - completedAtEpochSeconds
+      properties:
+        migrationRef: { type: string, minLength: 1 }
+        migrationObjectRef: { type: string, minLength: 1 }
+        migrationObjectFormat:
+          type: string
+          enum: ['urn:sphereon:managed-wallet-logical-migration:1', 'urn:sphereon:wallet-migration-object:1']
+        migrationObjectDigest: { type: string, pattern: '^sha256:[0-9a-f]{64}$' }
+        sourceWalletInstanceId: { type: string, minLength: 1 }
+        sourceWalletUnitId: { type: string, minLength: 1 }
+        targetWalletInstanceId: { type: string, minLength: 1 }
+        targetWalletUnitId: { type: string, minLength: 1 }
+        transferMode:
+          $ref: '#/components/schemas/EnterpriseWalletMigrationTransferMode'
+        migratedObjectCount: { type: integer, format: int64, minimum: 0 }
+        migratedHistoryEntryCount: { type: integer, format: int64, minimum: 0 }
+        sourceTombstoneManifestVersion: { type: integer, format: int64, minimum: 0 }
+        targetTombstoneManifestVersion: { type: integer, format: int64, minimum: 0 }
+        reissuanceRequiredCredentialRefs:
+          type: array
+          uniqueItems: true
+          items: { type: string, minLength: 1 }
+        excludedSecrets:
+          type: array
+          uniqueItems: true
+          minItems: 6
+          maxItems: 6
+          items:
+            $ref: '#/components/schemas/EnterpriseWalletMigrationExcludedSecret'
+        wscdConfined: { type: boolean }
+        plaintextExposedToApplication: { type: boolean }
+        completeLogicalDataset: { type: boolean }
+        tombstonesPreserved: { type: boolean }
+        policyProvenancePreserved: { type: boolean }
+        targetObjectsUsable: { type: boolean }
+        targetCryptographicDomainDistinct: { type: boolean }
+        completedAtEpochSeconds: { type: integer, format: int64, minimum: 1 }
+    EnterpriseWalletSuccessorMigrationProcess:
+      type: object
+      additionalProperties: false
+      required:
+        - tenantId
+        - recoveryProcessRef
+        - freshIdvEvidenceRef
+        - sourceChoiceRef
+        - provisioningRef
+        - accountRef
+        - sourceWalletInstanceId
+        - sourceWalletUnitId
+        - channel
+        - runtime
+        - authenticator
+        - reason
+        - sourceDisposition
+        - state
+        - createdAtEpochSeconds
+      properties:
+        tenantId: { type: string, minLength: 1 }
+        recoveryProcessRef: { type: string, minLength: 1 }
+        freshIdvEvidenceRef: { type: string, minLength: 1 }
+        sourceChoiceRef: { type: string, minLength: 1 }
+        provisioningRef: { type: string, minLength: 1 }
+        accountRef: { type: string, minLength: 1 }
+        sourceWalletInstanceId: { type: string, minLength: 1 }
+        sourceWalletUnitId: { type: string, minLength: 1 }
+        channel:
+          $ref: '#/components/schemas/WalletChannel'
+        runtime:
+          $ref: '#/components/schemas/WalletAppRuntime'
+        authenticator:
+          $ref: '#/components/schemas/BeginEnterpriseManagedWalletAuthenticatorResult'
+        reason:
+          $ref: '#/components/schemas/EnterpriseWalletSuccessorReason'
+        sourceDisposition:
+          $ref: '#/components/schemas/EnterpriseWalletSourceUnitDisposition'
+        state:
+          $ref: '#/components/schemas/EnterpriseWalletSuccessorMigrationState'
+        migrationEvidence:
+          type: object
+          nullable: true
+          allOf: [{ $ref: '#/components/schemas/EnterpriseWalletLogicalMigrationEvidence' }]
+        createdAtEpochSeconds: { type: integer, format: int64, minimum: 1 }
+        completedAtEpochSeconds: { type: integer, format: int64, minimum: 1, nullable: true }
+    BeginEnterpriseWalletSuccessorMigrationResult:
+      type: object
+      additionalProperties: false
+      required: [process, authenticator]
+      properties:
+        process:
+          $ref: '#/components/schemas/EnterpriseWalletSuccessorMigrationProcess'
+        authenticator:
+          $ref: '#/components/schemas/BeginEnterpriseManagedWalletAuthenticatorResult'
+    EnterpriseWalletBackupComponent:
+      type: string
+      enum:
+        - INSTANCE_UNIT_LIFECYCLE
+        - ATTESTATION_TRUST_STATUS
+        - WSCA_POLICY_ACTIVATION
+        - WSCD_HSM_KEY_DOMAIN
+        - CONTENT_KEY_VERSIONS
+        - ENCRYPTED_WALLET_OBJECTS
+        - CREDENTIAL_METADATA_STATUS
+        - SETTINGS_CONTACTS_HISTORY
+        - LIVE_INTERACTIONS_NOTIFICATIONS
+        - TOMBSTONES_RETENTION
+        - POLICY_ASSIGNMENT_PROVENANCE
+    EnterpriseWalletBackupManifestState:
+      type: string
+      enum: [COMPLETE, VERIFIED, RESTORED, INVALID]
+    EnterpriseWalletBackupComponentEvidence:
+      type: object
+      additionalProperties: false
+      required: [component, artifactRef, artifactVersion, artifactDigest, snapshotGroup, capturedAtEpochSeconds, objectCount, deletionWatermark]
+      properties:
+        component:
+          $ref: '#/components/schemas/EnterpriseWalletBackupComponent'
+        artifactRef: { type: string, minLength: 1 }
+        artifactVersion: { type: integer, format: int64, minimum: 1 }
+        artifactDigest: { type: string, pattern: '^sha256:[0-9a-f]{64}$' }
+        snapshotGroup: { type: string, minLength: 1 }
+        capturedAtEpochSeconds: { type: integer, format: int64, minimum: 1 }
+        objectCount: { type: integer, format: int64, minimum: 0 }
+        deletionWatermark: { type: integer, format: int64, minimum: 0 }
+    EnterpriseWalletCompleteUnitBackupManifest:
+      type: object
+      additionalProperties: false
+      required:
+        - tenantId
+        - walletInstanceId
+        - walletUnitId
+        - snapshotId
+        - snapshotConsistencyProofDigest
+        - backupVersion
+        - policyRevision
+        - activeContentKeyVersion
+        - tombstoneManifestVersion
+        - region
+        - failureDomain
+        - createdAtEpochSeconds
+        - components
+        - manifestDigest
+        - state
+      properties:
+        tenantId: { type: string, minLength: 1 }
+        walletInstanceId: { type: string, minLength: 1 }
+        walletUnitId: { type: string, minLength: 1 }
+        snapshotId: { type: string, minLength: 1 }
+        snapshotConsistencyProofDigest: { type: string, pattern: '^sha256:[0-9a-f]{64}$' }
+        backupVersion: { type: integer, format: int64, minimum: 1 }
+        parentManifestDigest: { type: string, pattern: '^sha256:[0-9a-f]{64}$', nullable: true }
+        policyRevision: { type: integer, format: int64, minimum: 1 }
+        activeContentKeyVersion: { type: integer, format: int64, minimum: 1 }
+        tombstoneManifestVersion: { type: integer, format: int64, minimum: 0 }
+        region: { type: string, minLength: 1 }
+        failureDomain: { type: string, minLength: 1 }
+        createdAtEpochSeconds: { type: integer, format: int64, minimum: 1 }
+        components:
+          type: array
+          minItems: 11
+          maxItems: 11
+          items:
+            $ref: '#/components/schemas/EnterpriseWalletBackupComponentEvidence'
+        manifestDigest: { type: string, pattern: '^sha256:[0-9a-f]{64}$' }
+        state:
+          $ref: '#/components/schemas/EnterpriseWalletBackupManifestState'
+        verifiedAtEpochSeconds: { type: integer, format: int64, minimum: 1, nullable: true }
+        lastRestoreDrillAtEpochSeconds: { type: integer, format: int64, minimum: 1, nullable: true }
+        restoreDrillRef: { type: string, minLength: 1, nullable: true }
+    CaptureEnterpriseWalletCompleteUnitBackupRequest:
+      type: object
+      additionalProperties: false
+      required: [walletInstanceId, walletUnitId, snapshotId, policyRevision, activeContentKeyVersion, tombstoneManifestVersion, region, failureDomain, requestedAtEpochSeconds]
+      properties:
+        walletInstanceId: { type: string, minLength: 1 }
+        walletUnitId: { type: string, minLength: 1 }
+        snapshotId: { type: string, minLength: 1 }
+        policyRevision: { type: integer, format: int64, minimum: 1 }
+        activeContentKeyVersion: { type: integer, format: int64, minimum: 1 }
+        tombstoneManifestVersion: { type: integer, format: int64, minimum: 0 }
+        region: { type: string, minLength: 1 }
+        failureDomain: { type: string, minLength: 1 }
+        requestedAtEpochSeconds: { type: integer, format: int64, minimum: 1 }
+    VerifyEnterpriseWalletCompleteUnitBackupRequest:
+      type: object
+      additionalProperties: false
+      required: [walletUnitId, verifiedAtEpochSeconds]
+      properties:
+        walletUnitId: { type: string, minLength: 1 }
+        verifiedAtEpochSeconds: { type: integer, format: int64, minimum: 1 }
+    RestoreEnterpriseWalletCompleteUnitBackupRequest:
+      type: object
+      additionalProperties: false
+      required: [walletUnitId, restoreTargetRef, region, failureDomain, restoreDrillRef, requestedAtEpochSeconds]
+      properties:
+        walletUnitId: { type: string, minLength: 1 }
+        restoreTargetRef: { type: string, minLength: 1 }
+        region: { type: string, minLength: 1 }
+        failureDomain: { type: string, minLength: 1 }
+        restoreDrillRef: { type: string, minLength: 1 }
+        requestedAtEpochSeconds: { type: integer, format: int64, minimum: 1 }
+    VaultId:
+      type: object
+      additionalProperties: false
+      required: [value]
+      properties: { value: { type: string, minLength: 1, maxLength: 128 } }
+    VaultObjectId:
+      type: object
+      additionalProperties: false
+      required: [value]
+      properties: { value: { type: string, minLength: 1, maxLength: 128 } }
+    VaultVersionId:
+      type: object
+      additionalProperties: false
+      required: [value]
+      properties: { value: { type: string, minLength: 1, maxLength: 128 } }
+    VaultRevision:
+      type: object
+      additionalProperties: false
+      required: [value]
+      properties: { value: { type: string, minLength: 1, maxLength: 512 } }
+    VaultPath:
+      type: object
+      additionalProperties: false
+      required: [value]
+      properties:
+        value: { type: string, minLength: 1, maxLength: 4096, pattern: '^/' }
+    VaultDigest:
+      type: object
+      additionalProperties: false
+      required: [algorithm, value]
+      properties:
+        algorithm: { type: string, minLength: 1 }
+        value: { type: string, minLength: 1 }
+    VaultMutationCondition:
+      type: object
+      additionalProperties: false
+      properties:
+        existence: { type: string, enum: [ANY, MUST_EXIST, MUST_NOT_EXIST], default: ANY }
+        expectedVaultRevision: { type: object, nullable: true, allOf: [{ $ref: '#/components/schemas/VaultRevision' }] }
+        expectedObjectRevision: { type: object, nullable: true, allOf: [{ $ref: '#/components/schemas/VaultRevision' }] }
+        expectedPathRevision: { type: object, nullable: true, allOf: [{ $ref: '#/components/schemas/VaultRevision' }] }
+        expectedVersionRevision: { type: object, nullable: true, allOf: [{ $ref: '#/components/schemas/VaultRevision' }] }
+        expectedCurrentVersionId: { type: object, nullable: true, allOf: [{ $ref: '#/components/schemas/VaultVersionId' }] }
+    VaultExportRecipient:
+      type: object
+      additionalProperties: false
+      required: [recipientRef, wrappingKeyRef]
+      properties:
+        recipientRef: { type: string, minLength: 1 }
+        wrappingKeyRef: { type: string, minLength: 1, writeOnly: true }
+    VaultExportRequest:
+      type: object
+      additionalProperties: false
+      required: [vaultId, scope, recipient, condition]
+      properties:
+        vaultId:
+          $ref: '#/components/schemas/VaultId'
+        scope: { type: string, enum: [OBJECT, FOLDER, VAULT] }
+        objectId: { type: object, nullable: true, allOf: [{ $ref: '#/components/schemas/VaultObjectId' }] }
+        path: { type: object, nullable: true, allOf: [{ $ref: '#/components/schemas/VaultPath' }] }
+        recipient:
+          $ref: '#/components/schemas/VaultExportRecipient'
+        includeVersionHistory: { type: boolean, default: true }
+        includeProvenance: { type: boolean, default: true }
+        includeDpvJsonLd: { type: boolean, default: false }
+        condition:
+          $ref: '#/components/schemas/VaultMutationCondition'
+    VaultExportManifest:
+      type: object
+      additionalProperties: false
+      required: [exportId, vaultId, scope, format, createdAt, recipientRef, objectCount, contentDigest, manifestDigest]
+      properties:
+        exportId: { type: string, minLength: 1 }
+        vaultId:
+          $ref: '#/components/schemas/VaultId'
+        scope: { type: string, enum: [OBJECT, FOLDER, VAULT] }
+        format: { type: string, enum: [TDF, BAGIT_TDF] }
+        createdAt: { type: string, format: date-time }
+        recipientRef: { type: string, minLength: 1 }
+        objectCount: { type: integer, format: int64, minimum: 0 }
+        contentDigest:
+          $ref: '#/components/schemas/VaultDigest'
+        manifestDigest:
+          $ref: '#/components/schemas/VaultDigest'
+    ProtectedPackageBytes:
+      type: array
+      minItems: 1
+      items: { type: integer, format: int32, minimum: -128, maximum: 127 }
+      description: JSON representation of protected package bytes. It is not plaintext wallet content.
+    VaultExportResult:
+      type: object
+      additionalProperties: false
+      required: [manifest, packageBytes]
+      properties:
+        manifest:
+          $ref: '#/components/schemas/VaultExportManifest'
+        packageBytes:
+          $ref: '#/components/schemas/ProtectedPackageBytes'
+    VaultImportRequest:
+      type: object
+      additionalProperties: false
+      required: [targetVaultId, packageBytes, condition]
+      properties:
+        targetVaultId:
+          $ref: '#/components/schemas/VaultId'
+        destination:
+          $ref: '#/components/schemas/VaultPath'
+        packageBytes:
+          writeOnly: true
+          allOf: [{ $ref: '#/components/schemas/ProtectedPackageBytes' }]
+        condition:
+          $ref: '#/components/schemas/VaultMutationCondition'
+    VaultImportedObject:
+      type: object
+      additionalProperties: false
+      required: [objectId, path, keyDisposition]
+      properties:
+        objectId:
+          $ref: '#/components/schemas/VaultObjectId'
+        path:
+          $ref: '#/components/schemas/VaultPath'
+        keyDisposition: { type: string, enum: [AVAILABLE, REISSUANCE_REQUIRED] }
+    VaultImportManifest:
+      type: object
+      additionalProperties: false
+      required: [importId, targetVaultId, importedAt, sourceDigest, importedObjects]
+      properties:
+        importId: { type: string, minLength: 1 }
+        targetVaultId:
+          $ref: '#/components/schemas/VaultId'
+        importedAt: { type: string, format: date-time }
+        sourceDigest:
+          $ref: '#/components/schemas/VaultDigest'
+        importedObjects:
+          type: array
+          items:
+            $ref: '#/components/schemas/VaultImportedObject'

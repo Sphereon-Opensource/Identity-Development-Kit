@@ -30,8 +30,8 @@ import com.sphereon.wallet.interaction.WalletEntryPoint
 import com.sphereon.wallet.interaction.WalletInteractionAction
 import com.sphereon.wallet.interaction.WalletInteractionInput
 import com.sphereon.wallet.interaction.WalletInteractionStatus
-import com.sphereon.wallet.interaction.WalletSecurityGate
 import com.sphereon.wallet.interaction.WalletProtocol
+import com.sphereon.wallet.interaction.WalletSecurityGate
 import com.sphereon.wallet.interaction.impl.DefaultWalletInteractionEngine
 import com.sphereon.wallet.interaction.impl.InMemoryWalletInteractionPrivateSessionStore
 import com.sphereon.wallet.interaction.impl.InMemoryWalletInteractionSessionStore
@@ -60,6 +60,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
+import com.sphereon.wallet.interaction.WalletInteractionDiagnostics
 
 @ContributesTo(SessionScope::class)
 interface WalletInteractionOid4vciStoreTestGraph {
@@ -176,7 +177,7 @@ class WalletInteractionOid4vciRealProtocolE2ETest {
         }
     }
 
-    private val ctx = Oid4vciTestContext(this)
+    private val ctx = Oid4vciTestContext(this, credentialConfigurationIds = listOf(CREDENTIAL_CONFIG_ID))
     private val issuerUrl = "https://issuer.example.com"
     private val json =
         Json {
@@ -265,6 +266,7 @@ class WalletInteractionOid4vciRealProtocolE2ETest {
                     securityGate = WalletSecurityGate.allow,
                     launchAuthorities = setOf(integrationLaunchAuthority()),
                     adapters = listOf(adapter),
+                    diagnostics = WalletInteractionDiagnostics.none,
                 )
 
             val session =
@@ -410,7 +412,11 @@ class WalletInteractionOid4vciRealProtocolE2ETest {
                     keyAttestationJwt = kaJwt,
                 )
             assertTrue(proofResult.isOk, "Proof creation should succeed: ${if (proofResult.isErr) proofResult.error.message.defaultMessage else ""}")
-            val proofJwt = (proofResult.value.proofs.proofValues.single() as JsonPrimitive).content
+            val proofJwt =
+                (
+                    proofResult.value.proofs.proofValues
+                        .single() as JsonPrimitive
+                ).content
             val proofHeader = Json.parseToJsonElement(proofJwt.split('.')[0].decodeFromBase64Url().decodeToString()).jsonObject
             assertEquals(kaJwt, proofHeader["key_attestation"]?.jsonPrimitive?.content, "the produced proof JWT must carry the KA verbatim in its key_attestation header")
 
@@ -466,7 +472,6 @@ class WalletInteractionOid4vciRealProtocolE2ETest {
         )
         ctx.registerIssuerSigningKey(ISSUER_SIGNING_KEY_ALIAS)
     }
-
 }
 
 /**

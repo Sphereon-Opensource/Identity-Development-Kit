@@ -89,6 +89,7 @@ class OpRsRpE2ETest {
     @Test
     fun op_idToken_rpValidates_claimsAndSignature() =
         runTest {
+            ctx.ensureClientRegistration(clientId)
             ctx.ensureOpSigningKey()
 
             val nonce = "nonce-abc"
@@ -134,6 +135,7 @@ class OpRsRpE2ETest {
     @Test
     fun op_idToken_rpValidates_pinnedToOpJwks() =
         runTest {
+            ctx.ensureClientRegistration(clientId)
             ctx.ensureOpSigningKey()
 
             val idToken =
@@ -247,6 +249,7 @@ class OpRsRpE2ETest {
     @Test
     fun rp_rejectsIdToken_signedByWrongKey() =
         runTest {
+            ctx.ensureClientRegistration(clientId)
             ctx.ensureOpSigningKey()
 
             // Mint a valid id_token.
@@ -300,6 +303,7 @@ class OpRsRpE2ETest {
     @Test
     fun rp_rejectsIdToken_signedByKeyNotInTrustedJwks() =
         runTest {
+            ctx.ensureClientRegistration(clientId)
             ctx.ensureOpSigningKey()
 
             val idToken =
@@ -338,6 +342,7 @@ class OpRsRpE2ETest {
     @Test
     fun rp_rejectsIdToken_withWrongAudience() =
         runTest {
+            ctx.ensureClientRegistration(clientId)
             ctx.ensureOpSigningKey()
 
             val idToken =
@@ -372,6 +377,7 @@ class OpRsRpE2ETest {
     @Test
     fun rp_rejectsIdToken_withWrongIssuer() =
         runTest {
+            ctx.ensureClientRegistration(clientId)
             ctx.ensureOpSigningKey()
 
             val idToken =
@@ -416,6 +422,7 @@ class OpRsRpE2ETest {
     fun rs256IdTokenEndToEnd() =
         runTest {
             val rsaAlias = "rsa-2048-test"
+            ctx.ensureClientRegistration(clientId)
             ctx.ensureOpSigningKey(alias = rsaAlias, alg = SignatureAlgorithm.RSA_SHA256)
 
             // Swap the per-session config to point at the RSA key with NO pinned alg list, so
@@ -496,6 +503,7 @@ class OpRsRpE2ETest {
             // CreateIdTokenArgs.authTime, where it lands as the id_token `auth_time` claim. This
             // assertion locks in the leaf step of that chain so the OIDF `OIDCCMaxAge*` suite
             // sees a stable, non-zero value when the suite presets `max_age`.
+            ctx.ensureClientRegistration(clientId)
             ctx.ensureOpSigningKey()
             val authTime = 1_700_000_000L
 

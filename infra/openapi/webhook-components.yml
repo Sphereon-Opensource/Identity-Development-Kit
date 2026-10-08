@@ -1,0 +1,553 @@
+openapi: 3.0.4
+info:
+  title: Webhook API Components
+  version: 0.1.0
+  description: Entity schemas, enums, parameters, and responses for the Webhook REST API.
+paths: {}
+components:
+  parameters:
+    EndpointId:
+      name: endpointId
+      in: path
+      required: true
+      description: Identifier of the webhook endpoint.
+      schema:
+        type: string
+        minLength: 1
+    DeliveryId:
+      name: deliveryId
+      in: path
+      required: true
+      description: Identifier of the delivery record.
+      schema:
+        type: string
+        minLength: 1
+    WebhookIfMatch:
+      name: If-Match
+      in: header
+      required: true
+      description: |
+        Opaque entity tag of the endpoint being mutated, taken from the `etag` field of the last read.
+        A stale tag is rejected with 412; a missing header is rejected with 428.
+      schema:
+        type: string
+        minLength: 1
+    DeliveryStatusFilter:
+      name: status
+      in: query
+      required: false
+      description: Restrict to deliveries in this status. Repeat the parameter to select several statuses.
+      style: form
+      explode: true
+      schema:
+        type: array
+        items:
+          $ref: '#/components/schemas/WebhookDeliveryStatus'
+    EventTypeFilter:
+      name: eventType
+      in: query
+      required: false
+      description: Restrict to deliveries of this event type.
+      schema:
+        $ref: '#/components/schemas/WebhookEventTypeId'
+
+  headers:
+    WebhookId:
+      description: Unique identifier of this delivery attempt's message. Equals `deliveryId` and is stable across retries of the same delivery.
+      schema:
+        type: string
+    WebhookTimestamp:
+      description: Unix time in seconds at which the request was signed. Receivers should reject timestamps older than their tolerance window (5 minutes is the recommended default).
+      schema:
+        type: integer
+        format: int64
+    WebhookEventType:
+      description: Event type carried in the body, duplicated in a header so receivers can route before parsing.
+      schema:
+        $ref: '#/components/schemas/WebhookEventTypeId'
+    WebhookAttempt:
+      description: One-based attempt counter for this delivery.
+      schema:
+        type: integer
+        minimum: 1
+    WebhookSignature:
+      description: |
+        `v1=<hex>` where `<hex>` is the lowercase hex encoding of
+        `HMAC-SHA256(secret, "<Webhook-Timestamp>.<raw request body>")`.
+        The secret is the endpoint secret at signing time. During a rotation grace period the
+        header may carry two comma-separated `v1=` values, one per active secret; a receiver
+        accepts the request when any value verifies.
+      schema:
+        type: string
+        pattern: '^v1=[0-9a-f]{64}(,v1=[0-9a-f]{64})*$'
+
+  responses:
+    PreconditionFailed:
+      description: The `If-Match` tag does not match the current entity tag of the endpoint.
+      content:
+        application/json:
+          schema:
+            $ref: './common-components.yml#/components/schemas/ApiError'
+    PreconditionRequired:
+      description: The request mutates a versioned endpoint and carried no `If-Match` header.
+      content:
+        application/json:
+          schema:
+            $ref: './common-components.yml#/components/schemas/ApiError'
+
+  schemas:
+    WebhookScope:
+      type: string
+      description: |
+        Which events an endpoint observes. `TENANT` receives every event of the tenant.
+        `ISSUER_INSTANCE` and `VERIFIER_INSTANCE` restrict the subscription to events
+        originating from the issuer or verifier instance named by `scopeId`.
+      enum: [TENANT, ISSUER_INSTANCE, VERIFIER_INSTANCE]
+
+    WebhookSigningAlgorithm:
+      type: string
+      description: Signature scheme applied to every delivery. Only `HMAC_SHA256` is defined.
+      enum: [HMAC_SHA256]
+
+    WebhookSecretRef:
+      type: string
+      description: Opaque secret-management reference of the endpoint's signing secret. Secret material is never returned.
+      pattern: '^sec_[A-Za-z0-9_-]{16,128}$'
+      example: sec_01JZZZZZZZZZZZZZZZZZZZZZZZ
+
+    WebhookRetryPolicy:
+      type: object
+      description: |
+        Backoff applied by the delivery worker after a failed attempt. The delay before attempt
+        `n` is `initialDelayMs * 2^(n-1)` when `exponential` is true, otherwise `initialDelayMs`,
+        and is capped at `maxDelayMs`. After `maxAttempts` failed attempts the delivery is
+        moved to `DEAD_LETTER`.
+      required: [maxAttempts, initialDelayMs, maxDelayMs, exponential]
+      properties:
+        maxAttempts:
+          type: integer
+          minimum: 1
+          maximum: 50
+          example: 8
+        initialDelayMs:
+          type: integer
+          format: int64
+          minimum: 100
+          example: 1000
+        maxDelayMs:
+          type: integer
+          format: int64
+          minimum: 100
+          example: 300000
+        exponential:
+          type: boolean
+          example: true
+
+    WebhookEndpoint:
+      type: object
+      description: A registered receiver of tenant events. The signing secret is referenced, never returned.
+      required: [endpointId, tenantId, scope, url, enabled, eventTypes, secretRef, signing, retry, managedBy, managedAt, etag]
+      properties:
+        endpointId:
+          type: string
+        tenantId:
+          type: string
+        scope:
+          $ref: '#/components/schemas/WebhookScope'
+        scopeId:
+          type: string
+          nullable: true
+          description: Issuer or verifier instance id the subscription is bound to. Absent for `TENANT` scope.
+        url:
+          type: string
+          format: uri
+          pattern: '^https://'
+          description: Receiver URL. Only `https` is accepted.
+          example: https://receiver.example.com/hooks/vdx
+        enabled:
+          type: boolean
+        eventTypes:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items:
+            $ref: '#/components/schemas/WebhookEventTypeId'
+        secretRef:
+          $ref: '#/components/schemas/WebhookSecretRef'
+        signing:
+          $ref: '#/components/schemas/WebhookSigningAlgorithm'
+        headers:
+          type: object
+          nullable: true
+          description: Static headers added to every delivery, for example a receiver-side routing token. Reserved `Webhook-*` names are rejected.
+          additionalProperties:
+            type: string
+        retry:
+          $ref: '#/components/schemas/WebhookRetryPolicy'
+        managedBy:
+          type: string
+        managedAt:
+          type: string
+          format: date-time
+        etag:
+          type: string
+          description: Entity version to send as `If-Match` on the next mutation of this endpoint.
+    WebhookEndpointList:
+      type: array
+      items:
+        $ref: '#/components/schemas/WebhookEndpoint'
+
+    CreateWebhookEndpointRequest:
+      type: object
+      description: |
+        Registers an endpoint. Exactly one of `secretValue` and `secretRef` must be supplied.
+        `secretValue` is stored immediately through secret management and never returned;
+        `secretRef` points at a secret already held there.
+      required: [scope, url, eventTypes]
+      properties:
+        scope:
+          $ref: '#/components/schemas/WebhookScope'
+        scopeId:
+          type: string
+          nullable: true
+          description: Required for `ISSUER_INSTANCE` and `VERIFIER_INSTANCE`, rejected for `TENANT`.
+        url:
+          type: string
+          format: uri
+          pattern: '^https://'
+          example: https://receiver.example.com/hooks/vdx
+        enabled:
+          type: boolean
+          default: true
+        eventTypes:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items:
+            $ref: '#/components/schemas/WebhookEventTypeId'
+        secretValue:
+          type: string
+          format: password
+          writeOnly: true
+          minLength: 16
+          description: Write-once signing secret stored immediately through secret management. Mutually exclusive with `secretRef` and never returned or logged.
+        secretRef:
+          $ref: '#/components/schemas/WebhookSecretRef'
+        signing:
+          $ref: '#/components/schemas/WebhookSigningAlgorithm'
+        headers:
+          type: object
+          nullable: true
+          additionalProperties:
+            type: string
+        retry:
+          $ref: '#/components/schemas/WebhookRetryPolicy'
+
+    ReplaceWebhookEndpointRequest:
+      type: object
+      description: |
+        Full replacement of the endpoint configuration under `If-Match`. The signing secret is not
+        part of this request; use the secret rotation action to change it.
+      required: [scope, url, enabled, eventTypes, signing, retry]
+      properties:
+        scope:
+          $ref: '#/components/schemas/WebhookScope'
+        scopeId:
+          type: string
+          nullable: true
+        url:
+          type: string
+          format: uri
+          pattern: '^https://'
+        enabled:
+          type: boolean
+        eventTypes:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items:
+            $ref: '#/components/schemas/WebhookEventTypeId'
+        signing:
+          $ref: '#/components/schemas/WebhookSigningAlgorithm'
+        headers:
+          type: object
+          nullable: true
+          additionalProperties:
+            type: string
+        retry:
+          $ref: '#/components/schemas/WebhookRetryPolicy'
+
+    RotateWebhookSecretRequest:
+      type: object
+      description: |
+        Replaces the signing secret. Supply `secretValue` or `secretRef`, or neither to let the
+        service generate a secret. `gracePeriodSeconds` keeps the previous secret valid for
+        signing so deliveries in flight still verify; during that window every delivery carries
+        two `v1=` signatures.
+      properties:
+        secretValue:
+          type: string
+          format: password
+          writeOnly: true
+          minLength: 16
+          description: Write-once signing secret. Mutually exclusive with `secretRef` and never returned or logged.
+        secretRef:
+          $ref: '#/components/schemas/WebhookSecretRef'
+        gracePeriodSeconds:
+          type: integer
+          minimum: 0
+          maximum: 86400
+          default: 0
+    RotateWebhookSecretResponse:
+      type: object
+      required: [endpoint, secretRef]
+      properties:
+        endpoint:
+          $ref: '#/components/schemas/WebhookEndpoint'
+        secretRef:
+          $ref: '#/components/schemas/WebhookSecretRef'
+        previousSecretRef:
+          type: string
+          nullable: true
+          pattern: '^sec_[A-Za-z0-9_-]{16,128}$'
+          description: Reference of the secret being retired. Present only while the grace period is running.
+        previousSecretValidUntil:
+          type: string
+          format: date-time
+          nullable: true
+        secretValue:
+          type: string
+          format: password
+          description: Present only when the service generated the secret. It is returned exactly once and cannot be read back.
+
+    WebhookDeliveryStatus:
+      type: string
+      description: |
+        Delivery lifecycle. `PENDING` waits for a worker; `CLAIMED` is leased by a worker;
+        `RETRY` failed and waits for `nextAttemptAt`; `DELIVERED` received a 2xx; `FAILED`
+        received a non-retryable response; `DEAD_LETTER` exhausted `retry.maxAttempts`.
+      enum: [PENDING, CLAIMED, DELIVERED, RETRY, FAILED, DEAD_LETTER]
+
+    WebhookDelivery:
+      type: object
+      description: One event queued for one endpoint. Receiver responses are reduced to status and error class; bodies are never stored.
+      required: [deliveryId, endpointId, eventId, eventType, status, attemptCount]
+      properties:
+        deliveryId:
+          type: string
+        endpointId:
+          type: string
+        eventId:
+          type: string
+        eventType:
+          $ref: '#/components/schemas/WebhookEventTypeId'
+        status:
+          $ref: '#/components/schemas/WebhookDeliveryStatus'
+        attemptCount:
+          type: integer
+          minimum: 0
+        nextAttemptAt:
+          type: string
+          format: date-time
+          nullable: true
+        lastAttemptAt:
+          type: string
+          format: date-time
+          nullable: true
+        responseStatus:
+          type: integer
+          nullable: true
+          description: HTTP status returned by the receiver on the last attempt.
+        lastErrorClass:
+          type: string
+          nullable: true
+          description: Stable classification of the last failure, for example `CONNECT_TIMEOUT`, `TLS_HANDSHAKE`, `HTTP_5XX`, `HTTP_4XX`.
+        safeLastError:
+          type: string
+          nullable: true
+          description: Redacted human-readable failure message. Never contains receiver response bodies or headers.
+        deliveredAt:
+          type: string
+          format: date-time
+          nullable: true
+        deadLetteredAt:
+          type: string
+          format: date-time
+          nullable: true
+    WebhookDeliveryPage:
+      type: object
+      required: [data, pagination]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/WebhookDelivery'
+        pagination:
+          $ref: './common-components.yml#/components/schemas/PageMeta'
+
+    WebhookEventTypeId:
+      type: string
+      description: |
+        Event types an endpoint can subscribe to.
+        `oid4vci.issuance.session.status_changed`: an OID4VCI issuance session moved to a new status; `subject.sessionId` names the session.
+        `oid4vp.verification.session.status_changed`: an OID4VP verification session moved to a new status; `subject.sessionId` names the session.
+        `statuslist.entry.status_changed`: a credential's status-list entry was revoked, suspended, or reactivated; `subject.statusListId` names the list.
+        `statuslist.list.created`: a new status list was created; `subject.statusListId` names the list.
+        `webhook.endpoint.test`: synthetic event sent by the endpoint test action.
+      enum:
+        - oid4vci.issuance.session.status_changed
+        - oid4vp.verification.session.status_changed
+        - statuslist.entry.status_changed
+        - statuslist.list.created
+        - webhook.endpoint.test
+    WebhookEventType:
+      type: object
+      required: [eventType, description]
+      properties:
+        eventType:
+          $ref: '#/components/schemas/WebhookEventTypeId'
+        description:
+          type: string
+        subjectFields:
+          type: array
+          description: Which `subject` fields the envelope carries for this event type.
+          items:
+            type: string
+            enum: [sessionId, statusListId, correlationId]
+    WebhookEventTypeList:
+      type: array
+      items:
+        $ref: '#/components/schemas/WebhookEventType'
+
+    WebhookEventSubject:
+      type: object
+      description: Identifiers of the entity the event is about. Which fields are present depends on the event type.
+      properties:
+        sessionId:
+          type: string
+          nullable: true
+        statusListId:
+          type: string
+          nullable: true
+        correlationId:
+          type: string
+          nullable: true
+    WebhookEventEnvelope:
+      type: object
+      description: |
+        Body POSTed to the receiver. `eventId` is stable across retries of the same event so
+        receivers can deduplicate. `data` carries event-specific detail and is omitted when the
+        endpoint or the originating session did not opt into payload data.
+      required: [eventId, eventType, occurredAt, tenantId, scope]
+      properties:
+        eventId:
+          type: string
+        eventType:
+          $ref: '#/components/schemas/WebhookEventTypeId'
+        occurredAt:
+          type: string
+          format: date-time
+        tenantId:
+          type: string
+        scope:
+          $ref: '#/components/schemas/WebhookScope'
+        scopeId:
+          type: string
+          nullable: true
+        subject:
+          $ref: '#/components/schemas/WebhookEventSubject'
+        previousStatus:
+          type: string
+          nullable: true
+        status:
+          type: string
+          nullable: true
+        data:
+          type: object
+          nullable: true
+          additionalProperties: true
+
+  examples:
+    CreateTenantEndpointRequest:
+      summary: Tenant-wide endpoint with a write-once secret
+      value:
+        scope: TENANT
+        url: https://receiver.example.com/hooks/vdx
+        enabled: true
+        eventTypes:
+          - oid4vci.issuance.session.status_changed
+          - statuslist.entry.status_changed
+        secretValue: "0123456789abcdef0123456789abcdef"
+        signing: HMAC_SHA256
+        headers:
+          X-Receiver-Token: route-42
+        retry:
+          maxAttempts: 8
+          initialDelayMs: 1000
+          maxDelayMs: 300000
+          exponential: true
+    CreateIssuerInstanceEndpointRequest:
+      summary: Issuer-instance endpoint referencing an existing secret
+      value:
+        scope: ISSUER_INSTANCE
+        scopeId: issuer-main
+        url: https://receiver.example.com/hooks/issuer-main
+        eventTypes:
+          - oid4vci.issuance.session.status_changed
+        secretRef: sec_01JZZZZZZZZZZZZZZZZZZZZZZZ
+    WebhookEndpointExample:
+      summary: Registered endpoint
+      value:
+        endpointId: whe_01K3F4Q9X7M2N8P5R6S7T8U9V0
+        tenantId: tenant-acme
+        scope: TENANT
+        scopeId: null
+        url: https://receiver.example.com/hooks/vdx
+        enabled: true
+        eventTypes:
+          - oid4vci.issuance.session.status_changed
+          - statuslist.entry.status_changed
+        secretRef: sec_01JZZZZZZZZZZZZZZZZZZZZZZZ
+        signing: HMAC_SHA256
+        headers:
+          X-Receiver-Token: route-42
+        retry:
+          maxAttempts: 8
+          initialDelayMs: 1000
+          maxDelayMs: 300000
+          exponential: true
+        managedBy: admin@acme.example
+        managedAt: "2026-09-01T10:15:00Z"
+        etag: "3"
+    WebhookDeliveryExample:
+      summary: Delivery retried after a receiver 503
+      value:
+        deliveryId: whd_01K3F4R2B6C7D8E9F0G1H2J3K4
+        endpointId: whe_01K3F4Q9X7M2N8P5R6S7T8U9V0
+        eventId: evt_01K3F4R1A5B6C7D8E9F0G1H2J3
+        eventType: oid4vci.issuance.session.status_changed
+        status: RETRY
+        attemptCount: 2
+        nextAttemptAt: "2026-09-01T10:16:04Z"
+        lastAttemptAt: "2026-09-01T10:16:02Z"
+        responseStatus: 503
+        lastErrorClass: HTTP_5XX
+        safeLastError: Receiver answered 503 Service Unavailable
+        deliveredAt: null
+        deadLetteredAt: null
+    WebhookEventEnvelopeExample:
+      summary: Issuance session status change
+      value:
+        eventId: evt_01K3F4R1A5B6C7D8E9F0G1H2J3
+        eventType: oid4vci.issuance.session.status_changed
+        occurredAt: "2026-09-01T10:16:00Z"
+        tenantId: tenant-acme
+        scope: TENANT
+        scopeId: null
+        subject:
+          sessionId: 4d2e5b1c-9a7f-4c3e-8b2d-1f0a9c8e7d6b
+          correlationId: order-4711
+        previousStatus: CREDENTIAL_REQUESTED
+        status: CREDENTIAL_ISSUED
+        data:
+          credentialConfigurationId: EmployeeBadge

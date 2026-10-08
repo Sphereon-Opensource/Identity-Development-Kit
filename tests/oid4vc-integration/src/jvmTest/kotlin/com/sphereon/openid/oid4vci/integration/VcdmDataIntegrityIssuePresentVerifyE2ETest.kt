@@ -17,18 +17,20 @@ import com.sphereon.crypto.resolution.extern.ExternalIdentifierDidOpts
 import com.sphereon.di.session.SessionScope
 import com.sphereon.did.methods.jwk.JwkDidProviderImpl
 import com.sphereon.jsonld.loader.LinkedDataDocumentLoader
+import com.sphereon.oauth2.common.model.AuthorizationRequest
+import com.sphereon.oauth2.common.model.AuthorizationResponse
 import com.sphereon.openid.oid4vc.common.CredentialFormat
 import com.sphereon.openid.oid4vc.common.vcdm.VcdmProfiles
 import com.sphereon.openid.oid4vci.common.model.CredentialConfigurationSupported
 import com.sphereon.openid.oid4vci.common.model.CredentialDefinition
 import com.sphereon.openid.oid4vci.common.model.CredentialRequest
+import com.sphereon.openid.oid4vci.issuer.format.CredentialFormatHandler
 import com.sphereon.openid.oid4vci.issuer.format.IssuanceContext
 import com.sphereon.openid.oid4vci.issuer.format.SigningKeyMode
-import com.sphereon.openid.oid4vci.issuer.impl.format.LdpVcFormatHandler
-import com.sphereon.openid.oid4vp.common.ResponseMode
-import com.sphereon.openid.oid4vp.common.VpToken
 import com.sphereon.openid.oid4vp.common.ClientMetadata
+import com.sphereon.openid.oid4vp.common.ResponseMode
 import com.sphereon.openid.oid4vp.common.VpFormatInfo
+import com.sphereon.openid.oid4vp.common.VpToken
 import com.sphereon.openid.oid4vp.common.vpToken
 import com.sphereon.openid.oid4vp.dcql.DcqlCredentialQuery
 import com.sphereon.openid.oid4vp.dcql.DcqlQuery
@@ -36,12 +38,10 @@ import com.sphereon.openid.oid4vp.dcql.w3cVcMeta
 import com.sphereon.openid.oid4vp.holder.CreateAuthorizationResponseArgs
 import com.sphereon.openid.oid4vp.holder.ResolvedOid4vpRequest
 import com.sphereon.openid.oid4vp.holder.SelectedCredential
+import com.sphereon.openid.oid4vp.holder.VerifierInfo
 import com.sphereon.openid.oid4vp.verifier.CreateAuthorizationRequestArgs
 import com.sphereon.openid.oid4vp.verifier.ParseAuthorizationResponseArgs
 import com.sphereon.openid.oid4vp.verifier.ValidateAuthorizationResponseArgs
-import com.sphereon.openid.oid4vp.holder.VerifierInfo
-import com.sphereon.oauth2.common.model.AuthorizationRequest
-import com.sphereon.oauth2.common.model.AuthorizationResponse
 import com.sphereon.wallet.interaction.protocol.oid4vp.Oid4vpDataIntegrityHolderBindingRequest
 import com.sphereon.wallet.interaction.protocol.oid4vp.SecureComponentOid4vpDataIntegrityHolderBindingProvider
 import com.sphereon.wallet.unit.SecureComponentUsage
@@ -61,7 +61,9 @@ import kotlin.test.assertTrue
 
 @ContributesTo(SessionScope::class)
 interface VcdmDataIntegrityIssuerTestGraph {
-    val ldpVcFormatHandler: LdpVcFormatHandler
+    val credentialFormatHandlers: Set<CredentialFormatHandler>
+    val ldpVcFormatHandler: CredentialFormatHandler
+        get() = credentialFormatHandlers.single { it.supportedFormat == CredentialFormat.LDP_VC.value }
     val linkedDataDocumentLoader: LinkedDataDocumentLoader
 }
 
@@ -89,10 +91,11 @@ class VcdmDataIntegrityIssuePresentVerifyE2ETest {
             val query = query()
             val request = createRequest(query, nonce = "vcdm-di-valid-nonce", state = "vcdm-di-valid-state")
             val resolved = resolvedRequest(request.request, query)
-            val credentials = listOf(
-                issue(issuer, holder.did, "Alice"),
-                issue(issuer, holder.did, "Engineering"),
-            )
+            val credentials =
+                listOf(
+                    issue(issuer, holder.did, "Alice"),
+                    issue(issuer, holder.did, "Engineering"),
+                )
 
             val response = createResponse(resolved, credentials, holder)
             val token = assertNotNull(response.value.vpToken)
@@ -119,9 +122,10 @@ class VcdmDataIntegrityIssuePresentVerifyE2ETest {
             val request = createRequest(query, nonce = "vcdm-di-tamper-nonce", state = "vcdm-di-tamper-state")
             val response = createResponse(resolvedRequest(request.request, query), listOf(issue(issuer, holder.did, "Alice"), issue(issuer, holder.did, "Engineering")), holder)
             val tamperedToken = tamperFirstCredential(assertNotNull(response.value.vpToken))
-            val tampered = response.value.copy(
-                additionalParameters = response.value.additionalParameters + ("vp_token" to VpToken.run { tamperedToken.toJson() }),
-            )
+            val tampered =
+                response.value.copy(
+                    additionalParameters = response.value.additionalParameters + ("vp_token" to VpToken.run { tamperedToken.toJson() }),
+                )
 
             val validation = validate(request.request, query, tampered, request.request.nonce!!, issuer, holder)
             assertTrue(validation.isOk, "tampering should produce a structured invalid result")
@@ -134,8 +138,8 @@ class VcdmDataIntegrityIssuePresentVerifyE2ETest {
             val issuer = generateIssuer()
             val holder = provisionHolder()
             val query = query()
-            val request = createRequest(query, nonce = "vcdm-di-binding-nonce", state = "vcdm-di-binding-state")
-            val resolved = resolvedRequest(request.request, query)
+            var request = createRequest(query, nonce = "vcdm-di-binding-nonce", state = "vcdm-di-binding-state")
+            var resolved = resolvedRequest(request.request, query)
             val credentials = listOf(issue(issuer, holder.did, "Alice"), issue(issuer, holder.did, "Engineering"))
 
             val wrongNonceRequest = resolved.copy(request = resolved.request.copy(nonce = "wrong-vcdm-di-nonce"))
@@ -144,6 +148,8 @@ class VcdmDataIntegrityIssuePresentVerifyE2ETest {
             assertTrue(wrongNonce.isOk)
             assertFalse(wrongNonce.value.valid, "a holder proof with the wrong challenge must fail")
 
+            request = createRequest(query, nonce = "vcdm-di-binding-nonce", state = "vcdm-di-binding-wrong-domain-state")
+            resolved = resolvedRequest(request.request, query)
             val wrongDomainRequest = resolved.copy(verifierInfo = resolved.verifierInfo.copy(clientId = "https://wrong-vcdm-di-verifier.example"))
             val wrongDomainResponse = createResponse(wrongDomainRequest, credentials, holder)
             val wrongDomain = validate(request.request, query, wrongDomainResponse.value, request.request.nonce!!, issuer, holder)
@@ -153,60 +159,81 @@ class VcdmDataIntegrityIssuePresentVerifyE2ETest {
 
     private suspend fun generateIssuer(): IssuerMaterial {
         // This is issuer-side setup. Holder key provisioning/signing below is deliberately WSCA-only.
-        val kms = ctx.session.graph.asKeyManagerServiceGraph().keyManagerService
+        val kms =
+            ctx.session.graph
+                .asKeyManagerServiceGraph()
+                .keyManagerService
         val generated = kms.generateKeyResult(alias = issuerAlias, use = JwkUse.sig, alg = SignatureAlgorithm.ED25519)
         assertTrue(generated.isOk, "issuer Ed25519 key generation must succeed")
-        val publicJwk = assertNotNull(generated.value.keyPair?.jose?.publicJwk)
+        val publicJwk =
+            assertNotNull(
+                generated.value.keyPair
+                    ?.jose
+                    ?.publicJwk
+            )
         val did = JwkDidProviderImpl.didFromJwk(publicJwk)
         return IssuerMaterial(did, "$did#0")
     }
 
     private suspend fun provisionHolder(): HolderMaterial {
         val wsca = (ctx.session.graph as WalletInteractionOid4vciWscaTestGraph).wsca
-        val key = wsca.ensureKey(
-            walletUnitId = walletUnitId,
-            usage = SecureComponentUsage.WALLET_CREDENTIAL_PROOF,
-            algorithm = SignatureAlgorithm.ED25519,
-            keyAlias = holderKeyAlias,
-        )
+        val key =
+            wsca.ensureKey(
+                walletUnitId = walletUnitId,
+                usage = SecureComponentUsage.WALLET_CREDENTIAL_PROOF,
+                algorithm = SignatureAlgorithm.ED25519,
+                keyAlias = holderKeyAlias,
+            )
         assertTrue(key.isOk, "holder key must be provisioned through WSCA")
         val publicJwk = Json.decodeFromString<Jwk>(assertNotNull(key.value.publicKeyJwk))
         val did = JwkDidProviderImpl.didFromJwk(publicJwk)
         return HolderMaterial(did, "$did#0", holderKeyAlias)
     }
 
-    private suspend fun issue(issuer: IssuerMaterial, holderDid: String, name: String): JsonObject {
-        val configuration = CredentialConfigurationSupported(
-            format = CredentialFormat.LDP_VC.value,
-            credentialDefinition = CredentialDefinition(
-                context = listOf(VcdmProfiles.V2_0_CONTEXT),
-                type = listOf("VerifiableCredential", "DataIntegrityVcdm2Credential"),
-            ),
-        )
-        val result = (ctx.session.graph as VcdmDataIntegrityIssuerTestGraph).ldpVcFormatHandler.issueCredential(
-            CredentialRequest(format = CredentialFormat.LDP_VC.value),
-            IssuanceContext(
-                subject = holderDid,
-                clientId = "https://vcdm-di-client.example",
-                issuerIdentifier = issuer.did,
-                credentialConfigurationId = "vcdm-di-v2",
-                credentialConfiguration = configuration,
-                holderBindingKey = null,
-                attributes = mapOf("name" to JsonPrimitive(name)),
-                signingKeyAlias = issuerAlias,
-                signingKeyMode = SigningKeyMode.JwkThumbprint,
-                signingVerificationMethodId = issuer.verificationMethod,
-                dataIntegrityCryptosuite = "eddsa-jcs-2022",
-                issuanceClockSkewInSeconds = 0,
-                expirationInDays = 30,
-            ),
-        )
+    private suspend fun issue(
+        issuer: IssuerMaterial,
+        holderDid: String,
+        name: String
+    ): JsonObject {
+        val configuration =
+            CredentialConfigurationSupported(
+                format = CredentialFormat.LDP_VC.value,
+                credentialDefinition =
+                    CredentialDefinition(
+                        context = listOf(VcdmProfiles.V2_0_CONTEXT),
+                        type = listOf("VerifiableCredential", "DataIntegrityVcdm2Credential"),
+                    ),
+            )
+        val result =
+            (ctx.session.graph as VcdmDataIntegrityIssuerTestGraph).ldpVcFormatHandler.issueCredential(
+                CredentialRequest(format = CredentialFormat.LDP_VC.value),
+                IssuanceContext(
+                    subject = holderDid,
+                    clientId = "https://vcdm-di-client.example",
+                    issuerIdentifier = issuer.did,
+                    credentialConfigurationId = "vcdm-di-v2",
+                    credentialConfiguration = configuration,
+                    holderBindingKey = null,
+                    attributes = mapOf("name" to JsonPrimitive(name)),
+                    signingKeyAlias = issuerAlias,
+                    signingKeyMode = SigningKeyMode.JwkThumbprint,
+                    signingVerificationMethodId = issuer.verificationMethod,
+                    dataIntegrityCryptosuite = "eddsa-jcs-2022",
+                    issuanceClockSkewInSeconds = 0,
+                    expirationInDays = 30,
+                ),
+            )
         assertTrue(result.isOk, "production ldp_vc issuer must issue VCDM 2.0 DI credentials: ${if (result.isErr) result.error else ""}")
         return result.value.credential.jsonObject
     }
 
-    private suspend fun createRequest(query: DcqlQuery, nonce: String, state: String) =
-        (ctx.session.graph as Oid4vpPresentationTestGraph).oid4vpVerifierService.createAuthorizationRequest(
+    private suspend fun createRequest(
+        query: DcqlQuery,
+        nonce: String,
+        state: String
+    ) = (ctx.session.graph as Oid4vpPresentationTestGraph)
+        .oid4vpVerifierService
+        .createAuthorizationRequest(
             CreateAuthorizationRequestArgs(
                 instanceId = "vcdm-di-verifier",
                 dcqlQuery = query,
@@ -217,15 +244,18 @@ class VcdmDataIntegrityIssuePresentVerifyE2ETest {
                 state = state,
                 clientMetadata = dataIntegrityClientMetadata(),
             ),
-        ).also { assertTrue(it.isOk, "production verifier request command must succeed") }.value
+        ).also { assertTrue(it.isOk, "production verifier request command must succeed") }
+        .value
 
-    private fun resolvedRequest(request: AuthorizationRequest, query: DcqlQuery) =
-        ResolvedOid4vpRequest(
-            request = request,
-            dcqlQuery = query,
-            clientMetadata = dataIntegrityClientMetadata(),
-            verifierInfo = VerifierInfo(clientId = verifier, clientIdScheme = com.sphereon.openid.oid4vp.common.ClientIdScheme.REDIRECT_URI),
-        )
+    private fun resolvedRequest(
+        request: AuthorizationRequest,
+        query: DcqlQuery
+    ) = ResolvedOid4vpRequest(
+        request = request,
+        dcqlQuery = query,
+        clientMetadata = dataIntegrityClientMetadata(),
+        verifierInfo = VerifierInfo(clientId = verifier, clientIdScheme = com.sphereon.openid.oid4vp.common.ClientIdScheme.REDIRECT_URI),
+    )
 
     private fun dataIntegrityClientMetadata() =
         ClientMetadata(
@@ -239,9 +269,13 @@ class VcdmDataIntegrityIssuePresentVerifyE2ETest {
                 ),
         )
 
-    private suspend fun createResponse(request: ResolvedOid4vpRequest, credentials: List<JsonObject>, holder: HolderMaterial) =
-        (ctx.session.graph as Oid4vpPresentationTestGraph).let { graph ->
-            val selected = credentials.mapIndexed { index, credential ->
+    private suspend fun createResponse(
+        request: ResolvedOid4vpRequest,
+        credentials: List<JsonObject>,
+        holder: HolderMaterial
+    ) = (ctx.session.graph as Oid4vpPresentationTestGraph).let { graph ->
+        val selected =
+            credentials.mapIndexed { index, credential ->
                 SelectedCredential(
                     credentialQueryId = if (index == 0) QUERY_A else QUERY_B,
                     credentialId = "vcdm-di-credential-$index",
@@ -254,7 +288,8 @@ class VcdmDataIntegrityIssuePresentVerifyE2ETest {
                     dataIntegrityCryptosuite = "eddsa-jcs-2022",
                 )
             }
-            val bound = SecureComponentOid4vpDataIntegrityHolderBindingProvider(
+        val bound =
+            SecureComponentOid4vpDataIntegrityHolderBindingProvider(
                 (ctx.session.graph as WalletInteractionOid4vciWscaTestGraph).wsca,
                 (ctx.session.graph as VcdmDataIntegrityIssuerTestGraph).linkedDataDocumentLoader,
                 com.sphereon.wallet.interaction.protocol.oid4vp.Oid4vpDataIntegritySigningAlgorithmResolver.selectedCredentialMetadata,
@@ -266,15 +301,16 @@ class VcdmDataIntegrityIssuePresentVerifyE2ETest {
                     selectedCredentials = selected,
                 ),
             )
-            assertTrue(bound.isOk, "holder must bind each VP through WSCA: ${if (bound.isErr) bound.error else ""}")
-            graph.oid4vpHolder.commands.createAuthorizationResponse.execute(
+        assertTrue(bound.isOk, "holder must bind each VP through WSCA: ${if (bound.isErr) bound.error else ""}")
+        graph.oid4vpHolder.commands.createAuthorizationResponse
+            .execute(
                 CreateAuthorizationResponseArgs(
                     request = request,
                     selectedCredentials = bound.value.selectedCredentials,
                     preparedPresentations = bound.value.preparedPresentations,
                 ),
             ).also { assertTrue(it.isOk, "production holder response command must serialize secured VPs") }
-        }
+    }
 
     private suspend fun validate(
         request: AuthorizationRequest,
@@ -285,15 +321,22 @@ class VcdmDataIntegrityIssuePresentVerifyE2ETest {
         holder: HolderMaterial,
     ) = (ctx.session.graph as Oid4vpPresentationTestGraph).oid4vpVerifierService.let { service ->
         val vpToken = assertNotNull(response.vpToken)
-        val parsed = service.parseAuthorizationResponse(
-            ParseAuthorizationResponseArgs(
-                responseParams = mapOf(
-                    "vp_token" to json.encodeToString(kotlinx.serialization.json.JsonElement.serializer(), VpToken.run { vpToken.toJson() }),
-                    "state" to assertNotNull(response.state),
+        val parsed =
+            service.parseAuthorizationResponse(
+                ParseAuthorizationResponseArgs(
+                    responseParams =
+                        mapOf(
+                            "vp_token" to
+                                json.encodeToString(
+                                    kotlinx.serialization.json.JsonElement
+                                        .serializer(),
+                                    VpToken.run { vpToken.toJson() }
+                                ),
+                            "state" to assertNotNull(response.state),
+                        ),
+                    originalRequest = request,
                 ),
-                originalRequest = request,
-            ),
-        )
+            )
         assertTrue(parsed.isOk, "production response parser must accept the holder command output")
         service.validateAuthorizationResponse(
             ValidateAuthorizationResponseArgs(
@@ -301,42 +344,50 @@ class VcdmDataIntegrityIssuePresentVerifyE2ETest {
                 originalRequest = request,
                 dcqlQuery = query,
                 expectedNonce = expectedNonce,
-                verificationMethodResolutionPolicy = VerificationMethodResolutionPolicy.of(
-                    listOf(
-                        TrustedVerificationMethod(
-                            reference = issuer.verificationMethod,
-                            identifierOpts = ExternalIdentifierDidOpts(issuer.did),
-                            controller = issuer.did,
-                            authorizedProofPurposes = setOf(ProofPurpose.ASSERTION_METHOD),
-                        ),
-                        TrustedVerificationMethod(
-                            reference = holder.verificationMethod,
-                            identifierOpts = ExternalIdentifierDidOpts(holder.did),
-                            controller = holder.did,
-                            authorizedProofPurposes = setOf(ProofPurpose.AUTHENTICATION),
+                verificationMethodResolutionPolicy =
+                    VerificationMethodResolutionPolicy.of(
+                        listOf(
+                            TrustedVerificationMethod(
+                                reference = issuer.verificationMethod,
+                                identifierOpts = ExternalIdentifierDidOpts(issuer.did),
+                                controller = issuer.did,
+                                authorizedProofPurposes = setOf(ProofPurpose.ASSERTION_METHOD),
+                            ),
+                            TrustedVerificationMethod(
+                                reference = holder.verificationMethod,
+                                identifierOpts = ExternalIdentifierDidOpts(holder.did),
+                                controller = holder.did,
+                                authorizedProofPurposes = setOf(ProofPurpose.AUTHENTICATION),
+                            ),
                         ),
                     ),
-                ),
             ),
         )
     }
 
-    private fun query() = DcqlQuery(
-        credentials = listOf(
-            DcqlCredentialQuery(
-                id = QUERY_A,
-                format = CredentialFormat.LDP_VC.value,
-                meta = w3cVcMeta(listOf("VerifiableCredential", "DataIntegrityVcdm2Credential")),
-            ),
-            DcqlCredentialQuery(
-                id = QUERY_B,
-                format = CredentialFormat.LDP_VC.value,
-                meta = w3cVcMeta(listOf("VerifiableCredential", "DataIntegrityVcdm2Credential")),
-            ),
-        ),
-    )
+    private fun query() =
+        DcqlQuery(
+            credentials =
+                listOf(
+                    DcqlCredentialQuery(
+                        id = QUERY_A,
+                        format = CredentialFormat.LDP_VC.value,
+                        meta = w3cVcMeta(listOf("VerifiableCredential", "DataIntegrityVcdm2Credential")),
+                    ),
+                    DcqlCredentialQuery(
+                        id = QUERY_B,
+                        format = CredentialFormat.LDP_VC.value,
+                        meta = w3cVcMeta(listOf("VerifiableCredential", "DataIntegrityVcdm2Credential")),
+                    ),
+                ),
+        )
 
-    private fun assertVp(token: VpToken, issuer: IssuerMaterial, holder: HolderMaterial, nonce: String) {
+    private fun assertVp(
+        token: VpToken,
+        issuer: IssuerMaterial,
+        holder: HolderMaterial,
+        nonce: String
+    ) {
         val vp = assertIs<JsonObject>(token.getSinglePresentationElement(QUERY_A))
         assertEquals(holder.did, vp["holder"]?.toString()?.trim('"'))
         val vcs = assertIs<JsonArray>(vp["verifiableCredential"])
@@ -370,8 +421,16 @@ class VcdmDataIntegrityIssuePresentVerifyE2ETest {
         return VpToken(token.presentationElements + (QUERY_A to listOf(tamperedVp)) + (QUERY_B to listOf(tamperedVp)))
     }
 
-    private data class IssuerMaterial(val did: String, val verificationMethod: String)
-    private data class HolderMaterial(val did: String, val verificationMethod: String, val keyAlias: String)
+    private data class IssuerMaterial(
+        val did: String,
+        val verificationMethod: String
+    )
+
+    private data class HolderMaterial(
+        val did: String,
+        val verificationMethod: String,
+        val keyAlias: String
+    )
 
     private companion object {
         const val QUERY_A = "vcdm-di-a"

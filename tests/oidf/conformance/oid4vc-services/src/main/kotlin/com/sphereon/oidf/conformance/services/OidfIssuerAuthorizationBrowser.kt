@@ -56,6 +56,7 @@ internal class OidfIssuerAuthorizationBrowser(
         Files.createDirectories(evidenceDirectory)
         val transcriptPath = evidenceDirectory.resolve("authorization-browser.log")
         val transcript = mutableListOf<String>()
+
         fun record(line: String) {
             transcript += line
             Files.writeString(transcriptPath, transcript.joinToString("\n", postfix = "\n"))
@@ -76,8 +77,9 @@ internal class OidfIssuerAuthorizationBrowser(
         frontChannel@ for (step in 0 until MAX_FRONT_CHANNEL_STEPS) {
             when {
                 response.statusCode() in 300..399 -> {
-                    val location = response.headers().firstValue("Location").orElse(null)
-                        ?: error("Front-channel redirect from $logicalUri omitted Location")
+                    val location =
+                        response.headers().firstValue("Location").orElse(null)
+                            ?: error("Front-channel redirect from $logicalUri omitted Location")
                     logicalUri = logicalUri.resolve(location)
                     response = sendGet(logicalUri)
                     record(describe("GET", logicalUri, response))
@@ -118,7 +120,11 @@ internal class OidfIssuerAuthorizationBrowser(
                 response.statusCode() == 200 && IMPLICIT_SUBMIT.find(response.body()) != null -> {
                     val callbackUri = logicalUri
                     val implicitSubmitUrl =
-                        IMPLICIT_SUBMIT.find(response.body())?.groupValues?.get(1)?.decodeHtml()
+                        IMPLICIT_SUBMIT
+                            .find(response.body())
+                            ?.groupValues
+                            ?.get(1)
+                            ?.decodeHtml()
                             ?: error("OIDF callback page omitted its implicit submission URL")
                     logicalUri = callbackUri.resolve(implicitSubmitUrl)
                     response = sendImplicitSubmission(logicalUri, callbackUri.rawFragment?.let { "#$it" }.orEmpty())
@@ -130,10 +136,13 @@ internal class OidfIssuerAuthorizationBrowser(
                     terminalResponseReached = true
                     break@frontChannel
                 }
-                else -> error(
-                    "Issuer authorization front channel returned HTTP ${response.statusCode()} at $logicalUri: " +
-                        response.body().take(1_000),
-                )
+
+                else -> {
+                    error(
+                        "Issuer authorization front channel returned HTTP ${response.statusCode()} at $logicalUri: " +
+                            response.body().take(1_000),
+                    )
+                }
             }
         }
 
@@ -219,11 +228,19 @@ internal class OidfIssuerAuthorizationBrowser(
 
     private fun parseLoginForm(html: String): LoginForm {
         val action =
-            LOGIN_FORM_ACTION.find(html)?.groupValues?.get(1)?.decodeHtml()
+            LOGIN_FORM_ACTION
+                .find(html)
+                ?.groupValues
+                ?.get(1)
+                ?.decodeHtml()
                 ?: error("VDX login page did not contain the expected POST form action")
         val hidden =
             REQUIRED_HIDDEN_FIELDS.associateWith { name ->
-                hiddenInput(name).find(html)?.groupValues?.get(1)?.decodeHtml()
+                hiddenInput(name)
+                    .find(html)
+                    ?.groupValues
+                    ?.get(1)
+                    ?.decodeHtml()
                     ?: error("VDX login page omitted required hidden field '$name'")
             }
         return LoginForm(action = action, hiddenFields = hidden)
@@ -231,11 +248,19 @@ internal class OidfIssuerAuthorizationBrowser(
 
     private fun parseCancelForm(html: String): LoginForm {
         val action =
-            CANCEL_FORM_ACTION.find(html)?.groupValues?.get(1)?.decodeHtml()
+            CANCEL_FORM_ACTION
+                .find(html)
+                ?.groupValues
+                ?.get(1)
+                ?.decodeHtml()
                 ?: error("VDX login page did not contain the expected cancel form action")
         val hidden =
             CANCEL_HIDDEN_FIELDS.associateWith { name ->
-                hiddenInput(name).find(html)?.groupValues?.get(1)?.decodeHtml()
+                hiddenInput(name)
+                    .find(html)
+                    ?.groupValues
+                    ?.get(1)
+                    ?.decodeHtml()
                     ?: error("VDX login cancel form omitted required hidden field '$name'")
             }
         return LoginForm(action = action, hiddenFields = hidden)
@@ -268,7 +293,11 @@ internal class OidfIssuerAuthorizationBrowser(
     ): String {
         val location = response.headers().firstValue("Location").orElse(null)
         return buildString {
-            append(method).append(' ').append(logicalUri).append(" -> ").append(response.statusCode())
+            append(method)
+                .append(' ')
+                .append(logicalUri)
+                .append(" -> ")
+                .append(response.statusCode())
             location?.let { append(" Location: ").append(logicalUri.resolve(it)) }
         }
     }
@@ -299,8 +328,7 @@ internal class OidfIssuerAuthorizationBrowser(
                 RegexOption.IGNORE_CASE,
             )
 
-        fun hiddenInput(name: String): Regex =
-            Regex("""<input[^>]*name="$name"[^>]*value="([^"]*)"""", RegexOption.IGNORE_CASE)
+        fun hiddenInput(name: String): Regex = Regex("""<input[^>]*name="$name"[^>]*value="([^"]*)"""", RegexOption.IGNORE_CASE)
 
         fun urlEncode(value: String): String = URLEncoder.encode(value, StandardCharsets.UTF_8)
 

@@ -1,3 +1,8 @@
+import org.gradle.api.tasks.application.CreateStartScripts
+import org.gradle.jvm.application.scripts.JavaAppStartScriptGenerationDetails
+import org.gradle.jvm.application.scripts.ScriptGenerator
+import java.io.Writer
+
 /*
  * BYO OIDC example service.
  *
@@ -26,54 +31,59 @@ metro {
 group = "com.sphereon.example"
 version = "1.0.0-SNAPSHOT"
 
+// IDK publications retain the owning platform version, independent of this example.
+val idkArtifactVersion = rootProject.extra["platformVersion"].toString()
+
 application {
     mainClass.set("com.sphereon.example.byo.ByoOidcApplicationKt")
 }
 
 dependencies {
+    // Root examples consume pack publications. IDK_LOCAL_PACKS composites substitute
+    // these same coordinates when explicitly selected for source development.
     // ----- IDK-only runtime dependencies -----
     // Core types: SessionContext, IdkResult, error model, AppGraph abstractions.
-    implementation(projects.libCoreApiPublic)
+    implementation("com.sphereon.idk:lib-core-api-public:$idkArtifactVersion")
     // Default SessionContextFactory, IdentityResolutionPipeline, UserContextManager,
     // SessionContextManager bindings, DefaultRootScopeProvider, OidcPrincipalResolver.
-    implementation(projects.libCoreApiDefault)
+    implementation("com.sphereon.idk:lib-core-api-default:$idkArtifactVersion")
 
     // JWT validation: DefaultJwtValidationService, DefaultIdpRegistry.
-    implementation(projects.libOauth2JwtValidationApi)
-    implementation(projects.libOauth2JwtValidationImpl)
+    implementation("com.sphereon.idk:lib-oauth2-jwt-validation-api:$idkArtifactVersion")
+    implementation("com.sphereon.idk:lib-oauth2-jwt-validation-impl:$idkArtifactVersion")
 
     // OAuth2 resource server: VerifyJwtCommandImpl (delegates to JwtService).
-    implementation(projects.libOauth2ServerResourcePublic)
-    implementation(projects.libOauth2ServerResourceImpl)
+    implementation("com.sphereon.idk:lib-oauth2-server-resource-public:$idkArtifactVersion")
+    implementation("com.sphereon.idk:lib-oauth2-server-resource-impl:$idkArtifactVersion")
 
     // OAuth2 client: FetchAuthorizationServerMetadataCommand is required by
     // ResourceServerIntrospectTokenCommandImpl, which sits on the classpath
     // next to VerifyJwtCommand. We don't use introspection in the BYO demo
     // (JWTs are verified via JWKS, not the introspection endpoint) but
     // Metro needs the binding to construct the session graph.
-    implementation(projects.libOauth2CommonPublic)
-    implementation(projects.libOauth2CommonImpl)
-    implementation(projects.libOauth2ClientPublic)
-    implementation(projects.libOauth2ClientImpl)
+    implementation("com.sphereon.idk:lib-oauth2-common-public:$idkArtifactVersion")
+    implementation("com.sphereon.idk:lib-oauth2-common-impl:$idkArtifactVersion")
+    implementation("com.sphereon.idk:lib-oauth2-client-public:$idkArtifactVersion")
+    implementation("com.sphereon.idk:lib-oauth2-client-impl:$idkArtifactVersion")
 
     // Crypto core: JwtServiceImpl + VerifyJwsCommandImpl + IdentifierService +
     // SignatureService + JwksUrlExternalIdentifierResolutionServiceImpl.
-    implementation(projects.libCryptoCorePublic)
-    implementation(projects.libCryptoCoreImpl)
+    implementation("com.sphereon.idk:lib-crypto-core-public:$idkArtifactVersion")
+    implementation("com.sphereon.idk:lib-crypto-core-impl:$idkArtifactVersion")
 
     // Software KMS provider: supplies RSA / EC verification primitives to
     // SignatureService. Without it, VerifyJwsCommand fails with
     // "No KMS found for signature algorithm RSA_SHA256" when validating
     // RS256-signed access tokens. The provider runs purely in-process, so
     // it stays IDK-pure.
-    implementation(projects.libCryptoKmsProviderSoftware)
+    implementation("com.sphereon.idk:lib-crypto-kms-provider-software:$idkArtifactVersion")
 
     // HTTP client implementation: the JWKS URL resolver uses HttpClientFactory.
-    implementation(projects.libDataLinkHttpClientPublic)
-    implementation(projects.libDataLinkHttpClientImpl)
+    implementation("com.sphereon.idk:lib-data-link-http-client-public:$idkArtifactVersion")
+    implementation("com.sphereon.idk:lib-data-link-http-client-impl:$idkArtifactVersion")
 
     // A-2 Ktor plugin: install(JwtAuthentication) { ... }.
-    implementation(projects.ktorServerJwtAuth)
+    implementation("com.sphereon.idk:ktor-server-jwt-auth:$idkArtifactVersion")
 
     // DI (Metro + Amazon App Platform scope infrastructure used by AppGraph).
     implementation(libs.bundles.app.platform.di)
@@ -103,6 +113,72 @@ dependencies {
     // Testcontainers (declared in sphereonlib library BOM).
     testImplementation(sphereonlib.org.testcontainers.testcontainers)
     testImplementation(sphereonlib.org.testcontainers.junit.jupiter)
+}
+
+class CoordinateClasspathScriptGenerator(
+    private val delegate: ScriptGenerator,
+    private val libraryPaths: List<String>,
+) : ScriptGenerator {
+    override fun generateScript(
+        details: JavaAppStartScriptGenerationDetails,
+        destination: Writer,
+    ) {
+        require(details.modulePath.isEmpty()) { "BYO distribution uses a classpath, not a module path" }
+        delegate.generateScript(
+            object : JavaAppStartScriptGenerationDetails by details {
+                override fun getClasspath(): List<String> = libraryPaths
+            },
+            destination,
+        )
+    }
+}
+
+// Resolve after Kotlin and convention plugins finish declaring their dependencies.
+afterEvaluate {
+    // Colliding distribution filenames include Maven identity: fork modules may publish different
+    // bytecode with the same physical JAR basename. Keep every runtime artifact.
+    val runtimeDistributionArtifacts =
+        configurations
+            .named("runtimeClasspath")
+            .get()
+            .resolvedConfiguration
+            .resolvedArtifacts
+    val collidingLibraryBasenames =
+        runtimeDistributionArtifacts.groupBy { it.file.name }.filterValues { it.size > 1 }.keys
+    val distributionLibraryNames =
+        runtimeDistributionArtifacts.associate { artifact ->
+            val coordinate = artifact.moduleVersion.id
+            val name =
+                if (artifact.file.name in collidingLibraryBasenames) {
+                    "${coordinate.group}__${coordinate.name}__${coordinate.version}__${artifact.file.name}"
+                } else {
+                    artifact.file.name
+                }
+            require(name.matches(Regex("[A-Za-z0-9._-]+"))) { "Unsafe distribution artifact filename: $name" }
+            artifact.file.absolutePath to name
+        }
+    require(distributionLibraryNames.values.toSet().size == distributionLibraryNames.size) {
+        "Distribution Maven identities do not produce unique filenames"
+    }
+
+    tasks.named<CreateStartScripts>("startScripts") {
+        val names = distributionLibraryNames
+        val libraryPaths =
+            requireNotNull(classpath).files.map { file ->
+                "lib/" + (names[file.absolutePath] ?: file.name)
+            }
+        require(libraryPaths.toSet().size == libraryPaths.size) { "Distribution classpath names collide" }
+        inputs.property("distributionLibraryPaths", libraryPaths)
+        unixStartScriptGenerator = CoordinateClasspathScriptGenerator(unixStartScriptGenerator, libraryPaths)
+        windowsStartScriptGenerator = CoordinateClasspathScriptGenerator(windowsStartScriptGenerator, libraryPaths)
+    }
+
+    distributions.named("main") {
+        val names = distributionLibraryNames
+        contents.eachFile {
+            names[file.absolutePath]?.let { name = it }
+        }
+    }
 }
 
 tasks.withType<Test>().configureEach {

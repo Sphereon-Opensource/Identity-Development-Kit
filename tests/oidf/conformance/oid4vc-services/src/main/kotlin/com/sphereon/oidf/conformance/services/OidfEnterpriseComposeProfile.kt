@@ -9,13 +9,6 @@ package com.sphereon.oidf.conformance.services
 
 import com.sphereon.oidf.conformance.OidfSuiteConfigPreprocessor
 import com.sphereon.oidf.conformance.OidfSuiteEnvironment
-import java.nio.file.Files
-import java.nio.file.Path
-import java.nio.file.StandardCopyOption
-import java.security.MessageDigest
-import java.time.Duration
-import java.util.concurrent.TimeUnit
-import kotlin.io.path.isRegularFile
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -27,6 +20,13 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
+import java.nio.file.Files
+import java.nio.file.Path
+import java.nio.file.StandardCopyOption
+import java.security.MessageDigest
+import java.time.Duration
+import java.util.concurrent.TimeUnit
+import kotlin.io.path.isRegularFile
 
 /**
  * Applies the suite profile to an already provisioned production Compose deployment.
@@ -72,14 +72,20 @@ internal class OidfEnterpriseComposeProfile(
     private val composeDirectory = infraWorkspace.resolve("deploy/edk/e2e/compose").normalize()
     private val ingressComposeFile =
         when {
-            composeIngress == "localtest" -> composeDirectory.resolve("docker-compose.gateway.yml")
+            composeIngress == "localtest" -> {
+                composeDirectory.resolve("docker-compose.gateway.yml")
+            }
+
             BEHIND_EDGE_INGRESS.matches(composeIngress) -> {
                 val environmentLabel = BEHIND_EDGE_INGRESS.matchEntire(composeIngress)!!.groupValues[1]
                 composeDirectory.resolve("docker-compose.behind-edge.$environmentLabel.yml")
             }
-            else -> error(
-                "enterpriseContext.composeIngress must be 'localtest' or 'behind-edge-<label>', got '$composeIngress'",
-            )
+
+            else -> {
+                error(
+                    "enterpriseContext.composeIngress must be 'localtest' or 'behind-edge-<label>', got '$composeIngress'",
+                )
+            }
         }
     private val composeFiles = oidfEnterpriseComposeFiles(composeDirectory, ingressComposeFile, composeRuntime)
     private val baseComposeFiles = composeFiles.base
@@ -252,10 +258,12 @@ internal class OidfEnterpriseComposeProfile(
         val failures = mutableListOf<String>()
         val records =
             COHERENCE_SERVICES.map { service ->
-                val serviceConfig = services[service]?.jsonObject
-                    ?: error("Rendered enterprise Compose config has no $service service")
-                val image = serviceConfig["image"]?.jsonPrimitive?.content
-                    ?: error("Rendered enterprise Compose service $service has no image")
+                val serviceConfig =
+                    services[service]?.jsonObject
+                        ?: error("Rendered enterprise Compose config has no $service service")
+                val image =
+                    serviceConfig["image"]?.jsonPrimitive?.content
+                        ?: error("Rendered enterprise Compose service $service has no image")
                 val effectiveEntrypoint = oidfEntrypointValues(serviceConfig["entrypoint"])
                 val inspection = inspectImage(image)
                 val effectiveRuntime = oidfEntrypointRuntime(effectiveEntrypoint)
@@ -264,7 +272,7 @@ internal class OidfEnterpriseComposeProfile(
                 if (!coherent) {
                     failures +=
                         "$service renders ${effectiveEntrypoint.joinToString(" ")} (${effectiveRuntime ?: "unknown"}) " +
-                            "but $image provides ${inspection.entrypoint.joinToString(" ")} (${imageRuntime ?: "unknown"})"
+                        "but $image provides ${inspection.entrypoint.joinToString(" ")} (${imageRuntime ?: "unknown"})"
                 }
                 buildJsonObject {
                     put("service", service)
@@ -295,9 +303,15 @@ internal class OidfEnterpriseComposeProfile(
                 command = listOf("docker", "image", "inspect", image),
                 timeout = Duration.ofMinutes(1),
             )
-        val inspected = Json.parseToJsonElement(output).jsonArray.single().jsonObject
-        val id = inspected["Id"]?.jsonPrimitive?.content
-            ?: error("docker image inspect returned no image ID for $image")
+        val inspected =
+            Json
+                .parseToJsonElement(output)
+                .jsonArray
+                .single()
+                .jsonObject
+        val id =
+            inspected["Id"]?.jsonPrimitive?.content
+                ?: error("docker image inspect returned no image ID for $image")
         val entrypoint = oidfEntrypointValues(inspected["Config"]?.jsonObject?.get("Entrypoint"))
         return OidfImageInspection(id = id, entrypoint = entrypoint)
     }
@@ -337,11 +351,13 @@ internal class OidfEnterpriseComposeProfile(
             "Unable to inspect the provisioned enterprise platform container"
         }
         val values =
-            output.lineSequence()
+            output
+                .lineSequence()
                 .mapNotNull { line ->
                     val separator = line.indexOf('=')
                     if (separator <= 0) null else line.substring(0, separator) to line.substring(separator + 1)
                 }.toMap()
+
         fun required(name: String): String =
             values[name]?.takeIf(String::isNotBlank)
                 ?: error("Provisioned enterprise platform container has no $name")

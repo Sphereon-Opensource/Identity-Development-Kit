@@ -1,0 +1,177 @@
+openapi: 3.0.4
+info:
+  title: Email API Components
+  version: 0.1.0
+  description: Entity schemas, request payloads, and path parameters for the Email API.
+paths: {}
+components:
+  schemas:
+    EmailAddress:
+      type: object
+      description: An email participant. A bare address, optionally with a display name.
+      required: [address]
+      properties:
+        address:
+          type: string
+          format: email
+          description: RFC 5322 mailbox address.
+          example: alice@example.com
+        name:
+          type: string
+          nullable: true
+          description: Optional display name shown alongside the address.
+          example: Alice Smith
+
+    EmailStatus:
+      type: object
+      description: >-
+        Configuration and health of the email service for the calling tenant. The endpoint always
+        responds `200`; `available` and `healthy` report whether the requested email-type route is usable
+        rather than being signalled through the HTTP status.
+      required: [emailTypeId, available, healthy]
+      properties:
+        emailTypeId:
+          $ref: '#/components/schemas/EmailTypeId'
+        available:
+          type: boolean
+          description: True when the exact email type resolves to a usable account configuration.
+        healthy:
+          type: boolean
+          description: True when the exact route resolves to a configured transport. Tracks `available` for SMTP.
+        lastError:
+          type: string
+          nullable: true
+          description: The most recent configuration or connectivity error, when one is known.
+
+    EmailTypeId:
+      type: string
+      pattern: '^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$'
+      description: Stable registered business-event id used to select content and one sender identity.
+      example: identity.password-change
+
+    EmailDelivery:
+      type: object
+      description: >-
+        Outcome of an accepted send. Returned with `202`; a send that the transport rejects is
+        reported as an error response, not as a `FAILED` body.
+      required: [status]
+      properties:
+        deliveryId:
+          type: string
+          nullable: true
+          description: Service-assigned id for the accepted message. Mirrors the provider message id for the SMTP transport.
+        providerMessageId:
+          type: string
+          nullable: true
+          description: The transport-assigned message id, such as the SMTP `Message-ID`.
+        transportId:
+          type: string
+          nullable: true
+          description: The id of the transport that delivered the message, for example `smtp`.
+        status:
+          type: string
+          enum: [SENT, FAILED, PENDING]
+          default: SENT
+          description: Delivery state. Accepted sends report `SENT`.
+
+    SendEmailRequest:
+      type: object
+      description: A raw email. Provide an HTML body, a plain-text body, or both.
+      required: [emailTypeId, to, subject]
+      properties:
+        emailTypeId:
+          $ref: '#/components/schemas/EmailTypeId'
+        to:
+          type: array
+          minItems: 1
+          description: Primary recipients.
+          items:
+            $ref: '#/components/schemas/EmailAddress'
+        subject:
+          type: string
+          example: Welcome to VDX
+        htmlBody:
+          type: string
+          nullable: true
+          description: HTML body.
+        textBody:
+          type: string
+          nullable: true
+          description: Plain-text body.
+        replyTo:
+          $ref: '#/components/schemas/EmailAddress'
+        cc:
+          type: array
+          description: Carbon-copy recipients.
+          items:
+            $ref: '#/components/schemas/EmailAddress'
+        bcc:
+          type: array
+          description: Blind carbon-copy recipients.
+          items:
+            $ref: '#/components/schemas/EmailAddress'
+
+    SendTemplatedEmailRequest:
+      type: object
+      description: A catalog-backed email. The server selects published content and validates typed variables before delivery.
+      required: [emailTypeId, to, variables]
+      properties:
+        emailTypeId:
+          $ref: '#/components/schemas/EmailTypeId'
+        templateId:
+          type: string
+          nullable: true
+          description: Optional published same-tenant template override bound to the requested email type.
+        locale:
+          type: string
+          nullable: true
+          pattern: '^[A-Za-z]{2,8}(?:-[A-Za-z0-9]{1,8})*$'
+          description: Preferred BCP-47 locale. Resolution tries the exact tag, base language, then the template default.
+        applicationId:
+          type: string
+          nullable: true
+          description: Optional application owned by the calling tenant. Selects application-specific content and live branding.
+        to:
+          type: array
+          minItems: 1
+          description: Primary recipients.
+          items:
+            $ref: '#/components/schemas/EmailAddress'
+        variables:
+          type: object
+          additionalProperties: true
+          description: Typed JSON variables validated against the registered email-type contract. Branding names are reserved.
+          example:
+            displayName: Alice Smith
+            verificationLink: https://app.example.com/tenants/signup/confirm?token=abc
+        replyTo:
+          $ref: '#/components/schemas/EmailAddress'
+        cc:
+          type: array
+          items:
+            $ref: '#/components/schemas/EmailAddress'
+        bcc:
+          type: array
+          items:
+            $ref: '#/components/schemas/EmailAddress'
+
+    TestSendEmailRequest:
+      type: object
+      description: Administrative diagnostic send; this is the only send contract with explicit account selection.
+      required: [accountId, to, subject]
+      properties:
+        accountId:
+          type: string
+        to:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/EmailAddress'
+        subject:
+          type: string
+        htmlBody:
+          type: string
+          nullable: true
+        textBody:
+          type: string
+          nullable: true

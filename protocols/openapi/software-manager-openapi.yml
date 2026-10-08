@@ -1,0 +1,1048 @@
+openapi: 3.0.4
+info:
+  title: Software / Instance Manager API
+  version: 0.1.0
+  description: |
+    Manage tenant-owned software and service instances. The generic `ServiceInstances`
+    section provides cross-type CRUD, lifecycle actions, and deployment and endpoint
+    sub-resources. Typed sections for authorization servers, OID4VCI issuers, and OID4VP
+    verifiers expose protocol-specific create and update operations.
+
+    Instances are represented as software parties and can be deployed, suspended, resumed,
+    decommissioned, discovered, and connected to runtime endpoints from one base path.
+servers:
+  - url: http://localhost:8080/api/services/v1
+
+security:
+  - bearer: []
+
+paths:
+  /services/instances:
+    get:
+      operationId: listServiceInstances
+      x-license-protection:
+        entitlementKey: vdx.services.instance.list
+        deploymentShapePredicates: [packaging=container, environment=production]
+        protectionMode: licensed
+      summary: List all service instances across types
+      tags: [ServiceInstances]
+      parameters:
+        - name: softwareKind
+          in: query
+          schema:
+            $ref: './software-manager-components.yml#/components/schemas/SoftwareKind'
+        - name: capabilityType
+          in: query
+          schema:
+            $ref: './software-manager-components.yml#/components/schemas/CapabilityType'
+        - name: lifecycleStatus
+          in: query
+          schema:
+            $ref: './software-manager-components.yml#/components/schemas/LifecycleStatus'
+        - name: managementMode
+          in: query
+          schema:
+            $ref: './software-manager-components.yml#/components/schemas/ManagementMode'
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 0
+        - name: size
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: Paginated list of service instances.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServiceInstanceListResponse'
+
+  /services/instances/{instanceId}:
+    get:
+      operationId: getServiceInstance
+      x-license-protection:
+        entitlementKey: vdx.services.instance.get
+        deploymentShapePredicates: [packaging=container, environment=production]
+        protectionMode: licensed
+      summary: Get a service instance by ID
+      tags: [ServiceInstances]
+      parameters:
+        - name: instanceId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Service instance detail.
+          content:
+            application/json:
+              schema:
+                $ref: './software-manager-components.yml#/components/schemas/ServiceInstanceSummary'
+        '404':
+          description: Not found.
+
+    delete:
+      operationId: deleteServiceInstance
+      x-license-protection:
+        entitlementKey: vdx.services.instance.delete
+        deploymentShapePredicates: [packaging=container, environment=production]
+        protectionMode: licensed
+      summary: Soft-delete a service instance
+      tags: [ServiceInstances]
+      parameters:
+        - name: instanceId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Deleted.
+
+  /services/instances/{instanceId}/actions/deploy:
+    post:
+      operationId: deployServiceInstance
+      x-license-protection:
+        entitlementKey: vdx.services.capability.deploy
+        deploymentShapePredicates: [packaging=container, environment=production]
+        protectionMode: licensed
+      summary: Deploy a managed service instance
+      tags: [ServiceInstances]
+      parameters:
+        - name: instanceId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: './software-manager-components.yml#/components/schemas/LifecycleActionRequest'
+      responses:
+        '200':
+          description: Deployment initiated.
+
+  /services/instances/{instanceId}/actions/suspend:
+    post:
+      operationId: suspendServiceInstance
+      x-license-protection:
+        entitlementKey: vdx.services.capability.suspend
+        deploymentShapePredicates: [packaging=container, environment=production]
+        protectionMode: licensed
+      summary: Suspend a service instance
+      tags: [ServiceInstances]
+      parameters:
+        - name: instanceId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: './software-manager-components.yml#/components/schemas/LifecycleActionRequest'
+      responses:
+        '200':
+          description: Suspended.
+
+  /services/instances/{instanceId}/actions/resume:
+    post:
+      operationId: resumeServiceInstance
+      x-license-protection:
+        entitlementKey: vdx.services.capability.resume
+        deploymentShapePredicates: [packaging=container, environment=production]
+        protectionMode: licensed
+      summary: Resume a suspended service instance
+      tags: [ServiceInstances]
+      parameters:
+        - name: instanceId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: './software-manager-components.yml#/components/schemas/LifecycleActionRequest'
+      responses:
+        '200':
+          description: Resumed.
+
+  /services/instances/{instanceId}/actions/decommission:
+    post:
+      operationId: decommissionServiceInstance
+      x-license-protection:
+        entitlementKey: vdx.services.capability.decommission
+        deploymentShapePredicates: [packaging=container, environment=production]
+        protectionMode: licensed
+      summary: Decommission a service instance
+      tags: [ServiceInstances]
+      parameters:
+        - name: instanceId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: './software-manager-components.yml#/components/schemas/LifecycleActionRequest'
+      responses:
+        '200':
+          description: Decommissioned.
+
+  /services/instances/{instanceId}/actions/discover:
+    post:
+      operationId: discoverServiceInstance
+      x-license-protection:
+        entitlementKey: vdx.services.capability.discover
+        deploymentShapePredicates: [packaging=container, environment=production]
+        protectionMode: licensed
+      summary: Trigger metadata discovery for a service instance
+      tags: [ServiceInstances]
+      parameters:
+        - name: instanceId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Discovery completed.
+          content:
+            application/json:
+              schema:
+                $ref: './software-manager-components.yml#/components/schemas/MetadataSnapshot'
+
+  /services/instances/{instanceId}/deployments:
+    parameters:
+      - name: instanceId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      operationId: listDeployments
+      summary: List deployments for a service instance
+      tags: [ServiceInstances]
+      responses:
+        '200':
+          description: Deployments for this instance.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeploymentListResponse'
+    post:
+      operationId: addDeployment
+      summary: Add a deployment to a service instance
+      tags: [ServiceInstances]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './software-manager-components.yml#/components/schemas/DeploymentCreateRequest'
+      responses:
+        '201':
+          description: Deployment created.
+          content:
+            application/json:
+              schema:
+                $ref: './software-manager-components.yml#/components/schemas/SoftwareDeployment'
+
+  /services/instances/{instanceId}/deployments/{deploymentId}:
+    parameters:
+      - name: instanceId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: deploymentId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    patch:
+      operationId: updateDeploymentStatus
+      summary: Update deployment status
+      tags: [ServiceInstances]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeploymentStatusUpdateRequest'
+      responses:
+        '200':
+          description: Deployment updated.
+          content:
+            application/json:
+              schema:
+                $ref: './software-manager-components.yml#/components/schemas/SoftwareDeployment'
+
+  /services/instances/{instanceId}/endpoints:
+    parameters:
+      - name: instanceId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      operationId: listEndpoints
+      summary: List endpoints for a service instance
+      tags: [ServiceInstances]
+      responses:
+        '200':
+          description: Endpoints for this instance.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EndpointListResponse'
+    post:
+      operationId: addEndpoint
+      summary: Add an endpoint to a service instance
+      tags: [ServiceInstances]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './software-manager-components.yml#/components/schemas/EndpointCreateRequest'
+      responses:
+        '201':
+          description: Endpoint created.
+          content:
+            application/json:
+              schema:
+                $ref: './software-manager-components.yml#/components/schemas/SoftwareEndpoint'
+
+  /services/instances/{instanceId}/endpoints/{endpointId}:
+    parameters:
+      - name: instanceId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: endpointId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    delete:
+      operationId: removeEndpoint
+      summary: Remove an endpoint
+      tags: [ServiceInstances]
+      responses:
+        '204':
+          description: Removed.
+
+  # -------------------------------------------------------------------------
+  # AuthorizationServers (absorbed from oauth2-server-openapi.yml)
+  # -------------------------------------------------------------------------
+  /oauth2/servers:
+    get:
+      operationId: listAuthorizationServers
+      x-license-protection:
+        entitlementKey: vdx.oauth2.server.list
+        deploymentShapePredicates: [packaging=container, environment=production]
+        protectionMode: licensed
+      summary: List authorization server instances
+      tags: [AuthorizationServers]
+      parameters:
+        - name: managementMode
+          in: query
+          schema:
+            $ref: './software-manager-components.yml#/components/schemas/ManagementMode'
+        - name: lifecycleStatus
+          in: query
+          schema:
+            $ref: './software-manager-components.yml#/components/schemas/LifecycleStatus'
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 0
+        - name: size
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: List of authorization servers.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthorizationServerListResponse'
+
+    post:
+      operationId: createAuthorizationServer
+      x-license-protection:
+        entitlementKey: vdx.oauth2.server.create
+        deploymentShapePredicates: [packaging=container, environment=production]
+        protectionMode: licensed
+        quotaKeys: [oauth2.authorizationServer.instances.perTenant.max]
+      summary: Create an authorization server instance
+      tags: [AuthorizationServers]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuthorizationServerCreateRequest'
+      responses:
+        '201':
+          description: Authorization server created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthorizationServerDetail'
+
+  /oauth2/servers/{asId}:
+    get:
+      operationId: getAuthorizationServer
+      x-license-protection:
+        entitlementKey: vdx.oauth2.server.get
+        deploymentShapePredicates: [packaging=container, environment=production]
+        protectionMode: licensed
+      summary: Get authorization server detail
+      tags: [AuthorizationServers]
+      parameters:
+        - name: asId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Authorization server detail.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthorizationServerDetail'
+        '404':
+          description: Not found.
+
+    patch:
+      operationId: updateAuthorizationServer
+      x-license-protection:
+        entitlementKey: vdx.oauth2.server.update
+        deploymentShapePredicates: [packaging=container, environment=production]
+        protectionMode: licensed
+      summary: Update an authorization server
+      tags: [AuthorizationServers]
+      parameters:
+        - name: asId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuthorizationServerUpdateRequest'
+      responses:
+        '200':
+          description: Updated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthorizationServerDetail'
+
+    delete:
+      operationId: deleteAuthorizationServer
+      x-license-protection:
+        entitlementKey: vdx.oauth2.server.delete
+        deploymentShapePredicates: [packaging=container, environment=production]
+        protectionMode: licensed
+      summary: Soft-delete an authorization server
+      tags: [AuthorizationServers]
+      parameters:
+        - name: asId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Deleted.
+
+  /oauth2/servers/{asId}/credentials:
+    get:
+      operationId: listAuthorizationServerCredentials
+      summary: List credentials for this AS
+      tags: [AuthorizationServers]
+      parameters:
+        - name: asId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: List of credentials (secrets masked).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CredentialListResponse'
+
+    post:
+      operationId: addAuthorizationServerCredential
+      summary: Add a credential for this AS
+      tags: [AuthorizationServers]
+      parameters:
+        - name: asId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CredentialCreateRequest'
+      responses:
+        '201':
+          description: Credential added.
+          content:
+            application/json:
+              schema:
+                $ref: './software-manager-components.yml#/components/schemas/SoftwareCredential'
+
+  /oauth2/servers/{asId}/credentials/{credentialId}:
+    delete:
+      operationId: removeAuthorizationServerCredential
+      summary: Remove a credential
+      tags: [AuthorizationServers]
+      parameters:
+        - name: asId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: credentialId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Removed.
+
+  # -------------------------------------------------------------------------
+  # Oid4vciIssuers (absorbed from oid4vci-openapi.yml)
+  # -------------------------------------------------------------------------
+  /oid4vci/issuers:
+    get:
+      operationId: listOid4vciIssuers
+      x-license-protection:
+        entitlementKey: vdx.oid4vci.issuer.list
+        deploymentShapePredicates: [packaging=container, environment=production]
+        protectionMode: licensed
+      summary: List OID4VCI issuer instances
+      tags: [Oid4vciIssuers]
+      parameters:
+        - name: managementMode
+          in: query
+          schema:
+            $ref: './software-manager-components.yml#/components/schemas/ManagementMode'
+        - name: lifecycleStatus
+          in: query
+          schema:
+            $ref: './software-manager-components.yml#/components/schemas/LifecycleStatus'
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 0
+        - name: size
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: List of issuers.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Oid4vciIssuerListResponse'
+
+    post:
+      operationId: createOid4vciIssuer
+      x-license-protection:
+        entitlementKey: vdx.oid4vci.issuer.create
+        deploymentShapePredicates: [packaging=container, environment=production]
+        protectionMode: licensed
+        quotaKeys: [oid4vci.issuer.instances.perTenant.max]
+      summary: Create an OID4VCI issuer instance
+      tags: [Oid4vciIssuers]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Oid4vciIssuerCreateRequest'
+      responses:
+        '201':
+          description: Issuer created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Oid4vciIssuerDetail'
+
+  /oid4vci/issuers/{issuerId}:
+    get:
+      operationId: getOid4vciIssuer
+      x-license-protection:
+        entitlementKey: vdx.oid4vci.issuer.get
+        deploymentShapePredicates: [packaging=container, environment=production]
+        protectionMode: licensed
+      summary: Get issuer detail
+      tags: [Oid4vciIssuers]
+      parameters:
+        - name: issuerId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Issuer detail.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Oid4vciIssuerDetail'
+
+    patch:
+      operationId: updateOid4vciIssuer
+      x-license-protection:
+        entitlementKey: vdx.oid4vci.issuer.update
+        deploymentShapePredicates: [packaging=container, environment=production]
+        protectionMode: licensed
+      summary: Update an issuer
+      tags: [Oid4vciIssuers]
+      parameters:
+        - name: issuerId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Oid4vciIssuerUpdateRequest'
+      responses:
+        '200':
+          description: Updated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Oid4vciIssuerDetail'
+
+    delete:
+      operationId: deleteOid4vciIssuer
+      x-license-protection:
+        entitlementKey: vdx.oid4vci.issuer.delete
+        deploymentShapePredicates: [packaging=container, environment=production]
+        protectionMode: licensed
+      summary: Soft-delete an issuer
+      tags: [Oid4vciIssuers]
+      parameters:
+        - name: issuerId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Deleted.
+
+  # -------------------------------------------------------------------------
+  # Oid4vpVerifiers (absorbed from oid4vp-openapi.yml)
+  # -------------------------------------------------------------------------
+  /oid4vp/verifiers:
+    get:
+      operationId: listOid4vpVerifiers
+      x-license-protection:
+        entitlementKey: vdx.oid4vp.verifier.list
+        deploymentShapePredicates: [packaging=container, environment=production]
+        protectionMode: licensed
+      summary: List OID4VP verifier instances
+      tags: [Oid4vpVerifiers]
+      parameters:
+        - name: managementMode
+          in: query
+          schema:
+            $ref: './software-manager-components.yml#/components/schemas/ManagementMode'
+        - name: lifecycleStatus
+          in: query
+          schema:
+            $ref: './software-manager-components.yml#/components/schemas/LifecycleStatus'
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 0
+        - name: size
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: List of verifiers.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Oid4vpVerifierListResponse'
+
+    post:
+      operationId: createOid4vpVerifier
+      x-license-protection:
+        entitlementKey: vdx.oid4vp.verifier.create
+        deploymentShapePredicates: [packaging=container, environment=production]
+        protectionMode: licensed
+        quotaKeys: [oid4vp.verifier.instances.perTenant.max]
+      summary: Create an OID4VP verifier instance
+      tags: [Oid4vpVerifiers]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Oid4vpVerifierCreateRequest'
+      responses:
+        '201':
+          description: Verifier created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Oid4vpVerifierDetail'
+
+  /oid4vp/verifiers/{verifierId}:
+    get:
+      operationId: getOid4vpVerifier
+      x-license-protection:
+        entitlementKey: vdx.oid4vp.verifier.get
+        deploymentShapePredicates: [packaging=container, environment=production]
+        protectionMode: licensed
+      summary: Get verifier detail
+      tags: [Oid4vpVerifiers]
+      parameters:
+        - name: verifierId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Verifier detail.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Oid4vpVerifierDetail'
+
+    patch:
+      operationId: updateOid4vpVerifier
+      x-license-protection:
+        entitlementKey: vdx.oid4vp.verifier.update
+        deploymentShapePredicates: [packaging=container, environment=production]
+        protectionMode: licensed
+      summary: Update a verifier
+      tags: [Oid4vpVerifiers]
+      parameters:
+        - name: verifierId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Oid4vpVerifierUpdateRequest'
+      responses:
+        '200':
+          description: Updated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Oid4vpVerifierDetail'
+
+    delete:
+      operationId: deleteOid4vpVerifier
+      x-license-protection:
+        entitlementKey: vdx.oid4vp.verifier.delete
+        deploymentShapePredicates: [packaging=container, environment=production]
+        protectionMode: licensed
+      summary: Soft-delete a verifier
+      tags: [Oid4vpVerifiers]
+      parameters:
+        - name: verifierId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Deleted.
+
+components:
+  securitySchemes:
+    bearer:
+      $ref: './common-components.yml#/components/securitySchemes/bearer'
+  schemas:
+    DeploymentListResponse:
+      type: object
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: './software-manager-components.yml#/components/schemas/SoftwareDeployment'
+
+    EndpointListResponse:
+      type: object
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: './software-manager-components.yml#/components/schemas/SoftwareEndpoint'
+
+    DeploymentStatusUpdateRequest:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          $ref: './software-manager-components.yml#/components/schemas/DeploymentStatus'
+        reason:
+          type: string
+
+    ServiceInstanceListResponse:
+      type: object
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: './software-manager-components.yml#/components/schemas/ServiceInstanceSummary'
+        page:
+          $ref: './common-components.yml#/components/schemas/PagingMeta'
+
+    # -- AuthorizationServers request/response schemas (absorbed from oauth2-server-openapi.yml) --
+
+    AuthorizationServerListResponse:
+      type: object
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AuthorizationServerDetail'
+        page:
+          $ref: './common-components.yml#/components/schemas/PagingMeta'
+
+    CredentialListResponse:
+      type: object
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: './software-manager-components.yml#/components/schemas/SoftwareCredential'
+
+    CredentialCreateRequest:
+      type: object
+      required: [credentialType]
+      properties:
+        credentialType:
+          $ref: './software-manager-components.yml#/components/schemas/CredentialType'
+        label:
+          type: string
+        clientId:
+          type: string
+        validFrom:
+          type: string
+          format: date-time
+        validUntil:
+          type: string
+          format: date-time
+          nullable: true
+
+    AuthorizationServerCreateRequest:
+      type: object
+      required: [displayName, managementMode]
+      properties:
+        # --- Operational fields (not runtime config) ---
+        displayName:
+          type: string
+          description: Human-readable name for the AS instance.
+        managementMode:
+          $ref: './software-manager-components.yml#/components/schemas/ManagementMode'
+        runtimeMode:
+          $ref: './software-manager-components.yml#/components/schemas/RuntimeMode'
+        serviceTier:
+          $ref: './software-manager-components.yml#/components/schemas/ServiceTier'
+        discoveryUrl:
+          type: string
+          format: uri
+          description: OIDC discovery endpoint. If provided, auto-discovery runs on create.
+        # --- Runtime config (mirrors OAuth2ServerInstanceConfig) ---
+        config:
+          $ref: './software-manager-components.yml#/components/schemas/OAuth2ServerConfig'
+
+    AuthorizationServerUpdateRequest:
+      type: object
+      properties:
+        displayName:
+          type: string
+        serviceTier:
+          $ref: './software-manager-components.yml#/components/schemas/ServiceTier'
+        config:
+          $ref: './software-manager-components.yml#/components/schemas/OAuth2ServerConfig'
+
+    AuthorizationServerDetail:
+      $ref: './software-manager-components.yml#/components/schemas/AuthorizationServerDetail'
+
+    # -- Oid4vciIssuers request/response schemas (absorbed from oid4vci-openapi.yml) --
+
+    Oid4vciIssuerListResponse:
+      type: object
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Oid4vciIssuerDetail'
+        page:
+          $ref: './common-components.yml#/components/schemas/PagingMeta'
+
+    Oid4vciIssuerCreateRequest:
+      type: object
+      required: [displayName, managementMode]
+      properties:
+        # --- Operational fields ---
+        displayName:
+          type: string
+        managementMode:
+          $ref: './software-manager-components.yml#/components/schemas/ManagementMode'
+        runtimeMode:
+          $ref: './software-manager-components.yml#/components/schemas/RuntimeMode'
+        authorizationServerId:
+          type: string
+          format: uuid
+          description: Party ID of the AS this issuer uses (resolved to capability FK).
+        discoveryUrl:
+          type: string
+          format: uri
+        # --- Runtime config ---
+        config:
+          $ref: './software-manager-components.yml#/components/schemas/Oid4vciIssuerConfig'
+
+    Oid4vciIssuerUpdateRequest:
+      type: object
+      properties:
+        displayName:
+          type: string
+        config:
+          $ref: './software-manager-components.yml#/components/schemas/Oid4vciIssuerConfig'
+
+    Oid4vciIssuerDetail:
+      $ref: './software-manager-components.yml#/components/schemas/Oid4vciIssuerDetail'
+
+    # -- Oid4vpVerifiers request/response schemas (absorbed from oid4vp-openapi.yml) --
+
+    Oid4vpVerifierListResponse:
+      type: object
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Oid4vpVerifierDetail'
+        page:
+          $ref: './common-components.yml#/components/schemas/PagingMeta'
+
+    Oid4vpVerifierCreateRequest:
+      type: object
+      required: [displayName, managementMode]
+      properties:
+        # --- Operational fields ---
+        displayName:
+          type: string
+        managementMode:
+          $ref: './software-manager-components.yml#/components/schemas/ManagementMode'
+        runtimeMode:
+          $ref: './software-manager-components.yml#/components/schemas/RuntimeMode'
+        authorizationServerId:
+          type: string
+          format: uuid
+          description: Party ID of the AS this verifier uses (resolved to capability FK).
+        discoveryUrl:
+          type: string
+          format: uri
+        # --- Runtime config (mirrors UniversalOid4vpConfig + verifier config) ---
+        config:
+          $ref: './software-manager-components.yml#/components/schemas/Oid4vpVerifierConfig'
+
+    Oid4vpVerifierUpdateRequest:
+      type: object
+      properties:
+        displayName:
+          type: string
+        config:
+          $ref: './software-manager-components.yml#/components/schemas/Oid4vpVerifierConfig'
+
+    Oid4vpVerifierDetail:
+      $ref: './software-manager-components.yml#/components/schemas/Oid4vpVerifierDetail'

@@ -50,7 +50,11 @@ class OidfWalletConformanceHarnessTest {
         assertFalse(obj.containsKey("browser"), config)
         assertEquals(
             "https://localhost.emobix.co.uk:8443/test/a/oidf-vci-issuer-test/credential_offer",
-            obj.getValue("vci").jsonObject.getValue("credential_offer_endpoint").jsonPrimitive.content,
+            obj
+                .getValue("vci")
+                .jsonObject
+                .getValue("credential_offer_endpoint")
+                .jsonPrimitive.content,
         )
         assertNotNull(obj.getValue("server").jsonObject.getValue("jwks"))
     }
@@ -260,5 +264,4 @@ class OidfWalletConformanceHarnessTest {
         }
 }
 
-private fun base64UrlDecodeToString(value: String): String =
-    Base64.getUrlDecoder().decode(value).decodeToString()
+private fun base64UrlDecodeToString(value: String): String = Base64.getUrlDecoder().decode(value).decodeToString()

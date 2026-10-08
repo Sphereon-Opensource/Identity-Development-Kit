@@ -72,27 +72,27 @@ object OidfPlanScenarioManifest {
                 "openid" to "plain_oauth",
                 "fapi_response_mode" to "plain_response",
             )
+
         fun scenario(
             id: String,
             format: String,
             grant: String,
             flow: String,
             encryption: String,
-        ) =
-            OidfPlanScenario(
-                id = id,
-                planName = plan,
-                configTemplate = config,
-                variant =
-                    base +
-                        mapOf(
-                            "credential_format" to format,
-                            "vci_grant_type" to grant,
-                            "vci_authorization_code_flow_variant" to flow,
-                            "vci_credential_encryption" to encryption,
-                        ),
-                configOverrides = JsonObject(emptyMap()),
-            )
+        ) = OidfPlanScenario(
+            id = id,
+            planName = plan,
+            configTemplate = config,
+            variant =
+                base +
+                    mapOf(
+                        "credential_format" to format,
+                        "vci_grant_type" to grant,
+                        "vci_authorization_code_flow_variant" to flow,
+                        "vci_credential_encryption" to encryption,
+                    ),
+            configOverrides = JsonObject(emptyMap()),
+        )
 
         return listOf(
             scenario("issuer-final-sdjwt-wallet-auth-plain", "sd_jwt_vc", "authorization_code", "wallet_initiated", "plain"),
@@ -177,6 +177,7 @@ object OidfPlanScenarioManifest {
                 "client_auth_type" to "private_key_jwt",
                 "authorization_request_type" to "simple",
             )
+
         fun scenario(
             id: String,
             format: String,

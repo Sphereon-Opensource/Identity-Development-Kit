@@ -98,6 +98,17 @@ class ByoOidcE2ETest {
 
             val issuer = issuerUrl()
             val accessToken = mintUserToken(issuer)
+            val protectedHeaderJson =
+                java.util.Base64
+                    .getUrlDecoder()
+                    .decode(accessToken.substringBefore('.'))
+                    .toString(Charsets.UTF_8)
+            val protectedHeader = json.parseToJsonElement(protectedHeaderJson).jsonObject
+            assertEquals(
+                "at+jwt",
+                protectedHeader["typ"]?.jsonPrimitive?.content,
+                "Keycloak fixture must issue an RFC 9068 access token",
+            )
 
             testApplication {
                 application {
@@ -114,7 +125,35 @@ class ByoOidcE2ETest {
                     client.get("/api/v1/me") {
                         header(HttpHeaders.Authorization, "Bearer $accessToken")
                     }
-                assertEquals(HttpStatusCode.OK, response.status, "Expected 200 for authenticated request")
+                val authenticationChallengeCategory =
+                    response.headers[HttpHeaders.WWWAuthenticate]
+                        ?.substringAfter("error_description=", "")
+                        ?.substringAfter('"', "")
+                        ?.substringBefore('"')
+                        ?.takeIf {
+                            it in
+                                setOf(
+                                    "Missing bearer token",
+                                    "Malformed token",
+                                    "Invalid signature",
+                                    "Token expired",
+                                    "Token not yet valid",
+                                    "Invalid issuer",
+                                    "Invalid audience",
+                                    "Missing required claim",
+                                    "Key set unavailable",
+                                    "Signing key not found",
+                                    "Algorithm not allowed",
+                                    "IdP misconfigured",
+                                    "IdP discovery failed",
+                                    "Token validation failed",
+                                )
+                        } ?: "unavailable"
+                assertEquals(
+                    HttpStatusCode.OK,
+                    response.status,
+                    "Expected 200 for authenticated request; WWW-Authenticate category=$authenticationChallengeCategory",
+                )
                 val body = json.parseToJsonElement(response.bodyAsText()).jsonObject
                 // OidcPrincipalResolver picks the OIDC `sub` claim (a stable
                 // Keycloak-assigned UUID) over `preferred_username` — correct

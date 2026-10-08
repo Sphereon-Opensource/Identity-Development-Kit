@@ -16,7 +16,16 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 IDK_ROOT="$(cd ../../.. && pwd)"
-IDK_VERSION="$(grep '^version=' "${IDK_ROOT}/gradle.properties" | cut -d= -f2)"
+if [ -f "${IDK_ROOT}/platform-version.properties" ]; then
+  IDK_VERSION="$(grep -E '^platformVersion=' "${IDK_ROOT}/platform-version.properties" | cut -d= -f2- | tr -d '\r')"
+  echo "IDK_VERSION=${IDK_VERSION} (from ${IDK_ROOT}/platform-version.properties)"
+elif [ -f "${IDK_ROOT}/gradle.properties" ] && grep -qE '^version=' "${IDK_ROOT}/gradle.properties"; then
+  IDK_VERSION="$(grep -E '^version=' "${IDK_ROOT}/gradle.properties" | cut -d= -f2- | tr -d '\r')"
+  echo "IDK_VERSION=${IDK_VERSION} (from ${IDK_ROOT}/gradle.properties)"
+else
+  echo "ERROR: cannot resolve IDK_VERSION from platform-version.properties or gradle.properties" >&2
+  exit 1
+fi
 GIT_SHA="$(git -C "${IDK_ROOT}" rev-parse --short HEAD 2>/dev/null || echo unknown)"
 REGISTRY="${REGISTRY:-sphereon}"
 

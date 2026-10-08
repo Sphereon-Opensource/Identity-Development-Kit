@@ -1,0 +1,1192 @@
+openapi: 3.0.4
+info:
+  title: Semantic Binding API
+  version: 0.1.0
+  # Enterprise license coverage is declared per operation with `x-license-protection`, so the
+  # OpenAPI contract can drift-check against static ServiceCommandContract license descriptors.
+  description: |
+    Connect existing records to concepts defined by data domains and object models. The records
+    are the parties in the directory (people, organizations, and systems),
+    the relationships between them, the services that act on them, and the external data sources
+    they read from. A binding annotates a record in place; it does not copy or restructure the
+    record, so data-domain governance and interoperability rules apply wherever the data is held.
+
+    Five kinds of binding are managed through this API:
+
+      - **Party-type bindings** declare that a kind of record (a party type, optionally a subtype)
+        stands for a particular data-domain or object-model concept, so every record of that type inherits
+        that meaning.
+      - **Party attribute values** attach a semantically-keyed value to one specific record,
+        addressed by its data-domain or object-model business-term path. The value keeps its meaning and may be a
+        scalar, an array, or a nested object.
+      - **Relationship bindings** map a relationship between two records (a subject and an object, of
+        a governed relation type) to an object-model relationship, which gives it its use-case meaning.
+      - **Service capabilities** record which concepts, object models, data products, and channels a service can
+        work with.
+      - **Source bindings** connect a registered data source (a system or service that holds
+        business-term data) to the terms of a version-pinned data domain, so the source's fields inherit
+        those terms' governance rules. The values are either copied in or only referenced in
+        place (see `MaterializationPolicy`).
+
+    All changes require the `semantic-modeling.v1` enterprise entitlement.
+servers:
+  - url: http://localhost:8080/api/semantic/binding/v1
+    description: Local development.
+security:
+  - bearer: []
+tags:
+  - name: PartyTypeBindings
+    description: Map a kind of record (a party type, optionally a subtype) to a data-domain or object-model concept.
+  - name: PartyAttributeValues
+    description: Attach semantically-keyed attribute values to specific party records.
+  - name: RelationshipBindings
+    description: Map a relationship between two records to an object-model relationship.
+  - name: ServiceCapabilities
+    description: Declare which concepts, object models, data products, and channels a service can work with.
+  - name: SourceBindings
+    description: Bind a registered data source to business terms in a version-pinned data domain.
+paths:
+  /partytypebindings:
+    post:
+      tags: [PartyTypeBindings]
+      summary: Create a semantic party-type binding
+      operationId: createSemanticPartyTypeBinding
+      x-license-protection:
+        entitlementKey: vdx.semantic.binding.create-party-type-binding
+        deploymentShapePredicates: [packaging=container, environment=production]
+        protectionMode: licensed
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSemanticPartyTypeBindingInput'
+      responses:
+        '201':
+          description: Party-type binding created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SemanticPartyTypeBinding'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+    get:
+      tags: [PartyTypeBindings]
+      summary: List semantic party-type bindings
+      operationId: listSemanticPartyTypeBindings
+      x-license-protection:
+        entitlementKey: vdx.semantic.binding.list-party-type-bindings
+        deploymentShapePredicates: [packaging=container, environment=production]
+        protectionMode: licensed
+      description: |
+        Returns a page of party-type bindings in the calling tenant, narrowed by the optional
+        filter. Pagination accepts both `limit`/`offset` and OpenAPI-style `page`/`size`; the
+        parser normalises and clamps `limit` to `[1, 100]` (default `20`). Default sort is
+        `createdAt DESC`.
+      parameters:
+        - name: partyType
+          in: query
+          description: Restrict to bindings whose party type equals this exact value.
+          schema:
+            type: string
+        - name: partySubtype
+          in: query
+          description: Restrict to bindings whose CTI subtype equals this exact value.
+          schema:
+            type: string
+        - $ref: './common-components.yml#/components/parameters/Limit'
+        - $ref: './common-components.yml#/components/parameters/Offset'
+        - $ref: './common-components.yml#/components/parameters/Page'
+        - $ref: './common-components.yml#/components/parameters/Size'
+        - $ref: './common-components.yml#/components/parameters/Sort'
+        - $ref: './common-components.yml#/components/parameters/SortDirection'
+      responses:
+        '200':
+          description: Page of party-type bindings.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SemanticPartyTypeBindingPageResponse'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /partytypebindings/{id}:
+    parameters:
+      - $ref: '#/components/parameters/BindingId'
+    get:
+      tags: [PartyTypeBindings]
+      summary: Get one semantic party-type binding
+      operationId: getSemanticPartyTypeBinding
+      x-license-protection:
+        entitlementKey: vdx.semantic.binding.get-party-type-binding
+        deploymentShapePredicates: [packaging=container, environment=production]
+        protectionMode: licensed
+      responses:
+        '200':
+          description: Party-type binding.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SemanticPartyTypeBinding'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+    put:
+      tags: [PartyTypeBindings]
+      summary: Update a semantic party-type binding
+      operationId: updateSemanticPartyTypeBinding
+      x-license-protection:
+        entitlementKey: vdx.semantic.binding.update-party-type-binding
+        deploymentShapePredicates: [packaging=container, environment=production]
+        protectionMode: licensed
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateSemanticPartyTypeBindingInput'
+      responses:
+        '200':
+          description: Updated party-type binding.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SemanticPartyTypeBinding'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+    delete:
+      tags: [PartyTypeBindings]
+      summary: Soft-delete a semantic party-type binding
+      operationId: deleteSemanticPartyTypeBinding
+      x-license-protection:
+        entitlementKey: vdx.semantic.binding.delete-party-type-binding
+        deploymentShapePredicates: [packaging=container, environment=production]
+        protectionMode: licensed
+      responses:
+        '204':
+          description: Party-type binding soft-deleted.
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /partyattributevalues:
+    post:
+      tags: [PartyAttributeValues]
+      summary: Create a semantic party attribute value
+      operationId: createSemanticPartyAttributeValue
+      x-license-protection:
+        entitlementKey: vdx.semantic.binding.create-party-attribute-value
+        deploymentShapePredicates: [packaging=container, environment=production]
+        protectionMode: licensed
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSemanticPartyAttributeValueInput'
+      responses:
+        '201':
+          description: Party attribute value created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SemanticPartyAttributeValue'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+    get:
+      tags: [PartyAttributeValues]
+      summary: List semantic party attribute values
+      operationId: listSemanticPartyAttributeValues
+      x-license-protection:
+        entitlementKey: vdx.semantic.binding.list-party-attribute-values
+        deploymentShapePredicates: [packaging=container, environment=production]
+        protectionMode: licensed
+      description: |
+        Returns a page of party attribute values in the calling tenant, optionally scoped to one
+        party. Pagination accepts both `limit`/`offset` and OpenAPI-style `page`/`size`; `limit`
+        is clamped to `[1, 100]` (default `20`). Default sort is `createdAt DESC`.
+      parameters:
+        - name: partyId
+          in: query
+          description: Restrict to values attached to this exact party record.
+          schema:
+            type: string
+            format: uuid
+        - $ref: './common-components.yml#/components/parameters/Limit'
+        - $ref: './common-components.yml#/components/parameters/Offset'
+        - $ref: './common-components.yml#/components/parameters/Page'
+        - $ref: './common-components.yml#/components/parameters/Size'
+        - $ref: './common-components.yml#/components/parameters/Sort'
+        - $ref: './common-components.yml#/components/parameters/SortDirection'
+      responses:
+        '200':
+          description: Page of party attribute values.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SemanticPartyAttributeValuePageResponse'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /partyattributevalues/{id}:
+    parameters:
+      - $ref: '#/components/parameters/BindingId'
+    get:
+      tags: [PartyAttributeValues]
+      summary: Get one semantic party attribute value
+      operationId: getSemanticPartyAttributeValue
+      x-license-protection:
+        entitlementKey: vdx.semantic.binding.get-party-attribute-value
+        deploymentShapePredicates: [packaging=container, environment=production]
+        protectionMode: licensed
+      responses:
+        '200':
+          description: Party attribute value.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SemanticPartyAttributeValue'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+    put:
+      tags: [PartyAttributeValues]
+      summary: Update a semantic party attribute value
+      operationId: updateSemanticPartyAttributeValue
+      x-license-protection:
+        entitlementKey: vdx.semantic.binding.update-party-attribute-value
+        deploymentShapePredicates: [packaging=container, environment=production]
+        protectionMode: licensed
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateSemanticPartyAttributeValueInput'
+      responses:
+        '200':
+          description: Updated party attribute value.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SemanticPartyAttributeValue'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+    delete:
+      tags: [PartyAttributeValues]
+      summary: Soft-delete a semantic party attribute value
+      operationId: deleteSemanticPartyAttributeValue
+      x-license-protection:
+        entitlementKey: vdx.semantic.binding.delete-party-attribute-value
+        deploymentShapePredicates: [packaging=container, environment=production]
+        protectionMode: licensed
+      responses:
+        '204':
+          description: Party attribute value soft-deleted.
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /relationshipbindings:
+    post:
+      tags: [RelationshipBindings]
+      summary: Create a semantic relationship binding
+      operationId: createSemanticRelationshipBinding
+      x-license-protection:
+        entitlementKey: vdx.semantic.binding.create-relationship-binding
+        deploymentShapePredicates: [packaging=container, environment=production]
+        protectionMode: licensed
+      description: |
+        Creates a relationship binding. The create command validates `relationType` against the
+        the relationship-type registry and, when the optional endpoint party types are supplied,
+        checks endpoint compatibility.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSemanticRelationshipBindingInput'
+      responses:
+        '201':
+          description: Relationship binding created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SemanticRelationshipBinding'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+    get:
+      tags: [RelationshipBindings]
+      summary: List semantic relationship bindings
+      operationId: listSemanticRelationshipBindings
+      x-license-protection:
+        entitlementKey: vdx.semantic.binding.list-relationship-bindings
+        deploymentShapePredicates: [packaging=container, environment=production]
+        protectionMode: licensed
+      description: |
+        Returns a page of relationship bindings in the calling tenant, optionally scoped to a
+        subject party, object party, and/or governed relation type (e.g. to read all roles a
+        given subject party holds). Pagination accepts both `limit`/`offset` and OpenAPI-style
+        `page`/`size`; `limit` is clamped to `[1, 100]` (default `20`). Default sort is
+        `createdAt DESC`.
+      parameters:
+        - name: subjectPartyId
+          in: query
+          description: Restrict to bindings whose subject endpoint is this exact party.
+          schema:
+            type: string
+            format: uuid
+        - name: objectPartyId
+          in: query
+          description: Restrict to bindings whose object endpoint is this exact party.
+          schema:
+            type: string
+            format: uuid
+        - name: relationType
+          in: query
+          description: Restrict to bindings with this exact governed directed relation id.
+          schema:
+            type: string
+        - $ref: './common-components.yml#/components/parameters/Limit'
+        - $ref: './common-components.yml#/components/parameters/Offset'
+        - $ref: './common-components.yml#/components/parameters/Page'
+        - $ref: './common-components.yml#/components/parameters/Size'
+        - $ref: './common-components.yml#/components/parameters/Sort'
+        - $ref: './common-components.yml#/components/parameters/SortDirection'
+      responses:
+        '200':
+          description: Page of relationship bindings.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SemanticRelationshipBindingPageResponse'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /relationshipbindings/{id}:
+    parameters:
+      - $ref: '#/components/parameters/BindingId'
+    get:
+      tags: [RelationshipBindings]
+      summary: Get one semantic relationship binding
+      operationId: getSemanticRelationshipBinding
+      x-license-protection:
+        entitlementKey: vdx.semantic.binding.get-relationship-binding
+        deploymentShapePredicates: [packaging=container, environment=production]
+        protectionMode: licensed
+      responses:
+        '200':
+          description: Relationship binding.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SemanticRelationshipBinding'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+    put:
+      tags: [RelationshipBindings]
+      summary: Update a semantic relationship binding
+      operationId: updateSemanticRelationshipBinding
+      x-license-protection:
+        entitlementKey: vdx.semantic.binding.update-relationship-binding
+        deploymentShapePredicates: [packaging=container, environment=production]
+        protectionMode: licensed
+      description: Re-validates the governed relation type and endpoint compatibility before persisting.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateSemanticRelationshipBindingInput'
+      responses:
+        '200':
+          description: Updated relationship binding.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SemanticRelationshipBinding'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+    delete:
+      tags: [RelationshipBindings]
+      summary: Soft-delete a semantic relationship binding
+      operationId: deleteSemanticRelationshipBinding
+      x-license-protection:
+        entitlementKey: vdx.semantic.binding.delete-relationship-binding
+        deploymentShapePredicates: [packaging=container, environment=production]
+        protectionMode: licensed
+      responses:
+        '204':
+          description: Relationship binding soft-deleted.
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /servicecapabilities:
+    post:
+      tags: [ServiceCapabilities]
+      summary: Create a semantic service capability
+      operationId: createSemanticServiceCapability
+      x-license-protection:
+        entitlementKey: vdx.semantic.binding.create-service-capability
+        deploymentShapePredicates: [packaging=container, environment=production]
+        protectionMode: licensed
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSemanticServiceCapabilityInput'
+      responses:
+        '201':
+          description: Service capability created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SemanticServiceCapability'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+    get:
+      tags: [ServiceCapabilities]
+      summary: List semantic service capabilities
+      operationId: listSemanticServiceCapabilities
+      x-license-protection:
+        entitlementKey: vdx.semantic.binding.list-service-capabilities
+        deploymentShapePredicates: [packaging=container, environment=production]
+        protectionMode: licensed
+      description: |
+        Returns a page of service-capability declarations in the calling tenant, optionally
+        scoped to one service id. Pagination accepts both `limit`/`offset` and OpenAPI-style
+        `page`/`size`; `limit` is clamped to `[1, 100]` (default `20`). Default sort is
+        `createdAt DESC`.
+      parameters:
+        - name: serviceId
+          in: query
+          description: Restrict to capabilities declared for this exact service id.
+          schema:
+            type: string
+        - $ref: './common-components.yml#/components/parameters/Limit'
+        - $ref: './common-components.yml#/components/parameters/Offset'
+        - $ref: './common-components.yml#/components/parameters/Page'
+        - $ref: './common-components.yml#/components/parameters/Size'
+        - $ref: './common-components.yml#/components/parameters/Sort'
+        - $ref: './common-components.yml#/components/parameters/SortDirection'
+      responses:
+        '200':
+          description: Page of service capabilities.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SemanticServiceCapabilityPageResponse'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /servicecapabilities/{id}:
+    parameters:
+      - $ref: '#/components/parameters/BindingId'
+    get:
+      tags: [ServiceCapabilities]
+      summary: Get one semantic service capability
+      operationId: getSemanticServiceCapability
+      x-license-protection:
+        entitlementKey: vdx.semantic.binding.get-service-capability
+        deploymentShapePredicates: [packaging=container, environment=production]
+        protectionMode: licensed
+      responses:
+        '200':
+          description: Service capability.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SemanticServiceCapability'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+    put:
+      tags: [ServiceCapabilities]
+      summary: Update a semantic service capability
+      operationId: updateSemanticServiceCapability
+      x-license-protection:
+        entitlementKey: vdx.semantic.binding.update-service-capability
+        deploymentShapePredicates: [packaging=container, environment=production]
+        protectionMode: licensed
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateSemanticServiceCapabilityInput'
+      responses:
+        '200':
+          description: Updated service capability.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SemanticServiceCapability'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+    delete:
+      tags: [ServiceCapabilities]
+      summary: Soft-delete a semantic service capability
+      operationId: deleteSemanticServiceCapability
+      x-license-protection:
+        entitlementKey: vdx.semantic.binding.delete-service-capability
+        deploymentShapePredicates: [packaging=container, environment=production]
+        protectionMode: licensed
+      responses:
+        '204':
+          description: Service capability soft-deleted.
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /sourcebindings:
+    post:
+      tags: [SourceBindings]
+      summary: Bind a registered connector to data-domain business terms
+      operationId: createSemanticSourceBinding
+      x-license-protection:
+        entitlementKey: vdx.semantic.binding.create-source-binding
+        deploymentShapePredicates: [packaging=container, environment=production]
+        protectionMode: licensed
+      description: |
+        Binds a registered connector/software party carrying a `CONNECTOR`
+        capability to business terms in a version-pinned data domain. The connector's native fields map onto
+        business-term paths and inherit those terms' governance overlays; whether the resolved
+        values are stored or only referenced is controlled by `materialization`. The id, tenant and
+        timestamps are assigned by the command (tenant from the session).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSemanticSourceBindingInput'
+      responses:
+        '201':
+          description: Source binding created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SemanticSourceBinding'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+    get:
+      tags: [SourceBindings]
+      summary: List semantic source bindings
+      operationId: listSemanticSourceBindings
+      x-license-protection:
+        entitlementKey: vdx.semantic.binding.list-source-bindings
+        deploymentShapePredicates: [packaging=container, environment=production]
+        protectionMode: licensed
+      description: |
+        Returns a page of source bindings in the calling tenant, optionally scoped to a source party
+        and/or the bound data domain. Pagination accepts both `limit`/`offset` and OpenAPI-style
+        `page`/`size`; `limit` is clamped to `[1, 100]` (default `20`). Default sort is `createdAt DESC`.
+      parameters:
+        - name: sourcePartyId
+          in: query
+          description: Restrict to bindings whose connector is this exact software/server party.
+          schema:
+            type: string
+            format: uuid
+        - name: catalogId
+          in: query
+          description: Restrict to bindings whose bound data domain has this exact id.
+          schema:
+            type: string
+            format: uuid
+        - $ref: './common-components.yml#/components/parameters/Limit'
+        - $ref: './common-components.yml#/components/parameters/Offset'
+        - $ref: './common-components.yml#/components/parameters/Page'
+        - $ref: './common-components.yml#/components/parameters/Size'
+        - $ref: './common-components.yml#/components/parameters/Sort'
+        - $ref: './common-components.yml#/components/parameters/SortDirection'
+      responses:
+        '200':
+          description: Page of source bindings.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SemanticSourceBindingPageResponse'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+  /sourcebindings/{id}:
+    parameters:
+      - $ref: '#/components/parameters/BindingId'
+    get:
+      tags: [SourceBindings]
+      summary: Get one semantic source binding
+      operationId: getSemanticSourceBinding
+      x-license-protection:
+        entitlementKey: vdx.semantic.binding.get-source-binding
+        deploymentShapePredicates: [packaging=container, environment=production]
+        protectionMode: licensed
+      responses:
+        '200':
+          description: Source binding.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SemanticSourceBinding'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+    put:
+      tags: [SourceBindings]
+      summary: Update a semantic source binding
+      operationId: updateSemanticSourceBinding
+      x-license-protection:
+        entitlementKey: vdx.semantic.binding.update-source-binding
+        deploymentShapePredicates: [packaging=container, environment=production]
+        protectionMode: licensed
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateSemanticSourceBindingInput'
+      responses:
+        '200':
+          description: Updated source binding.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SemanticSourceBinding'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+    delete:
+      tags: [SourceBindings]
+      summary: Soft-delete a semantic source binding
+      operationId: deleteSemanticSourceBinding
+      x-license-protection:
+        entitlementKey: vdx.semantic.binding.delete-source-binding
+        deploymentShapePredicates: [packaging=container, environment=production]
+        protectionMode: licensed
+      responses:
+        '204':
+          description: Source binding soft-deleted.
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './common-components.yml#/components/responses/NotFound'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+components:
+  # Shared parameters (TenantId), pagination params (Limit/Offset/Page/Size/Sort/SortDirection),
+  # error responses (NotFound/ValidationError/Unauthorized/Forbidden/Error), and the
+  # ApiError/ErrorResponse/PageMeta schemas are defined in the canonical shared
+  # ./common-components.yml (owned by IDK lib-core-api-public, copied in at build time).
+  # Only semantic-binding-specific components are defined locally below.
+  parameters:
+    BindingId:
+      $ref: './semantic-binding-components.yml#/components/parameters/BindingId'
+
+  schemas:
+    # ---- Shared reference value objects ----------------------------------
+    SemanticConceptRefKind:
+      $ref: './semantic-binding-components.yml#/components/schemas/SemanticConceptRefKind'
+
+    SemanticConceptRef:
+      $ref: './semantic-binding-components.yml#/components/schemas/SemanticConceptRef'
+
+    ProfileRelationRef:
+      $ref: './semantic-binding-components.yml#/components/schemas/ProfileRelationRef'
+
+    # ---- Party-type binding ----------------------------------------------
+    SemanticPartyTypeBinding:
+      $ref: './semantic-binding-components.yml#/components/schemas/SemanticPartyTypeBinding'
+
+    CreateSemanticPartyTypeBindingInput:
+      type: object
+      description: |
+        Input for creating a party-type binding. The id, tenant and timestamps are assigned by the
+        command (tenant from the session); only the authored fields are accepted.
+      required: [partyType, semanticConceptRef]
+      example:
+        partyType: "natural_person"
+        partySubtype: "employee"
+        semanticConceptRef:
+          kind: CATALOG_ATTRIBUTE
+          catalogId: "9f2c1b3e-7a44-4c1e-8b0a-2d6f5e9c1a77"
+      properties:
+        partyType:
+          type: string
+        partySubtype:
+          type: string
+          nullable: true
+        semanticConceptRef:
+          $ref: '#/components/schemas/SemanticConceptRef'
+
+    UpdateSemanticPartyTypeBindingInput:
+      type: object
+      description: |
+        Input for updating the mutable fields of a party-type binding. The path `{id}` identifies
+        the record and overrides any `id` in the body.
+      required: [partyType, semanticConceptRef]
+      properties:
+        partyType:
+          type: string
+        partySubtype:
+          type: string
+          nullable: true
+        semanticConceptRef:
+          $ref: '#/components/schemas/SemanticConceptRef'
+
+    SemanticPartyTypeBindingPageResponse:
+      type: object
+      description: Paged list of party-type bindings.
+      required: [data, pagination]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/SemanticPartyTypeBinding'
+        pagination:
+          $ref: './common-components.yml#/components/schemas/PageMeta'
+
+    # ---- Party attribute value -------------------------------------------
+    SemanticPartyAttributeValue:
+      $ref: './semantic-binding-components.yml#/components/schemas/SemanticPartyAttributeValue'
+
+    CreateSemanticPartyAttributeValueInput:
+      type: object
+      description: |
+        Input for creating a party attribute value. The `value` may be a scalar, array, or nested
+        object. The id, tenant and timestamps are assigned by the command (tenant from the session).
+      required: [partyId, conceptRef, attributePath, value]
+      example:
+        partyId: "3a2b1c0d-9e8f-4a7b-8c6d-5e4f3a2b1c0d"
+        conceptRef:
+          kind: CATALOG_ATTRIBUTE
+          catalogId: "9f2c1b3e-7a44-4c1e-8b0a-2d6f5e9c1a77"
+          attributePath: "address.postalCode"
+        attributePath: "address.postalCode"
+        value: "1011AB"
+      properties:
+        partyId:
+          type: string
+          format: uuid
+        conceptRef:
+          $ref: '#/components/schemas/SemanticConceptRef'
+        attributePath:
+          type: string
+          description: Dot-separated attribute path (e.g. `address.postal_code`).
+        value:
+          description: The attribute value as arbitrary JSON (scalar, array, or nested object).
+
+    UpdateSemanticPartyAttributeValueInput:
+      type: object
+      description: |
+        Input for updating the mutable fields of a party attribute value. The path `{id}` identifies
+        the record and overrides any `id` in the body.
+      required: [partyId, conceptRef, attributePath, value]
+      properties:
+        partyId:
+          type: string
+          format: uuid
+        conceptRef:
+          $ref: '#/components/schemas/SemanticConceptRef'
+        attributePath:
+          type: string
+          description: Dot-separated attribute path (e.g. `address.postal_code`).
+        value:
+          description: The attribute value as arbitrary JSON (scalar, array, or nested object).
+
+    SemanticPartyAttributeValuePageResponse:
+      type: object
+      description: Paged list of party attribute values.
+      required: [data, pagination]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/SemanticPartyAttributeValue'
+        pagination:
+          $ref: './common-components.yml#/components/schemas/PageMeta'
+
+    # ---- Relationship binding --------------------------------------------
+    SemanticRelationshipBinding:
+      $ref: './semantic-binding-components.yml#/components/schemas/SemanticRelationshipBinding'
+
+    CreateSemanticRelationshipBindingInput:
+      type: object
+      description: |
+        Input for creating a relationship binding. The create command validates `relationType`
+        against the relationship-type registry and, when the optional endpoint party types are
+        supplied, checks endpoint compatibility. The id, tenant and timestamps are assigned by the
+        command (tenant from the session).
+      required: [subjectPartyId, objectPartyId, relationType]
+      example:
+        subjectPartyId: "3a2b1c0d-9e8f-4a7b-8c6d-5e4f3a2b1c0d"
+        objectPartyId: "7c1d2e3f-4a5b-4c6d-8e9f-0a1b2c3d4e5f"
+        relationType: "employed-by"
+        subjectPartyType: "natural_person"
+        objectPartyType: "organization"
+      properties:
+        subjectPartyId:
+          type: string
+          format: uuid
+        objectPartyId:
+          type: string
+          format: uuid
+        relationType:
+          type: string
+        relationshipInstanceId:
+          type: string
+          format: uuid
+          nullable: true
+        profileRelationRef:
+          allOf:
+            - $ref: '#/components/schemas/ProfileRelationRef'
+          type: object
+          nullable: true
+        subjectPartyType:
+          type: string
+          nullable: true
+          description: Optional semantic party type of the subject endpoint, for the endpoint-compatibility check; null skips it.
+        objectPartyType:
+          type: string
+          nullable: true
+          description: Optional semantic party type of the object endpoint; null skips it.
+
+    UpdateSemanticRelationshipBindingInput:
+      type: object
+      description: |
+        Input for updating the mutable fields of a relationship binding; re-validates governance.
+        The path `{id}` identifies the record and overrides any `id` in the body.
+      required: [subjectPartyId, objectPartyId, relationType]
+      properties:
+        subjectPartyId:
+          type: string
+          format: uuid
+        objectPartyId:
+          type: string
+          format: uuid
+        relationType:
+          type: string
+        relationshipInstanceId:
+          type: string
+          format: uuid
+          nullable: true
+        profileRelationRef:
+          allOf:
+            - $ref: '#/components/schemas/ProfileRelationRef'
+          type: object
+          nullable: true
+        subjectPartyType:
+          type: string
+          nullable: true
+        objectPartyType:
+          type: string
+          nullable: true
+
+    SemanticRelationshipBindingPageResponse:
+      type: object
+      description: Paged list of relationship bindings.
+      required: [data, pagination]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/SemanticRelationshipBinding'
+        pagination:
+          $ref: './common-components.yml#/components/schemas/PageMeta'
+
+    # ---- Service capability ----------------------------------------------
+    SemanticServiceCapability:
+      $ref: './semantic-binding-components.yml#/components/schemas/SemanticServiceCapability'
+
+    CreateSemanticServiceCapabilityInput:
+      type: object
+      description: |
+        Input for creating a service capability. The id, tenant and timestamps are assigned by the
+        command (tenant from the session).
+      required: [serviceId]
+      example:
+        serviceId: "issuer-employee-badge"
+        supportedProfileIds: ["c4d5e6f7-8a9b-4c0d-8e1f-2a3b4c5d6e7f"]
+        supportedConcepts:
+          - kind: PROFILE
+            profileId: "c4d5e6f7-8a9b-4c0d-8e1f-2a3b4c5d6e7f"
+      properties:
+        serviceId:
+          type: string
+        supportedProfileIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+          default: []
+        supportedSetIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+          default: []
+        supportedChannelIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+          default: []
+        supportedConcepts:
+          type: array
+          items:
+            $ref: '#/components/schemas/SemanticConceptRef'
+          default: []
+
+    UpdateSemanticServiceCapabilityInput:
+      type: object
+      description: |
+        Input for updating the mutable fields of a service capability. The path `{id}` identifies
+        the record and overrides any `id` in the body.
+      required: [serviceId]
+      properties:
+        serviceId:
+          type: string
+        supportedProfileIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+          default: []
+        supportedSetIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+          default: []
+        supportedChannelIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+          default: []
+        supportedConcepts:
+          type: array
+          items:
+            $ref: '#/components/schemas/SemanticConceptRef'
+          default: []
+
+    SemanticServiceCapabilityPageResponse:
+      type: object
+      description: Paged list of service capabilities.
+      required: [data, pagination]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/SemanticServiceCapability'
+        pagination:
+          $ref: './common-components.yml#/components/schemas/PageMeta'
+
+    # ---- Source binding --------------------------------------------------
+    MaterializationPolicy:
+      $ref: './semantic-binding-components.yml#/components/schemas/MaterializationPolicy'
+    DataDomainRef:
+      $ref: './semantic-binding-components.yml#/components/schemas/DataDomainRef'
+    AttributeTransformKind:
+      $ref: './semantic-binding-components.yml#/components/schemas/AttributeTransformKind'
+    AttributeTransform:
+      $ref: './semantic-binding-components.yml#/components/schemas/AttributeTransform'
+    SourceFieldMapping:
+      $ref: './semantic-binding-components.yml#/components/schemas/SourceFieldMapping'
+    SourceEntityBinding:
+      $ref: './semantic-binding-components.yml#/components/schemas/SourceEntityBinding'
+    SemanticSourceBinding:
+      $ref: './semantic-binding-components.yml#/components/schemas/SemanticSourceBinding'
+
+    CreateSemanticSourceBindingInput:
+      type: object
+      description: |
+        Input for creating a source binding. The id, tenant and timestamps are assigned by the command
+        (tenant from the session). The nested entity/field-mapping structure is persisted as JSON.
+      required: [name, sourcePartyId, capabilityId, catalogRef]
+      example:
+        name: "HR system - employee attributes"
+        sourcePartyId: "6d9c2a1b-3e44-4f12-9a0b-1c2d3e4f5a6b"
+        capabilityId: "b1e2c3d4-5f60-4a71-8b92-0c1d2e3f4a5b"
+        catalogRef:
+          dataDomainId: "9f2c1b3e-7a44-4c1e-8b0a-2d6f5e9c1a77"
+          dataDomainVersion: 3
+        materialization: REFERENCE_ONLY
+        entityBindings:
+          - entity: "Employee"
+            fieldMappings:
+              - sourceField: "emp_given_name"
+                attributePath: "givenName"
+              - sourceField: "emp_dept"
+                attributePath: "department"
+                transform:
+                  kind: RENAME_ONLY
+      properties:
+        name:
+          type: string
+          description: Human-readable binding name; must be non-blank.
+        sourcePartyId:
+          type: string
+          format: uuid
+          description: The software/server party that carries the `CONNECTOR` capability.
+        capabilityId:
+          type: string
+          format: uuid
+          description: The `CONNECTOR` capability id on that party.
+        catalogRef:
+          $ref: '#/components/schemas/DataDomainRef'
+        entityBindings:
+          type: array
+          description: Per-object-type field mappings from source-native fields onto business terms.
+          default: []
+          items:
+            $ref: '#/components/schemas/SourceEntityBinding'
+        materialization:
+          allOf:
+            - $ref: '#/components/schemas/MaterializationPolicy'
+          default: REFERENCE_ONLY
+          description: Whether resolved values are stored or only referenced for governance overlay.
+
+    UpdateSemanticSourceBindingInput:
+      type: object
+      description: |
+        Input for updating the mutable fields of a source binding. The path `{id}` identifies the
+        record and overrides any `id` in the body.
+      required: [name, sourcePartyId, capabilityId, catalogRef]
+      properties:
+        name:
+          type: string
+        sourcePartyId:
+          type: string
+          format: uuid
+        capabilityId:
+          type: string
+          format: uuid
+        catalogRef:
+          $ref: '#/components/schemas/DataDomainRef'
+        entityBindings:
+          type: array
+          default: []
+          items:
+            $ref: '#/components/schemas/SourceEntityBinding'
+        materialization:
+          allOf:
+            - $ref: '#/components/schemas/MaterializationPolicy'
+          default: REFERENCE_ONLY
+
+    SemanticSourceBindingPageResponse:
+      type: object
+      description: Paged list of source bindings.
+      required: [data, pagination]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/SemanticSourceBinding'
+        pagination:
+          $ref: './common-components.yml#/components/schemas/PageMeta'
+
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Bearer JWT token. Tenant context is resolved from this token.

@@ -1,0 +1,439 @@
+openapi: 3.0.4
+info:
+  title: BlobStore API
+  version: 1.0.0
+  x-products: [idk, edk, vdx]
+  description: |
+    Canonical provider-neutral BlobStore API over the IDK `BlobService` contract.
+    BlobStore persists opaque bytes and metadata; it never receives vault or wallet key material.
+    Binary PUT and GET bodies are streamable. Conditional writes and deletes are atomic only when
+    advertised by the selected store's capability document; implementations must not emulate them
+    with an unsafe check-then-write sequence.
+servers:
+  - url: https://api.example.com/api/blob-store/v1
+    description: Production server.
+  - url: http://localhost:8080/api/blob-store/v1
+    description: Local development server.
+security:
+  - bearer: []
+tags:
+  - name: BlobStores
+    description: Store capability discovery.
+  - name: Blobs
+    description: Streaming opaque-byte CRUD, listing, search, copy, and move.
+  - name: ContentAddressing
+    description: Content-addressed storage and integrity verification.
+  - name: TemporaryUrls
+    description: Time-bounded provider URLs where supported.
+paths:
+  /stores/{storeId}/capabilities:
+    get:
+      tags: [BlobStores]
+      operationId: getBlobStoreCapabilities
+      summary: Get store capabilities
+      parameters:
+        - $ref: '#/components/parameters/StoreId'
+      responses:
+        '200':
+          description: Truthful capabilities for the selected configured store.
+          content:
+            application/json:
+              schema: { $ref: './blob-store-components.yml#/components/schemas/BlobStoreCapabilities' }
+        '401': { $ref: './blob-store-components.yml#/components/responses/BlobUnauthorized' }
+        '403': { $ref: './blob-store-components.yml#/components/responses/BlobForbidden' }
+        '404': { $ref: './blob-store-components.yml#/components/responses/BlobNotFound' }
+        '500': { $ref: './blob-store-components.yml#/components/responses/BlobErrorResponse' }
+
+  /stores/{storeId}/blobs:
+    get:
+      tags: [Blobs]
+      operationId: listBlobs
+      summary: List blobs and common prefixes
+      parameters:
+        - $ref: '#/components/parameters/StoreId'
+        - name: prefix
+          in: query
+          schema: { type: string }
+        - name: delimiter
+          in: query
+          schema: { type: string, default: / }
+        - name: recursive
+          in: query
+          schema: { type: boolean, default: false }
+        - name: pageSize
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 1000, default: 100 }
+        - name: pageToken
+          in: query
+          schema: { type: string }
+      responses:
+        '200':
+          description: Bounded page of descriptors and virtual/common folders.
+          content:
+            application/json:
+              schema: { $ref: './blob-store-components.yml#/components/schemas/BlobListResult' }
+        '400': { $ref: './blob-store-components.yml#/components/responses/BlobBadRequest' }
+        '401': { $ref: './blob-store-components.yml#/components/responses/BlobUnauthorized' }
+        '403': { $ref: './blob-store-components.yml#/components/responses/BlobForbidden' }
+        '404': { $ref: './blob-store-components.yml#/components/responses/BlobNotFound' }
+        '501': { $ref: './blob-store-components.yml#/components/responses/BlobUnsupported' }
+        '500': { $ref: './blob-store-components.yml#/components/responses/BlobErrorResponse' }
+
+  /stores/{storeId}/blobs/content:
+    parameters:
+      - $ref: '#/components/parameters/StoreId'
+      - $ref: '#/components/parameters/BlobPathQuery'
+    put:
+      tags: [Blobs]
+      operationId: putBlob
+      summary: Stream a blob into a store
+      description: >-
+        Writes or atomically replaces an opaque object. `If-None-Match: *` is create-only;
+        `If-Match` or `X-Expected-Revision` performs compare-and-set. The service verifies the
+        optional Digest header while consuming the stream and rejects partial writes.
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/IfNoneMatch'
+        - $ref: '#/components/parameters/ExpectedRevision'
+        - $ref: '#/components/parameters/Digest'
+        - $ref: '#/components/parameters/BlobMetadata'
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema: { type: string, format: binary }
+      responses:
+        '201':
+          description: Blob created.
+          content:
+            application/json:
+              schema: { $ref: './blob-store-components.yml#/components/schemas/BlobDescriptor' }
+        '200':
+          description: Blob atomically replaced.
+          content:
+            application/json:
+              schema: { $ref: './blob-store-components.yml#/components/schemas/BlobDescriptor' }
+        '400': { $ref: './blob-store-components.yml#/components/responses/BlobBadRequest' }
+        '401': { $ref: './blob-store-components.yml#/components/responses/BlobUnauthorized' }
+        '403': { $ref: './blob-store-components.yml#/components/responses/BlobForbidden' }
+        '409': { $ref: './blob-store-components.yml#/components/responses/BlobConflict' }
+        '412': { $ref: './blob-store-components.yml#/components/responses/BlobPreconditionFailed' }
+        '501': { $ref: './blob-store-components.yml#/components/responses/BlobUnsupported' }
+        '500': { $ref: './blob-store-components.yml#/components/responses/BlobErrorResponse' }
+    get:
+      tags: [Blobs]
+      operationId: streamBlob
+      summary: Stream blob bytes
+      parameters:
+        - name: Range
+          in: header
+          description: Standard byte range, for example `bytes=0-1048575`.
+          schema: { type: string }
+      responses:
+        '200':
+          $ref: '#/components/responses/BlobBytes'
+        '206':
+          $ref: '#/components/responses/PartialBlobBytes'
+        '401': { $ref: './blob-store-components.yml#/components/responses/BlobUnauthorized' }
+        '403': { $ref: './blob-store-components.yml#/components/responses/BlobForbidden' }
+        '404': { $ref: './blob-store-components.yml#/components/responses/BlobNotFound' }
+        '416': { $ref: './blob-store-components.yml#/components/responses/BlobRangeNotSatisfiable' }
+        '500': { $ref: './blob-store-components.yml#/components/responses/BlobErrorResponse' }
+    head:
+      tags: [Blobs]
+      operationId: getBlobInfo
+      summary: Get blob metadata without content
+      responses:
+        '200':
+          description: Blob exists; descriptor fields are returned in response headers.
+          headers:
+            ETag: { schema: { type: string } }
+            X-Blob-Revision: { schema: { type: integer, format: int64 } }
+            Content-Length: { schema: { type: integer, format: int64 } }
+            Content-Type: { schema: { type: string } }
+            Digest: { schema: { type: string } }
+        '401': { $ref: './blob-store-components.yml#/components/responses/BlobUnauthorized' }
+        '403': { $ref: './blob-store-components.yml#/components/responses/BlobForbidden' }
+        '404': { $ref: './blob-store-components.yml#/components/responses/BlobNotFound' }
+        '500': { $ref: './blob-store-components.yml#/components/responses/BlobErrorResponse' }
+    delete:
+      tags: [Blobs]
+      operationId: deleteBlob
+      summary: Delete a blob conditionally
+      description: >-
+        When `If-Match` or `X-Expected-Revision` is supplied, deletion is atomic and fails
+        rather than deleting a newer object. An unconditional request retains BlobService delete behavior.
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/ExpectedRevision'
+      responses:
+        '200':
+          description: Whether an object was deleted.
+          content:
+            application/json:
+              schema: { $ref: './blob-store-components.yml#/components/schemas/DeleteResult' }
+        '401': { $ref: './blob-store-components.yml#/components/responses/BlobUnauthorized' }
+        '403': { $ref: './blob-store-components.yml#/components/responses/BlobForbidden' }
+        '404': { $ref: './blob-store-components.yml#/components/responses/BlobNotFound' }
+        '412': { $ref: './blob-store-components.yml#/components/responses/BlobPreconditionFailed' }
+        '501': { $ref: './blob-store-components.yml#/components/responses/BlobUnsupported' }
+        '500': { $ref: './blob-store-components.yml#/components/responses/BlobErrorResponse' }
+
+  /blobs:search:
+    post:
+      tags: [Blobs]
+      operationId: searchBlobs
+      summary: Search indexed blob metadata
+      parameters:
+        - name: storeId
+          in: query
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: './blob-store-components.yml#/components/schemas/MetadataSearchQuery' }
+      responses:
+        '200':
+          description: Matching descriptors. Object bodies are never opened by metadata search.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: './blob-store-components.yml#/components/schemas/BlobDescriptor' }
+        '400': { $ref: './blob-store-components.yml#/components/responses/BlobBadRequest' }
+        '401': { $ref: './blob-store-components.yml#/components/responses/BlobUnauthorized' }
+        '403': { $ref: './blob-store-components.yml#/components/responses/BlobForbidden' }
+        '501': { $ref: './blob-store-components.yml#/components/responses/BlobUnsupported' }
+        '500': { $ref: './blob-store-components.yml#/components/responses/BlobErrorResponse' }
+
+  /stores/{storeId}/blobs:verify:
+    post:
+      tags: [Blobs]
+      operationId: verifyBlobIntegrity
+      summary: Verify a blob against an expected content address
+      description: Reads the selected object through the backend integrity path without returning its bytes.
+      parameters:
+        - $ref: '#/components/parameters/StoreId'
+        - $ref: '#/components/parameters/BlobPathQuery'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: './blob-store-components.yml#/components/schemas/ContentAddress' }
+      responses:
+        '200':
+          description: Integrity verification result.
+          content:
+            application/json:
+              schema: { $ref: './blob-store-components.yml#/components/schemas/VerifyResult' }
+        '400': { $ref: './blob-store-components.yml#/components/responses/BlobBadRequest' }
+        '401': { $ref: './blob-store-components.yml#/components/responses/BlobUnauthorized' }
+        '403': { $ref: './blob-store-components.yml#/components/responses/BlobForbidden' }
+        '404': { $ref: './blob-store-components.yml#/components/responses/BlobNotFound' }
+        '501': { $ref: './blob-store-components.yml#/components/responses/BlobUnsupported' }
+        '500': { $ref: './blob-store-components.yml#/components/responses/BlobErrorResponse' }
+
+  /blobs:copy:
+    post:
+      tags: [Blobs]
+      operationId: copyBlob
+      summary: Copy a blob within or across configured stores
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: './blob-store-components.yml#/components/schemas/BlobTransferRequest' }
+      responses:
+        '201':
+          description: Destination descriptor.
+          content:
+            application/json:
+              schema: { $ref: './blob-store-components.yml#/components/schemas/BlobDescriptor' }
+        '400': { $ref: './blob-store-components.yml#/components/responses/BlobBadRequest' }
+        '401': { $ref: './blob-store-components.yml#/components/responses/BlobUnauthorized' }
+        '403': { $ref: './blob-store-components.yml#/components/responses/BlobForbidden' }
+        '404': { $ref: './blob-store-components.yml#/components/responses/BlobNotFound' }
+        '409': { $ref: './blob-store-components.yml#/components/responses/BlobConflict' }
+        '501': { $ref: './blob-store-components.yml#/components/responses/BlobUnsupported' }
+        '500': { $ref: './blob-store-components.yml#/components/responses/BlobErrorResponse' }
+
+  /blobs:move:
+    post:
+      tags: [Blobs]
+      operationId: moveBlob
+      summary: Move a blob within or across configured stores
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: './blob-store-components.yml#/components/schemas/BlobTransferRequest' }
+      responses:
+        '200':
+          description: Destination descriptor.
+          content:
+            application/json:
+              schema: { $ref: './blob-store-components.yml#/components/schemas/BlobDescriptor' }
+        '400': { $ref: './blob-store-components.yml#/components/responses/BlobBadRequest' }
+        '401': { $ref: './blob-store-components.yml#/components/responses/BlobUnauthorized' }
+        '403': { $ref: './blob-store-components.yml#/components/responses/BlobForbidden' }
+        '404': { $ref: './blob-store-components.yml#/components/responses/BlobNotFound' }
+        '409': { $ref: './blob-store-components.yml#/components/responses/BlobConflict' }
+        '501': { $ref: './blob-store-components.yml#/components/responses/BlobUnsupported' }
+        '500': { $ref: './blob-store-components.yml#/components/responses/BlobErrorResponse' }
+
+  /stores/{storeId}/cas:
+    post:
+      tags: [ContentAddressing]
+      operationId: storeContentAddressedBlob
+      summary: Store content by digest
+      parameters:
+        - $ref: '#/components/parameters/StoreId'
+        - name: algorithm
+          in: query
+          schema: { type: string, enum: [sha-256, sha-384, sha-512], default: sha-256 }
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema: { type: string, format: binary }
+      responses:
+        '201':
+          description: Content-addressed descriptor.
+          content:
+            application/json:
+              schema: { $ref: './blob-store-components.yml#/components/schemas/ContentAddressDescriptor' }
+        '400': { $ref: './blob-store-components.yml#/components/responses/BlobBadRequest' }
+        '401': { $ref: './blob-store-components.yml#/components/responses/BlobUnauthorized' }
+        '403': { $ref: './blob-store-components.yml#/components/responses/BlobForbidden' }
+        '500': { $ref: './blob-store-components.yml#/components/responses/BlobErrorResponse' }
+
+  /stores/{storeId}/cas/{algorithm}/{digest}:
+    parameters:
+      - $ref: '#/components/parameters/StoreId'
+      - $ref: '#/components/parameters/DigestAlgorithm'
+      - $ref: '#/components/parameters/DigestValue'
+    get:
+      tags: [ContentAddressing]
+      operationId: getContentAddressedBlob
+      summary: Stream content by digest
+      responses:
+        '200': { $ref: '#/components/responses/BlobBytes' }
+        '401': { $ref: './blob-store-components.yml#/components/responses/BlobUnauthorized' }
+        '403': { $ref: './blob-store-components.yml#/components/responses/BlobForbidden' }
+        '404': { $ref: './blob-store-components.yml#/components/responses/BlobNotFound' }
+        '500': { $ref: './blob-store-components.yml#/components/responses/BlobErrorResponse' }
+    head:
+      tags: [ContentAddressing]
+      operationId: verifyContentAddressedBlob
+      summary: Verify content exists and matches its address
+      responses:
+        '200':
+          description: Integrity verification result.
+          headers:
+            X-Blob-Integrity-Valid:
+              description: Always `true`; an integrity mismatch is an error response.
+              schema: { type: boolean, enum: [true] }
+        '401': { $ref: './blob-store-components.yml#/components/responses/BlobUnauthorized' }
+        '403': { $ref: './blob-store-components.yml#/components/responses/BlobForbidden' }
+        '404': { $ref: './blob-store-components.yml#/components/responses/BlobNotFound' }
+        '500': { $ref: './blob-store-components.yml#/components/responses/BlobErrorResponse' }
+
+  /stores/{storeId}/temporary-urls:
+    post:
+      tags: [TemporaryUrls]
+      operationId: createBlobTemporaryUrl
+      summary: Create a temporary provider URL
+      parameters:
+        - $ref: '#/components/parameters/StoreId'
+        - name: blobPath
+          in: query
+          required: true
+          schema: { $ref: './blob-store-components.yml#/components/schemas/BlobPath' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: './blob-store-components.yml#/components/schemas/TempUrlRequest' }
+      responses:
+        '201':
+          description: Time-bounded URL and required request headers.
+          content:
+            application/json:
+              schema: { $ref: './blob-store-components.yml#/components/schemas/TempUrlResult' }
+        '400': { $ref: './blob-store-components.yml#/components/responses/BlobBadRequest' }
+        '401': { $ref: './blob-store-components.yml#/components/responses/BlobUnauthorized' }
+        '403': { $ref: './blob-store-components.yml#/components/responses/BlobForbidden' }
+        '404': { $ref: './blob-store-components.yml#/components/responses/BlobNotFound' }
+        '501': { $ref: './blob-store-components.yml#/components/responses/BlobUnsupported' }
+        '500': { $ref: './blob-store-components.yml#/components/responses/BlobErrorResponse' }
+
+components:
+  securitySchemes:
+    bearer:
+      $ref: './common-components.yml#/components/securitySchemes/bearer'
+  parameters:
+    StoreId:
+      name: storeId
+      in: path
+      required: true
+      schema: { type: string, minLength: 1 }
+    BlobPathQuery:
+      name: path
+      in: query
+      required: true
+      description: Canonical relative blob path; hierarchical `/` separators remain ordinary query data.
+      schema: { $ref: './blob-store-components.yml#/components/schemas/BlobPath' }
+    IfMatch:
+      name: If-Match
+      in: header
+      schema: { type: string }
+    IfNoneMatch:
+      name: If-None-Match
+      in: header
+      schema: { type: string }
+    ExpectedRevision:
+      name: X-Expected-Revision
+      in: header
+      schema: { type: integer, format: int64, minimum: 0 }
+    Digest:
+      name: Digest
+      in: header
+      description: RFC 3230-style digest, for example `sha-256=<base64>`.
+      schema: { type: string }
+    BlobMetadata:
+      name: X-Blob-Metadata
+      in: header
+      description: UTF-8 JSON serialization of BlobMetadata. Secrets and key material are forbidden.
+      schema: { type: string }
+    DigestAlgorithm:
+      name: algorithm
+      in: path
+      required: true
+      schema: { type: string, enum: [sha-256, sha-384, sha-512] }
+    DigestValue:
+      name: digest
+      in: path
+      required: true
+      schema: { type: string }
+  responses:
+    BlobBytes:
+      description: Streamed blob content.
+      headers:
+        ETag: { schema: { type: string } }
+        X-Blob-Revision: { schema: { type: integer, format: int64 } }
+        Digest: { schema: { type: string } }
+        Accept-Ranges: { schema: { type: string, example: bytes } }
+      content:
+        application/octet-stream:
+          schema: { type: string, format: binary }
+    PartialBlobBytes:
+      description: Requested byte range.
+      headers:
+        Content-Range: { schema: { type: string } }
+        ETag: { schema: { type: string } }
+        X-Blob-Revision: { schema: { type: integer, format: int64 } }
+        Digest: { schema: { type: string } }
+      content:
+        application/octet-stream:
+          schema: { type: string, format: binary }

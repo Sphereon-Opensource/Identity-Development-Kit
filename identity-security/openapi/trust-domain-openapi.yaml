@@ -1,0 +1,1686 @@
+openapi: 3.0.4
+info:
+  title: Trust Domain API
+  version: 0.1.0
+  description: |
+    Typed V2 administration and fail-closed internal resolution for tenant trust domains.
+    Trust anchors retain enforcement-safe identifier summaries, including optional certificate PEM
+    needed by the existing QR and PEM export actions. Attachment administration is generic across
+    consumer kinds; the authorization-server consumer is represented on the wire as AS.
+  contact:
+    name: Product Engineering
+    email: support@example.com
+  license:
+    name: Apache 2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0
+servers:
+  - url: https://api.example.com/api/trust-domain/v1
+  - url: http://localhost:8080/api/trust-domain/v1
+tags:
+  - name: TrustDomains
+  - name: TrustAnchors
+  - name: TrustSources
+  - name: LoTESources
+  - name: TrustCatalogs
+  - name: MdocVical
+  - name: TrustAttachments
+  - name: TrustEligibility
+  - name: InternalTrustResolution
+security:
+  - bearerAuth: []
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+paths:
+  /domains:
+    get:
+      operationId: listTrustDomains
+      summary: List Trust Domains
+      tags: [TrustDomains]
+      responses:
+        '200':
+          description: Successful listTrustDomains response.
+          content:
+            application/json:
+              schema:
+                $ref: './trust-domain-components.yml#/components/schemas/TrustDomainList'
+        '400':
+          $ref: './trust-domain-components.yml#/components/responses/BadRequest'
+        '401':
+          $ref: './trust-domain-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './trust-domain-components.yml#/components/responses/NotFound'
+        '412':
+          $ref: './trust-domain-components.yml#/components/responses/PreconditionFailed'
+    post:
+      operationId: createTrustDomain
+      summary: Create Trust Domain
+      tags: [TrustDomains]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './trust-domain-components.yml#/components/schemas/CreateTrustDomainRequest'
+      responses:
+        '201':
+          description: Successful createTrustDomain response.
+          content:
+            application/json:
+              schema:
+                $ref: './trust-domain-components.yml#/components/schemas/TrustDomain'
+        '400':
+          $ref: './trust-domain-components.yml#/components/responses/BadRequest'
+        '401':
+          $ref: './trust-domain-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './trust-domain-components.yml#/components/responses/NotFound'
+        '412':
+          $ref: './trust-domain-components.yml#/components/responses/PreconditionFailed'
+  /domains/{domainId}:
+    get:
+      operationId: getTrustDomain
+      summary: Get Trust Domain
+      tags: [TrustDomains]
+      parameters:
+        - $ref: './trust-domain-components.yml#/components/parameters/DomainId'
+      responses:
+        '200':
+          description: Successful getTrustDomain response.
+          content:
+            application/json:
+              schema:
+                $ref: './trust-domain-components.yml#/components/schemas/TrustDomain'
+        '400':
+          $ref: './trust-domain-components.yml#/components/responses/BadRequest'
+        '401':
+          $ref: './trust-domain-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './trust-domain-components.yml#/components/responses/NotFound'
+        '412':
+          $ref: './trust-domain-components.yml#/components/responses/PreconditionFailed'
+    put:
+      operationId: putTrustDomain
+      summary: Put Trust Domain
+      tags: [TrustDomains]
+      parameters:
+        - $ref: './trust-domain-components.yml#/components/parameters/DomainId'
+        - $ref: './trust-domain-components.yml#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './trust-domain-components.yml#/components/schemas/PutTrustDomainRequest'
+      responses:
+        '200':
+          description: Successful putTrustDomain response.
+          content:
+            application/json:
+              schema:
+                $ref: './trust-domain-components.yml#/components/schemas/TrustDomain'
+        '400':
+          $ref: './trust-domain-components.yml#/components/responses/BadRequest'
+        '401':
+          $ref: './trust-domain-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './trust-domain-components.yml#/components/responses/NotFound'
+        '412':
+          $ref: './trust-domain-components.yml#/components/responses/PreconditionFailed'
+    delete:
+      operationId: deleteTrustDomain
+      summary: Delete Trust Domain
+      tags: [TrustDomains]
+      parameters:
+        - $ref: './trust-domain-components.yml#/components/parameters/DomainId'
+        - $ref: './trust-domain-components.yml#/components/parameters/IfMatch'
+      responses:
+        '200':
+          description: Successful deleteTrustDomain response.
+          content:
+            application/json:
+              schema:
+                $ref: './trust-domain-components.yml#/components/schemas/DeleteResult'
+        '400':
+          $ref: './trust-domain-components.yml#/components/responses/BadRequest'
+        '401':
+          $ref: './trust-domain-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './trust-domain-components.yml#/components/responses/NotFound'
+        '412':
+          $ref: './trust-domain-components.yml#/components/responses/PreconditionFailed'
+  /domains/{domainId}/consumers:
+    get:
+      operationId: listTrustDomainConsumers
+      summary: List Trust Domain Consumers
+      tags: [TrustDomains]
+      parameters:
+        - $ref: './trust-domain-components.yml#/components/parameters/DomainId'
+      responses:
+        '200':
+          description: Successful listTrustDomainConsumers response.
+          content:
+            application/json:
+              schema:
+                $ref: './trust-domain-components.yml#/components/schemas/TrustDomainConsumerList'
+        '400':
+          $ref: './trust-domain-components.yml#/components/responses/BadRequest'
+        '401':
+          $ref: './trust-domain-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './trust-domain-components.yml#/components/responses/NotFound'
+        '412':
+          $ref: './trust-domain-components.yml#/components/responses/PreconditionFailed'
+  /domains/{domainId}/anchors:
+    get:
+      operationId: listTrustAnchors
+      summary: List Trust Anchors
+      tags: [TrustAnchors]
+      parameters:
+        - $ref: './trust-domain-components.yml#/components/parameters/DomainId'
+      responses:
+        '200':
+          description: Successful listTrustAnchors response.
+          content:
+            application/json:
+              schema:
+                $ref: './trust-domain-components.yml#/components/schemas/TrustAnchorList'
+        '400':
+          $ref: './trust-domain-components.yml#/components/responses/BadRequest'
+        '401':
+          $ref: './trust-domain-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './trust-domain-components.yml#/components/responses/NotFound'
+        '412':
+          $ref: './trust-domain-components.yml#/components/responses/PreconditionFailed'
+    post:
+      operationId: createTrustAnchor
+      summary: Create Trust Anchor
+      tags: [TrustAnchors]
+      parameters:
+        - $ref: './trust-domain-components.yml#/components/parameters/DomainId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './trust-domain-components.yml#/components/schemas/CreateTrustAnchorRequest'
+      responses:
+        '201':
+          description: Successful createTrustAnchor response.
+          content:
+            application/json:
+              schema:
+                $ref: './trust-domain-components.yml#/components/schemas/TrustAnchor'
+        '400':
+          $ref: './trust-domain-components.yml#/components/responses/BadRequest'
+        '401':
+          $ref: './trust-domain-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './trust-domain-components.yml#/components/responses/NotFound'
+        '412':
+          $ref: './trust-domain-components.yml#/components/responses/PreconditionFailed'
+  /domains/{domainId}/anchors/{anchorId}:
+    put:
+      operationId: putTrustAnchor
+      summary: Put Trust Anchor
+      tags: [TrustAnchors]
+      parameters:
+        - $ref: './trust-domain-components.yml#/components/parameters/DomainId'
+        - $ref: './trust-domain-components.yml#/components/parameters/AnchorId'
+        - $ref: './trust-domain-components.yml#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './trust-domain-components.yml#/components/schemas/PutTrustAnchorRequest'
+      responses:
+        '200':
+          description: Successful putTrustAnchor response.
+          content:
+            application/json:
+              schema:
+                $ref: './trust-domain-components.yml#/components/schemas/TrustAnchor'
+        '400':
+          $ref: './trust-domain-components.yml#/components/responses/BadRequest'
+        '401':
+          $ref: './trust-domain-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './trust-domain-components.yml#/components/responses/NotFound'
+        '412':
+          $ref: './trust-domain-components.yml#/components/responses/PreconditionFailed'
+    delete:
+      operationId: deleteTrustAnchor
+      summary: Delete Trust Anchor
+      tags: [TrustAnchors]
+      parameters:
+        - $ref: './trust-domain-components.yml#/components/parameters/DomainId'
+        - $ref: './trust-domain-components.yml#/components/parameters/AnchorId'
+        - $ref: './trust-domain-components.yml#/components/parameters/IfMatch'
+      responses:
+        '200':
+          description: Successful deleteTrustAnchor response.
+          content:
+            application/json:
+              schema:
+                $ref: './trust-domain-components.yml#/components/schemas/DeleteResult'
+        '400':
+          $ref: './trust-domain-components.yml#/components/responses/BadRequest'
+        '401':
+          $ref: './trust-domain-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './trust-domain-components.yml#/components/responses/NotFound'
+        '412':
+          $ref: './trust-domain-components.yml#/components/responses/PreconditionFailed'
+  /domains/{domainId}/anchors/{anchorId}/admissions:
+    get:
+      operationId: listTrustAnchorAdmissions
+      summary: List Trust Anchor Admissions
+      tags: [TrustAnchors]
+      parameters:
+        - $ref: './trust-domain-components.yml#/components/parameters/DomainId'
+        - $ref: './trust-domain-components.yml#/components/parameters/AnchorId'
+      responses:
+        '200':
+          description: Successful listTrustAnchorAdmissions response.
+          content:
+            application/json:
+              schema:
+                $ref: './trust-domain-components.yml#/components/schemas/TrustAnchorAdmissionList'
+        '400':
+          $ref: './trust-domain-components.yml#/components/responses/BadRequest'
+        '401':
+          $ref: './trust-domain-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './trust-domain-components.yml#/components/responses/NotFound'
+        '412':
+          $ref: './trust-domain-components.yml#/components/responses/PreconditionFailed'
+  /domains/{domainId}/anchors/{anchorId}/admissions/{admissionClass}:
+    put:
+      operationId: putTrustAnchorAdmission
+      summary: Put Trust Anchor Admission
+      tags: [TrustAnchors]
+      parameters:
+        - $ref: './trust-domain-components.yml#/components/parameters/DomainId'
+        - $ref: './trust-domain-components.yml#/components/parameters/AnchorId'
+        - $ref: './trust-domain-components.yml#/components/parameters/AdmissionClass'
+        - $ref: './trust-domain-components.yml#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './trust-domain-components.yml#/components/schemas/PutTrustAnchorAdmissionRequest'
+      responses:
+        '200':
+          description: Successful putTrustAnchorAdmission response.
+          content:
+            application/json:
+              schema:
+                $ref: './trust-domain-components.yml#/components/schemas/TrustAnchorAdmission'
+        '400':
+          $ref: './trust-domain-components.yml#/components/responses/BadRequest'
+        '401':
+          $ref: './trust-domain-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './trust-domain-components.yml#/components/responses/NotFound'
+        '412':
+          $ref: './trust-domain-components.yml#/components/responses/PreconditionFailed'
+    delete:
+      operationId: deleteTrustAnchorAdmission
+      summary: Delete Trust Anchor Admission
+      tags: [TrustAnchors]
+      parameters:
+        - $ref: './trust-domain-components.yml#/components/parameters/DomainId'
+        - $ref: './trust-domain-components.yml#/components/parameters/AnchorId'
+        - $ref: './trust-domain-components.yml#/components/parameters/AdmissionClass'
+        - $ref: './trust-domain-components.yml#/components/parameters/IfMatch'
+      responses:
+        '200':
+          description: Successful deleteTrustAnchorAdmission response.
+          content:
+            application/json:
+              schema:
+                $ref: './trust-domain-components.yml#/components/schemas/DeleteResult'
+        '400':
+          $ref: './trust-domain-components.yml#/components/responses/BadRequest'
+        '401':
+          $ref: './trust-domain-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './trust-domain-components.yml#/components/responses/NotFound'
+        '412':
+          $ref: './trust-domain-components.yml#/components/responses/PreconditionFailed'
+  /domains/{domainId}/anchors/{anchorId}/mdoc-vical:
+    get:
+      operationId: describeMdocVicalConfiguration
+      summary: Describe Mdoc Vical Configuration
+      description: >-
+        Returns the ISO 18013-5 Annex C VICAL configured on this anchor. An anchor with no VICAL
+        yet returns an unconfigured configuration rather than 404, so a client can render the empty
+        form without a special case.
+      tags: [MdocVical]
+      parameters:
+        - $ref: './trust-domain-components.yml#/components/parameters/DomainId'
+        - $ref: './trust-domain-components.yml#/components/parameters/AnchorId'
+      responses:
+        '200':
+          description: Successful describeMdocVicalConfiguration response.
+          content:
+            application/json:
+              schema:
+                $ref: './trust-domain-components.yml#/components/schemas/MdocVicalConfiguration'
+        '400':
+          $ref: './trust-domain-components.yml#/components/responses/BadRequest'
+        '401':
+          $ref: './trust-domain-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './trust-domain-components.yml#/components/responses/NotFound'
+    put:
+      operationId: configureMdocVicalConfiguration
+      summary: Configure Mdoc Vical Configuration
+      description: >-
+        Sets the VICAL source for this anchor. Every referenced anchor must already exist in the
+        same trust domain, be ACTIVE, and hold the admission class for its job: MDOC_VICAL_SIGNER
+        for the anchors that verify the artifact signature, CREDENTIAL_ISSUER for the issuing
+        authorities the artifact admits. At least one signer anchor is required, because an
+        unverified VICAL would admit every authority it happens to contain.
+      tags: [MdocVical]
+      parameters:
+        - $ref: './trust-domain-components.yml#/components/parameters/DomainId'
+        - $ref: './trust-domain-components.yml#/components/parameters/AnchorId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './trust-domain-components.yml#/components/schemas/MdocVicalSourceConfiguration'
+            examples:
+              configureMdocVical:
+                summary: Configure an mdoc VICAL source
+                value:
+                  url: "https://issuer.example.com/mdoc/vical"
+                  signerAnchorIds: ["anchor-vical-signer"]
+                  issuerAnchorIds: ["anchor-iaca-example"]
+                  requiredCertificateProfiles: ["mdoc-dsc"]
+                  enabled: true
+      responses:
+        '200':
+          description: Successful configureMdocVicalConfiguration response.
+          content:
+            application/json:
+              schema:
+                $ref: './trust-domain-components.yml#/components/schemas/MdocVicalConfiguration'
+              example:
+                domainId: "mdoc-production"
+                anchorId: "vical-provider"
+                source:
+                  url: "https://issuer.example.com/mdoc/vical"
+                  signerAnchorIds: ["anchor-vical-signer"]
+                  issuerAnchorIds: ["anchor-iaca-example"]
+                  requiredCertificateProfiles: ["mdoc-dsc"]
+                  enabled: true
+        '400':
+          $ref: './trust-domain-components.yml#/components/responses/BadRequest'
+        '401':
+          $ref: './trust-domain-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './trust-domain-components.yml#/components/responses/NotFound'
+    delete:
+      operationId: removeMdocVicalConfiguration
+      summary: Remove Mdoc Vical Configuration
+      tags: [MdocVical]
+      parameters:
+        - $ref: './trust-domain-components.yml#/components/parameters/DomainId'
+        - $ref: './trust-domain-components.yml#/components/parameters/AnchorId'
+      responses:
+        '200':
+          description: Successful removeMdocVicalConfiguration response.
+          content:
+            application/json:
+              schema:
+                $ref: './trust-domain-components.yml#/components/schemas/MdocVicalConfiguration'
+        '400':
+          $ref: './trust-domain-components.yml#/components/responses/BadRequest'
+        '401':
+          $ref: './trust-domain-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './trust-domain-components.yml#/components/responses/NotFound'
+  /domains/{domainId}/trust-sources:
+    get:
+      operationId: listTrustSources
+      summary: List Trust Sources
+      tags: [TrustSources]
+      parameters:
+        - $ref: './trust-domain-components.yml#/components/parameters/DomainId'
+      responses:
+        '200':
+          description: Successful listTrustSources response.
+          content:
+            application/json:
+              schema:
+                $ref: './trust-domain-components.yml#/components/schemas/TrustSourceList'
+        '400':
+          $ref: './trust-domain-components.yml#/components/responses/BadRequest'
+        '401':
+          $ref: './trust-domain-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './trust-domain-components.yml#/components/responses/NotFound'
+        '412':
+          $ref: './trust-domain-components.yml#/components/responses/PreconditionFailed'
+  /domains/{domainId}/trust-sources/{sourceId}:
+    get:
+      operationId: getTrustSource
+      summary: Get Trust Source
+      tags: [TrustSources]
+      parameters:
+        - $ref: './trust-domain-components.yml#/components/parameters/DomainId'
+        - $ref: './trust-domain-components.yml#/components/parameters/SourceId'
+      responses:
+        '200':
+          description: Successful getTrustSource response.
+          content:
+            application/json:
+              schema:
+                $ref: './trust-domain-components.yml#/components/schemas/TrustSource'
+        '400':
+          $ref: './trust-domain-components.yml#/components/responses/BadRequest'
+        '401':
+          $ref: './trust-domain-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './trust-domain-components.yml#/components/responses/NotFound'
+        '412':
+          $ref: './trust-domain-components.yml#/components/responses/PreconditionFailed'
+    delete:
+      operationId: deleteTrustSource
+      summary: Delete Trust Source
+      tags: [TrustSources]
+      parameters:
+        - $ref: './trust-domain-components.yml#/components/parameters/DomainId'
+        - $ref: './trust-domain-components.yml#/components/parameters/SourceId'
+        - $ref: './trust-domain-components.yml#/components/parameters/IfMatch'
+      responses:
+        '200':
+          description: Successful deleteTrustSource response.
+          content:
+            application/json:
+              schema:
+                $ref: './trust-domain-components.yml#/components/schemas/DeleteResult'
+        '400':
+          $ref: './trust-domain-components.yml#/components/responses/BadRequest'
+        '401':
+          $ref: './trust-domain-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './trust-domain-components.yml#/components/responses/NotFound'
+        '412':
+          $ref: './trust-domain-components.yml#/components/responses/PreconditionFailed'
+    put:
+      operationId: upsertCustomTrustSource
+      summary: Upsert Custom Trust Source
+      tags: [TrustSources]
+      parameters:
+        - $ref: './trust-domain-components.yml#/components/parameters/DomainId'
+        - $ref: './trust-domain-components.yml#/components/parameters/SourceId'
+        - $ref: './trust-domain-components.yml#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './trust-domain-components.yml#/components/schemas/UpsertCustomTrustSourceRequest'
+      responses:
+        '200':
+          description: Successful upsertCustomTrustSource response.
+          content:
+            application/json:
+              schema:
+                $ref: './trust-domain-components.yml#/components/schemas/TrustSource'
+        '400':
+          $ref: './trust-domain-components.yml#/components/responses/BadRequest'
+        '401':
+          $ref: './trust-domain-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './trust-domain-components.yml#/components/responses/NotFound'
+        '412':
+          $ref: './trust-domain-components.yml#/components/responses/PreconditionFailed'
+  /domains/{domainId}/trust-sources/eu:
+    put:
+      operationId: ensureEuTrustSource
+      summary: Ensure Eu Trust Source
+      tags: [TrustSources]
+      parameters:
+        - $ref: './trust-domain-components.yml#/components/parameters/DomainId'
+        - $ref: './trust-domain-components.yml#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './trust-domain-components.yml#/components/schemas/EnsureEuTrustSourceRequest'
+      responses:
+        '200':
+          description: Successful ensureEuTrustSource response.
+          content:
+            application/json:
+              schema:
+                $ref: './trust-domain-components.yml#/components/schemas/TrustSource'
+        '400':
+          $ref: './trust-domain-components.yml#/components/responses/BadRequest'
+        '401':
+          $ref: './trust-domain-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './trust-domain-components.yml#/components/responses/NotFound'
+        '412':
+          $ref: './trust-domain-components.yml#/components/responses/PreconditionFailed'
+  /domains/{domainId}/trust-sources/{sourceId}/revisions:
+    get:
+      operationId: listTrustSourceRevisions
+      summary: List Trust Source Revisions
+      tags: [TrustSources]
+      parameters:
+        - $ref: './trust-domain-components.yml#/components/parameters/DomainId'
+        - $ref: './trust-domain-components.yml#/components/parameters/SourceId'
+      responses:
+        '200':
+          description: Successful listTrustSourceRevisions response.
+          content:
+            application/json:
+              schema:
+                $ref: './trust-domain-components.yml#/components/schemas/TrustSourceRevisionList'
+        '400':
+          $ref: './trust-domain-components.yml#/components/responses/BadRequest'
+        '401':
+          $ref: './trust-domain-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './trust-domain-components.yml#/components/responses/NotFound'
+        '412':
+          $ref: './trust-domain-components.yml#/components/responses/PreconditionFailed'
+  /domains/{domainId}/trust-sources/{sourceId}/revisions/{revision}/validate:
+    post:
+      operationId: validateTrustSource
+      summary: Validate Trust Source
+      tags: [TrustSources]
+      parameters:
+        - $ref: './trust-domain-components.yml#/components/parameters/DomainId'
+        - $ref: './trust-domain-components.yml#/components/parameters/SourceId'
+        - $ref: './trust-domain-components.yml#/components/parameters/Revision'
+        - $ref: './trust-domain-components.yml#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './trust-domain-components.yml#/components/schemas/ValidateTrustSourceRequest'
+      responses:
+        '200':
+          description: Successful validateTrustSource response.
+          content:
+            application/json:
+              schema:
+                $ref: './trust-domain-components.yml#/components/schemas/TrustSourceRevision'
+        '400':
+          $ref: './trust-domain-components.yml#/components/responses/BadRequest'
+        '401':
+          $ref: './trust-domain-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './trust-domain-components.yml#/components/responses/NotFound'
+        '412':
+          $ref: './trust-domain-components.yml#/components/responses/PreconditionFailed'
+  /domains/{domainId}/trust-sources/{sourceId}/revisions/{revision}/activate:
+    post:
+      operationId: activateTrustSource
+      summary: Activate Trust Source
+      tags: [TrustSources]
+      parameters:
+        - $ref: './trust-domain-components.yml#/components/parameters/DomainId'
+        - $ref: './trust-domain-components.yml#/components/parameters/SourceId'
+        - $ref: './trust-domain-components.yml#/components/parameters/Revision'
+        - $ref: './trust-domain-components.yml#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './trust-domain-components.yml#/components/schemas/ActivateTrustSourceRequest'
+      responses:
+        '200':
+          description: Successful activateTrustSource response.
+          content:
+            application/json:
+              schema:
+                $ref: './trust-domain-components.yml#/components/schemas/TrustSourceActivationResult'
+        '400':
+          $ref: './trust-domain-components.yml#/components/responses/BadRequest'
+        '401':
+          $ref: './trust-domain-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './trust-domain-components.yml#/components/responses/NotFound'
+        '412':
+          $ref: './trust-domain-components.yml#/components/responses/PreconditionFailed'
+  /domains/{domainId}/trust-sources/{sourceId}/refresh:
+    post:
+      operationId: refreshTrustSource
+      summary: Refresh Trust Source
+      tags: [TrustSources]
+      parameters:
+        - $ref: './trust-domain-components.yml#/components/parameters/DomainId'
+        - $ref: './trust-domain-components.yml#/components/parameters/SourceId'
+        - $ref: './trust-domain-components.yml#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './trust-domain-components.yml#/components/schemas/RefreshTrustSourceRequest'
+      responses:
+        '202':
+          description: Successful refreshTrustSource response.
+          content:
+            application/json:
+              schema:
+                $ref: './trust-domain-components.yml#/components/schemas/TrustSourceRefreshJob'
+        '400':
+          $ref: './trust-domain-components.yml#/components/responses/BadRequest'
+        '401':
+          $ref: './trust-domain-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './trust-domain-components.yml#/components/responses/NotFound'
+        '412':
+          $ref: './trust-domain-components.yml#/components/responses/PreconditionFailed'
+  /domains/{domainId}/trust-sources/{sourceId}/snapshot:
+    get:
+      operationId: getActiveTrustSourceSnapshot
+      summary: Get Active Trust Source Snapshot
+      tags: [TrustSources]
+      parameters:
+        - $ref: './trust-domain-components.yml#/components/parameters/DomainId'
+        - $ref: './trust-domain-components.yml#/components/parameters/SourceId'
+      responses:
+        '200':
+          description: Successful getActiveTrustSourceSnapshot response.
+          content:
+            application/json:
+              schema:
+                $ref: './trust-domain-components.yml#/components/schemas/TrustSourceSnapshot'
+        '400':
+          $ref: './trust-domain-components.yml#/components/responses/BadRequest'
+        '401':
+          $ref: './trust-domain-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './trust-domain-components.yml#/components/responses/NotFound'
+        '412':
+          $ref: './trust-domain-components.yml#/components/responses/PreconditionFailed'
+  /domains/{domainId}/trust-sources/{sourceId}/derived-entries:
+    get:
+      operationId: listTrustSourceDerivedEntries
+      summary: List Trust Source Derived Entries
+      tags: [TrustSources]
+      parameters:
+        - $ref: './trust-domain-components.yml#/components/parameters/DomainId'
+        - $ref: './trust-domain-components.yml#/components/parameters/SourceId'
+      responses:
+        '200':
+          description: Successful listTrustSourceDerivedEntries response.
+          content:
+            application/json:
+              schema:
+                $ref: './trust-domain-components.yml#/components/schemas/TrustSourceDerivedEntryList'
+        '400':
+          $ref: './trust-domain-components.yml#/components/responses/BadRequest'
+        '401':
+          $ref: './trust-domain-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './trust-domain-components.yml#/components/responses/NotFound'
+        '412':
+          $ref: './trust-domain-components.yml#/components/responses/PreconditionFailed'
+  /domains/{domainId}/trust-sources/{sourceId}/refresh-attempts:
+    get:
+      operationId: listTrustSourceRefreshAttempts
+      summary: List Trust Source Refresh Attempts
+      tags: [TrustSources]
+      parameters:
+        - $ref: './trust-domain-components.yml#/components/parameters/DomainId'
+        - $ref: './trust-domain-components.yml#/components/parameters/SourceId'
+      responses:
+        '200':
+          description: Successful listTrustSourceRefreshAttempts response.
+          content:
+            application/json:
+              schema:
+                $ref: './trust-domain-components.yml#/components/schemas/TrustSourceRefreshAttemptList'
+        '400':
+          $ref: './trust-domain-components.yml#/components/responses/BadRequest'
+        '401':
+          $ref: './trust-domain-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './trust-domain-components.yml#/components/responses/NotFound'
+        '412':
+          $ref: './trust-domain-components.yml#/components/responses/PreconditionFailed'
+  /domains/{domainId}/trust-sources/{sourceId}/diagnostics:
+    get:
+      operationId: getTrustSourceDiagnostics
+      summary: Get Trust Source Diagnostics
+      tags: [TrustSources]
+      parameters:
+        - $ref: './trust-domain-components.yml#/components/parameters/DomainId'
+        - $ref: './trust-domain-components.yml#/components/parameters/SourceId'
+      responses:
+        '200':
+          description: Successful getTrustSourceDiagnostics response.
+          content:
+            application/json:
+              schema:
+                $ref: './trust-domain-components.yml#/components/schemas/TrustSourceDiagnostics'
+        '400':
+          $ref: './trust-domain-components.yml#/components/responses/BadRequest'
+        '401':
+          $ref: './trust-domain-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './trust-domain-components.yml#/components/responses/NotFound'
+        '412':
+          $ref: './trust-domain-components.yml#/components/responses/PreconditionFailed'
+  /domains/{domainId}/lote-sources:
+    get:
+      operationId: listLoTERemoteSources
+      summary: List LoTE Remote Sources
+      tags: [LoTESources]
+      parameters:
+        - $ref: './trust-domain-components.yml#/components/parameters/DomainId'
+      responses:
+        '200':
+          description: Successful listLoTERemoteSources response.
+          content:
+            application/json:
+              schema:
+                $ref: './trust-domain-components.yml#/components/schemas/LoTERemoteSourceList'
+        '400':
+          $ref: './trust-domain-components.yml#/components/responses/BadRequest'
+        '401':
+          $ref: './trust-domain-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './trust-domain-components.yml#/components/responses/NotFound'
+        '412':
+          $ref: './trust-domain-components.yml#/components/responses/PreconditionFailed'
+        '403':
+          $ref: './trust-domain-components.yml#/components/responses/Forbidden'
+  /domains/{domainId}/lote-sources/{sourceId}:
+    get:
+      operationId: getLoTERemoteSource
+      summary: Get LoTE Remote Source
+      tags: [LoTESources]
+      parameters:
+        - $ref: './trust-domain-components.yml#/components/parameters/DomainId'
+        - $ref: './trust-domain-components.yml#/components/parameters/SourceId'
+      responses:
+        '200':
+          description: Successful getLoTERemoteSource response.
+          content:
+            application/json:
+              schema:
+                $ref: './trust-domain-components.yml#/components/schemas/LoTERemoteSource'
+        '400':
+          $ref: './trust-domain-components.yml#/components/responses/BadRequest'
+        '401':
+          $ref: './trust-domain-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './trust-domain-components.yml#/components/responses/NotFound'
+        '412':
+          $ref: './trust-domain-components.yml#/components/responses/PreconditionFailed'
+        '403':
+          $ref: './trust-domain-components.yml#/components/responses/Forbidden'
+    put:
+      operationId: putLoTERemoteSource
+      summary: Put LoTE Source
+      description: |
+        Creates the next candidate revision of a source. The body is discriminated by sourceKind:
+        REMOTE registers a published list that is fetched on validation and refresh, INLINE
+        supplies the signed list by value. A source keeps its kind across revisions.
+      tags: [LoTESources]
+      parameters:
+        - $ref: './trust-domain-components.yml#/components/parameters/DomainId'
+        - $ref: './trust-domain-components.yml#/components/parameters/SourceId'
+        - $ref: './trust-domain-components.yml#/components/parameters/LoTEIfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './trust-domain-components.yml#/components/schemas/PutLoTESourceRequest'
+            examples:
+              remoteSource:
+                summary: Register a remote PID provider list
+                value:
+                  sourceKind: REMOTE
+                  profile: PID_PROVIDER
+                  url: "https://lote.example.eu/pid-providers.jws"
+                  verificationTrustAnchorIds: ["anchor-lote-signer"]
+                  allowedHosts: ["lote.example.eu"]
+                  maxArtifactBytes: 1048576
+                  enabled: true
+              inlineSource:
+                summary: Register a list supplied by value
+                value:
+                  sourceKind: INLINE
+                  profile: PID_PROVIDER
+                  artifact: "eyJhbGciOiJFUzI1NiIsInR5cCI6Impvc2UranNvbiIsIng1YyI6WyJNSUlC..."
+                  verificationTrustAnchorIds: ["anchor-lote-signer"]
+                  maxArtifactBytes: 1048576
+                  enabled: true
+      responses:
+        '200':
+          description: Successful putLoTERemoteSource response.
+          content:
+            application/json:
+              schema:
+                $ref: './trust-domain-components.yml#/components/schemas/LoTERemoteSourceRevision'
+        '201':
+          description: Successful putLoTERemoteSource response for a source registered by this call.
+          content:
+            application/json:
+              schema:
+                $ref: './trust-domain-components.yml#/components/schemas/LoTERemoteSourceRevision'
+        '400':
+          $ref: './trust-domain-components.yml#/components/responses/BadRequest'
+        '401':
+          $ref: './trust-domain-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './trust-domain-components.yml#/components/responses/NotFound'
+        '412':
+          $ref: './trust-domain-components.yml#/components/responses/PreconditionFailed'
+        '428':
+          $ref: './trust-domain-components.yml#/components/responses/PreconditionRequired'
+        '403':
+          $ref: './trust-domain-components.yml#/components/responses/Forbidden'
+        '409':
+          $ref: './trust-domain-components.yml#/components/responses/Conflict'
+        '422':
+          $ref: './trust-domain-components.yml#/components/responses/UnprocessableEntity'
+    delete:
+      operationId: deleteLoTERemoteSource
+      summary: Delete LoTE Remote Source
+      tags: [LoTESources]
+      parameters:
+        - $ref: './trust-domain-components.yml#/components/parameters/DomainId'
+        - $ref: './trust-domain-components.yml#/components/parameters/SourceId'
+        - $ref: './trust-domain-components.yml#/components/parameters/LoTEIfMatch'
+      responses:
+        '200':
+          description: Successful deleteLoTERemoteSource response.
+          content:
+            application/json:
+              schema:
+                $ref: './trust-domain-components.yml#/components/schemas/LoTERemoteSource'
+        '400':
+          $ref: './trust-domain-components.yml#/components/responses/BadRequest'
+        '401':
+          $ref: './trust-domain-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './trust-domain-components.yml#/components/responses/NotFound'
+        '412':
+          $ref: './trust-domain-components.yml#/components/responses/PreconditionFailed'
+        '428':
+          $ref: './trust-domain-components.yml#/components/responses/PreconditionRequired'
+        '403':
+          $ref: './trust-domain-components.yml#/components/responses/Forbidden'
+  /domains/{domainId}/lote-sources/{sourceId}/revisions:
+    get:
+      operationId: listLoTERemoteSourceRevisions
+      summary: List LoTE Remote Source Revisions
+      tags: [LoTESources]
+      parameters:
+        - $ref: './trust-domain-components.yml#/components/parameters/DomainId'
+        - $ref: './trust-domain-components.yml#/components/parameters/SourceId'
+      responses:
+        '200':
+          description: Successful listLoTERemoteSourceRevisions response.
+          content:
+            application/json:
+              schema:
+                $ref: './trust-domain-components.yml#/components/schemas/LoTERemoteSourceRevisionList'
+        '400':
+          $ref: './trust-domain-components.yml#/components/responses/BadRequest'
+        '401':
+          $ref: './trust-domain-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './trust-domain-components.yml#/components/responses/NotFound'
+        '412':
+          $ref: './trust-domain-components.yml#/components/responses/PreconditionFailed'
+        '403':
+          $ref: './trust-domain-components.yml#/components/responses/Forbidden'
+  /domains/{domainId}/lote-sources/{sourceId}/revisions/{revision}/validate:
+    post:
+      operationId: validateLoTERemoteSourceRevision
+      summary: Validate LoTE Remote Source Revision
+      tags: [LoTESources]
+      parameters:
+        - $ref: './trust-domain-components.yml#/components/parameters/DomainId'
+        - $ref: './trust-domain-components.yml#/components/parameters/SourceId'
+        - $ref: './trust-domain-components.yml#/components/parameters/Revision'
+        - $ref: './trust-domain-components.yml#/components/parameters/LoTEIfMatch'
+      responses:
+        '200':
+          description: Successful validateLoTERemoteSourceRevision response.
+          content:
+            application/json:
+              schema:
+                $ref: './trust-domain-components.yml#/components/schemas/LoTERemoteSourceValidationResult'
+        '400':
+          $ref: './trust-domain-components.yml#/components/responses/BadRequest'
+        '401':
+          $ref: './trust-domain-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './trust-domain-components.yml#/components/responses/NotFound'
+        '412':
+          $ref: './trust-domain-components.yml#/components/responses/PreconditionFailed'
+        '428':
+          $ref: './trust-domain-components.yml#/components/responses/PreconditionRequired'
+        '403':
+          $ref: './trust-domain-components.yml#/components/responses/Forbidden'
+        '409':
+          $ref: './trust-domain-components.yml#/components/responses/Conflict'
+        '422':
+          $ref: './trust-domain-components.yml#/components/responses/UnprocessableEntity'
+  /domains/{domainId}/lote-sources/{sourceId}/revisions/{revision}/activate:
+    post:
+      operationId: activateLoTERemoteSourceRevision
+      summary: Activate LoTE Remote Source Revision
+      tags: [LoTESources]
+      parameters:
+        - $ref: './trust-domain-components.yml#/components/parameters/DomainId'
+        - $ref: './trust-domain-components.yml#/components/parameters/SourceId'
+        - $ref: './trust-domain-components.yml#/components/parameters/Revision'
+        - $ref: './trust-domain-components.yml#/components/parameters/LoTEIfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './trust-domain-components.yml#/components/schemas/ActivateLoTERemoteSourceRevisionRequest'
+      responses:
+        '200':
+          description: Successful activateLoTERemoteSourceRevision response.
+          content:
+            application/json:
+              schema:
+                $ref: './trust-domain-components.yml#/components/schemas/LoTERemoteSourceActivationResult'
+        '400':
+          $ref: './trust-domain-components.yml#/components/responses/BadRequest'
+        '401':
+          $ref: './trust-domain-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './trust-domain-components.yml#/components/responses/NotFound'
+        '412':
+          $ref: './trust-domain-components.yml#/components/responses/PreconditionFailed'
+        '428':
+          $ref: './trust-domain-components.yml#/components/responses/PreconditionRequired'
+        '403':
+          $ref: './trust-domain-components.yml#/components/responses/Forbidden'
+        '409':
+          $ref: './trust-domain-components.yml#/components/responses/Conflict'
+        '422':
+          $ref: './trust-domain-components.yml#/components/responses/UnprocessableEntity'
+  /domains/{domainId}/lote-sources/{sourceId}/refresh:
+    post:
+      operationId: refreshLoTERemoteSource
+      summary: Refresh LoTE Remote Source
+      description: |
+        Fetches the active revision's list again and stores a new snapshot. Only REMOTE sources
+        can be refreshed; an INLINE source answers 409 with code
+        LOTE_SOURCE_INLINE_NOT_REFRESHABLE, because its list changes only through a new revision.
+      tags: [LoTESources]
+      parameters:
+        - $ref: './trust-domain-components.yml#/components/parameters/DomainId'
+        - $ref: './trust-domain-components.yml#/components/parameters/SourceId'
+        - $ref: './trust-domain-components.yml#/components/parameters/LoTEIfMatch'
+      responses:
+        '200':
+          description: Successful refreshLoTERemoteSource response.
+          content:
+            application/json:
+              schema:
+                $ref: './trust-domain-components.yml#/components/schemas/LoTERemoteSourceRefreshResult'
+        '400':
+          $ref: './trust-domain-components.yml#/components/responses/BadRequest'
+        '401':
+          $ref: './trust-domain-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './trust-domain-components.yml#/components/responses/NotFound'
+        '412':
+          $ref: './trust-domain-components.yml#/components/responses/PreconditionFailed'
+        '428':
+          $ref: './trust-domain-components.yml#/components/responses/PreconditionRequired'
+        '403':
+          $ref: './trust-domain-components.yml#/components/responses/Forbidden'
+        '409':
+          description: |
+            The source is not in a state that allows a refresh: it has no active revision, or it
+            is an INLINE source (code LOTE_SOURCE_INLINE_NOT_REFRESHABLE).
+          content:
+            application/json:
+              schema:
+                $ref: './trust-domain-components.yml#/components/schemas/ErrorEnvelope'
+              example:
+                error:
+                  code: LOTE_SOURCE_INLINE_NOT_REFRESHABLE
+                  message: Inline sources carry their artifact by value and cannot be refreshed; put a new revision instead.
+        '422':
+          $ref: './trust-domain-components.yml#/components/responses/UnprocessableEntity'
+  /domains/{domainId}/lote-sources/{sourceId}/diagnostics:
+    get:
+      operationId: getLoTERemoteSourceDiagnostics
+      summary: Get LoTE Remote Source Diagnostics
+      tags: [LoTESources]
+      parameters:
+        - $ref: './trust-domain-components.yml#/components/parameters/DomainId'
+        - $ref: './trust-domain-components.yml#/components/parameters/SourceId'
+      responses:
+        '200':
+          description: Successful getLoTERemoteSourceDiagnostics response.
+          content:
+            application/json:
+              schema:
+                $ref: './trust-domain-components.yml#/components/schemas/LoTERemoteSourceDiagnostics'
+        '400':
+          $ref: './trust-domain-components.yml#/components/responses/BadRequest'
+        '401':
+          $ref: './trust-domain-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './trust-domain-components.yml#/components/responses/NotFound'
+        '412':
+          $ref: './trust-domain-components.yml#/components/responses/PreconditionFailed'
+        '403':
+          $ref: './trust-domain-components.yml#/components/responses/Forbidden'
+  /domains/{domainId}/catalogs:
+    get:
+      operationId: listTrustCatalogs
+      summary: List Trust Catalogs
+      tags: [TrustCatalogs]
+      parameters:
+        - $ref: './trust-domain-components.yml#/components/parameters/DomainId'
+      responses:
+        '200':
+          description: Successful listTrustCatalogs response.
+          content:
+            application/json:
+              schema:
+                $ref: './trust-domain-components.yml#/components/schemas/TrustCatalogList'
+        '400':
+          $ref: './trust-domain-components.yml#/components/responses/BadRequest'
+        '401':
+          $ref: './trust-domain-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './trust-domain-components.yml#/components/responses/NotFound'
+        '412':
+          $ref: './trust-domain-components.yml#/components/responses/PreconditionFailed'
+    post:
+      operationId: createTrustCatalog
+      summary: Create Trust Catalog
+      tags: [TrustCatalogs]
+      parameters:
+        - $ref: './trust-domain-components.yml#/components/parameters/DomainId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './trust-domain-components.yml#/components/schemas/CreateTrustCatalogRequest'
+      responses:
+        '201':
+          description: Successful createTrustCatalog response.
+          content:
+            application/json:
+              schema:
+                $ref: './trust-domain-components.yml#/components/schemas/TrustCatalog'
+        '400':
+          $ref: './trust-domain-components.yml#/components/responses/BadRequest'
+        '401':
+          $ref: './trust-domain-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './trust-domain-components.yml#/components/responses/NotFound'
+        '412':
+          $ref: './trust-domain-components.yml#/components/responses/PreconditionFailed'
+  /domains/{domainId}/catalogs/{catalogId}:
+    get:
+      operationId: getTrustCatalog
+      summary: Get Trust Catalog
+      tags: [TrustCatalogs]
+      parameters:
+        - $ref: './trust-domain-components.yml#/components/parameters/DomainId'
+        - $ref: './trust-domain-components.yml#/components/parameters/CatalogId'
+      responses:
+        '200':
+          description: Successful getTrustCatalog response.
+          content:
+            application/json:
+              schema:
+                $ref: './trust-domain-components.yml#/components/schemas/TrustCatalog'
+        '400':
+          $ref: './trust-domain-components.yml#/components/responses/BadRequest'
+        '401':
+          $ref: './trust-domain-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './trust-domain-components.yml#/components/responses/NotFound'
+        '412':
+          $ref: './trust-domain-components.yml#/components/responses/PreconditionFailed'
+    put:
+      operationId: updateTrustCatalog
+      summary: Update Trust Catalog
+      tags: [TrustCatalogs]
+      parameters:
+        - $ref: './trust-domain-components.yml#/components/parameters/DomainId'
+        - $ref: './trust-domain-components.yml#/components/parameters/CatalogId'
+        - $ref: './trust-domain-components.yml#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './trust-domain-components.yml#/components/schemas/UpdateTrustCatalogRequest'
+      responses:
+        '200':
+          description: Successful updateTrustCatalog response.
+          content:
+            application/json:
+              schema:
+                $ref: './trust-domain-components.yml#/components/schemas/TrustCatalog'
+        '400':
+          $ref: './trust-domain-components.yml#/components/responses/BadRequest'
+        '401':
+          $ref: './trust-domain-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './trust-domain-components.yml#/components/responses/NotFound'
+        '412':
+          $ref: './trust-domain-components.yml#/components/responses/PreconditionFailed'
+    delete:
+      operationId: deleteTrustCatalog
+      summary: Delete Trust Catalog
+      tags: [TrustCatalogs]
+      parameters:
+        - $ref: './trust-domain-components.yml#/components/parameters/DomainId'
+        - $ref: './trust-domain-components.yml#/components/parameters/CatalogId'
+        - $ref: './trust-domain-components.yml#/components/parameters/IfMatch'
+      responses:
+        '200':
+          description: Successful deleteTrustCatalog response.
+          content:
+            application/json:
+              schema:
+                $ref: './trust-domain-components.yml#/components/schemas/DeleteResult'
+        '400':
+          $ref: './trust-domain-components.yml#/components/responses/BadRequest'
+        '401':
+          $ref: './trust-domain-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './trust-domain-components.yml#/components/responses/NotFound'
+        '412':
+          $ref: './trust-domain-components.yml#/components/responses/PreconditionFailed'
+  /domains/{domainId}/catalogs/{catalogId}/snapshots:
+    get:
+      operationId: listTrustCatalogSnapshots
+      summary: List Trust Catalog Snapshots
+      tags: [TrustCatalogs]
+      parameters:
+        - $ref: './trust-domain-components.yml#/components/parameters/DomainId'
+        - $ref: './trust-domain-components.yml#/components/parameters/CatalogId'
+      responses:
+        '200':
+          description: Successful listTrustCatalogSnapshots response.
+          content:
+            application/json:
+              schema:
+                $ref: './trust-domain-components.yml#/components/schemas/TrustCatalogSnapshotList'
+        '400':
+          $ref: './trust-domain-components.yml#/components/responses/BadRequest'
+        '401':
+          $ref: './trust-domain-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './trust-domain-components.yml#/components/responses/NotFound'
+        '412':
+          $ref: './trust-domain-components.yml#/components/responses/PreconditionFailed'
+  /domains/{domainId}/catalogs/{catalogId}/snapshots/{snapshotId}:
+    get:
+      operationId: getTrustCatalogSnapshot
+      summary: Get Trust Catalog Snapshot
+      tags: [TrustCatalogs]
+      parameters:
+        - $ref: './trust-domain-components.yml#/components/parameters/DomainId'
+        - $ref: './trust-domain-components.yml#/components/parameters/CatalogId'
+        - $ref: './trust-domain-components.yml#/components/parameters/SnapshotId'
+      responses:
+        '200':
+          description: Successful getTrustCatalogSnapshot response.
+          content:
+            application/json:
+              schema:
+                $ref: './trust-domain-components.yml#/components/schemas/TrustCatalogSnapshot'
+        '400':
+          $ref: './trust-domain-components.yml#/components/responses/BadRequest'
+        '401':
+          $ref: './trust-domain-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './trust-domain-components.yml#/components/responses/NotFound'
+        '412':
+          $ref: './trust-domain-components.yml#/components/responses/PreconditionFailed'
+  /domains/{domainId}/catalogs/{catalogId}/candidates/validate:
+    post:
+      operationId: validateTrustCatalogCandidate
+      summary: Validate Trust Catalog Candidate
+      tags: [TrustCatalogs]
+      parameters:
+        - $ref: './trust-domain-components.yml#/components/parameters/DomainId'
+        - $ref: './trust-domain-components.yml#/components/parameters/CatalogId'
+        - $ref: './trust-domain-components.yml#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './trust-domain-components.yml#/components/schemas/ValidateTrustCatalogCandidateRequest'
+      responses:
+        '201':
+          description: Successful validateTrustCatalogCandidate response.
+          content:
+            application/json:
+              schema:
+                $ref: './trust-domain-components.yml#/components/schemas/TrustCatalogCandidateValidationResult'
+        '400':
+          $ref: './trust-domain-components.yml#/components/responses/BadRequest'
+        '401':
+          $ref: './trust-domain-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './trust-domain-components.yml#/components/responses/NotFound'
+        '412':
+          $ref: './trust-domain-components.yml#/components/responses/PreconditionFailed'
+  /domains/{domainId}/catalogs/{catalogId}/snapshots/{snapshotId}/activate:
+    post:
+      operationId: activateTrustCatalogSnapshot
+      summary: Activate Trust Catalog Snapshot
+      tags: [TrustCatalogs]
+      parameters:
+        - $ref: './trust-domain-components.yml#/components/parameters/DomainId'
+        - $ref: './trust-domain-components.yml#/components/parameters/CatalogId'
+        - $ref: './trust-domain-components.yml#/components/parameters/SnapshotId'
+        - $ref: './trust-domain-components.yml#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './trust-domain-components.yml#/components/schemas/ActivateTrustCatalogSnapshotRequest'
+      responses:
+        '200':
+          description: Successful activateTrustCatalogSnapshot response.
+          content:
+            application/json:
+              schema:
+                $ref: './trust-domain-components.yml#/components/schemas/TrustCatalogActivationResult'
+        '400':
+          $ref: './trust-domain-components.yml#/components/responses/BadRequest'
+        '401':
+          $ref: './trust-domain-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './trust-domain-components.yml#/components/responses/NotFound'
+        '412':
+          $ref: './trust-domain-components.yml#/components/responses/PreconditionFailed'
+  /attachments:
+    get:
+      operationId: listTrustAttachments
+      summary: List Trust Attachments
+      tags: [TrustAttachments]
+      parameters:
+        - $ref: './trust-domain-components.yml#/components/parameters/ConsumerKindQuery'
+        - $ref: './trust-domain-components.yml#/components/parameters/ConsumerIdQuery'
+        - $ref: './trust-domain-components.yml#/components/parameters/UsageQuery'
+      responses:
+        '200':
+          description: Successful listTrustAttachments response.
+          content:
+            application/json:
+              schema:
+                $ref: './trust-domain-components.yml#/components/schemas/TrustAttachmentList'
+        '400':
+          $ref: './trust-domain-components.yml#/components/responses/BadRequest'
+        '401':
+          $ref: './trust-domain-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './trust-domain-components.yml#/components/responses/NotFound'
+        '412':
+          $ref: './trust-domain-components.yml#/components/responses/PreconditionFailed'
+  /attachments/{consumerKind}/{consumerId}/{usage}:
+    get:
+      operationId: getTrustAttachment
+      summary: Get Trust Attachment
+      tags: [TrustAttachments]
+      parameters:
+        - $ref: './trust-domain-components.yml#/components/parameters/ConsumerKind'
+        - $ref: './trust-domain-components.yml#/components/parameters/ConsumerId'
+        - $ref: './trust-domain-components.yml#/components/parameters/Usage'
+      responses:
+        '200':
+          description: Successful getTrustAttachment response.
+          content:
+            application/json:
+              schema:
+                $ref: './trust-domain-components.yml#/components/schemas/TrustAttachmentAggregate'
+        '400':
+          $ref: './trust-domain-components.yml#/components/responses/BadRequest'
+        '401':
+          $ref: './trust-domain-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './trust-domain-components.yml#/components/responses/NotFound'
+        '412':
+          $ref: './trust-domain-components.yml#/components/responses/PreconditionFailed'
+    put:
+      operationId: putTrustAttachment
+      summary: Put Trust Attachment
+      tags: [TrustAttachments]
+      parameters:
+        - $ref: './trust-domain-components.yml#/components/parameters/ConsumerKind'
+        - $ref: './trust-domain-components.yml#/components/parameters/ConsumerId'
+        - $ref: './trust-domain-components.yml#/components/parameters/Usage'
+        - $ref: './trust-domain-components.yml#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './trust-domain-components.yml#/components/schemas/PutTrustAttachmentRequest'
+      responses:
+        '200':
+          description: Successful putTrustAttachment response.
+          content:
+            application/json:
+              schema:
+                $ref: './trust-domain-components.yml#/components/schemas/TrustAttachmentAggregate'
+        '400':
+          $ref: './trust-domain-components.yml#/components/responses/BadRequest'
+        '401':
+          $ref: './trust-domain-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './trust-domain-components.yml#/components/responses/NotFound'
+        '412':
+          $ref: './trust-domain-components.yml#/components/responses/PreconditionFailed'
+    delete:
+      operationId: deleteTrustAttachment
+      summary: Delete Trust Attachment
+      tags: [TrustAttachments]
+      parameters:
+        - $ref: './trust-domain-components.yml#/components/parameters/ConsumerKind'
+        - $ref: './trust-domain-components.yml#/components/parameters/ConsumerId'
+        - $ref: './trust-domain-components.yml#/components/parameters/Usage'
+        - $ref: './trust-domain-components.yml#/components/parameters/IfMatch'
+      responses:
+        '200':
+          description: Successful deleteTrustAttachment response.
+          content:
+            application/json:
+              schema:
+                $ref: './trust-domain-components.yml#/components/schemas/DeleteResult'
+        '400':
+          $ref: './trust-domain-components.yml#/components/responses/BadRequest'
+        '401':
+          $ref: './trust-domain-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './trust-domain-components.yml#/components/responses/NotFound'
+        '412':
+          $ref: './trust-domain-components.yml#/components/responses/PreconditionFailed'
+  /eligibility/{consumerKind}/{usage}:
+    get:
+      operationId: listTrustEligibilityGrants
+      summary: List Trust Eligibility Grants
+      tags: [TrustEligibility]
+      parameters:
+        - $ref: './trust-domain-components.yml#/components/parameters/ConsumerKind'
+        - $ref: './trust-domain-components.yml#/components/parameters/Usage'
+      responses:
+        '200':
+          description: Successful listTrustEligibilityGrants response.
+          content:
+            application/json:
+              schema:
+                $ref: './trust-domain-components.yml#/components/schemas/TrustEligibilityGrantList'
+        '400':
+          $ref: './trust-domain-components.yml#/components/responses/BadRequest'
+        '401':
+          $ref: './trust-domain-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './trust-domain-components.yml#/components/responses/NotFound'
+        '412':
+          $ref: './trust-domain-components.yml#/components/responses/PreconditionFailed'
+    put:
+      operationId: putTrustEligibilityGrant
+      summary: Put Trust Eligibility Grant
+      tags: [TrustEligibility]
+      parameters:
+        - $ref: './trust-domain-components.yml#/components/parameters/ConsumerKind'
+        - $ref: './trust-domain-components.yml#/components/parameters/Usage'
+        - $ref: './trust-domain-components.yml#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './trust-domain-components.yml#/components/schemas/PutTrustEligibilityGrantRequest'
+      responses:
+        '200':
+          description: Successful putTrustEligibilityGrant response.
+          content:
+            application/json:
+              schema:
+                $ref: './trust-domain-components.yml#/components/schemas/TrustEligibilityGrant'
+        '400':
+          $ref: './trust-domain-components.yml#/components/responses/BadRequest'
+        '401':
+          $ref: './trust-domain-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './trust-domain-components.yml#/components/responses/NotFound'
+        '412':
+          $ref: './trust-domain-components.yml#/components/responses/PreconditionFailed'
+    delete:
+      operationId: deleteTrustEligibilityGrant
+      summary: Delete Trust Eligibility Grant
+      tags: [TrustEligibility]
+      parameters:
+        - $ref: './trust-domain-components.yml#/components/parameters/ConsumerKind'
+        - $ref: './trust-domain-components.yml#/components/parameters/Usage'
+        - $ref: './trust-domain-components.yml#/components/parameters/IfMatch'
+      responses:
+        '200':
+          description: Successful deleteTrustEligibilityGrant response.
+          content:
+            application/json:
+              schema:
+                $ref: './trust-domain-components.yml#/components/schemas/DeleteResult'
+        '400':
+          $ref: './trust-domain-components.yml#/components/responses/BadRequest'
+        '401':
+          $ref: './trust-domain-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './trust-domain-components.yml#/components/responses/NotFound'
+        '412':
+          $ref: './trust-domain-components.yml#/components/responses/PreconditionFailed'
+  /internal/resolve/attachment:
+    post:
+      operationId: resolveTrustAttachment
+      summary: Resolve Trust Attachment
+      tags: [InternalTrustResolution]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './trust-domain-components.yml#/components/schemas/ResolveTrustAttachmentRequest'
+      responses:
+        '200':
+          description: Successful resolveTrustAttachment response.
+          content:
+            application/json:
+              schema:
+                $ref: './trust-domain-components.yml#/components/schemas/ResolvedTrustAttachment'
+        '400':
+          $ref: './trust-domain-components.yml#/components/responses/BadRequest'
+        '401':
+          $ref: './trust-domain-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './trust-domain-components.yml#/components/responses/NotFound'
+        '412':
+          $ref: './trust-domain-components.yml#/components/responses/PreconditionFailed'
+  /internal/resolve/authentication-material:
+    post:
+      operationId: resolveTrustAuthenticationMaterial
+      summary: Resolve Trust Authentication Material
+      tags: [InternalTrustResolution]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './trust-domain-components.yml#/components/schemas/ResolveTrustAuthenticationMaterialRequest'
+      responses:
+        '200':
+          description: Successful resolveTrustAuthenticationMaterial response.
+          content:
+            application/json:
+              schema:
+                $ref: './trust-domain-components.yml#/components/schemas/ResolvedTrustAuthenticationMaterial'
+        '400':
+          $ref: './trust-domain-components.yml#/components/responses/BadRequest'
+        '401':
+          $ref: './trust-domain-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './trust-domain-components.yml#/components/responses/NotFound'
+        '412':
+          $ref: './trust-domain-components.yml#/components/responses/PreconditionFailed'
+  /internal/evaluate/credential-issuer:
+    post:
+      operationId: evaluateCredentialIssuerTrust
+      summary: Evaluate Credential Issuer Trust
+      tags: [InternalTrustResolution]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './trust-domain-components.yml#/components/schemas/EvaluateCredentialIssuerTrustRequest'
+      responses:
+        '200':
+          description: Successful evaluateCredentialIssuerTrust response.
+          content:
+            application/json:
+              schema:
+                $ref: './trust-domain-components.yml#/components/schemas/TrustEvaluationResult'
+        '400':
+          $ref: './trust-domain-components.yml#/components/responses/BadRequest'
+        '401':
+          $ref: './trust-domain-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './trust-domain-components.yml#/components/responses/NotFound'
+        '412':
+          $ref: './trust-domain-components.yml#/components/responses/PreconditionFailed'
+  /internal/evaluate/wallet-provider:
+    post:
+      operationId: evaluateWalletProviderTrust
+      summary: Evaluate Wallet Provider Trust
+      tags: [InternalTrustResolution]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './trust-domain-components.yml#/components/schemas/EvaluateWalletProviderTrustRequest'
+      responses:
+        '200':
+          description: Successful evaluateWalletProviderTrust response.
+          content:
+            application/json:
+              schema:
+                $ref: './trust-domain-components.yml#/components/schemas/TrustEvaluationResult'
+        '400':
+          $ref: './trust-domain-components.yml#/components/responses/BadRequest'
+        '401':
+          $ref: './trust-domain-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './trust-domain-components.yml#/components/responses/NotFound'
+        '412':
+          $ref: './trust-domain-components.yml#/components/responses/PreconditionFailed'
+  /internal/evaluate/verifier:
+    post:
+      operationId: evaluateVerifierTrust
+      summary: Evaluate Verifier Trust
+      tags: [InternalTrustResolution]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './trust-domain-components.yml#/components/schemas/EvaluateVerifierTrustRequest'
+      responses:
+        '200':
+          description: Successful evaluateVerifierTrust response.
+          content:
+            application/json:
+              schema:
+                $ref: './trust-domain-components.yml#/components/schemas/TrustEvaluationResult'
+        '400':
+          $ref: './trust-domain-components.yml#/components/responses/BadRequest'
+        '401':
+          $ref: './trust-domain-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './trust-domain-components.yml#/components/responses/NotFound'
+        '412':
+          $ref: './trust-domain-components.yml#/components/responses/PreconditionFailed'
+  /internal/evaluate/catalog-authorization:
+    post:
+      operationId: evaluateCatalogAuthorization
+      summary: Evaluate Catalog Authorization
+      tags: [InternalTrustResolution]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './trust-domain-components.yml#/components/schemas/EvaluateCatalogAuthorizationRequest'
+      responses:
+        '200':
+          description: Successful evaluateCatalogAuthorization response.
+          content:
+            application/json:
+              schema:
+                $ref: './trust-domain-components.yml#/components/schemas/TrustEvaluationResult'
+        '400':
+          $ref: './trust-domain-components.yml#/components/responses/BadRequest'
+        '401':
+          $ref: './trust-domain-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './trust-domain-components.yml#/components/responses/NotFound'
+        '412':
+          $ref: './trust-domain-components.yml#/components/responses/PreconditionFailed'
+  /internal/resolve/tls-server-material:
+    post:
+      operationId: resolveTlsServerTrustMaterial
+      summary: Resolve Tls Server Trust Material
+      tags: [InternalTrustResolution]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './trust-domain-components.yml#/components/schemas/ResolveTlsServerTrustMaterialRequest'
+      responses:
+        '200':
+          description: Successful resolveTlsServerTrustMaterial response.
+          content:
+            application/json:
+              schema:
+                $ref: './trust-domain-components.yml#/components/schemas/TlsServerTrustMaterialResult'
+        '400':
+          $ref: './trust-domain-components.yml#/components/responses/BadRequest'
+        '401':
+          $ref: './trust-domain-components.yml#/components/responses/Unauthorized'
+        '404':
+          $ref: './trust-domain-components.yml#/components/responses/NotFound'
+        '412':
+          $ref: './trust-domain-components.yml#/components/responses/PreconditionFailed'

@@ -7,14 +7,14 @@ package com.sphereon.oidf.conformance.services
 
 // Shared by deployed issuer, verifier, and wallet conformance drivers.
 
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import java.nio.file.Files
 import java.nio.file.Path
 import java.time.Duration
 import java.util.concurrent.TimeUnit
 import kotlin.io.path.isRegularFile
-import kotlinx.serialization.json.buildJsonArray
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
 
 internal data class OidfEnterprisePlatformConfigSpec(
     val infraWorkspace: Path,
@@ -165,8 +165,7 @@ internal fun provisionOidfEnterprisePlatformConfig(spec: OidfEnterprisePlatformC
                             .filter(String::isNotBlank)
                             .joinToString(" ")
                 }
-            }
-            .start()
+            }.start()
     if (!process.waitFor(Duration.ofMinutes(3).toMillis(), TimeUnit.MILLISECONDS)) {
         process.destroyForcibly()
         error("Timed out provisioning OIDF platform config. Output: $output")

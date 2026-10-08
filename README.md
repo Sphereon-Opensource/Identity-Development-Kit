@@ -18,7 +18,7 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache%202.0-blue.svg" alt="License"></a>
   <img src="https://img.shields.io/badge/Kotlin-2.3+-7F52FF.svg?logo=kotlin&logoColor=white" alt="Kotlin">
   <img src="https://img.shields.io/badge/Platforms-Android%20%7C%20iOS%20%7C%20JVM%20%7C%20JS%20%7C%20wasmJs%20%7C%20Linux-brightgreen.svg" alt="Platforms">
-  <img src="https://img.shields.io/badge/Version-0.25.0--SNAPSHOT-orange.svg" alt="Version">
+  <img src="https://img.shields.io/badge/Version-0.26.0--SNAPSHOT-orange.svg" alt="Version">
 </p>
 
 <p align="center">
@@ -150,24 +150,26 @@ repositories {
 }
 
 dependencies {
-    // Core API
-    implementation("com.sphereon.idk:lib-core-api-public:0.25.0-SNAPSHOT")
+    // Core API — pin with platformVersion from platform-version.properties
+    implementation("com.sphereon.idk:lib-core-api-public:${platformVersion}")
 
     // Cryptography
-    implementation("com.sphereon.idk:lib-crypto-core-public:0.25.0-SNAPSHOT")
-    implementation("com.sphereon.idk:lib-crypto-core-impl:0.25.0-SNAPSHOT")
+    implementation("com.sphereon.idk:lib-crypto-core-public:${platformVersion}")
+    implementation("com.sphereon.idk:lib-crypto-core-impl:${platformVersion}")
 
     // DIDs
-    implementation("com.sphereon.idk:lib-did-resolver-impl:0.25.0-SNAPSHOT")
-    implementation("com.sphereon.idk:lib-did-methods-key:0.25.0-SNAPSHOT")
+    implementation("com.sphereon.idk:lib-did-resolver-impl:${platformVersion}")
+    implementation("com.sphereon.idk:lib-did-methods-key:${platformVersion}")
 
     // mDoc
-    implementation("com.sphereon.idk:lib-mdoc-core-public:0.25.0-SNAPSHOT")
-    implementation("com.sphereon.idk:lib-mdoc-core-impl:0.25.0-SNAPSHOT")
+    implementation("com.sphereon.idk:lib-mdoc-core-public:${platformVersion}")
+    implementation("com.sphereon.idk:lib-mdoc-core-impl:${platformVersion}")
 
     // OID4VCI / OID4VP / SD-JWT: add as needed
 }
 ```
+
+`platformVersion` is defined in [`platform-version.properties`](platform-version.properties) at the repo root (loaded by `settings.gradle.kts` into every project's `version`).
 
 See the [installation guide](https://docs.sphereon.com/idk/guides/installation) for per-platform setup and the [modules reference](https://docs.sphereon.com/idk/guides/modules) for the full module catalog.
 
@@ -371,7 +373,7 @@ Full module reference: [docs.sphereon.com/idk/guides/modules](https://docs.spher
 
 ## Module index
 
-227 modules across 56 domains, generated from the verified module index (`docs/module-index/`): every abstract below passed the four-facet rubric, 44 checks per module.
+218 modules across 49 domains, generated from the verified module index (`docs/module-index/`): every abstract below passed the four-facet rubric, 44 checks per module.
 Full narratives: [Module Reference](https://docs.sphereon.com/idk/guides/modules).
 
 | Domain | Modules | Scope |
@@ -392,7 +394,7 @@ Full narratives: [Module Reference](https://docs.sphereon.com/idk/guides/modules
 | crypto-kms | 6 | `crypto-kms` is the Key Management Service abstraction: a provider SPI plus four concrete providers and a REST-facing API. |
 | crypto-secdsa | 2 | `crypto-secdsa` provides Elliptic-Curve Digital Signature Algorithm support split into a public API surface (`lib-crypto-secdsa-public`) and an implementation module (`lib-crypto-secdsa-impl`). |
 | data | 4 | `data` covers credential-definition data and cross-cutting integration taxonomy. |
-| data-link | 6 | `data-link` provides transport/link primitives used across mDoc and wallet flows: HTTP client (public/impl), BLE (public), and NFC APDU/NDEF (public/impl). |
+| data-link | 7 | `data-link` provides transport/link primitives used across mDoc and wallet flows: HTTP client (public/impl), BLE (public), and NFC APDU/NDEF (public/impl). |
 | data-store-asset | 2 | `data-store-asset` is a tenant asset library: content-addressed, per-tenant deduplicated asset storage (public API + impl). |
 | data-store-blob | 7 | `data-store-blob` is the cross-cutting blob/object storage abstraction: public contracts plus multiple backings — memory, filesystem (`impl-fs`), key-value (`impl-kv`), OKD (`impl-okd`), and an HTTP client (`client-http`) for remote blob services. |
 | data-store-credential-design | 2 | `data-store-credential-design` stores credential design, localization, and render metadata (public/impl): how a credential type is presented (layout, branding, localized labels) independent of the wire format. |
@@ -404,10 +406,10 @@ Full narratives: [Module Reference](https://docs.sphereon.com/idk/guides/modules
 | data-store-schema-registry | 2 | `data-store-schema-registry` provides versioned schema management backed by a blob store (public/impl): schemas are stored as blobs with version metadata on top. |
 | data-store-vault | 2 | `data-store-vault` defines a provider-neutral protected file/folder contract (public) plus a portability module (`lib-data-store-vault-portability`) for moving vault content across providers/backends. |
 | did | 18 | `did` is the W3C Decentralized Identifier domain: the largest IDK domain (18 modules). |
-| identity | 9 | `identity` groups four capabilities: **matching** (hashed/encrypted identifier matching), **resolution** (identity resolution), **reconciliation** (cross-source attribute reconciliation) — each as public/impl — plus **IDV** (identity verification): a public API with two drivers, `lib-idv-oidc` (OIDC IDP-based verification) and `lib-idv-wallet` (wallet-based verification). |
+| identity | 11 | `identity` groups four capabilities: **matching** (hashed/encrypted identifier matching), **resolution** (identity resolution), **reconciliation** (cross-source attribute reconciliation) — each as public/impl — plus **IDV** (identity verification): a public API with two drivers, `lib-idv-oidc` (OIDC IDP-based verification) and `lib-idv-wallet` (wallet-based verification). |
 | jsonld | 4 | `jsonld` provides JSON-LD 1.1 capability with a two-track design: Track A — loader + validators (`lib-jsonld-loader`, shared public surface); Track B — full processor (`lib-jsonld-processor`). `lib-jsonld-rdf-canon` implements RDF canonicalization (URDNA2015 class algorithms) needed for Data Integrity proofs. |
 | mdoc | 13 | `mdoc` implements ISO 18013 mobile driving license (mDoc) support: document model and CBOR codecs (`core` public/impl), device-engagement orchestration (`datatransfer` public/impl), reader runtime (`lib-mdoc-reader`), and four transports — BLE (public/impl), NFC engagement/handover, REST API, and OID4VP for ISO 18013-7 online flows. |
-| oauth2 | 11 | `oauth2` implements the OAuth2/OIDC stack: shared models (common public/impl), OAuth2 client (with JAR, PAR, token exchange), Authorization Server command graph, Resource Server validation/introspection/DPoP caches, JWT + OIDC discovery validation (api/impl), and a REST-facing server module (`lib-oauth2-server-rest`). |
+| oauth2 | 12 | `oauth2` implements the OAuth2/OIDC stack: shared models (common public/impl), OAuth2 client (with JAR, PAR, token exchange), Authorization Server command graph, Resource Server validation/introspection/DPoP caches, JWT + OIDC discovery validation (api/impl), and a REST-facing server module (`lib-oauth2-server-rest`). |
 | openid-oid4vc | 2 | `openid-oid4vc` holds shared OpenID for Verifiable Credential family types and a QR code service (public/impl), used by both OID4VCI and OID4VP. |
 | openid-oid4vci | 9 | `openid-oid4vci` implements OpenID for Verifiable Credential Issuance: common model and validators, **issuer** runtime, **holder** (wallet) runtime, and a REST-facing issuer service layer (`rest-public`/`rest-impl` plus `issuer-rest`). |
 | openid-oid4vp | 16 | `openid-oid4vp` implements OpenID for Verifiable Presentations (16 modules): common request types, **holder** and **verifier** runtimes (plus a VCDM-specific verifier impl), **DCQL** query/response types and a DCQL store (public/impl/rest with `oid4vp-dcql` REST spec), a **universal** verifier service layer (`oid4vp-universal` REST spec), and an **auth-bridge** that maps OID4VP flows onto traditional authentication. `oid4vp-universal`. |
@@ -425,16 +427,9 @@ Full narratives: [Module Reference](https://docs.sphereon.com/idk/guides/modules
 | ui | 2 | `ui` provides shared Compose Multiplatform UI component token primitives (`lib-ui-compose`) and a blob adapter (`lib-ui-compose-blob-adapter`) for rendering blob-backed content in Compose UIs. |
 | versions | 1 | Single-module domain: `idk-bom` — the Bill-of-Materials that pins IDK library versions for consumers (EDK, VDX, external adopters) so they can import one BOM instead of per-module versions. |
 | wallet | 22 | `wallet` is the largest IDK domain (22 modules): the protocol-neutral headless wallet runtime and SDK. |
-| wallet-app | 3 | `wallet-app` is the wallet application layer: public API + impl plus a REST client for credential operations (`wallet-credential` REST spec). |
-| wallet-cli | 1 | Single-module domain: `wallet-cli` — a command-line wallet runner/tooling module under `wallet/cli`. |
-| wallet-kit | 1 | Single-module domain: `wallet-kit` — higher-level wallet kit assembly under `wallet/kit`, bundling wallet runtime pieces for consumers. |
-| wallet-presentation | 3 | `wallet-presentation` is the wallet presentation layer: contracts, a Molecule-based presentation module, and a presenter — rendering credential/wallet state into UI models consumed by `wallet-ui`. |
-| wallet-profile | 2 | `wallet-profile` provides wallet profile management (public/impl): user profile data, preferences, and profile-scoped state for the wallet app. |
-| wallet-runner | 1 | Single-module domain: `wallet-runner` — the runnable wallet host under `wallet/runner`, bootstrapping and running the wallet application. |
-| wallet-ui | 2 | `wallet-ui` is the wallet’s Compose Multiplatform UI: `wallet-ui-compose` (screens and components) and `wallet-ui-navigation3` (Navigation 3 routing). |
 
 <details>
-<summary><b>Module ids by domain (227)</b></summary>
+<summary><b>Module ids by domain (218)</b></summary>
 
 - **attribute**: `lib-attribute-flow-public`, `lib-attribute-mapping-public`
 - **catalog**: `lib-catalog-eu-impl`, `lib-catalog-eu-public`, `lib-catalog-impl`, `lib-catalog-persistence-api`, `lib-catalog-persistence-memory`, `lib-catalog-persistence-sqlite`, `lib-catalog-public`, `lib-catalog-ts11-public`
@@ -452,7 +447,7 @@ Full narratives: [Module Reference](https://docs.sphereon.com/idk/guides/modules
 - **crypto-kms**: `lib-crypto-kms-provider-aws`, `lib-crypto-kms-provider-azure`, `lib-crypto-kms-provider-mobile`, `lib-crypto-kms-provider-rest`, `lib-crypto-kms-provider-software`, `lib-crypto-kms-rest-api`
 - **crypto-secdsa**: `lib-crypto-secdsa-impl`, `lib-crypto-secdsa-public`
 - **data**: `lib-data-credential-definition-impl`, `lib-data-credential-definition-public`, `lib-data-credential-definition-rest`, `lib-data-integration-public`
-- **data-link**: `lib-data-link-ble-public`, `lib-data-link-http-client`, `lib-data-link-http-client-impl`, `lib-data-link-http-client-public`, `lib-data-link-nfc-impl`, `lib-data-link-nfc-public`
+- **data-link**: `lib-data-link-ble-public`, `lib-data-link-http-client`, `lib-data-link-http-client-impl`, `lib-data-link-http-client-kms-impl`, `lib-data-link-http-client-public`, `lib-data-link-nfc-impl`, `lib-data-link-nfc-public`
 - **data-store-asset**: `lib-data-store-asset-impl`, `lib-data-store-asset-public`
 - **data-store-blob**: `lib-data-store-blob-client-http`, `lib-data-store-blob-impl`, `lib-data-store-blob-impl-fs`, `lib-data-store-blob-impl-kv`, `lib-data-store-blob-impl-memory`, `lib-data-store-blob-impl-okd`, `lib-data-store-blob-public`
 - **data-store-credential-design**: `lib-data-store-credential-design-impl`, `lib-data-store-credential-design-public`
@@ -464,10 +459,10 @@ Full narratives: [Module Reference](https://docs.sphereon.com/idk/guides/modules
 - **data-store-schema-registry**: `lib-data-store-schema-registry-impl`, `lib-data-store-schema-registry-public`
 - **data-store-vault**: `lib-data-store-vault-portability`, `lib-data-store-vault-public`
 - **did**: `lib-did-core-public`, `lib-did-hosting-impl`, `lib-did-hosting-public`, `lib-did-manager-impl`, `lib-did-manager-public`, `lib-did-methods-jwk`, `lib-did-methods-key`, `lib-did-methods-web`, `lib-did-methods-webvh-provider`, `lib-did-methods-webvh-public`, `lib-did-methods-webvh-resolver`, `lib-did-methods-webvh-rest-server`, `lib-did-persistence-api`, `lib-did-persistence-memory`, `lib-did-persistence-sqlite`, `lib-did-resolver-impl`, `lib-did-resolver-public`, `lib-did-rest-resolver-server`
-- **identity**: `lib-identity-matching-impl`, `lib-identity-matching-public`, `lib-identity-reconciliation-impl`, `lib-identity-reconciliation-public`, `lib-identity-resolution-impl`, `lib-identity-resolution-public`, `lib-idv-oidc`, `lib-idv-public`, `lib-idv-wallet`
+- **identity**: `lib-identity-matching-impl`, `lib-identity-matching-public`, `lib-identity-reconciliation-impl`, `lib-identity-reconciliation-oidc`, `lib-identity-reconciliation-public`, `lib-identity-resolution-catalog`, `lib-identity-resolution-impl`, `lib-identity-resolution-public`, `lib-idv-oidc`, `lib-idv-public`, `lib-idv-wallet`
 - **jsonld**: `lib-jsonld-loader`, `lib-jsonld-processor`, `lib-jsonld-public`, `lib-jsonld-rdf-canon`
 - **mdoc**: `lib-mdoc-core`, `lib-mdoc-core-impl`, `lib-mdoc-core-public`, `lib-mdoc-datatransfer`, `lib-mdoc-datatransfer-impl`, `lib-mdoc-datatransfer-public`, `lib-mdoc-reader`, `lib-mdoc-transport-ble`, `lib-mdoc-transport-ble-impl`, `lib-mdoc-transport-ble-public`, `lib-mdoc-transport-nfc`, `lib-mdoc-transport-oid4vp`, `lib-mdoc-transport-restapi`
-- **oauth2**: `lib-oauth2-client-impl`, `lib-oauth2-client-public`, `lib-oauth2-common-impl`, `lib-oauth2-common-public`, `lib-oauth2-jwt-validation-api`, `lib-oauth2-jwt-validation-impl`, `lib-oauth2-server-authorization-impl`, `lib-oauth2-server-authorization-public`, `lib-oauth2-server-resource-impl`, `lib-oauth2-server-resource-public`, `lib-oauth2-server-rest`
+- **oauth2**: `lib-oauth2-client-impl`, `lib-oauth2-client-public`, `lib-oauth2-common-impl`, `lib-oauth2-common-public`, `lib-oauth2-jwt-validation-api`, `lib-oauth2-jwt-validation-impl`, `lib-oauth2-server-authorization-impl`, `lib-oauth2-server-authorization-public`, `lib-oauth2-server-authorization-theme`, `lib-oauth2-server-resource-impl`, `lib-oauth2-server-resource-public`, `lib-oauth2-server-rest`
 - **openid-oid4vc**: `lib-openid-oid4vc-common-impl`, `lib-openid-oid4vc-common-public`
 - **openid-oid4vci**: `lib-openid-oid4vci-common-impl`, `lib-openid-oid4vci-common-public`, `lib-openid-oid4vci-holder-impl`, `lib-openid-oid4vci-holder-public`, `lib-openid-oid4vci-issuer-impl`, `lib-openid-oid4vci-issuer-public`, `lib-openid-oid4vci-issuer-rest`, `lib-openid-oid4vci-rest-impl`, `lib-openid-oid4vci-rest-public`
 - **openid-oid4vp**: `lib-openid-oid4vp-auth-bridge-impl`, `lib-openid-oid4vp-auth-bridge-public`, `lib-openid-oid4vp-common-impl`, `lib-openid-oid4vp-common-public`, `lib-openid-oid4vp-dcql`, `lib-openid-oid4vp-dcql-store-impl`, `lib-openid-oid4vp-dcql-store-public`, `lib-openid-oid4vp-dcql-store-rest`, `lib-openid-oid4vp-holder-impl`, `lib-openid-oid4vp-holder-public`, `lib-openid-oid4vp-universal-impl`, `lib-openid-oid4vp-universal-public`, `lib-openid-oid4vp-verifier-impl`, `lib-openid-oid4vp-verifier-public`, `lib-openid-oid4vp-verifier-rest`, `lib-openid-oid4vp-verifier-vcdm-impl`
@@ -485,13 +480,6 @@ Full narratives: [Module Reference](https://docs.sphereon.com/idk/guides/modules
 - **ui**: `lib-ui-compose`, `lib-ui-compose-blob-adapter`
 - **versions**: `idk-bom`
 - **wallet**: `lib-wallet-impl`, `lib-wallet-interaction-client-rest`, `lib-wallet-interaction-holder-wiring`, `lib-wallet-interaction-impl`, `lib-wallet-interaction-presenter`, `lib-wallet-interaction-presenter-contracts`, `lib-wallet-interaction-protocol-iso18013`, `lib-wallet-interaction-protocol-oid4vci`, `lib-wallet-interaction-protocol-oid4vp`, `lib-wallet-interaction-public`, `lib-wallet-party-local`, `lib-wallet-party-public`, `lib-wallet-provider-local`, `lib-wallet-provider-public`, `lib-wallet-public`, `lib-wallet-unit-impl`, `lib-wallet-unit-public`, `lib-wallet-wsca-impl`, `lib-wallet-wsca-public`, `lib-wallet-wscd-mobile`, `lib-wallet-wscd-public`, `lib-wallet-wscd-software`
-- **wallet-app**: `wallet-app-client-rest`, `wallet-app-impl`, `wallet-app-public`
-- **wallet-cli**: `wallet-cli`
-- **wallet-kit**: `wallet-kit`
-- **wallet-presentation**: `wallet-presentation`, `wallet-presentation-contracts`, `wallet-presentation-molecule`
-- **wallet-profile**: `wallet-profile-impl`, `wallet-profile-public`
-- **wallet-runner**: `wallet-runner`
-- **wallet-ui**: `wallet-ui-compose`, `wallet-ui-navigation3`
 
 </details>
 

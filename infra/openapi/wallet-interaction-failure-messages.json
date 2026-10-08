@@ -1,0 +1,47 @@
+{
+  "$comment": "Holder-facing failure copy for wallet interaction. Keyed on code, never messageKey. Twenty distinct codes share wallet.interaction.error.action_not_allowed, and oid4vp.request_uri_expired shares a key with oid4vp.request_uri_fetch_failed despite different dispositions. Only codes where a holder learns something the disposition does not say have byCode entries; the rest of the 120 engine codes fall back to byDisposition. Consumers resolve locally in the device locale. Do not populate WalletInteractionError.message from this file.",
+  "defaultLocale": "en",
+  "byDisposition": {
+    "TERMINAL": {
+      "en": "The exchange could not be completed, and it cannot be picked up again. Start a new one when you are ready."
+    },
+    "REPEATABLE": {
+      "en": "The exchange did not get through. Nothing was shared or received, and it is worth trying again."
+    },
+    "RESUMABLE": {
+      "en": "The exchange stopped part way through. It is still open and can be continued."
+    }
+  },
+  "byCode": {
+    "iso18013.reader_blocked": {
+      "en": "This reader is not accepted by your wallet, so nothing was shared."
+    },
+    "iso18013.transport_unavailable": {
+      "en": "The reader could not be reached. Check that the connection is on and try again."
+    },
+    "oid4vci.issuer_blocked": {
+      "en": "This issuer is not accepted by your wallet, so nothing was issued."
+    },
+    "oid4vci.offer_parse_failed": {
+      "en": "This offer could not be read. Ask the issuer for a new one."
+    },
+    "oid4vp.request_uri_expired": {
+      "en": "This request has expired. Ask the verifier for a new one."
+    },
+    "oid4vp.request_uri_fetch_failed": {
+      "en": "The verifier could not be reached. Nothing was shared."
+    },
+    "oid4vp.request_uri_not_found": {
+      "en": "This request is no longer available. Ask the verifier for a new one."
+    },
+    "oid4vp.selection_unsatisfiable": {
+      "en": "None of your credentials match what was asked for, so there was nothing to share."
+    },
+    "oid4vp.verifier_blocked": {
+      "en": "This verifier is not accepted by your wallet, so nothing was shared."
+    },
+    "wallet_interaction.no_adapter": {
+      "en": "This wallet does not support the kind of code or link that was captured."
+    }
+  }
+}

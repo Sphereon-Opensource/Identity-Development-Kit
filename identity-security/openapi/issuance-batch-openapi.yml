@@ -1,0 +1,136 @@
+openapi: 3.0.4
+info:
+  title: Issuance Batch API
+  version: 0.1.0
+  x-products: [vdx]
+  description: |
+    Run a credential issuance or verification batch from a recipient table in one
+    call. An operator uploads a recipient list and, depending on `mode`, either maps
+    its columns onto credential claims to issue, or attaches a DCQL request so every
+    recipient is invited to present. This API turns that single request into the
+    whole run: it creates or reuses the tabular source, ingests the rows, creates
+    and starts the batch, mints one invitation per row, and hands each invitation to
+    delivery.
+
+    ## Why it is one endpoint
+
+    The underlying steps are separate services with their own APIs: a tabular source
+    store, a mapping-template store, the batch engine, and the invitation service.
+    Driving them individually means an operator UI has to sequence eight calls and
+    unwind partial state on any failure. This surface collapses that sequence into one
+    request so the UI stays a single network call and the server owns ordering,
+    validation, and cleanup.
+
+    ## Source input and column mapping
+
+    The recipient table arrives one of two ways. Either the caller uploads it inline
+    (base64 CSV plus the header row it parsed), optionally promoting it to a reusable
+    attribute source for later runs, or the caller references a tabular source that a
+    previous run already created. Column-to-claim mapping is likewise either a stored
+    mapping template referenced by id, or an inline mapping that the run can persist as
+    a new template on success.
+
+    ## Where the run's output lives
+
+    The response carries the identifiers the operator follows the run with: the tabular
+    source, the tabular batch, and the invitation batch. Per-invitation lifecycle,
+    delivery state, and the batch's full error list belong to the invitation API; only
+    a capped sample of per-row mint rejections is returned here. Errors share the
+    stable, machine-readable [ApiError] body. Durations are ISO 8601; timestamps are
+    RFC 3339 / ISO 8601 in UTC.
+  license:
+    name: Apache 2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0
+
+servers:
+  - url: https://api.example.com/api/v1/batch-invite
+    description: Production server.
+  - url: http://localhost:8080/api/v1/batch-invite
+    description: Local development server.
+
+security:
+  - bearer: []
+
+tags:
+  - name: IssuanceBatch
+    description: >-
+      Operator surface for running a credential issuance or verification batch
+      end to end from a recipient table.
+
+paths:
+  /run:
+    post:
+      tags: [IssuanceBatch]
+      summary: Run a batch invite
+      operationId: runBatchInvite
+      x-command-id: issuance-batch-orchestrator.rest.run
+      description: |
+        Ingests a recipient table, mints one invitation per row, and hands each
+        invitation to delivery, in a single call.
+
+        `mode` selects issuance (default) or verification. Issuance requires
+        `credentialConfigurationId`. Verification requires `verifierInstanceId`,
+        `clientId`, `dcqlQuery`, and a `responseUri` or `redirectUri`; those values
+        are copied onto every row through the tabular source's `sharedContext`,
+        because a batch row's target is `sourceId:batchId:rowId` and cannot also
+        name the verifier.
+
+        The run creates or reuses the tabular source, ingests its rows, creates,
+        prepares, and starts the batch, then mints and delivers the invitations. Rows
+        that cannot be minted are rejected individually and reported in
+        `rejectedRecipients`; the run itself still succeeds as long as the batch was
+        submitted. Tenant and caller identity come from the authenticated session.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BatchInviteOrchestratorArgs'
+      responses:
+        '200':
+          description: The batch was submitted. The body reports the run's identifiers, counts, and any rejected rows.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BatchInviteOrchestratorResult'
+        '400':
+          $ref: './common-components.yml#/components/responses/ValidationError'
+        '401':
+          $ref: './common-components.yml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common-components.yml#/components/responses/Forbidden'
+        '404':
+          description: The referenced tabular source or mapping template does not exist in the caller's tenant.
+          content:
+            application/json:
+              schema:
+                $ref: './common-components.yml#/components/schemas/ApiError'
+        '500':
+          $ref: './common-components.yml#/components/responses/Error'
+
+components:
+  # Shared error responses, ApiError, and the bearer security scheme are defined in
+  # the canonical ./common-components.yml (owned by IDK lib-core-api-public, copied in
+  # at build time). Only issuance-batch-specific components are re-exported here from
+  # ./issuance-batch-components.yml.
+
+  securitySchemes:
+    bearer:
+      $ref: './common-components.yml#/components/securitySchemes/bearer'
+
+  schemas:
+    # ---- Re-exported mapping value objects ----------------------------------
+    ClaimTransform:
+      $ref: './issuance-batch-components.yml#/components/schemas/ClaimTransform'
+    ColumnMapping:
+      $ref: './issuance-batch-components.yml#/components/schemas/ColumnMapping'
+    SaveAsAttributeSource:
+      $ref: './issuance-batch-components.yml#/components/schemas/SaveAsAttributeSource'
+    RejectedRecipient:
+      $ref: './issuance-batch-components.yml#/components/schemas/RejectedRecipient'
+
+    # ---- Re-exported run request and result ---------------------------------
+    BatchInviteOrchestratorArgs:
+      $ref: './issuance-batch-components.yml#/components/schemas/BatchInviteOrchestratorArgs'
+    BatchInviteOrchestratorResult:
+      $ref: './issuance-batch-components.yml#/components/schemas/BatchInviteOrchestratorResult'

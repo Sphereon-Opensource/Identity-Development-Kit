@@ -49,7 +49,11 @@ REM Resolve IDK_VERSION from IDK gradle.properties.
 REM Normalize IDK_ROOT to an absolute path — `pushd` + `call gradlew.bat` against
 REM a `..\..\..`-relative path fails to find gradlew.bat in some cmd hosts.
 for %%d in ("%~dp0..\..\..") do set "IDK_ROOT=%%~fd"
-for /f "tokens=2 delims==" %%v in ('findstr /b /c:"version=" "%IDK_ROOT%\gradle.properties"') do set IDK_VERSION=%%v
+if exist "%IDK_ROOT%\platform-version.properties" (
+    for /f "tokens=2 delims==" %%v in ('findstr /b /c:"platformVersion=" "%IDK_ROOT%\platform-version.properties"') do set IDK_VERSION=%%v
+) else (
+    for /f "tokens=2 delims==" %%v in ('findstr /b /c:"version=" "%IDK_ROOT%\gradle.properties"') do set IDK_VERSION=%%v
+)
 echo IDK_VERSION=%IDK_VERSION%
 echo Dev mode: building from local IDK source at %IDK_ROOT%
 
