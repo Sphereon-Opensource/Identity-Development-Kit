@@ -19,6 +19,8 @@ package com.sphereon.crypto.key.persistence.impl
 
 import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.model.Origin
+import com.sphereon.crypto.certificate.persistence.CertificateReferenceKind
+import com.sphereon.crypto.certificate.persistence.CertificateReferenceStore
 import com.sphereon.crypto.core.KeyInfo
 import com.sphereon.crypto.core.KeyInfoType
 import com.sphereon.crypto.core.KeyVisibility
@@ -66,6 +68,7 @@ class ManagedKeyStoreSelector(
     private val modeResolver: ManagedKeyStoreModeResolver,
     private val registrar: ManagedKeyReferenceRegistrar,
     private val execution: SessionExecution,
+    private val certificateReferences: CertificateReferenceStore,
 ) : ManagedKeyStoreService {
     private val effectiveMode: ManagedKeyStoreMode
         get() {
@@ -217,15 +220,36 @@ class ManagedKeyStoreSelector(
                 .delete(tenantId, reference.alias, reference.providerId)
                 .getOrElse { error -> throw PKIException("Failed to delete key reference: ${error.code}") }
         }
-        return deleteFromProvider(reference.toProviderKeyInfo())
+        // Self-indexing providers own the resolved key and its dependent reference lifecycle.
+        if (iteratingStore.maintainsKeyReferenceIndex(reference.providerId)) {
+            return iteratingStore.deleteKey(reference.toProviderKeyInfo())
+        }
+        return deleteFromProvider(reference)
     }
 
-    private suspend fun deleteFromProvider(keyInfo: KeyInfoType<*>): Boolean {
+    private suspend fun deleteFromProvider(reference: KeyReferenceRecord): Boolean {
+        val keyInfo = reference.toProviderKeyInfo()
+        val chains = if (certificateReferences.isAvailable) {
+            certificateReferences.findByLinkedKeyReferenceId(tenantId, reference.id)
+                .getOrElse { throw PKIException("Failed to resolve linked certificate references: ${it.code}") }
+                .filter {
+                    it.tenantId == tenantId && it.linkedKeyReferenceId == reference.id &&
+                        it.kind == CertificateReferenceKind.KEY_CERTIFICATE_CHAIN &&
+                        it.controlMode == ResourceControlMode.PLATFORM_MANAGED && it.deletedAt == null
+                }
+        } else emptyList()
         val deleted = iteratingStore.deleteKey(keyInfo)
         if (deleted) {
-            registrar
+            // Keep the ownership row until its dependent managed chains are retired.
+            for (chain in chains) {
+                val retired = certificateReferences.deleteById(tenantId, chain.id)
+                    .getOrElse { throw PKIException("Failed to retire linked certificate reference: ${it.code}") }
+                if (!retired) throw PKIException("Linked certificate reference was not retired")
+            }
+            val retired = registrar
                 .removeKeyReference(keyInfo)
                 .getOrElse { error -> throw PKIException("Failed to remove key reference: ${error.code}") }
+            if (!retired) throw PKIException("Deleted provider key reference was not retired")
         }
         return deleted
     }

@@ -53,7 +53,9 @@ import kotlin.test.assertTrue
 import kotlin.time.Clock
 
 class ManagedKeyStoreSelectorTest {
-    private val iteratingStore = mockk<ManagedKeyStoreWithProviderLookups>()
+    private val iteratingStore = mockk<ManagedKeyStoreWithProviderLookups>().also {
+        coEvery { it.maintainsKeyReferenceIndex(any()) } returns false
+    }
     private val keyReferenceStore = mockk<KeyReferenceStore>()
     private val modeResolver = mockk<ManagedKeyStoreModeResolver>()
     private val registrar = mockk<ManagedKeyReferenceRegistrar>()
@@ -78,6 +80,7 @@ class ManagedKeyStoreSelectorTest {
             modeResolver = modeResolver,
             registrar = registrar,
             execution = execution,
+            certificateReferences = com.sphereon.crypto.certificate.persistence.NoOpCertificateReferenceStore(),
         )
 
     private fun restartedSelector() =
@@ -87,6 +90,7 @@ class ManagedKeyStoreSelectorTest {
             modeResolver = modeResolver,
             registrar = registrar,
             execution = execution,
+            certificateReferences = com.sphereon.crypto.certificate.persistence.NoOpCertificateReferenceStore(),
         )
 
     private val now = Clock.System.now()
@@ -607,6 +611,7 @@ class ManagedKeyStoreSelectorTest {
             modeResolver = modeResolver,
             registrar = registrar,
             execution = execution,
+            certificateReferences = com.sphereon.crypto.certificate.persistence.NoOpCertificateReferenceStore(),
         )
 
     private fun durableStoreSession(records: MutableList<KeyReferenceRecord>): KeyReferenceStore =
