@@ -21,11 +21,21 @@ import com.sphereon.crypto.jose.jws.command.CreateJwsArgs
 import com.sphereon.crypto.jose.jws.command.CreateJwsCompactCommand
 import com.sphereon.crypto.jose.jws.command.CreateJwsOpts
 import com.sphereon.di.session.SessionScope
+import com.sphereon.oauth2.common.config.OAuth2ServersConfigProvider
+import com.sphereon.oauth2.server.authorization.signing.AsSigningRequirement
 import com.sphereon.oauth2.server.authorization.signing.AsServerSigningIdentifierResolver
+import com.sphereon.oauth2.server.authorization.signing.CapturedAsServerConfig
+import com.sphereon.openid.oid4vci.issuer.authorization.Oid4vciAuthorizationPolicySnapshot
+import com.sphereon.openid.oid4vci.issuer.authorization.Oid4vciAuthorizationServerDeployment
 import com.sphereon.openid.oid4vci.issuer.command.MintDeferralScopedTokenArgs
 import com.sphereon.openid.oid4vci.issuer.command.MintDeferralScopedTokenCommand
 import com.sphereon.openid.oid4vci.issuer.command.MintDeferralScopedTokenResult
 import com.sphereon.openid.oid4vci.issuer.config.Oid4vciIssuerConfigProvider
+import com.sphereon.openid.oid4vci.issuer.config.Oid4vciIssuerInstanceIdProvider
+import com.sphereon.openid.oid4vci.issuer.store.CredentialIssuanceSessionStore
+import com.sphereon.openid.oid4vci.issuer.store.CredentialRequestIdentityStore
+import com.sphereon.openid.oid4vci.issuer.store.DeferredCredentialStatus
+import com.sphereon.openid.oid4vci.issuer.store.DeferredCredentialStore
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.Provider
@@ -40,15 +50,13 @@ import kotlin.time.Clock
  * `scope = "deferred_credential"` plus the correlation / transaction ids that bind it to a
  * specific deferred issuance entry.
  *
- * Signing reuses the AS [AsServerSigningIdentifierResolver] so the deferral-scoped token is signed
- * by the same key as the wallet's original access token. That keeps the token verifiable by the
- * same AS-side introspection logic with no extra key plumbing. The resolver is injected optionally
- * (the issuer may be deployed against an external AS that owns signing): when it is absent the
- * command returns a clear error instead of failing DI graph construction.
+ * The persisted transaction and authorization-policy snapshot select the exact hosted AS.
+ * Signing uses an ACTIVE tenant descriptor from that AS's current selection; key rotation may
+ * choose a different kid from the original access token. External-AS and unbacked transactions
+ * fail before the JWS command is called.
  *
- * The audience claim is populated from [MintDeferralScopedTokenArgs.audience] when supplied
- * by the caller, otherwise the [Oid4vciIssuerConfigProvider.issuerIdentifier] is used as a
- * fallback so the token always carries an `aud` claim.
+ * The JWT issuer is the persisted AS issuer. Audience defaults to the credential issuer and
+ * remains distinct from issuer; a nonblank explicit audience may narrow the request.
  *
  * JWS signing goes through [CreateJwsCompactCommand] (the bound IDK Command) rather than the
  * narrower [com.sphereon.crypto.jose.jws.command.CreateJwsCompactCommandService] surface so
@@ -66,6 +74,11 @@ class MintDeferralScopedTokenCommandImpl(
     private val createJwsCompactCommand: CreateJwsCompactCommand,
     private val signingIdentifierResolverProvider: Provider<AsServerSigningIdentifierResolver>? = null,
     private val issuerConfigProvider: Oid4vciIssuerConfigProvider,
+    private val oauth2ConfigProvider: OAuth2ServersConfigProvider? = null,
+    private val deferredStore: DeferredCredentialStore,
+    private val sessionStore: CredentialIssuanceSessionStore,
+    private val requestIdentityStore: CredentialRequestIdentityStore,
+    private val issuerInstanceIdProvider: Oid4vciIssuerInstanceIdProvider,
     private val clock: Clock,
 ) : TypedServiceCommandAdapter<MintDeferralScopedTokenArgs, MintDeferralScopedTokenResult, IdkError>(
         commandId = MintDeferralScopedTokenCommand.COMMAND_ID,
@@ -83,26 +96,71 @@ class MintDeferralScopedTokenCommandImpl(
         applyDuring: (MintDeferralScopedTokenArgs) -> MintDeferralScopedTokenArgs,
     ): IdkResult<MintDeferralScopedTokenResult, IdkError> {
         val applied = applyDuring(args)
-
-        val serverIdentifier = signingIdentifierResolverProvider?.invoke()?.resolveSigningIdentifier()
-        val signer =
-            serverIdentifier ?: return Err(
-                IdkError.INVALID_STATE(
-                    message =
-                        "Cannot mint deferral-scoped access token: no OAuth2 server signing identifier is available " +
-                            "(the AsServerSigningIdentifierResolver binding is absent or resolved null). Configure the " +
-                            "server signing key or enable refresh tokens on the AS so the wallet never needs a " +
-                            "deferral-scoped fallback.",
-                ),
-            )
+        val deferred = deferredStore.get(applied.transactionId).getOrElse { return Err(it) }
+            ?: return Err(IdkError.INVALID_STATE(message = "Deferral transaction has no persisted issuance binding"))
+        if (deferred.status != DeferredCredentialStatus.PENDING || deferred.expiresAt <= clock.now().toEpochMilliseconds()) {
+            return Err(IdkError.INVALID_STATE(message = "Deferral transaction is not pending and current"))
+        }
+        val session = sessionStore.get(deferred.issuanceSessionId).getOrElse { return Err(it) }
+        val snapshot: Oid4vciAuthorizationPolicySnapshot
+        val expectedCorrelation: String
+        val issuerInstanceId: String
+        if (session != null) {
+            snapshot = session.authorizationPolicySnapshot
+                ?: return Err(IdkError.INVALID_STATE(message = "Issuance session has no authorization-server snapshot"))
+            expectedCorrelation = session.lifecycleCorrelationId ?: session.sessionId
+            issuerInstanceId = session.instanceId
+        } else {
+            val identity = requestIdentityStore.get(deferred.issuanceSessionId).getOrElse { return Err(it) }
+                ?: return Err(IdkError.INVALID_STATE(message = "Deferral transaction has no persisted issuer identity"))
+            snapshot = identity.authorizationPolicySnapshot
+            expectedCorrelation = identity.protocolSessionId
+            issuerInstanceId = identity.instanceId
+        }
+        if (deferred.instanceId != issuerInstanceId || snapshot.issuerId.toString() != issuerInstanceId ||
+            applied.correlationId != expectedCorrelation || issuerInstanceIdProvider.currentInstanceId() != issuerInstanceId
+        ) {
+            return Err(IdkError.INVALID_STATE(message = "Deferral transaction does not match its persisted issuer binding"))
+        }
+        if (snapshot.authorizationServerDeployment != Oid4vciAuthorizationServerDeployment.HOSTED) {
+            return Err(IdkError.INVALID_STATE(message = "Deferral authorization server is not hosted"))
+        }
+        val exactKey = snapshot.authorizationServerRuntimeKey
+            ?: return Err(IdkError.INVALID_STATE(message = "Deferral authorization server has no runtime key"))
+        val configProvider = oauth2ConfigProvider
+            ?: return Err(IdkError.INVALID_STATE(message = "Deferral authorization-server configuration is unavailable"))
+        val resolver = signingIdentifierResolverProvider?.invoke()
+            ?: return Err(IdkError.INVALID_STATE(message = "Deferral authorization-server signer is unavailable"))
+        val captured = try {
+            CapturedAsServerConfig.select(configProvider.getConfig(), exactKey)
+        } catch (error: IllegalArgumentException) {
+            return Err(IdkError.INVALID_STATE(message = error.message ?: "Deferral authorization-server selection failed"))
+        } catch (error: IllegalStateException) {
+            return Err(IdkError.INVALID_STATE(message = error.message ?: "Deferral authorization-server selection failed"))
+        }
+        if (captured.server?.issuer?.let { it != snapshot.authorizationServerIssuer } == true ||
+            snapshot.authorizationServerIssuer.isBlank()
+        ) {
+            return Err(IdkError.INVALID_STATE(message = "Deferral authorization-server issuer differs from persisted selection"))
+        }
+        val signer = try {
+            resolver.selectSigning(captured, AsSigningRequirement.REQUIRED).identifier
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (expected: Exception) {
+            return Err(IdkError.INVALID_STATE(message = expected.message ?: "Deferral authorization-server signing selection failed"))
+        } ?: return Err(IdkError.INVALID_STATE(message = "Deferral authorization-server signer is unavailable"))
 
         val now = clock.now().epochSeconds
         val expiresAt = now + applied.ttlSeconds
         val audience = applied.audience ?: issuerConfigProvider.issuerIdentifier
+        if (audience.isBlank()) {
+            return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Deferral-token audience must not be blank"))
+        }
 
         val payload =
             buildJsonObject {
-                put("iss", issuerConfigProvider.issuerIdentifier)
+                put("iss", snapshot.authorizationServerIssuer)
                 put("aud", audience)
                 put("iat", now)
                 put("exp", expiresAt)

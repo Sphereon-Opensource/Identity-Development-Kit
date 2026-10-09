@@ -45,6 +45,7 @@ import com.sphereon.oauth2.server.authorization.command.jar.VerifyRequestObjectA
 import com.sphereon.oauth2.server.authorization.command.jar.VerifyRequestObjectCommand
 import com.sphereon.oauth2.server.authorization.error.AuthorizationServerError
 import com.sphereon.oauth2.server.authorization.model.ClientRegistration
+import com.sphereon.oauth2.server.authorization.storage.ClientAssertionJtiStore
 import com.sphereon.oauth2.server.authorization.storage.ClientRegistry
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
@@ -62,6 +63,7 @@ import kotlinx.serialization.json.long
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 import kotlin.time.Clock
+import kotlin.time.Instant
 
 /**
  * Server-side implementation of RFC 9101 (JAR) acceptance.
@@ -92,6 +94,7 @@ class VerifyRequestObjectCommandImpl(
     private val verifyJwsCommand: VerifyJwsCommand,
     private val fetchRequestUriCommand: FetchRequestUriCommand,
     private val serversConfigProvider: OAuth2ServersConfigProvider,
+    private val jtiStore: Lazy<ClientAssertionJtiStore>,
 ) : TypedServiceCommandAdapter<VerifyRequestObjectArgs, VerifiedRequestObject, IdkError>(
         commandId = VerifyRequestObjectCommand.COMMAND_ID,
         execution = execution,
@@ -194,6 +197,15 @@ class VerifyRequestObjectCommandImpl(
         // identity to fetch its keys, then enforces the cross-check.
         val jarIss = payload["iss"]?.jsonPrimitive?.content
         val jarClientId = payload["client_id"]?.jsonPrimitive?.content
+        // Both claims name the same client; OpenID Federation for OpenID Connect 1.1 §12.1.1.1 requires both to be the
+        // RP's Entity Identifier for Automatic Registration.
+        if (jarIss != null && jarClientId != null && jarIss != jarClientId) {
+            return Err(
+                AuthorizationServerError.InvalidRequestObject(
+                    details = "JAR 'iss' '$jarIss' and 'client_id' '$jarClientId' must name the same client",
+                ),
+            )
+        }
         val resolvedClientId =
             jarIss ?: jarClientId
                 ?: return Err(
@@ -344,6 +356,22 @@ class VerifyRequestObjectCommandImpl(
             return Err(AuthorizationServerError.InvalidRequestObject(details = "JAR 'iat' is in the future"))
         }
 
+        if (client.singleUseRequestObjects) {
+            val soleAudience = (aud as? JsonPrimitive)?.content
+                ?: (aud as? kotlinx.serialization.json.JsonArray)?.singleOrNull()?.jsonPrimitive?.content
+            if (soleAudience != args.issuer) {
+                return Err(AuthorizationServerError.InvalidRequestObject(details = "JAR 'aud' must name only this server"))
+            }
+            if (payload.containsKey("sub")) {
+                return Err(AuthorizationServerError.InvalidRequestObject(details = "JAR must not contain 'sub'"))
+            }
+            val jti = payload["jti"]?.jsonPrimitive?.content?.takeIf { it.isNotBlank() }
+                ?: return Err(AuthorizationServerError.InvalidRequestObject(details = "JAR is missing 'jti' claim"))
+            if (!jtiStore.value.recordIfNew(resolvedClientId, REQUEST_OBJECT_JTI_PREFIX + jti, Instant.fromEpochSeconds(exp))) {
+                return Err(AuthorizationServerError.InvalidRequestObject(details = "JAR 'jti' has already been used"))
+            }
+        }
+
         // RFC 9101 §6.1: signed claims override the front-channel parameters.
         val merged = mergeParameters(args.queryParameters, payload)
         return Ok(
@@ -410,6 +438,7 @@ class VerifyRequestObjectCommandImpl(
 
     companion object {
         private const val JWS_PART_COUNT = 3
+        private const val REQUEST_OBJECT_JTI_PREFIX = "request-object:"
 
         /** RFC 9101 §6.1: JWT-envelope claims to strip before merging. */
         private val JWT_ENVELOPE_CLAIMS: Set<String> = setOf("iss", "aud", "exp", "iat", "jti", "nbf", "typ", "alg")

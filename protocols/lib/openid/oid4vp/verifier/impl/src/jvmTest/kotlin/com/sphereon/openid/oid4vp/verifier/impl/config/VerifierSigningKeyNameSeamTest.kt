@@ -43,6 +43,7 @@ import com.sphereon.di.session.SessionContextManager
 import com.sphereon.did.manager.DidProviderRegistry
 import com.sphereon.openid.oid4vp.common.ClientIdScheme
 import com.sphereon.openid.oid4vp.verifier.impl.TestExecutionContext
+import com.sphereon.openid.oid4vp.verifier.federation.VerifierFederationMetadata
 import com.sphereon.openid.oid4vp.verifier.requesturi.VerifierSignerBinding
 import com.sphereon.openid.oid4vp.verifier.spi.VerifierSigningKeyNameResolver
 import kotlinx.coroutines.test.runTest
@@ -177,14 +178,50 @@ class VerifierSigningKeyNameSeamTest {
             assertFalse(collaborators.kms.isValidRawSignature(assertNotNull(otherKey.value.key).toPublicKeyInfo(), signingInput, signature))
         }
 
+    @Test
+    fun federationBindingNamesTheEntityAndTheRequestObjectKeyByItsThumbprint() =
+        runTest {
+            val collaborators = realCollaborators()
+            provisionKey(collaborators.kms, SERVER_KEY_NAME)
+            val provider = seamProvider(collaborators, FixedSigningKeyNameResolver(SERVER_KEY_NAME), FEDERATION_PROPERTIES)
+
+            val binding = provider.resolveSignerBinding(ClientIdScheme.OPENID_FEDERATION) as VerifierSignerBinding.Federation
+            assertEquals("openid_federation:$ENTITY_IDENTIFIER", binding.clientId)
+            assertEquals(ENTITY_IDENTIFIER, binding.bareIdentifier)
+            // The kid is the thumbprint of the verifier's own request-object key, the kid under which the
+            // verifier's federation metadata publishes that key.
+            val published = assertNotNull(VerifierFederationMetadata.publicJwk(collaborators.kms, SERVER_KEY_NAME))
+            assertEquals(VerifierFederationMetadata.kid(published), binding.kid)
+            assertEquals(binding, provider.resolveSignerBinding(null), "the configured mode selects the same binding")
+            assertEquals(SERVER_KEY_NAME, provider.resolveSigningKey().alias)
+        }
+
+    @Test
+    fun federationBindingRefusesWithoutAnEntityIdentifier() =
+        runTest {
+            val collaborators = realCollaborators()
+            provisionKey(collaborators.kms, SERVER_KEY_NAME)
+            val properties = FEDERATION_PROPERTIES - "oid4vp.verifiers.acme.${VerifierFederationMetadata.ENTITY_IDENTIFIER_CONFIG_KEY}"
+            val provider = seamProvider(collaborators, FixedSigningKeyNameResolver(SERVER_KEY_NAME), properties)
+            assertFailsWith<IllegalStateException> { provider.resolveSignerBinding(ClientIdScheme.OPENID_FEDERATION) }
+        }
+
+    @Test
+    fun federationBindingRejectsAnIdentifierThatIsNoEntityIdentifier() {
+        assertFailsWith<IllegalArgumentException> { VerifierSignerBinding.Federation("http://verify.example", "kid") }
+        assertFailsWith<IllegalArgumentException> { VerifierSignerBinding.Federation("https://verify.example/?x=1", "kid") }
+        assertFailsWith<IllegalArgumentException> { VerifierSignerBinding.Federation(ENTITY_IDENTIFIER, " ") }
+    }
+
     private fun seamProvider(
         collaborators: Collaborators,
         resolver: VerifierSigningKeyNameResolver,
+        properties: Map<String, Any> = PLANTED_ALIAS_PROPERTIES,
     ): RegistryBackedOid4vpVerifierConfigProvider {
         val holder = DefaultOid4vpVerifierInstanceIdProvider()
         holder.setCurrentInstanceId(INSTANCE_ID)
         return RegistryBackedOid4vpVerifierConfigProvider(
-            execution = TenantScopedTestSessionExecution(TestPrincipalConfigService(PLANTED_ALIAS_PROPERTIES), TENANT_ID),
+            execution = TenantScopedTestSessionExecution(TestPrincipalConfigService(properties), TENANT_ID),
             managedIdentifierService = collaborators.managedIdentifierService,
             kms = collaborators.kms,
             didProviderRegistry = collaborators.didProviderRegistry,
@@ -245,6 +282,15 @@ class VerifierSigningKeyNameSeamTest {
                 "oid4vp.verifiers.acme.request-object.signing.keyAlias" to PLANTED_ALIAS,
                 "oid4vp.verifiers.acme.request-object.signing.providerId" to "planted-provider",
                 "oid4vp.verifiers.acme.request-object.signing.mode" to "did:jwk",
+            )
+
+        const val ENTITY_IDENTIFIER = "https://verify.acme.example/oid4vp/acme"
+
+        val FEDERATION_PROPERTIES =
+            mapOf<String, Any>(
+                "oid4vp.verifiers.acme.request-object.signing.enabled" to "true",
+                "oid4vp.verifiers.acme.request-object.signing.mode" to "openid_federation",
+                "oid4vp.verifiers.acme.${VerifierFederationMetadata.ENTITY_IDENTIFIER_CONFIG_KEY}" to ENTITY_IDENTIFIER,
             )
     }
 }

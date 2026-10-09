@@ -28,6 +28,7 @@ import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.TypedServiceCommandAdapter
 import com.sphereon.core.events.SessionEventService
 import com.sphereon.crypto.core.CoseJoseKeyMappingService
+import com.sphereon.openid.oid4vp.verifier.federation.VerifierFederationMetadata
 import com.sphereon.crypto.core.KeyInfo
 import com.sphereon.crypto.core.KeyVisibility
 import com.sphereon.crypto.core.jose.Jwk
@@ -257,6 +258,9 @@ class CreateAuthRequestServiceCommandImpl(
                     ),
                 )
 
+        // OID4VP 1.0 §5.9.3 `openid_federation`: the wallet resolves this verifier's metadata from a Trust Chain.
+        val federationSession = ClientIdScheme.fromClientId(clientId) == ClientIdScheme.OPENID_FEDERATION
+
         // 4. Generate nonce
         val nonce = generateNonce()
 
@@ -267,7 +271,17 @@ class CreateAuthRequestServiceCommandImpl(
         val responseUri =
             input.responseUri
                 ?: universalConfig.responseUri
-                ?: "$clientId/response"
+                ?: if (federationSession) {
+                    // The metadata lists this instance's Response URI; a prefixed client_id is no URL to derive it from.
+                    configuredVerifierBaseUrl?.let(VerifierFederationMetadata::defaultResponseUri)
+                        ?: return Err(
+                            IdkError.ILLEGAL_ARGUMENT_ERROR(
+                                message = "An openid_federation verifier needs a configured response-uri or external-base-url",
+                            ),
+                        )
+                } else {
+                    "$clientId/response"
+                }
 
         // 6. Resolve client_id_scheme: explicit > detect from client_id prefix > default
         val resolvedScheme =
@@ -334,12 +348,12 @@ class CreateAuthRequestServiceCommandImpl(
                 JarmEncryptionKey(
                     publicJwk =
                         publicJwk.copy(
-                            // Pin kid to the session's correlationId (NOT the KMS alias). Per
-                            // OID4VP §8.3 the wallet echoes this kid in the JWE header — by
-                            // making it equal to the correlationId the response endpoint can
-                            // resolve session directly via store.getByCorrelationId(jwe.kid),
-                            // no secondary index over the KMS alias needed.
-                            kid = correlationId,
+                            // OID4VP §8.3: the wallet echoes this kid in the JWE header. Normally it is the
+                            // session's correlationId, so the response endpoint finds the session directly. Under
+                            // `openid_federation:` the wallet encrypts to the key in the verifier's federation
+                            // metadata instead, published under its thumbprint, and the endpoint finds the session
+                            // through the encrypted `state`.
+                            kid = if (federationSession) VerifierFederationMetadata.kid(publicJwk) else correlationId,
                             // Public-only payload: strip the private scalar even if the KMS
                             // returned the full key. Defensive — the JWK must never be
                             // emitted on the wire with `d`.
@@ -574,28 +588,7 @@ class CreateAuthRequestServiceCommandImpl(
      * emitting them is non-canonical noise that confuses conformance and pollutes the JAR).
      */
     private fun buildOid4vpClientMetadata(jarmKey: JarmEncryptionKey?): com.sphereon.openid.oid4vp.common.ClientMetadata {
-        val vpFormats =
-            mapOf(
-                "dc+sd-jwt" to
-                    com.sphereon.openid.oid4vp.common.VpFormatInfo(
-                        sdJwtAlgValuesSupported = listOf("ES256"),
-                        kbJwtAlgValuesSupported = listOf("ES256"),
-                    ),
-                "mso_mdoc" to
-                    com.sphereon.openid.oid4vp.common.VpFormatInfo(
-                        // -7 = ES256 in IANA COSE Algorithms (RFC 8152).
-                        issuerAuthAlgValuesSupported = listOf(-7),
-                        deviceAuthAlgValuesSupported = listOf(-7),
-                    ),
-                "jwt_vc_json" to
-                    com.sphereon.openid.oid4vp.common.VpFormatInfo(
-                        algValuesSupported = listOf("ES256"),
-                    ),
-                "jwt_vc_json-ld" to
-                    com.sphereon.openid.oid4vp.common.VpFormatInfo(
-                        algValuesSupported = listOf("ES256"),
-                    ),
-            )
+        val vpFormats = VerifierFederationMetadata.VP_FORMATS_SUPPORTED
         return com.sphereon.openid.oid4vp.common.ClientMetadata(
             jwks =
                 jarmKey?.let {

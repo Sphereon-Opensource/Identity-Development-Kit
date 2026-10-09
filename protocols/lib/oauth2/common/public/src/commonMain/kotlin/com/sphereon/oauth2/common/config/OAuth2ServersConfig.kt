@@ -16,6 +16,7 @@
 
 package com.sphereon.oauth2.common.config
 
+import com.sphereon.core.api.conf.PropertyKeyNormalizerImpl
 import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.Serializable
 
@@ -45,7 +46,19 @@ data class OAuth2ServersConfig(
      */
     val explicitlyConfigured: Boolean = true,
 ) {
-    fun getServer(id: String): OAuth2ServerInstanceConfig? = servers[id]
+    /**
+     * Returns the actual root-map key selected by a trusted server identifier. Exact keys take
+     * precedence; a normalized alias is usable only when it identifies one server.
+     */
+    fun matchedServerKey(id: String): String? {
+        if (servers.containsKey(id)) return id
+        val normalizedId = PropertyKeyNormalizerImpl.Default.normalize(id)
+        return servers.keys
+            .filter { PropertyKeyNormalizerImpl.Default.normalize(it) == normalizedId }
+            .singleOrNull()
+    }
+
+    fun getServer(id: String): OAuth2ServerInstanceConfig? = matchedServerKey(id)?.let { servers[it] }
 
     fun getDefaultServer(): OAuth2ServerInstanceConfig =
         servers[defaultServer]

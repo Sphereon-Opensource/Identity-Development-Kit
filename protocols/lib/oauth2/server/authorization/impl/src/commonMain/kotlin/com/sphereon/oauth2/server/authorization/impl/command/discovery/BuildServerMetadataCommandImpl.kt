@@ -23,15 +23,14 @@ import com.sphereon.core.api.binary.typeToken
 import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.TypedServiceCommandAdapter
-import com.sphereon.crypto.core.generic.SignatureAlgorithm
 import com.sphereon.crypto.core.kms.KmsProviderRegistry
-import com.sphereon.crypto.resolution.managed.ManagedOptsKeyInfo
-import com.sphereon.crypto.resolution.managed.MultiManagedIdentifierService
 import com.sphereon.di.session.SessionScope
 import com.sphereon.oauth2.common.config.AuthorizationServerMode
 import com.sphereon.oauth2.common.config.FeaturePolicy
 import com.sphereon.oauth2.common.config.OAuth2ServerInstanceConfig
 import com.sphereon.oauth2.common.config.OAuth2ServersConfigProvider
+import com.sphereon.oauth2.common.config.OAuth2ServerInstanceIdProvider
+import com.sphereon.oauth2.common.config.TokenFormat
 import com.sphereon.oauth2.common.config.isEnabled
 import com.sphereon.oauth2.common.config.isRequired
 import com.sphereon.oauth2.common.model.AuthorizationServerMetadata
@@ -40,9 +39,12 @@ import com.sphereon.oauth2.server.authorization.command.BuildServerMetadataComma
 import com.sphereon.oauth2.server.authorization.command.token.GrantHandler
 import com.sphereon.oauth2.server.authorization.error.AuthorizationServerError
 import com.sphereon.oauth2.server.authorization.signing.AsServerSigningIdentifierResolver
+import com.sphereon.oauth2.server.authorization.signing.AsSigningRequirement
+import com.sphereon.oauth2.server.authorization.signing.CapturedAsServerConfig
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.Named
 import dev.zacsweers.metro.SingleIn
+import kotlinx.coroutines.CancellationException
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 
@@ -91,8 +93,8 @@ import dev.zacsweers.metro.ExposeImplBinding
 class BuildServerMetadataCommandImpl(
     execution: SessionExecution,
     private val configProvider: OAuth2ServersConfigProvider,
+    private val asInstanceIdProvider: OAuth2ServerInstanceIdProvider,
     private val signingIdentifierResolver: AsServerSigningIdentifierResolver,
-    private val identifierService: MultiManagedIdentifierService,
     private val grantHandlers: Map<String, Lazy<GrantHandler>>,
     private val kmsProviderRegistry: KmsProviderRegistry,
     private val buildSignedMetadata: com.sphereon.oauth2.server.authorization.command.BuildSignedAuthorizationServerMetadataCommand,
@@ -102,7 +104,8 @@ class BuildServerMetadataCommandImpl(
         inputTypeToken = typeToken<BuildServerMetadataArgs>(),
         outputTypeToken = typeToken<AuthorizationServerMetadata>(),
     ),
-    BuildServerMetadataCommand {
+    BuildServerMetadataCommand,
+    CapturedServerMetadataAssembler {
     override val commandId: String get() = BuildServerMetadataCommand.COMMAND_ID
 
     override suspend fun supports(args: Any): Boolean = args is BuildServerMetadataArgs
@@ -112,42 +115,63 @@ class BuildServerMetadataCommandImpl(
         applyDuring: (BuildServerMetadataArgs) -> BuildServerMetadataArgs,
     ): IdkResult<AuthorizationServerMetadata, IdkError> {
         val applied = applyDuring(args)
-        return executeInternal(applied.serverId, applied.baseUrlOverride)
+        return executeInternal(applied.serverId, applied.baseUrlOverride, applied.includeSignedMetadata)
             .mapError { IdkError.fromDTO(it) }
     }
 
     private suspend fun executeInternal(
         serverId: String?,
         baseUrlOverride: String?,
+        includeSignedMetadata: Boolean,
     ): IdkResult<AuthorizationServerMetadata, AuthorizationServerError> {
-        val serverIdentifier = signingIdentifierResolver.resolveSigningIdentifier()
-        val config =
-            if (serverId != null) {
-                configProvider.getServer(serverId)
-                    ?: return Err(
-                        AuthorizationServerError.InvalidRequest(
-                            details = "Server '$serverId' not found in configuration",
-                        ),
-                    )
-            } else {
-                configProvider.serverConfig
+        val root = configProvider.getConfig()
+        val exactKey = serverId ?: asInstanceIdProvider.currentAsInstanceId() ?: root.defaultServer
+        val captured =
+            try {
+                CapturedAsServerConfig.select(root, exactKey)
+            } catch (expected: IllegalArgumentException) {
+                return Err(AuthorizationServerError.InvalidRequest(details = expected.message ?: "Invalid authorization server"))
+            } catch (expected: IllegalStateException) {
+                return Err(AuthorizationServerError.InvalidRequest(details = expected.message ?: "Authorization server not found"))
             }
+        val assembly = assembleCaptured(captured, baseUrlOverride, includeSignedMetadata, strictCapabilities = false)
+        if (assembly.isErr) return Err(assembly.error)
+        return Ok(assembly.value.metadata)
+    }
 
-        if (config.mode != AuthorizationServerMode.HOSTED) {
-            return Err(
-                AuthorizationServerError.InvalidRequest(
-                    details = "Cannot build metadata for EXTERNAL server. Use metadata discovery instead.",
-                ),
-            )
-        }
+    override suspend fun assembleCaptured(
+        captured: CapturedAsServerConfig,
+        baseUrlOverride: String?,
+        includeSignedMetadata: Boolean,
+        strictCapabilities: Boolean,
+    ): IdkResult<CapturedServerMetadataAssembly, AuthorizationServerError> {
+        val config = captured.server
+            ?: return Err(AuthorizationServerError.InvalidRequest(details = "No hosted authorization server is configured"))
 
         // fail fast on config that advertises capabilities we cannot back. Cheap
         // enough to re-run every discovery hit — OIDF suite's very first request catches drift.
         val consistency = validateServerMetadataConsistency(config)
         if (!consistency.isOk) return Err(consistency.error)
 
-        val activeSigningAlgs = runCatching { signingIdentifierResolver.supportedSigningAlgorithms() }.getOrDefault(emptySet())
-        if (activeSigningAlgs.isNotEmpty()) {
+        val independentSigningRequired =
+            config.tokenFormat == TokenFormat.JWT || config.oidc.isEnabled || config.jarm.isEnabled || config.logout.isEnabled
+        val requirement =
+            when {
+                independentSigningRequired || (includeSignedMetadata && config.signedMetadata.isRequired) -> AsSigningRequirement.REQUIRED
+                includeSignedMetadata && config.signedMetadata.isEnabled -> AsSigningRequirement.OPTIONAL
+                else -> AsSigningRequirement.NOT_REQUIRED
+            }
+        val signing =
+            try {
+                signingIdentifierResolver.selectSigning(captured, requirement)
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (expected: Exception) {
+                return Err(AuthorizationServerError.ServerError(details = "Signing selection failed: ${expected.message}", exception = expected))
+            }
+        val serverIdentifier = signing.identifier
+        val activeSigningAlgs = signing.algorithms
+        if (config.oidc.isEnabled || config.jarm.isEnabled) {
             val unavailableIdTokenAlgs =
                 config.idTokenSigningAlgValuesSupported.orEmpty().filterNot { configured ->
                     activeSigningAlgs.any { it.equals(configured, ignoreCase = true) }
@@ -172,18 +196,19 @@ class BuildServerMetadataCommandImpl(
             }
         }
 
-        val baseUrl =
+        val issuerUrl =
             (
                 baseUrlOverride?.takeIf { it.isNotBlank() }
                     ?: config.issuer
                     ?: return Err(
                         AuthorizationServerError.InvalidRequest(
                             details =
-                                "OAuth2 server '$serverId' has no issuer configured and no request-time baseUrl override; " +
+                                "OAuth2 server '${captured.serverKey}' has no issuer configured and no request-time baseUrl override; " +
                                     "set oauth2.servers.<id>.issuer or ensure the request carries Host + X-Forwarded-Proto headers",
                         ),
                     )
-            ).trimEnd('/')
+            )
+        val baseUrl = issuerUrl.trimEnd('/')
 
         // RFC 8705 §5: when an operator deploys a separate mTLS host, every advertised mTLS
         // endpoint URL swaps the issuer host for that override but keeps the path so the regular
@@ -214,9 +239,34 @@ class BuildServerMetadataCommandImpl(
             }
         val attestJwtClientAuthAdvertised = "attest_jwt_client_auth" in effectiveAuthMethods
 
+        // Only verification-capability fields without configured lists need KMS enumeration.
+        // One complete capture feeds all of them; observation fails closed on any provider error.
+        val needsDerivedVerifyAlgs =
+            (config.dpop.isEnabled && config.dpopSigningAlgValuesSupported == null) ||
+                (attestJwtClientAuthAdvertised &&
+                    (config.clientAttestationSigningAlgValuesSupported == null || config.clientAttestationPopSigningAlgValuesSupported == null)) ||
+                (config.jar.isEnabled && config.requestObjectSigningAlgValuesSupported == null)
+        val derivedVerifyAlgs =
+            if (needsDerivedVerifyAlgs) {
+                try {
+                    deriveJwsVerifyAlgsFromKms(strictCapabilities).also { derived ->
+                        if (strictCapabilities && derived.isEmpty()) {
+                            return Err(AuthorizationServerError.ServerError(details = "No JWS verification capability is available"))
+                        }
+                    }
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (expected: Exception) {
+                    if (!strictCapabilities) throw expected
+                    return Err(AuthorizationServerError.ServerError(details = "KMS verification capability collection failed", exception = expected))
+                }
+            } else {
+                emptyList()
+            }
+
         val metadata =
             AuthorizationServerMetadata(
-                issuer = baseUrl,
+                issuer = issuerUrl,
                 tokenEndpoint = "$baseUrl/token",
                 authorizationEndpoint = "$baseUrl/authorize",
                 jwksUri = config.jwksUri ?: "$baseUrl/.well-known/jwks.json",
@@ -260,7 +310,7 @@ class BuildServerMetadataCommandImpl(
                 // verify rather than by the AS's own signing key. Operator config wins when set.
                 dpopSigningAlgValuesSupported =
                     config.dpop.whenEnabled {
-                        config.dpopSigningAlgValuesSupported?.toList() ?: deriveJwsVerifyAlgsFromKms()
+                        config.dpopSigningAlgValuesSupported?.toList() ?: derivedVerifyAlgs
                     },
                 requirePushedAuthorizationRequests =
                     when {
@@ -291,13 +341,13 @@ class BuildServerMetadataCommandImpl(
                 challengeEndpoint = config.attestation.whenEnabled { "$baseUrl/attestation-challenge".takeIf { config.attestationChallengeRequired } },
                 clientAttestationSigningAlgValuesSupported =
                     if (attestJwtClientAuthAdvertised) {
-                        config.clientAttestationSigningAlgValuesSupported?.toList() ?: deriveJwsVerifyAlgsFromKms()
+                        config.clientAttestationSigningAlgValuesSupported?.toList() ?: derivedVerifyAlgs
                     } else {
                         null
                     },
                 clientAttestationPopSigningAlgValuesSupported =
                     if (attestJwtClientAuthAdvertised) {
-                        config.clientAttestationPopSigningAlgValuesSupported?.toList() ?: deriveJwsVerifyAlgsFromKms()
+                        config.clientAttestationPopSigningAlgValuesSupported?.toList() ?: derivedVerifyAlgs
                     } else {
                         null
                     },
@@ -307,7 +357,7 @@ class BuildServerMetadataCommandImpl(
                 userinfoEndpoint = config.oidc.whenEnabled { "$baseUrl/userinfo" },
                 subjectTypesSupported = config.oidc.whenEnabled { config.subjectTypesSupported },
                 idTokenSigningAlgValuesSupported =
-                    config.oidc.whenEnabled { config.idTokenSigningAlgValuesSupported?.toList() ?: deriveSigningAlgsFromKey() },
+                    config.oidc.whenEnabled { config.idTokenSigningAlgValuesSupported?.toList() ?: activeSigningAlgs.toList() },
                 // OIDC Discovery §3 — full standard claim set across all five OIDC scopes
                 // (openid + profile + email + address + phone). Operators can override via
                 // config.claimsSupported when they expose a narrower or wider set.
@@ -359,7 +409,7 @@ class BuildServerMetadataCommandImpl(
                 // signing/encryption alg lists and extend `response_modes_supported` with the
                 // `*.jwt` variants only when JARM is enabled.
                 authorizationSigningAlgValuesSupported =
-                    config.jarm.whenEnabled { config.authorizationSigningAlgValuesSupported?.toList() ?: deriveSigningAlgsFromKey() },
+                    config.jarm.whenEnabled { config.authorizationSigningAlgValuesSupported?.toList() ?: activeSigningAlgs.toList() },
                 authorizationEncryptionAlgValuesSupported = config.jarm.whenEnabled { config.authorizationEncryptionAlgValuesSupported?.toList() },
                 authorizationEncryptionEncValuesSupported = config.jarm.whenEnabled { config.authorizationEncryptionEncValuesSupported?.toList() },
                 responseModesSupported =
@@ -384,7 +434,7 @@ class BuildServerMetadataCommandImpl(
                 requestObjectSigningAlgValuesSupported =
                     config.jar.whenEnabled {
                         config.requestObjectSigningAlgValuesSupported?.toList()
-                            ?: deriveJwsVerifyAlgsFromKms()
+                            ?: derivedVerifyAlgs
                     },
                 // RFC 8705 §3.3 + §5: advertise certificate-bound access-token support and the
                 // per-endpoint mTLS aliases when the mTLS feature is enabled.
@@ -426,7 +476,7 @@ class BuildServerMetadataCommandImpl(
         // id_tokens (already published in JWKS), so RPs that already trust JWKS can
         // verify the signed metadata with no extra key configuration.
         val effective =
-            if (config.signedMetadata.isEnabled && serverIdentifier != null) {
+            if (includeSignedMetadata && config.signedMetadata.isEnabled && serverIdentifier != null) {
                 val signed =
                     buildSignedMetadata.execute(
                         com.sphereon.oauth2.server.authorization.command.BuildSignedAuthorizationServerMetadataArgs(
@@ -451,10 +501,13 @@ class BuildServerMetadataCommandImpl(
                     metadata
                 }
             } else {
+                if (includeSignedMetadata && config.signedMetadata.isRequired) {
+                    return Err(AuthorizationServerError.ServerError(details = "signed_metadata=REQUIRED but no ACTIVE signing key is available"))
+                }
                 metadata
             }
 
-        return Ok(effective)
+        return Ok(CapturedServerMetadataAssembly(effective, signing))
     }
 
     /**
@@ -468,15 +521,19 @@ class BuildServerMetadataCommandImpl(
      * rather than crashing — discovery should still succeed even if a provider exposes an alg the
      * JOSE family doesn't name.
      */
-    private suspend fun deriveJwsVerifyAlgsFromKms(): List<String> {
+    private suspend fun deriveJwsVerifyAlgsFromKms(strictCapabilities: Boolean): List<String> {
         val jwsAlgs = linkedSetOf<String>()
         for (id in kmsProviderRegistry.getProviderIds()) {
             val capabilities =
-                runCatching { kmsProviderRegistry.getProviderById(id).getCapabilities() }
-                    .getOrElse {
-                        log.warn("KMS provider '$id' getCapabilities() failed; excluded from discovery alg list: ${it.message}")
-                        continue
-                    }
+                try {
+                    kmsProviderRegistry.getProviderById(id).getCapabilities()
+                } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                    throw cancelled
+                } catch (expected: Exception) {
+                    if (strictCapabilities) throw expected
+                    log.warn("KMS provider '$id' getCapabilities() failed; excluded from discovery alg list: ${expected.message}")
+                    continue
+                }
             for (alg in capabilities.signatureAlgorithms) {
                 runCatching { keyAlgorithmToJwsAlg(alg) }.onSuccess { jwsAlgs.add(it) }
             }
@@ -484,66 +541,6 @@ class BuildServerMetadataCommandImpl(
         return jwsAlgs.toList()
     }
 
-    private suspend fun deriveSigningAlgsFromKey(): List<String> {
-        val activeAlgorithms = signingIdentifierResolver.supportedSigningAlgorithms()
-        if (activeAlgorithms.isNotEmpty()) {
-            return activeAlgorithms.toList()
-        }
-        val serverIdentifier = signingIdentifierResolver.resolveSigningIdentifier()
-        if (serverIdentifier == null) {
-            log.warn(
-                "OIDC is enabled but the OAuth2 SigningKeyStore has no ACTIVE key for the default tenant; " +
-                    "advertising RS256 as id_token_signing_alg_values_supported. Seed the store at " +
-                    "boot (via the AS bootstrap) or register a key through SigningKeyStore.register " +
-                    "to remove this warning.",
-            )
-            return listOf(DEFAULT_ID_TOKEN_SIGNING_ALG)
-        }
-        // SigningKeyStore requires a signatureAlgorithm on every registered key. A
-        // ManagedOptsKeyInfo therefore already carries everything discovery needs to advertise
-        // the signing algorithm. Do not resolve the key material merely to build public metadata:
-        // a tenant AS deliberately does not host the KMS provider that owns its private key.
-        (serverIdentifier as? ManagedOptsKeyInfo)
-            ?.identifier
-            ?.signatureAlgorithm
-            ?.let { return advertisedSigningAlg(it, "Registered OAuth2 signing key") }
-
-        // Alias and other legacy identifier shapes do not carry an algorithm descriptor. Keep
-        // resolving those through the local IDK provider registry so standalone IDK deployments
-        // retain their existing behavior.
-        val resolved = identifierService.resolve(serverIdentifier)
-        if (resolved.isErr) {
-            log.warn(
-                "Failed to resolve OAuth2 signing key for discovery metadata; advertising RS256: ${resolved.error.message.defaultMessage}",
-            )
-            return listOf(DEFAULT_ID_TOKEN_SIGNING_ALG)
-        }
-        val keyAlg =
-            resolved.value.keyInfo.signatureAlgorithm
-                ?: resolved.value.keyInfo.key
-                    .getSignatureAlgorithm()
-        if (keyAlg == null) {
-            log.warn(
-                "Resolved OAuth2 signing key carries no signatureAlgorithm; advertising RS256.",
-            )
-            return listOf(DEFAULT_ID_TOKEN_SIGNING_ALG)
-        }
-        return advertisedSigningAlg(keyAlg, "Resolved OAuth2 signing key")
-    }
-
-    private fun advertisedSigningAlg(
-        keyAlg: SignatureAlgorithm,
-        source: String,
-    ): List<String> {
-        return try {
-            listOf(keyAlgorithmToJwsAlg(keyAlg))
-        } catch (expected: IllegalStateException) {
-            log.warn(
-                "$source alg '$keyAlg' has no JWS mapping; advertising RS256: ${expected.message}",
-            )
-            listOf(DEFAULT_ID_TOKEN_SIGNING_ALG)
-        }
-    }
 
     /**
      * Compute the base URL used for [AuthorizationServerMetadata.mtlsEndpointAliases] entries
@@ -582,7 +579,6 @@ class BuildServerMetadataCommandImpl(
          * OIDC-mandated baseline alg. Used only as a defensive fallback when the resolver can't
          * report the actual key alg, and never as a silent default that could hide a config bug.
          */
-        const val DEFAULT_ID_TOKEN_SIGNING_ALG = "RS256"
 
         /** RFC 8693 Token Exchange grant_type URN. */
         const val TOKEN_EXCHANGE_GRANT_URN = "urn:ietf:params:oauth:grant-type:token-exchange"

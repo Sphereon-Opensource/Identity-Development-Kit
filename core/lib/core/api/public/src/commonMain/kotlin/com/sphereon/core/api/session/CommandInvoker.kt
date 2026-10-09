@@ -30,6 +30,7 @@ import dev.zacsweers.metro.ContributesTo
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
+import kotlinx.coroutines.CancellationException
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 
@@ -167,6 +168,8 @@ class SessionScopeCommandInvoker(
                 return IdkResult.err(errorMapper.unsupportedArg(command, input) as TError)
             }
             return command.execute(input)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (expected: Exception) {
             return IdkResult.err(
                 errorMapper.unknown(

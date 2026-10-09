@@ -38,6 +38,8 @@ import com.sphereon.crypto.core.KeyType
 import com.sphereon.crypto.resolution.managed.ManagedOptsKeyInfo
 import com.sphereon.di.session.SessionScope
 import com.sphereon.oauth2.common.config.OAuth2ServersConfigProvider
+import com.sphereon.oauth2.common.config.OAuth2ServerInstanceIdProvider
+import com.sphereon.oauth2.common.config.TokenFormat
 import com.sphereon.oauth2.server.authorization.command.CreateAccessTokenArgs
 import com.sphereon.oauth2.server.authorization.command.CreateAccessTokenCommand
 import com.sphereon.oauth2.server.authorization.error.AuthorizationServerError
@@ -48,6 +50,8 @@ import com.sphereon.oauth2.server.authorization.impl.command.putClaims
 import com.sphereon.oauth2.server.authorization.impl.config.OAuth2SigningKeyUnavailableException
 import com.sphereon.oauth2.server.authorization.model.AccessTokenData
 import com.sphereon.oauth2.server.authorization.signing.AsServerSigningIdentifierResolver
+import com.sphereon.oauth2.server.authorization.signing.AsSigningRequirement
+import com.sphereon.oauth2.server.authorization.signing.CapturedAsServerConfig
 import com.sphereon.oauth2.server.authorization.storage.TokenStorage
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.Named
@@ -99,6 +103,7 @@ class CreateAccessTokenCommandImpl(
     private val tokenStorage: TokenStorage,
     private val secureRandom: SecureRandom,
     private val configProvider: OAuth2ServersConfigProvider,
+    private val asInstanceIdProvider: OAuth2ServerInstanceIdProvider,
     private val signingIdentifierResolver: AsServerSigningIdentifierResolver,
     private val eventService: SessionEventService? = null,
 ) : TypedServiceCommandAdapter<CreateAccessTokenArgs, StringResult, IdkError>(
@@ -117,9 +122,20 @@ class CreateAccessTokenCommandImpl(
         applyDuring: (CreateAccessTokenArgs) -> CreateAccessTokenArgs,
     ): IdkResult<StringResult, IdkError> {
         val applied = applyDuring(args)
+        val root = configProvider.getConfig()
+        val captured =
+            try {
+                CapturedAsServerConfig.select(root, asInstanceIdProvider.currentAsInstanceId())
+            } catch (expected: IllegalArgumentException) {
+                return Err(IdkError.INVALID_STATE(message = expected.message ?: "Invalid authorization server selection"))
+            } catch (expected: IllegalStateException) {
+                return Err(IdkError.INVALID_STATE(message = expected.message ?: "Authorization server selection failed"))
+            }
+        val config = captured.server
+            ?: return Err(IdkError.INVALID_STATE(message = "No hosted authorization server is configured"))
         val issuerUrl =
             applied.baseUrlOverride?.takeIf { it.isNotBlank() }
-                ?: configProvider.serverConfig.issuer
+                ?: config.issuer
         if (issuerUrl == null) {
             val failure: IdkResult<StringResult, IdkError> =
                 Err(
@@ -166,6 +182,7 @@ class CreateAccessTokenCommandImpl(
                 applied.amr,
                 mergedClaims,
                 issuerUrl,
+                captured,
             ).map { StringResult(it) }.mapError { IdkError.fromDTO(it) }
         timings.report(log, if (result.isOk) "success" else "failed")
         emitOutcome(applied, result)
@@ -212,11 +229,13 @@ class CreateAccessTokenCommandImpl(
         amr: List<String>?,
         additionalClaims: Map<String, Any>,
         issuerUrl: String,
+        captured: CapturedAsServerConfig,
     ): IdkResult<String, AuthorizationServerError> {
         return try {
             val serverIdentifier =
                 timings.record(TokenPathStage.SIGNING_IDENTIFIER_RESOLUTION) {
-                    signingIdentifierResolver.resolveSigningIdentifier()
+                    if (captured.server?.tokenFormat == TokenFormat.OPAQUE) null
+                    else signingIdentifierResolver.selectSigning(captured, AsSigningRequirement.REQUIRED).identifier
                 }
             val now = Clock.System.now()
             val expiresAt = now + expiresInSeconds.seconds
@@ -228,7 +247,10 @@ class CreateAccessTokenCommandImpl(
                     amr?.takeIf { it.isNotEmpty() }?.let { put("amr", it) }
                 }
 
-            // If serverIdentifier is not configured, fall back to opaque tokens
+            // Opaque token format is an explicit configured mode, never a missing-key fallback.
+            if (captured.server?.tokenFormat != TokenFormat.OPAQUE && serverIdentifier == null) {
+                return Err(AuthorizationServerError.ServerError(details = "JWT access-token signing key is unavailable"))
+            }
             if (serverIdentifier == null) {
                 return createOpaqueToken(
                     subject,
@@ -420,6 +442,8 @@ class CreateAccessTokenCommandImpl(
                     exception = expected,
                 ),
             )
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
         } catch (expected: Exception) {
             Err(
                 AuthorizationServerError.ServerError(
@@ -432,7 +456,7 @@ class CreateAccessTokenCommandImpl(
 
     /**
      * Creates an opaque (non-JWT) access token
-     * Used as fallback when JWT signing is not configured
+     * Used only when the selected server explicitly configures opaque access tokens.
      */
     private suspend fun createOpaqueToken(
         subject: String,

@@ -17,6 +17,7 @@
 package com.sphereon.crypto.jose.jws.command
 
 import com.sphereon.core.api.encodeToBase64Url
+import com.sphereon.crypto.core.jose.hasWellFormedPublicJwkMaterial
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.JsonArray
@@ -27,6 +28,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 class JwksKeySelectorTest {
     private fun jwk(
@@ -123,6 +125,24 @@ class JwksKeySelectorTest {
         val set = jwks(jwk(kty = "EC", kid = "a", use = "enc"))
 
         assertNull(selectJwk(set, headerKid = "a", headerAlg = "ES256"))
+    }
+
+    @Test
+    fun encryptionUseCanBeWellFormedPublicMaterialWithoutBeingSelectableForJws() {
+        val key = jwk(kty = "EC", kid = "encryption", use = "enc")
+
+        assertTrue(hasWellFormedPublicJwkMaterial(key))
+        assertNull(selectJwk(jwks(key), headerKid = "encryption", headerAlg = "ES256"))
+    }
+
+    @Test
+    fun x25519AndX448PublicMaterialAreNotEdDsaSigningCandidates() {
+        for ((curve, size) in listOf("X25519" to 32, "X448" to 56)) {
+            val key = JsonObject(jwk(kty = "OKP", kid = curve, crv = curve) + ("x" to JsonPrimitive(b64(size))))
+
+            assertTrue(hasWellFormedPublicJwkMaterial(key), curve)
+            assertNull(selectJwk(jwks(key), headerKid = curve, headerAlg = "EdDSA"), curve)
+        }
     }
 
     @Test

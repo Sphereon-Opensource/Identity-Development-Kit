@@ -22,7 +22,10 @@ import com.sphereon.crypto.core.jose.JwaAlgorithm
 import com.sphereon.crypto.core.jose.JwaCurve
 import com.sphereon.crypto.core.jose.JwaKeyType
 import com.sphereon.crypto.core.jose.Jwk
-import com.sphereon.crypto.resolution.managed.ManagedOptsAlias
+import com.sphereon.crypto.core.KeyInfo
+import com.sphereon.crypto.core.KeyType
+import com.sphereon.crypto.core.generic.SignatureAlgorithm
+import com.sphereon.crypto.resolution.managed.ManagedOptsKeyInfo
 import com.sphereon.oauth2.common.command.VerifyDpopProofCommand
 import com.sphereon.oauth2.common.config.OAuth2ServerInstanceConfig
 import com.sphereon.oauth2.common.config.OAuth2ServersConfig
@@ -85,6 +88,7 @@ import com.sphereon.oauth2.server.authorization.impl.testutil.OAuth2ServerTestCo
 import com.sphereon.oauth2.server.authorization.impl.testutil.RecordingJwtService
 import com.sphereon.oauth2.server.authorization.impl.testutil.TestOAuth2ServersConfigProvider
 import com.sphereon.oauth2.server.authorization.impl.testutil.fixedSigningIdentifierResolver
+import com.sphereon.oauth2.server.authorization.impl.testutil.fixedAsInstanceIdProvider
 import com.sphereon.oauth2.server.authorization.trust.SubjectTokenIssuerTrust
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
@@ -263,7 +267,12 @@ class TokenExchangeJourneyCommandImplTest {
                 tokenStorage = InMemoryTokenStorageImpl(InMemoryOAuth2BackingStorageImpl()),
                 secureRandom = defaultSecureRandom(),
                 configProvider = configProvider,
-                signingIdentifierResolver = fixedSigningIdentifierResolver(ManagedOptsAlias(identifier = "exchange-mint-key")),
+                asInstanceIdProvider = fixedAsInstanceIdProvider(),
+                signingIdentifierResolver = fixedSigningIdentifierResolver(ManagedOptsKeyInfo(
+                    identifier = KeyInfo<KeyType>(
+                        alias = "exchange-mint-key", kid = "exchange-mint-key", signatureAlgorithm = SignatureAlgorithm.RSA_SHA256,
+                    ),
+                )),
                 eventService = null,
             )
         return object : CreateAccessTokenCommand {

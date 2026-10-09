@@ -23,6 +23,7 @@ import com.sphereon.openid.oid4vci.common.model.CredentialIssuerMetadata
 import com.sphereon.openid.oid4vci.common.model.MetadataCredentialRequestEncryption
 import com.sphereon.openid.oid4vci.common.model.MetadataCredentialResponseEncryption
 import kotlinx.serialization.KSerializer
+import kotlinx.serialization.SerializationException
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.descriptors.SerialDescriptor
@@ -31,6 +32,7 @@ import kotlinx.serialization.encoding.Decoder
 import kotlinx.serialization.encoding.Encoder
 import kotlinx.serialization.json.JsonDecoder
 import kotlinx.serialization.json.JsonEncoder
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
@@ -131,24 +133,20 @@ internal object CredentialIssuerMetadataSerializer : KSerializer<CredentialIssue
         val additionalMetadata = jsonObject.filterKeys { it !in knownJsonKeys }
 
         val configsObj =
-            jsonObject[KEY_CONFIGS_SUPPORTED]?.jsonObject
-                ?: throw IllegalArgumentException("credential_configurations_supported is required")
+            jsonObject[KEY_CONFIGS_SUPPORTED] as? JsonObject
+                ?: throw SerializationException("credential_configurations_supported must be a JSON object")
         val configs =
             configsObj.mapValues { (_, v) ->
                 json.decodeFromJsonElement(CredentialConfigurationSupported.serializer(), v)
             }
 
         return CredentialIssuerMetadata(
-            credentialIssuer =
-                jsonObject[KEY_CREDENTIAL_ISSUER]?.jsonPrimitive?.content
-                    ?: throw IllegalArgumentException("credential_issuer is required"),
+            credentialIssuer = requiredJsonString(jsonObject, KEY_CREDENTIAL_ISSUER),
             authorizationServers =
                 jsonObject[KEY_AUTH_SERVERS]?.let {
                     json.decodeFromJsonElement(ListSerializer(String.serializer()), it)
                 },
-            credentialEndpoint =
-                jsonObject[KEY_CREDENTIAL_ENDPOINT]?.jsonPrimitive?.content
-                    ?: throw IllegalArgumentException("credential_endpoint is required"),
+            credentialEndpoint = requiredJsonString(jsonObject, KEY_CREDENTIAL_ENDPOINT),
             batchCredentialEndpoint = jsonObject[KEY_BATCH_ENDPOINT]?.jsonPrimitive?.content,
             deferredCredentialEndpoint = jsonObject[KEY_DEFERRED_ENDPOINT]?.jsonPrimitive?.content,
             notificationEndpoint = jsonObject[KEY_NOTIFICATION_ENDPOINT]?.jsonPrimitive?.content,
@@ -175,4 +173,13 @@ internal object CredentialIssuerMetadataSerializer : KSerializer<CredentialIssue
             additionalMetadata = additionalMetadata,
         )
     }
+}
+
+/** Required protocol string fields must not coerce numeric, boolean, or null JSON values. */
+internal fun requiredJsonString(source: JsonObject, key: String): String {
+    val value = source[key] ?: throw SerializationException("$key is required")
+    val primitive = value as? JsonPrimitive
+        ?: throw SerializationException("$key must be a JSON string")
+    if (!primitive.isString) throw SerializationException("$key must be a JSON string")
+    return primitive.content
 }

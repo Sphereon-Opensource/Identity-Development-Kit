@@ -29,18 +29,17 @@ import kotlin.time.Clock
 import kotlin.time.Instant
 
 /**
- * App-scoped cache of the immutable descriptor for each tenant's current AS signing key.
+ * App-scoped cache of the eligible signing descriptors for each tenant's AS.
  *
  * The durable [com.sphereon.oauth2.server.authorization.storage.SigningKeyStore] remains the
  * authority. A cache entry is addressed by the store's durable tenant-local monotonic revision.
  * The revision is read before every reuse, so replicas and out-of-band database mutations cannot
  * leave an entry valid indefinitely. A load is accepted only when a second authoritative revision
- * read still matches, which prevents a concurrent rotation from publishing the previous ACTIVE
- * key back into the cache.
+ * read still matches, which prevents a concurrent rotation from publishing a stale collection.
  *
  * This cache has no arbitrary TTL. A future ACTIVE key's `notBefore` is a semantic lifecycle
  * boundary, so an entry records the earliest future activation and becomes stale exactly then.
- * Failures and the absence of an eligible ACTIVE key are never cached; callers therefore remain
+ * Failures and the absence of eligible ACTIVE keys are never cached; callers therefore remain
  * fail closed and can recover immediately after provisioning succeeds.
  */
 @Inject
@@ -50,23 +49,19 @@ class ActiveSigningKeySnapshotCache(
 ) : SynchronizedObject() {
     private data class Entry(
         val revision: Long,
-        val active: OAuth2SigningKey,
+        val active: List<OAuth2SigningKey>,
         val reevaluateAt: Instant?,
     )
 
     private val entries: MutableMap<String, Entry> = mutableMapOf()
     private val loadLocks: MutableMap<String, Mutex> = mutableMapOf()
 
-    /**
-     * Resolve the current ACTIVE key from a revision-matched snapshot, loading the tenant's
-     * immutable key descriptors only on a miss. [readRevision] and [loadAll] must read the same
-     * authoritative store.
-     */
-    suspend fun resolve(
+    /** Resolve all eligible ACTIVE descriptors, ordered by priority and creation time. */
+    suspend fun resolveAll(
         tenantId: String,
         readRevision: suspend () -> Long,
         loadAll: suspend () -> List<OAuth2SigningKey>,
-    ): OAuth2SigningKey? {
+    ): List<OAuth2SigningKey> {
         val initialRevision = readRevision()
         cached(tenantId, initialRevision)?.let { return it }
 
@@ -75,7 +70,7 @@ class ActiveSigningKeySnapshotCache(
                 val expectedRevision = readRevision()
                 cached(tenantId, expectedRevision)?.let { return@withLock it }
 
-                val keys = loadAll()
+                val keys = loadAll().toList()
                 val now = clock.now()
                 val active = selectActive(tenantId, keys, now)
                 val reevaluateAt = nextActivation(tenantId, keys, now)
@@ -86,7 +81,7 @@ class ActiveSigningKeySnapshotCache(
                         if (confirmedRevision != expectedRevision) {
                             false
                         } else {
-                            if (active != null) {
+                            if (active.isNotEmpty()) {
                                 entries[tenantId] =
                                     Entry(
                                         revision = expectedRevision,
@@ -98,19 +93,19 @@ class ActiveSigningKeySnapshotCache(
                         }
                     }
                 if (accepted) {
-                    return@withLock active
+                    return@withLock active.toList()
                 }
             }
 
             @Suppress("UNREACHABLE_CODE")
-            null
+            emptyList()
         }
     }
 
     private fun cached(
         tenantId: String,
         authoritativeRevision: Long,
-    ): OAuth2SigningKey? =
+    ): List<OAuth2SigningKey>? =
         synchronized(this) {
             val entry = entries[tenantId] ?: return@synchronized null
             if (entry.revision != authoritativeRevision) {
@@ -123,7 +118,7 @@ class ActiveSigningKeySnapshotCache(
                 entries.remove(tenantId)
                 return@synchronized null
             }
-            entry.active
+            entry.active.toList()
         }
 
     private fun loadLock(tenantId: String): Mutex =
@@ -135,14 +130,15 @@ class ActiveSigningKeySnapshotCache(
         tenantId: String,
         keys: List<OAuth2SigningKey>,
         now: Instant,
-    ): OAuth2SigningKey? =
+    ): List<OAuth2SigningKey> =
         keys
             .asSequence()
             .filter {
                 it.tenantId == tenantId &&
                     it.state == OAuth2SigningKeyState.ACTIVE &&
                     it.notBefore <= now
-            }.maxWithOrNull(activePriorityOrder)
+            }.sortedWith(activePriorityOrder.reversed())
+            .toList()
 
     private fun nextActivation(
         tenantId: String,

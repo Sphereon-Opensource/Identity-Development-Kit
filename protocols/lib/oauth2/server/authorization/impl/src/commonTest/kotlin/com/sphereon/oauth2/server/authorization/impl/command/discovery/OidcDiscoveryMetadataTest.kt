@@ -64,10 +64,8 @@ class OidcDiscoveryMetadataTest {
             assertNotNull(metadata.subjectTypesSupported)
             assertTrue(metadata.subjectTypesSupported!!.contains("public"))
             assertNotNull(metadata.idTokenSigningAlgValuesSupported)
-            // Test wires no signing key, so the discovery builder falls back to the
-            // OIDC-mandated RS256 baseline (OpenID Connect Core 1.0 §10.1) — the only id-token
-            // alg every conformant RP must accept. The historical hardcoded `ES256` fallback
-            // is the bug the OIDF Conformance Group D fix replaced.
+            // The shared discovery fixture supplies an actual public RS256 descriptor;
+            // no algorithm is inferred from a missing signing key.
             assertTrue(metadata.idTokenSigningAlgValuesSupported!!.contains("RS256"))
             assertNotNull(metadata.claimsSupported)
             assertTrue(metadata.claimsSupported!!.contains("sub"))

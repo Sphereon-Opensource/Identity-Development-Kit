@@ -33,13 +33,17 @@ import com.sphereon.crypto.core.kms.KmsProviderRegistryGraph
 import com.sphereon.crypto.core.kms.asKeyManagerServiceGraph
 import com.sphereon.crypto.kms.provider.software.SoftwareKmsProviderConfig
 import com.sphereon.crypto.kms.provider.software.SoftwareKmsProviderFactoryImpl
-import com.sphereon.crypto.resolution.managed.ManagedIdentifierOptsOrResult
+import com.sphereon.crypto.core.KeyInfo
+import com.sphereon.crypto.core.KeyType
+import com.sphereon.crypto.core.generic.SignatureAlgorithm
+import com.sphereon.crypto.resolution.managed.ManagedOptsKeyInfo
 import com.sphereon.crypto.resolution.managed.MultiManagedIdentifierService
 import com.sphereon.di.app.AppGraph
 import com.sphereon.di.session.SessionContext
 import com.sphereon.di.session.SessionContextManager
 import com.sphereon.di.session.SessionInstance
 import com.sphereon.oauth2.common.config.OAuth2ServerInstanceConfig
+import com.sphereon.oauth2.common.config.OAuth2ServerInstanceIdProvider
 import com.sphereon.oauth2.common.config.OAuth2ServersConfig
 import com.sphereon.oauth2.common.config.OAuth2ServersConfigProvider
 import com.sphereon.oauth2.common.jarm.CreateJarmResponseArgs
@@ -52,6 +56,9 @@ import com.sphereon.oauth2.server.authorization.impl.command.authorization.Creat
 import com.sphereon.oauth2.server.authorization.impl.command.discovery.BuildServerMetadataCommandImpl
 import com.sphereon.oauth2.server.authorization.model.ClientRegistration
 import com.sphereon.oauth2.server.authorization.signing.AsServerSigningIdentifierResolver
+import com.sphereon.oauth2.server.authorization.signing.AsSigningRequirement
+import com.sphereon.oauth2.server.authorization.signing.AsSigningSelection
+import com.sphereon.oauth2.server.authorization.signing.CapturedAsServerConfig
 import com.sphereon.oauth2.server.authorization.storage.ClientRegistry
 
 expect fun createOAuth2ServerTestAppGraph(testInstance: Any): AppGraph
@@ -87,17 +94,23 @@ class OAuth2ServerTestContext(
 
 /**
  * Centralised constructor for [BuildServerMetadataCommandImpl] that all discovery tests share.
- * Wires a null-resolving signing identifier because the standard discovery tests don't exercise
- * key derivation; the alg-derivation path only fires when a config has
- * `idTokenSigningAlgValuesSupported = null` AND a key is wired, which the RSA-derivation test
- * sets up explicitly with a [fixedSigningIdentifierResolver] carrying an alias.
+ * Wires a public RS256 descriptor for configured hosted OIDC/JWT discovery.
+ * Signed-metadata generation remains explicitly stubbed in these tests.
  */
 fun OAuth2ServerTestContext.newBuildServerMetadataCommand(configProvider: OAuth2ServersConfigProvider,): BuildServerMetadataCommandImpl =
     BuildServerMetadataCommandImpl(
         execution = this.execution,
         configProvider = configProvider,
-        signingIdentifierResolver = fixedSigningIdentifierResolver(),
-        identifierService = this.identifierService,
+        asInstanceIdProvider = fixedAsInstanceIdProvider(),
+        signingIdentifierResolver = fixedSigningIdentifierResolver(
+            ManagedOptsKeyInfo(
+                identifier = KeyInfo<KeyType>(
+                    alias = "discovery-rs256",
+                    kid = "discovery-rs256",
+                    signatureAlgorithm = SignatureAlgorithm.RSA_SHA256,
+                ),
+            ),
+        ),
             grantHandlers = emptyMap(),
         kmsProviderRegistry = this.kmsProviderRegistry,
         // Discovery tests don't exercise signed_metadata; the stub returns Err so a
@@ -107,13 +120,32 @@ fun OAuth2ServerTestContext.newBuildServerMetadataCommand(configProvider: OAuth2
     )
 
 /**
- * Wraps a fixed [ManagedIdentifierOptsOrResult] (or `null` for "no AS signing key") in an
+ * Wraps a fixed public descriptor (or null for no AS signing key) in an
  * [AsServerSigningIdentifierResolver], so command tests that construct the AS sign commands
  * directly can pin the resolved identifier without standing up a real SigningKeyStore.
  */
-fun fixedSigningIdentifierResolver(identifier: ManagedIdentifierOptsOrResult? = null,): AsServerSigningIdentifierResolver =
+fun fixedSigningIdentifierResolver(identifier: ManagedOptsKeyInfo? = null,): AsServerSigningIdentifierResolver =
     object : AsServerSigningIdentifierResolver {
-        override suspend fun resolveSigningIdentifier(): ManagedIdentifierOptsOrResult? = identifier
+        override suspend fun selectSigning(
+            captured: CapturedAsServerConfig,
+            requirement: AsSigningRequirement,
+            requestedAlgorithm: String?,
+        ): AsSigningSelection {
+            if (requirement == AsSigningRequirement.NOT_REQUIRED) return AsSigningSelection(null, emptySet())
+            if (requirement == AsSigningRequirement.REQUIRED && identifier == null) error("No ACTIVE signing descriptor")
+            val algorithm = identifier?.identifier?.signatureAlgorithm?.jose?.value
+            val algorithms = algorithm?.let { setOf(it) } ?: emptySet()
+            if (requestedAlgorithm != null && algorithm != requestedAlgorithm) {
+                if (requirement == AsSigningRequirement.REQUIRED) error("Requested signing algorithm is unavailable")
+                return AsSigningSelection(null, algorithms)
+            }
+            return AsSigningSelection(identifier, algorithms)
+        }
+    }
+
+fun fixedAsInstanceIdProvider(key: String = "default"): OAuth2ServerInstanceIdProvider =
+    object : OAuth2ServerInstanceIdProvider {
+        override fun currentAsInstanceId(): String = key
     }
 
 /**
@@ -263,6 +295,7 @@ fun OAuth2ServerTestContext.newCreateAuthorizationResponseCommand(): CreateAutho
     CreateAuthorizationResponseCommandImpl(
         execution = this.execution,
         configProvider = StubOAuth2ServersConfigProvider(),
+        asInstanceIdProvider = fixedAsInstanceIdProvider(),
         clientRegistry = StubClientRegistry(),
         createJarmResponse = StubCreateJarmResponseCommand(this.execution),
         signingIdentifierResolver = fixedSigningIdentifierResolver(),
@@ -275,6 +308,7 @@ fun OAuth2ServerTestContext.newCreateAuthorizationErrorResponseCommand(): Create
     CreateAuthorizationErrorResponseCommandImpl(
         execution = this.execution,
         configProvider = StubOAuth2ServersConfigProvider(),
+        asInstanceIdProvider = fixedAsInstanceIdProvider(),
         clientRegistry = StubClientRegistry(),
         createJarmResponse = StubCreateJarmResponseCommand(this.execution),
         signingIdentifierResolver = fixedSigningIdentifierResolver(),

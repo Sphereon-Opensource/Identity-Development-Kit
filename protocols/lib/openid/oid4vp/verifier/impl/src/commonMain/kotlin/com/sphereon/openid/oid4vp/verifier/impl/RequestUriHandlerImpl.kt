@@ -178,7 +178,12 @@ class RequestUriHandlerImpl(
                 issuer = binding.requestObjectIssuer(),
                 audience = signingConfig.audience,
                 expirationSeconds = signingConfig.expirationSeconds,
-                kid = (binding as? VerifierSignerBinding.Did)?.absoluteVerificationMethodId,
+                kid =
+                    when (binding) {
+                        is VerifierSignerBinding.Did -> binding.absoluteVerificationMethodId
+                        is VerifierSignerBinding.Federation -> binding.kid
+                        else -> null
+                    },
                 x5c =
                     (binding as? VerifierSignerBinding.X509SanDns)?.certificateChain
                         ?: (binding as? VerifierSignerBinding.X509Hash)?.certificateChain,

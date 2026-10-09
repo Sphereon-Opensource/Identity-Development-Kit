@@ -17,9 +17,25 @@
 package com.sphereon.oauth2.server.authorization.impl.command.authorization
 
 import com.sphereon.oauth2.common.model.OAuth2ResponseMode
+import com.sphereon.oauth2.common.config.AuthorizationServerMode
+import com.sphereon.oauth2.common.config.OAuth2ServerInstanceConfig
+import com.sphereon.oauth2.common.config.FeaturePolicy
+import com.sphereon.oauth2.common.model.GrantType
+import com.sphereon.oauth2.server.authorization.model.ClientRegistration
+import com.sphereon.oauth2.server.authorization.signing.AsServerSigningIdentifierResolver
+import com.sphereon.oauth2.server.authorization.signing.AsSigningRequirement
+import com.sphereon.oauth2.server.authorization.signing.AsSigningSelection
+import com.sphereon.oauth2.server.authorization.signing.CapturedAsServerConfig
+import kotlinx.coroutines.CancellationException
+import kotlin.test.assertFailsWith
 import com.sphereon.oauth2.server.authorization.command.CreateAuthorizationErrorResponseArgs
 import com.sphereon.oauth2.server.authorization.impl.testutil.OAuth2ServerTestContext
 import com.sphereon.oauth2.server.authorization.impl.testutil.newCreateAuthorizationErrorResponseCommand
+import com.sphereon.oauth2.server.authorization.impl.testutil.StubOAuth2ServersConfigProvider
+import com.sphereon.oauth2.server.authorization.impl.testutil.StubClientRegistry
+import com.sphereon.oauth2.server.authorization.impl.testutil.StubCreateJarmResponseCommand
+import com.sphereon.oauth2.server.authorization.impl.testutil.fixedAsInstanceIdProvider
+import com.sphereon.oauth2.server.authorization.impl.testutil.fixedSigningIdentifierResolver
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -36,6 +52,83 @@ import kotlin.test.assertTrue
 class CreateAuthorizationErrorResponseCommandImplTest {
     private val ctx = OAuth2ServerTestContext("create-auth-error-test", this)
     private val command = ctx.newCreateAuthorizationErrorResponseCommand()
+
+    private fun jarmErrorArgs() = CreateAuthorizationErrorResponseArgs(
+        error = "access_denied",
+        redirectUri = "https://rp.example.com/cb",
+        responseMode = OAuth2ResponseMode.QUERY_JWT,
+    )
+
+    private fun routedCommand(key: String, config: OAuth2ServerInstanceConfig = OAuth2ServerInstanceConfig()) =
+        CreateAuthorizationErrorResponseCommandImpl(
+            execution = ctx.execution,
+            configProvider = StubOAuth2ServersConfigProvider(config),
+            asInstanceIdProvider = fixedAsInstanceIdProvider(key),
+            clientRegistry = StubClientRegistry(),
+            createJarmResponse = StubCreateJarmResponseCommand(ctx.execution),
+            signingIdentifierResolver = fixedSigningIdentifierResolver(),
+        )
+
+    @Test
+    fun validHostedSelectionMayDowngradeJarmErrorWhenJarmDisabled() = runTest {
+        val result = routedCommand("default").execute(jarmErrorArgs())
+        assertTrue(result.isOk)
+        assertEquals(OAuth2ResponseMode.QUERY, result.value.responseMode)
+        assertEquals("https://rp.example.com/cb?error=access_denied", result.value.redirectUri)
+    }
+
+    @Test
+    fun unknownSelectedServerCannotDowngradeToBareError() = runTest {
+        val result = routedCommand("missing").execute(jarmErrorArgs())
+        assertTrue(result.isErr)
+        assertEquals("invalid_request", result.error.code)
+    }
+
+    @Test
+    fun unresolvedSelectedServerCannotDowngradeToBareError() = runTest {
+        val result = routedCommand("").execute(jarmErrorArgs())
+        assertTrue(result.isErr)
+        assertEquals("invalid_request", result.error.code)
+    }
+
+    @Test
+    fun externalSelectedServerCannotDowngradeToBareError() = runTest {
+        val result = routedCommand("default", OAuth2ServerInstanceConfig(mode = AuthorizationServerMode.EXTERNAL)).execute(jarmErrorArgs())
+        assertTrue(result.isErr)
+        assertEquals("invalid_request", result.error.code)
+    }
+
+    @Test
+    fun validSelectedSigningCancellationEscapesWithoutBareDowngrade() = runTest {
+        val cancellation = CancellationException("JARM selection cancelled")
+        val resolver = object : AsServerSigningIdentifierResolver {
+            override suspend fun selectSigning(
+                captured: CapturedAsServerConfig,
+                requirement: AsSigningRequirement,
+                requestedAlgorithm: String?,
+            ): AsSigningSelection = throw cancellation
+        }
+        val command = CreateAuthorizationErrorResponseCommandImpl(
+            execution = ctx.execution,
+            configProvider = StubOAuth2ServersConfigProvider(OAuth2ServerInstanceConfig(
+                issuer = "https://as.example/oidc",
+                jarm = FeaturePolicy.SUPPORTED,
+                authorizationSigningAlgValuesSupported = setOf("RS256"),
+            )),
+            asInstanceIdProvider = fixedAsInstanceIdProvider(),
+            clientRegistry = StubClientRegistry(mapOf("rp" to ClientRegistration(
+                clientId = "rp",
+                grantTypes = listOf(GrantType.AUTHORIZATION_CODE),
+                authorizationSignedResponseAlg = "RS256",
+            ))),
+            createJarmResponse = StubCreateJarmResponseCommand(ctx.execution),
+            signingIdentifierResolver = resolver,
+        )
+        val escaped = assertFailsWith<CancellationException> {
+            command.execute(jarmErrorArgs().copy(clientId = "rp"))
+        }
+        assertTrue(escaped === cancellation || escaped.cause === cancellation)
+    }
 
     @Test
     fun queryErrorAppendsParametersAsQueryString() =

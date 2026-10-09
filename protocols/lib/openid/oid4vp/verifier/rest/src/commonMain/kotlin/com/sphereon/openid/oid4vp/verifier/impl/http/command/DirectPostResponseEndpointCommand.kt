@@ -37,6 +37,15 @@ import com.sphereon.core.api.http.describe.MediaType
 import com.sphereon.crypto.core.KeyInfo
 import com.sphereon.crypto.core.KeyVisibility
 import com.sphereon.crypto.core.jose.tryGenerateJwkThumbprint
+import com.sphereon.crypto.core.kms.KeyManagerService
+import com.sphereon.crypto.jose.jwe.DecryptJweArgs
+import com.sphereon.crypto.jose.jwe.JweCompact
+import com.sphereon.crypto.jose.jwe.JweService
+import com.sphereon.openid.oid4vp.common.ClientIdScheme
+import com.sphereon.openid.oid4vp.verifier.config.Oid4vpVerifierInstanceIdProvider
+import com.sphereon.openid.oid4vp.verifier.federation.VerifierFederationMetadata
+import com.sphereon.openid.oid4vp.verifier.model.AuthorizationSession
+import kotlinx.serialization.json.JsonObject
 import com.sphereon.crypto.resolution.managed.ManagedOptsKeyInfo
 import com.sphereon.di.session.SessionScope
 import com.sphereon.openid.oid4vc.common.CredentialFormat
@@ -107,6 +116,9 @@ class DirectPostResponseEndpointCommandImpl(
     private val authorizationSessionStore: AuthorizationSessionStore,
     private val responseEncryptionKeyConfig: ResponseEncryptionKeyConfig,
     private val trustedAuthenticationResolver: Provider<VerifierTrustedAuthenticationResolver>? = null,
+    private val kms: Provider<KeyManagerService>? = null,
+    private val jweService: Provider<JweService>? = null,
+    private val instanceIdProvider: Provider<Oid4vpVerifierInstanceIdProvider>? = null,
 ) : HttpEndpointCommandAdapter(
         id = DirectPostResponseEndpointCommand.COMMAND_ID,
         execution = execution,
@@ -152,6 +164,7 @@ class DirectPostResponseEndpointCommandImpl(
         // Look up the authorization session to get the original request
         val session =
             authorizationSessionStore.getByCorrelationId(correlationId).getOrNull()
+                ?: federationSession(responseParams["response"], correlationId)
                 ?: return Err(IdkError.NOT_FOUND_ERROR(message = "Authorization session not found: $correlationId"))
 
         // Per OID4VP §7.2 redirect_uri is OPTIONAL in the response, and this response-endpoint
@@ -356,6 +369,46 @@ class DirectPostResponseEndpointCommandImpl(
      * that kid to the session correlationId, so a single store lookup resolves the
      * session before any decryption is attempted.
      */
+    /**
+     * The session of a `direct_post.jwt` response under the `openid_federation:` client identifier prefix. The wallet
+     * encrypts to the key published in the verifier's federation metadata, whose `kid` is the key's thumbprint rather
+     * than a session id (OpenID Federation for Wallet Architectures 1.0 §6.3.1), so the response names no session.
+     * When [kid] is the thumbprint of the routed instance's response-encryption key, that key decrypts the response and
+     * the `state` inside names the session, which must belong to the same instance and be a federation session.
+     */
+    private suspend fun federationSession(jwe: String?, kid: String): AuthorizationSession? {
+        if (jwe == null) return null
+        val kms = kms?.invoke() ?: return null
+        val jweService = jweService?.invoke() ?: return null
+        val instanceId = instanceIdProvider?.invoke()?.currentInstanceId()?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+        val keyName = responseEncryptionKeyConfig.resolveEncryptionKeyName(instanceId) ?: return null
+        val publicJwk = VerifierFederationMetadata.publicJwk(kms, keyName) ?: return null
+        if (VerifierFederationMetadata.kid(publicJwk) != kid) return null
+        val parsed = runCatching { JweCompact.parse(jwe) }.getOrNull() ?: return null
+        val decrypted =
+            jweService
+                .decryptJwe(
+                    DecryptJweArgs(
+                        jwe = parsed,
+                        decryptor = ManagedOptsKeyInfo(identifier = KeyInfo<Nothing>(alias = keyName, keyVisibility = KeyVisibility.PRIVATE)),
+                    ),
+                ).getOrNull() ?: return null
+        val plaintext = decrypted.plaintext?.decodeToString() ?: return null
+        // A signed-then-encrypted response carries a JWS; its payload is read here only to find the session. The
+        // response is verified in full afterwards, as every response is.
+        val payloadJson =
+            plaintext.split('.').takeIf { it.size == 3 }?.let { parts ->
+                runCatching { parts[1].decodeFromBase64Url().decodeToString() }.getOrNull()
+            } ?: plaintext
+        val payload = runCatching { json.parseToJsonElement(payloadJson) as? JsonObject }.getOrNull() ?: return null
+        val state =
+            (payload["state"] as? JsonPrimitive)?.takeIf { it.isString }?.content?.takeIf { it.isNotBlank() } ?: return null
+        val session = authorizationSessionStore.getByCorrelationId(state).getOrNull() ?: return null
+        if (session.instanceId != instanceId) return null
+        if (ClientIdScheme.fromClientId(session.authorizationRequest.clientId) != ClientIdScheme.OPENID_FEDERATION) return null
+        return session
+    }
+
     private fun extractKidFromJweHeader(jwe: String): String? {
         val firstDot = jwe.indexOf('.')
         if (firstDot <= 0) return null

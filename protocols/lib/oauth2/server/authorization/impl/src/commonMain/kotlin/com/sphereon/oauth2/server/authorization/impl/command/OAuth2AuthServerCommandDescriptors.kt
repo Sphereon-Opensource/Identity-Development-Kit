@@ -20,6 +20,7 @@ import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.ServiceCommand
 import com.sphereon.di.session.SessionScope
 import com.sphereon.oauth2.server.authorization.command.BuildServerMetadataCommand
+import com.sphereon.oauth2.server.authorization.command.ObserveHostedServerMetadataCommand
 import com.sphereon.oauth2.server.authorization.command.CreateAccessTokenCommand
 import com.sphereon.oauth2.server.authorization.command.CreateAttestationChallengeCommand
 import com.sphereon.oauth2.server.authorization.command.CreateAuthorizationCodeCommand
@@ -79,6 +80,8 @@ import com.sphereon.oauth2.server.authorization.impl.command.clientauth.VerifyAt
 import com.sphereon.oauth2.server.authorization.impl.command.clientauth.VerifyClientAuthenticationCommandImpl
 import com.sphereon.oauth2.server.authorization.impl.command.device.IssueDeviceAuthorizationCommandImpl
 import com.sphereon.oauth2.server.authorization.impl.command.discovery.BuildServerMetadataCommandImpl
+import com.sphereon.oauth2.server.authorization.impl.command.discovery.CapturedServerMetadataAssembler
+import com.sphereon.oauth2.server.authorization.impl.command.discovery.ObserveHostedServerMetadataCommandImpl
 import com.sphereon.oauth2.server.authorization.impl.command.iae.HandleIaeFollowUpCommandImpl
 import com.sphereon.oauth2.server.authorization.impl.command.iae.HandleIaeInitialRequestCommandImpl
 import com.sphereon.oauth2.server.authorization.impl.command.introspection.AuthServerIntrospectTokenCommandImpl
@@ -227,6 +230,15 @@ interface OAuth2AuthServerCommandDescriptors {
     @StringKey(BuildServerMetadataCommand.COMMAND_ID)
     fun buildServerMetadata(impl: BuildServerMetadataCommandImpl): ServiceCommand<*, *, *> = impl
 
+    // The same builder owns ordinary discovery and captured unsigned observation. Keep the
+    // concrete builder at composition only; the observer injects this local typed interface.
+    @Provides
+    fun capturedServerMetadataAssembler(impl: BuildServerMetadataCommandImpl): CapturedServerMetadataAssembler = impl
+
+    @Provides @IntoMap
+    @StringKey(ObserveHostedServerMetadataCommand.COMMAND_ID)
+    fun observeHostedServerMetadata(impl: ObserveHostedServerMetadataCommandImpl): ServiceCommand<*, *, *> = impl
+
     // Client authentication commands
     @Provides @IntoMap
     @StringKey(VerifyClientAuthenticationCommand.COMMAND_ID)
@@ -294,9 +306,8 @@ interface OAuth2AuthServerCommandDescriptors {
     @StringKey(FederationGetUserInfoCommand.COMMAND_ID)
     fun getFederationUserInfo(impl: FederationGetUserInfoCommand): ServiceCommand<*, *, *> = impl
 
-    // OAuth2 endpoint orchestration commands (Phase 3c-1 facade decomposition). Bound through
-    // the interface so test doubles contributed via @ContributesBinding(replaces = [...Impl::class])
-    // also win the registry lookup, matching the federation-command pattern above.
+    // OAuth2 endpoint orchestration commands (Phase 3c-1 facade decomposition).
+    // Concrete handlers expose their implementation bindings for registry injection.
     @Provides @IntoMap
     @StringKey(HandleTokenRequestCommand.COMMAND_ID)
     fun handleTokenRequest(impl: HandleTokenRequestCommandImpl): ServiceCommand<*, *, *> = impl

@@ -251,7 +251,7 @@ enum class ClientIdScheme(
      * - **X509_HASH**: x5c only - certificate hash must match client_id
      * - **DECENTRALIZED_IDENTIFIER**: did only - signer DID must match client_id
      * - **VERIFIER_ATTESTATION**: did, federation, jwk, x5c, custom
-     * - **OPENID_FEDERATION**: Empty - handled via federation trust chain
+     * - **OPENID_FEDERATION**: federation - signed with a key in the verifier's federation-resolved metadata `jwks`
      * - **ORIGIN**: Empty - reserved for DC API, no JAR
      *
      * @return Set of allowed signer methods, empty if JAR is not allowed
@@ -300,10 +300,9 @@ enum class ClientIdScheme(
                 }
 
                 OPENID_FEDERATION -> {
-                    emptySet()
+                    setOf(JarSignerMethod.FEDERATION)
                 }
 
-                // Handled via federation trust chain
                 ORIGIN -> {
                     emptySet()
                 } // Reserved for DC API

@@ -54,8 +54,14 @@ if (sphereonBuildProfile != null && sphereonBuildProfile != "forms") {
     throw GradleException("Unsupported sphereon.build.profile: $sphereonBuildProfile")
 }
 
+// The workspace artifact planner selects an exact source closure. Unset keeps the
+// normal and forms profiles unchanged; an explicitly empty selection includes none.
+val workspaceSourceModules = System.getenv("WORKSPACE_SOURCE_MODULES")
+    ?.split(",")?.map { it.trim() }?.filter { it.isNotEmpty() }?.toSet()
+
 // Helper function to include a project with its name as the path while pointing to the actual directory
 fun includeProject(name: String, path: String) {
+    if (workspaceSourceModules != null && name !in workspaceSourceModules) return
     if (sphereonBuildProfile == "forms" && name !in formsBuildProfileProjects) return
     include(":$name")
     project(":$name").projectDir = file(path)

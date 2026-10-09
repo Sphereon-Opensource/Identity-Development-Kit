@@ -34,9 +34,13 @@ import com.sphereon.crypto.jose.jws.PreparedJwsObject
 import com.sphereon.crypto.jose.jws.command.CreateJwsArgs
 import com.sphereon.crypto.jose.jws.command.CreateJwsJsonArgs
 import com.sphereon.crypto.jose.jws.command.VerifyJwsArgs
-import com.sphereon.crypto.resolution.managed.ManagedOptsAlias
+import com.sphereon.crypto.core.KeyInfo
+import com.sphereon.crypto.core.KeyType
+import com.sphereon.crypto.core.generic.SignatureAlgorithm
+import com.sphereon.crypto.resolution.managed.ManagedOptsKeyInfo
 import com.sphereon.oauth2.common.config.OAuth2ServerInstanceConfig
 import com.sphereon.oauth2.common.config.OAuth2ServersConfig
+import com.sphereon.oauth2.common.config.TokenFormat
 import com.sphereon.oauth2.common.model.ActorClaim
 import com.sphereon.oauth2.server.authorization.command.CreateAccessTokenArgs
 import com.sphereon.oauth2.server.authorization.error.AuthorizationServerError
@@ -46,8 +50,13 @@ import com.sphereon.oauth2.server.authorization.impl.storage.memory.InMemoryToke
 import com.sphereon.oauth2.server.authorization.impl.testutil.OAuth2ServerTestContext
 import com.sphereon.oauth2.server.authorization.impl.testutil.TestOAuth2ServersConfigProvider
 import com.sphereon.oauth2.server.authorization.impl.testutil.fixedSigningIdentifierResolver
+import com.sphereon.oauth2.server.authorization.impl.testutil.fixedAsInstanceIdProvider
 import com.sphereon.oauth2.server.authorization.signing.AsServerSigningIdentifierResolver
+import com.sphereon.oauth2.server.authorization.signing.AsSigningRequirement
+import com.sphereon.oauth2.server.authorization.signing.AsSigningSelection
+import com.sphereon.oauth2.server.authorization.signing.CapturedAsServerConfig
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.JsonObject
@@ -58,6 +67,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
@@ -91,15 +101,21 @@ class CreateAccessTokenAzpClaimTest {
 
     private fun newCommand(
         jwtService: RecordingJwtService,
+        serverConfigProvider: TestOAuth2ServersConfigProvider = configProvider,
         signingIdentifierResolver: AsServerSigningIdentifierResolver =
-            fixedSigningIdentifierResolver(ManagedOptsAlias(identifier = "as-signing-key")),
+            fixedSigningIdentifierResolver(
+                ManagedOptsKeyInfo(identifier = KeyInfo<KeyType>(
+                    alias = "as-signing-key", kid = "as-signing-key", signatureAlgorithm = SignatureAlgorithm.RSA_SHA256,
+                )),
+            ),
     ): CreateAccessTokenCommandImpl =
         CreateAccessTokenCommandImpl(
             execution = ctx.execution,
             jwtService = jwtService,
             tokenStorage = InMemoryTokenStorageImpl(InMemoryOAuth2BackingStorageImpl()),
             secureRandom = defaultSecureRandom(),
-            configProvider = configProvider,
+            configProvider = serverConfigProvider,
+            asInstanceIdProvider = fixedAsInstanceIdProvider(),
             // Non-null signing identifier forces the JWT (not opaque) path so a payload is built.
             signingIdentifierResolver = signingIdentifierResolver,
             eventService = null,
@@ -110,7 +126,11 @@ class CreateAccessTokenAzpClaimTest {
         runTest {
             val resolver =
                 object : AsServerSigningIdentifierResolver {
-                    override suspend fun resolveSigningIdentifier() =
+                    override suspend fun selectSigning(
+                        captured: CapturedAsServerConfig,
+                        requirement: AsSigningRequirement,
+                        requestedAlgorithm: String?,
+                    ): AsSigningSelection =
                         throw OAuth2SigningKeyUnavailableException(
                             tenantId = "platform",
                             message = "platform bootstrap has not provisioned its signing key",
@@ -118,7 +138,7 @@ class CreateAccessTokenAzpClaimTest {
                 }
 
             val result =
-                newCommand(RecordingJwtService(), resolver).execute(
+                newCommand(RecordingJwtService(), signingIdentifierResolver = resolver).execute(
                     CreateAccessTokenArgs(
                         subject = SERVICE_CLIENT_ID,
                         clientId = SERVICE_CLIENT_ID,
@@ -305,7 +325,92 @@ class CreateAccessTokenAzpClaimTest {
             )
         }
 
-    companion object {
+        @Test
+    fun jwtModeWithNoRequiredSignerNeverFallsBackToOpaque() = runTest {
+        val jwtService = RecordingJwtService()
+        var resolverCalls = 0
+        val nullRequiredResolver = object : AsServerSigningIdentifierResolver {
+            override suspend fun selectSigning(
+                captured: CapturedAsServerConfig,
+                requirement: AsSigningRequirement,
+                requestedAlgorithm: String?,
+            ): AsSigningSelection {
+                resolverCalls++
+                assertEquals(AsSigningRequirement.REQUIRED, requirement)
+                return AsSigningSelection(null, emptySet())
+            }
+        }
+        val result = newCommand(
+            jwtService = jwtService,
+            signingIdentifierResolver = nullRequiredResolver,
+        ).execute(CreateAccessTokenArgs(
+            subject = SERVICE_CLIENT_ID,
+            clientId = SERVICE_CLIENT_ID,
+            scope = "service",
+            audience = listOf("https://api.example.com"),
+        ))
+        assertTrue(result.isErr, "configured JWT mode must reject missing REQUIRED signer")
+        assertEquals(1, resolverCalls, "JWT mode must request its REQUIRED signing selection")
+        assertEquals(null, jwtService.lastArgs, "missing signer must not reach JWT creation")
+    }
+
+    @Test
+    fun explicitOpaqueModeMintsOpaqueOnlyWithoutCallingSigner() = runTest {
+        val jwtService = RecordingJwtService()
+        var resolverCalls = 0
+        val observedResolver = object : AsServerSigningIdentifierResolver {
+            override suspend fun selectSigning(
+                captured: CapturedAsServerConfig,
+                requirement: AsSigningRequirement,
+                requestedAlgorithm: String?,
+            ): AsSigningSelection {
+                resolverCalls++
+                return AsSigningSelection(null, emptySet())
+            }
+        }
+        val opaqueProvider = TestOAuth2ServersConfigProvider(OAuth2ServersConfig(
+            servers = mapOf("default" to OAuth2ServerInstanceConfig(issuer = ISSUER, tokenFormat = TokenFormat.OPAQUE)),
+        ))
+        val result = newCommand(
+            jwtService = jwtService,
+            serverConfigProvider = opaqueProvider,
+            signingIdentifierResolver = observedResolver,
+        ).execute(CreateAccessTokenArgs(
+            subject = SERVICE_CLIENT_ID,
+            clientId = SERVICE_CLIENT_ID,
+            scope = "service",
+            audience = listOf("https://api.example.com"),
+        ))
+        assertTrue(result.isOk, "explicit configured opaque mode remains a valid token format")
+        assertFalse(result.value.value.contains('.'), "opaque token must not be compact JWS")
+        assertEquals(0, resolverCalls, "opaque mode must not resolve a JWT signer")
+        assertEquals(null, jwtService.lastArgs, "opaque selection must not reach JWT creation")
+    }
+
+    @Test
+    fun signingSelectionCancellationEscapesWithoutOpaqueDowngrade() = runTest {
+        val jwtService = RecordingJwtService()
+        val cancellation = CancellationException("access signing cancelled")
+        val resolver = object : AsServerSigningIdentifierResolver {
+            override suspend fun selectSigning(
+                captured: CapturedAsServerConfig,
+                requirement: AsSigningRequirement,
+                requestedAlgorithm: String?,
+            ): AsSigningSelection = throw cancellation
+        }
+        val escaped = assertFailsWith<CancellationException> {
+            newCommand(jwtService, signingIdentifierResolver = resolver).execute(CreateAccessTokenArgs(
+                subject = SERVICE_CLIENT_ID,
+                clientId = SERVICE_CLIENT_ID,
+                scope = "service",
+                audience = listOf("https://api.example.com"),
+            ))
+        }
+        assertTrue(escaped === cancellation || escaped.cause === cancellation)
+        assertEquals(null, jwtService.lastArgs)
+    }
+
+companion object {
         private const val ISSUER = "https://as.example.com"
         private const val SERVICE_CLIENT_ID = "service-tenant-as"
     }

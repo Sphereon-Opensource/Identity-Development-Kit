@@ -29,6 +29,7 @@ import com.sphereon.crypto.core.KeyVisibility
 import com.sphereon.crypto.core.generic.DigestAlg
 import com.sphereon.crypto.core.generic.hash
 import com.sphereon.crypto.core.jose.Jwk
+import com.sphereon.crypto.core.jose.generateJwkThumbprint
 import com.sphereon.crypto.core.kms.KeyManagerService
 import com.sphereon.crypto.core.x509.certificateFromBase64Der
 import com.sphereon.crypto.resolution.managed.ManagedIdentifierService
@@ -39,6 +40,7 @@ import com.sphereon.did.models.VerificationPurpose
 import com.sphereon.openid.oid4vp.common.ClientIdScheme
 import com.sphereon.openid.oid4vp.common.qualifyDidJarVerificationMethodId
 import com.sphereon.openid.oid4vp.verifier.requesturi.RequestObjectSigningConfig
+import com.sphereon.openid.oid4vp.verifier.federation.VerifierFederationMetadata
 import com.sphereon.openid.oid4vp.verifier.requesturi.VerifierSignerBinding
 import com.sphereon.openid.oid4vp.verifier.spi.VerifierSigningKeyNameResolver
 import dev.zacsweers.metro.Provider
@@ -170,6 +172,10 @@ abstract class AbstractConfigOid4vpVerifierConfigProvider(
                 buildX509HashBinding(keyName)
             }
 
+            ClientIdScheme.OPENID_FEDERATION -> {
+                buildFederationBinding(keyName)
+            }
+
             null -> {
                 // No scheme requested — use the deployment-configured default.
                 val mode = configService.getPropertyAsString("$signingNamespace.signing.mode") ?: DEFAULT_MODE
@@ -177,14 +183,18 @@ abstract class AbstractConfigOid4vpVerifierConfigProvider(
                     mode.startsWith("did:") -> buildDidBinding(keyName, method = mode.removePrefix("did:"))
                     mode == "x509_san_dns" -> buildX509SanDnsBinding(keyName)
                     mode == "x509_hash" -> buildX509HashBinding(keyName)
-                    else -> error("Unsupported $signingNamespace.signing.mode='$mode' (expected did:<method>, x509_san_dns, or x509_hash)")
+                    mode == FEDERATION_MODE -> buildFederationBinding(keyName)
+                    else -> error(
+                        "Unsupported $signingNamespace.signing.mode='$mode' " +
+                            "(expected did:<method>, x509_san_dns, x509_hash or $FEDERATION_MODE)",
+                    )
                 }
             }
 
             else -> {
                 error(
                     "Unsupported client_id_scheme '$scheme' for verifier JAR signing. " +
-                        "Supported: decentralized_identifier (did:jwk), x509_san_dns, x509_hash.",
+                        "Supported: decentralized_identifier (did:jwk), x509_san_dns, x509_hash, openid_federation.",
                 )
             }
         }
@@ -279,6 +289,26 @@ abstract class AbstractConfigOid4vpVerifierConfigProvider(
             did = createResult.did,
             verificationMethodId = requireAbsoluteVerificationMethodIdForDid(createResult.did, vmId),
         )
+    }
+
+    /**
+     * Build the `openid_federation:` binding per OID4VP 1.0 §5.9.3. The verifier's Entity Identifier comes from the
+     * instance setting [VerifierFederationMetadata.ENTITY_IDENTIFIER_CONFIG_KEY]; the JOSE `kid` is the RFC 7638 SHA-256
+     * thumbprint of the
+     * request-object signing key, the same `kid` under which that key is published in the verifier's
+     * `openid_credential_verifier` metadata.
+     */
+    private suspend fun buildFederationBinding(keyName: String): VerifierSignerBinding.Federation {
+        val entityIdentifier =
+            configService.getPropertyAsString("$verifierNamespace.${VerifierFederationMetadata.ENTITY_IDENTIFIER_CONFIG_KEY}")
+                ?.trim()
+                ?.takeIf { it.isNotEmpty() }
+                ?: error(
+                    "openid_federation signing requires $verifierNamespace.${VerifierFederationMetadata.ENTITY_IDENTIFIER_CONFIG_KEY}, " +
+                        "the verifier's OpenID Federation Entity Identifier.",
+                )
+        val kid = generateJwkThumbprint(loadJwk(keyName).toPublicKey())
+        return VerifierSignerBinding.Federation(entityIdentifier = entityIdentifier, kid = kid)
     }
 
     private suspend fun buildX509SanDnsBinding(keyName: String): VerifierSignerBinding.X509SanDns {
@@ -405,6 +435,9 @@ abstract class AbstractConfigOid4vpVerifierConfigProvider(
 
         private const val DEFAULT_EXPIRATION_SECONDS = 300L
         private const val DEFAULT_MODE = "did:jwk"
+
+        /** `signing.mode` value selecting the `openid_federation:` client identifier prefix. */
+        const val FEDERATION_MODE = "openid_federation"
 
         /**
          * Single refusal for every reason the request-object signing key cannot be used: no binding,

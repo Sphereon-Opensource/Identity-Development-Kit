@@ -29,10 +29,9 @@ import com.sphereon.crypto.jose.jws.JwsIdentifierMode
 import com.sphereon.crypto.jose.jws.JwtService
 import com.sphereon.crypto.jose.jws.command.CreateJwsArgs
 import com.sphereon.crypto.jose.jws.command.CreateJwsOpts
-import com.sphereon.crypto.resolution.managed.ManagedIdentifierResult
-import com.sphereon.crypto.resolution.managed.MultiManagedIdentifierService
 import com.sphereon.di.session.SessionScope
 import com.sphereon.oauth2.common.config.OAuth2ServersConfigProvider
+import com.sphereon.oauth2.common.config.OAuth2ServerInstanceIdProvider
 import com.sphereon.oauth2.common.validation.jwsAlgToDigest
 import com.sphereon.oauth2.server.authorization.command.CreateIdTokenArgs
 import com.sphereon.oauth2.server.authorization.command.CreateIdTokenCommand
@@ -42,6 +41,8 @@ import com.sphereon.oauth2.server.authorization.impl.command.discovery.keyAlgori
 import com.sphereon.oauth2.server.authorization.impl.command.putClaims
 import com.sphereon.oauth2.server.authorization.provider.SessionParticipationRecorder
 import com.sphereon.oauth2.server.authorization.signing.AsServerSigningIdentifierResolver
+import com.sphereon.oauth2.server.authorization.signing.AsSigningRequirement
+import com.sphereon.oauth2.server.authorization.signing.CapturedAsServerConfig
 import com.sphereon.oauth2.server.authorization.storage.ClientRegistry
 import com.sphereon.oauth2.server.authorization.storage.OidcLoginSessionIdProvider
 import dev.zacsweers.metro.Inject
@@ -73,9 +74,9 @@ class CreateIdTokenCommandImpl(
     execution: SessionExecution,
     private val jwtService: JwtService,
     private val configProvider: OAuth2ServersConfigProvider,
+    private val asInstanceIdProvider: OAuth2ServerInstanceIdProvider,
     private val signingIdentifierResolver: AsServerSigningIdentifierResolver,
     private val clientRegistry: ClientRegistry,
-    private val identifierService: MultiManagedIdentifierService,
     private val sessionParticipationRecorders: Set<SessionParticipationRecorder>,
     private val loginSessionIdProvider: OidcLoginSessionIdProvider,
 ) : TypedServiceCommandAdapter<CreateIdTokenArgs, StringResult, IdkError>(
@@ -98,7 +99,17 @@ class CreateIdTokenCommandImpl(
     }
 
     private suspend fun executeInternal(args: CreateIdTokenArgs): IdkResult<String, AuthorizationServerError> {
-        val config = configProvider.serverConfig
+        val root = configProvider.getConfig()
+        val captured =
+            try {
+                CapturedAsServerConfig.select(root, asInstanceIdProvider.currentAsInstanceId())
+            } catch (expected: IllegalArgumentException) {
+                return Err(AuthorizationServerError.ServerError(details = expected.message ?: "Invalid authorization server selection"))
+            } catch (expected: IllegalStateException) {
+                return Err(AuthorizationServerError.ServerError(details = expected.message ?: "Authorization server selection failed"))
+            }
+        val config = captured.server
+            ?: return Err(AuthorizationServerError.ServerError(details = "No hosted authorization server is configured"))
         val clientResult = clientRegistry.getClient(args.clientId)
         if (clientResult.isErr) {
             return Err(clientResult.error)
@@ -120,11 +131,9 @@ class CreateIdTokenCommandImpl(
         }
         val serverIdentifier =
             try {
-                if (requestedAlg == null) {
-                    signingIdentifierResolver.resolveSigningIdentifier()
-                } else {
-                    signingIdentifierResolver.resolveSigningIdentifier(requestedAlg)
-                }
+                signingIdentifierResolver.selectSigning(captured, AsSigningRequirement.REQUIRED, requestedAlg).identifier
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
             } catch (expected: Exception) {
                 return Err(
                     AuthorizationServerError.ServerError(
@@ -144,7 +153,7 @@ class CreateIdTokenCommandImpl(
 
         val issuerUrl =
             args.baseUrlOverride?.takeIf { it.isNotBlank() }
-                ?: configProvider.serverConfig.issuer
+                ?: config.issuer
                 ?: return Err(
                     AuthorizationServerError.ServerError(
                         details =
@@ -156,14 +165,14 @@ class CreateIdTokenCommandImpl(
         val now = Clock.System.now()
         val expiresAt = now.epochSeconds + config.idTokenLifetimeSeconds
 
-        // Resolve the signing key once so the JWS `alg` we report through `at_hash`/`c_hash`
-        // matches the alg `PrepareJwsCommandImpl` will write into the JOSE header from
-        // `keyInfo.signatureAlgorithm`. Resolution failure here is non-fatal — the JWS path
-        // exercises the same resolver moments later and will surface the underlying error
-        // through `jwtService.createJwsCompact`.
-        val resolvedKeyResult = identifierService.resolve(serverIdentifier)
-        val resolvedKey: ManagedIdentifierResult<*>? =
-            if (resolvedKeyResult.isOk) resolvedKeyResult.value else null
+        // The selected public descriptor carries the JOSE algorithm; do not fetch private material.
+        val idTokenSigningAlg = try {
+            val selectedAlgorithm = serverIdentifier.identifier.signatureAlgorithm
+                ?: return Err(AuthorizationServerError.ServerError(details = "Selected ID-token signing key has no algorithm"))
+            keyAlgorithmToJwsAlg(selectedAlgorithm)
+        } catch (expected: IllegalStateException) {
+            return Err(AuthorizationServerError.ServerError(details = expected.message ?: "Unsupported ID-token signing algorithm"))
+        }
 
         // OIDC Back-Channel Logout 1.0 §4.1: emit `sid` so RPs can correlate logout_token.sid
         // back to a local session. We prefer the cookie-derived OIDC login session id (the
@@ -194,7 +203,6 @@ class CreateIdTokenCommandImpl(
                 // signing alg (RS/ES/PS/HS 256/384/512 → SHA-256/-384/-512). The signing alg
                 // is derived from the selected KMS key so the digest matches the JWS header
                 // `alg` `PrepareJwsCommandImpl` will write.
-                val idTokenSigningAlg = resolveIdTokenAlg(resolvedKey)
                 args.accessToken?.let { token ->
                     computeTokenHash(token, idTokenSigningAlg)?.let { put("at_hash", it) }
                 }
@@ -279,6 +287,8 @@ class CreateIdTokenCommandImpl(
                         }
                     }
                 }
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
         } catch (expected: Exception) {
             Err(
                 AuthorizationServerError.ServerError(
@@ -317,36 +327,4 @@ class CreateIdTokenCommandImpl(
         }
     }
 
-    /**
-     * Pick the JWS `alg` to digest under for `at_hash`/`c_hash`. Resolution order:
-     *  1. The resolved KMS key's `signatureAlgorithm` mapped through [keyAlgorithmToJwsAlg] —
-     *     this is what `PrepareJwsCommandImpl` will write into the JOSE `alg` header at sign
-     *     time, so the digest matches the actual signature.
-     *  2. RS256 — OIDC Core §10.1 mandates RP support for this alg; safer than ES256 as a
-     *     defensive default when the key resolver returned nothing.
-     */
-    private fun resolveIdTokenAlg(resolvedKey: ManagedIdentifierResult<*>?): String {
-        val keyAlg =
-            resolvedKey?.keyInfo?.signatureAlgorithm
-                ?: resolvedKey?.keyInfo?.key?.getSignatureAlgorithm()
-        if (keyAlg != null) {
-            try {
-                return keyAlgorithmToJwsAlg(keyAlg)
-            } catch (expected: IllegalStateException) {
-                execution.log.warn(
-                    "Resolved id-token signing key alg '$keyAlg' has no JWS mapping; falling back to RS256: ${expected.message}",
-                )
-            }
-        }
-        return DEFAULT_ID_TOKEN_SIGNING_ALG
-    }
-
-    private companion object {
-        /**
-         * OIDC Core §10.1 mandates RP support for `RS256`; using it as the defensive fallback
-         * keeps `at_hash`/`c_hash` digests interoperable when the key resolver can't report an
-         * alg. Replaces the historical hardcoded `ES256` which mismatched real RSA-backed keys.
-         */
-        const val DEFAULT_ID_TOKEN_SIGNING_ALG = "RS256"
-    }
 }

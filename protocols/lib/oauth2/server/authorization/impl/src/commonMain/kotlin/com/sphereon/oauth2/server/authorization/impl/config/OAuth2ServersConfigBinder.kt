@@ -114,11 +114,7 @@ class OAuth2ServersConfigBinder(
         return getConfig()
     }
 
-    override fun getServer(id: String): OAuth2ServerInstanceConfig? {
-        val config = getConfig()
-        return config.getServer(id) ?: config.servers.entries
-            .firstOrNull { keyNormalizer.normalize(it.key) == keyNormalizer.normalize(id) }?.value
-    }
+    override fun getServer(id: String): OAuth2ServerInstanceConfig? = getConfig().getServer(id)
 
     override val serverConfig: OAuth2ServerInstanceConfig
         get() {
@@ -137,24 +133,7 @@ class OAuth2ServersConfigBinder(
         val server =
             getConfig().getServer(serverId)
                 ?: error("OAuth2 server '$serverId' not found in configuration")
-        val issuer = server.issuer
-        val template = server.issuerTemplate
-        return when {
-            issuer != null -> {
-                issuer
-            }
-
-            template != null -> {
-                template.replace("{tenant-id}", tenantId)
-            }
-
-            else -> {
-                error(
-                    "OAuth2 server '$serverId' has no issuer configured; " +
-                        "set oauth2.servers.$serverId.issuer or oauth2.servers.$serverId.issuer-template",
-                )
-            }
-        }
+        return server.resolveIssuer(serverId, tenantId)
     }
 
     private fun loadConfig(): OAuth2ServersConfig {

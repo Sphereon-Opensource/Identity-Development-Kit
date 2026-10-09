@@ -328,6 +328,17 @@ data class OAuth2ServerInstanceConfig(
      */
     val clientRegistrySourcePrecedence: ClientRegistrySourcePrecedence = ClientRegistrySourcePrecedence.PERSISTENCE_PRIMARY,
 ) {
+    /** Resolve this already-selected server's issuer without reading configuration again. */
+    fun resolveIssuer(serverId: String, tenantId: String): String =
+        when {
+            issuer != null -> issuer
+            issuerTemplate != null -> issuerTemplate.replace("{tenant-id}", tenantId)
+            else -> error(
+                "OAuth2 server '$serverId' has no issuer configured; " +
+                    "set oauth2.servers.$serverId.issuer or oauth2.servers.$serverId.issuer-template",
+            )
+        }
+
     companion object {
         const val CONFIG_PREFIX = "oauth2.servers"
     }

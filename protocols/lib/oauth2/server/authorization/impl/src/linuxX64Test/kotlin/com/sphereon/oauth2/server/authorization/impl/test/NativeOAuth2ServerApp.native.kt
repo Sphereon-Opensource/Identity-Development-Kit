@@ -17,12 +17,14 @@
 package com.sphereon.oauth2.server.authorization.impl.test
 
 import com.sphereon.core.defaults.app.DefaultRootScopeProvider
-import com.sphereon.crypto.resolution.managed.ManagedIdentifierOptsOrResult
 import com.sphereon.di.app.AbstractAppGraph
 import com.sphereon.di.app.RootScopeProvider
 import com.sphereon.di.session.SessionScope
 import com.sphereon.oauth2.server.authorization.impl.config.DefaultAsServerSigningIdentifierResolver
 import com.sphereon.oauth2.server.authorization.signing.AsServerSigningIdentifierResolver
+import com.sphereon.oauth2.server.authorization.signing.AsSigningRequirement
+import com.sphereon.oauth2.server.authorization.signing.AsSigningSelection
+import com.sphereon.oauth2.server.authorization.signing.CapturedAsServerConfig
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesTo
 import dev.zacsweers.metro.DependencyGraph
@@ -41,7 +43,11 @@ interface NativeTestOAuth2ServerIdentifierModule {
     @SingleIn(SessionScope::class)
     fun provideSigningIdentifierResolver(): AsServerSigningIdentifierResolver =
         object : AsServerSigningIdentifierResolver {
-            override suspend fun resolveSigningIdentifier(): ManagedIdentifierOptsOrResult? = null
+            override suspend fun selectSigning(
+                captured: CapturedAsServerConfig,
+                requirement: AsSigningRequirement,
+                requestedAlgorithm: String?,
+            ): AsSigningSelection = AsSigningSelection(null, emptySet())
         }
 }
 

@@ -136,9 +136,7 @@ internal object CredentialConfigurationSupportedSerializer : KSerializer<Credent
         val additionalParameters = jsonObject.filterKeys { it !in knownJsonKeys }
 
         return CredentialConfigurationSupported(
-            format =
-                jsonObject[KEY_FORMAT]?.jsonPrimitive?.content
-                    ?: throw IllegalArgumentException("format is required"),
+            format = requiredJsonString(jsonObject, KEY_FORMAT),
             scope = jsonObject[KEY_SCOPE]?.jsonPrimitive?.content,
             cryptographicBindingMethodsSupported =
                 jsonObject[KEY_CRYPTO_BINDING]?.let {

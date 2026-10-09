@@ -16,10 +16,14 @@
 
 package com.sphereon.oauth2.server.authorization.impl.config
 
+import com.sphereon.oauth2.common.config.AuthorizationServerMode
 import com.sphereon.oauth2.common.config.OAuth2ServerInstanceConfig
+import com.sphereon.oauth2.common.config.OAuth2ServersConfig
 import com.sphereon.oauth2.common.config.isEnabled
+import com.sphereon.oauth2.server.authorization.signing.CapturedAsServerConfig
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -42,6 +46,17 @@ import kotlin.test.assertTrue
 class OAuth2ServersConfigBinderDiscoveryTest {
     private val prefix = OAuth2ServerInstanceConfig.CONFIG_PREFIX
 
+    private fun distinctIssuerHostedBinder() = newBinder(
+        mapOf(
+            "$prefix.default-server" to "primary",
+            "$prefix.primary.mode" to "HOSTED",
+            "$prefix.primary.issuer" to "https://as.example/primary",
+            "$prefix.hosted-slug.mode" to "HOSTED",
+            "$prefix.hosted-slug.issuer" to "https://as.example/tenant-a",
+        ),
+        normalizeKeys = true,
+    )
+
     @Test
     fun normalizedNonDefaultHostedSlugKeepsItsWholeConfiguration() {
         val binder = newBinder(mapOf(
@@ -56,6 +71,88 @@ class OAuth2ServersConfigBinderDiscoveryTest {
         assertEquals("https://tenant.example/as/wallet-proxy", binder.getServer("wallet-proxy")?.issuer)
         assertEquals(binder.getServer("wallet-proxy"), binder.getServer("wallet.proxy"))
         assertTrue(requireNotNull(binder.getServer("wallet-proxy")).oidc.isEnabled)
+    }
+
+    @Test
+    fun realBinderRootLookupResolvesUniqueNormalizedSlugWithDistinctIssuerPath() {
+        val binder = distinctIssuerHostedBinder()
+        val root = binder.getConfig()
+
+        assertEquals(setOf("primary", "hosted.slug"), root.servers.keys)
+        assertEquals("https://as.example/tenant-a", binder.getServer("hosted-slug")?.issuer)
+        val selectedFromRoot = assertNotNull(root.getServer("hosted-slug"))
+        assertEquals("https://as.example/tenant-a", selectedFromRoot.issuer)
+        assertEquals(binder.getServer("hosted-slug"), selectedFromRoot)
+    }
+
+    @Test
+    fun capturedSelectionUsesTheUniqueBoundRootKeyForDistinctIssuerPath() {
+        val binder = distinctIssuerHostedBinder()
+        val root = binder.getConfig()
+        assertEquals(setOf("primary", "hosted.slug"), root.servers.keys)
+        assertEquals("https://as.example/tenant-a", binder.getServer("hosted-slug")?.issuer)
+
+        val attempt = runCatching { CapturedAsServerConfig.select(root, "hosted-slug") }
+        assertTrue(attempt.isSuccess, "unique normalized hosted slug must bind to the captured root server")
+        val captured = attempt.getOrThrow()
+
+        assertEquals("hosted.slug", captured.serverKey)
+        assertEquals("https://as.example/tenant-a", captured.server?.issuer)
+        assertEquals(root.getServer("hosted-slug"), captured.server)
+    }
+
+    @Test
+    fun exactRootKeyWinsBeforeNormalizedAliasEvenWhenTheyCollide() {
+        val exact = OAuth2ServerInstanceConfig(mode = AuthorizationServerMode.HOSTED, issuer = "https://as.example/exact")
+        val other = OAuth2ServerInstanceConfig(mode = AuthorizationServerMode.HOSTED, issuer = "https://as.example/other")
+        val root = OAuth2ServersConfig(defaultServer = "hosted-slug", servers = mapOf("hosted-slug" to exact, "hosted.slug" to other))
+
+        val captured = CapturedAsServerConfig.select(root, "hosted-slug")
+
+        assertEquals(exact, root.getServer("hosted-slug"))
+        assertEquals("hosted-slug", captured.serverKey)
+        assertEquals(exact, captured.server)
+    }
+
+    @Test
+    fun ambiguousNonExactNormalizedAliasCannotSelectEitherHostedServer() {
+        val first = OAuth2ServerInstanceConfig(mode = AuthorizationServerMode.HOSTED, issuer = "https://as.example/first")
+        val second = OAuth2ServerInstanceConfig(mode = AuthorizationServerMode.HOSTED, issuer = "https://as.example/second")
+        val root = OAuth2ServersConfig(defaultServer = "hosted-slug", servers = mapOf("hosted-slug" to first, "hosted.slug" to second))
+
+        assertNull(root.getServer("hosted_slug"))
+        assertFailsWith<IllegalStateException> { CapturedAsServerConfig.select(root, "hosted_slug") }
+    }
+
+    @Test
+    fun uniqueNormalizedExternalAliasRemainsIneligibleForHostedCapture() {
+        val binder = newBinder(
+            mapOf(
+                "$prefix.default-server" to "primary",
+                "$prefix.primary.mode" to "HOSTED",
+                "$prefix.primary.issuer" to "https://as.example/primary",
+                "$prefix.hosted-slug.mode" to "EXTERNAL",
+                "$prefix.hosted-slug.issuer" to "https://as.example/tenant-a",
+            ),
+            normalizeKeys = true,
+        )
+        val root = binder.getConfig()
+        assertEquals(setOf("primary", "hosted.slug"), root.servers.keys)
+        assertEquals(AuthorizationServerMode.EXTERNAL, binder.getServer("hosted-slug")?.mode)
+        assertEquals(AuthorizationServerMode.EXTERNAL, root.getServer("hosted-slug")?.mode)
+
+        assertFailsWith<IllegalArgumentException> { CapturedAsServerConfig.select(root, "hosted-slug") }
+    }
+
+    @Test
+    fun configuredMissingBlankAndImplicitDefaultSelectionsStayFailClosed() {
+        val hosted = OAuth2ServerInstanceConfig(mode = AuthorizationServerMode.HOSTED, issuer = "https://as.example/exact")
+        val configured = OAuth2ServersConfig(defaultServer = "exact", servers = mapOf("exact" to hosted))
+        assertFailsWith<IllegalArgumentException> { CapturedAsServerConfig.select(configured, null) }
+        assertFailsWith<IllegalArgumentException> { CapturedAsServerConfig.select(configured, " ") }
+        assertFailsWith<IllegalStateException> { CapturedAsServerConfig.select(configured, "missing") }
+        val synthesized = OAuth2ServersConfig(explicitlyConfigured = false)
+        assertFailsWith<IllegalArgumentException> { CapturedAsServerConfig.select(synthesized, "default") }
     }
 
     @Test

@@ -36,6 +36,7 @@ import com.sphereon.data.store.credential.design.model.DesignBindingKey
 import com.sphereon.data.store.credential.design.model.ResolveCredentialDesignInput
 import com.sphereon.di.session.SessionScope
 import com.sphereon.oauth2.common.config.OAuth2ServersConfigProvider
+import com.sphereon.oauth2.server.authorization.signing.CapturedAsServerConfig
 import com.sphereon.openid.oid4vci.common.model.CredentialRequest
 import com.sphereon.openid.oid4vci.common.model.CredentialResponse
 import com.sphereon.openid.oid4vci.common.model.CredentialResponseItem
@@ -47,6 +48,7 @@ import com.sphereon.openid.oid4vci.issuer.attribute.CredentialAttributeContribut
 import com.sphereon.openid.oid4vci.issuer.authorization.Oid4vciAuthorizationGrant
 import com.sphereon.openid.oid4vci.issuer.authorization.Oid4vciAuthorizationPolicySnapshot
 import com.sphereon.openid.oid4vci.issuer.authorization.Oid4vciAuthorizationSelectionRequest
+import com.sphereon.openid.oid4vci.issuer.authorization.Oid4vciAuthorizationServerDeployment
 import com.sphereon.openid.oid4vci.issuer.authorization.Oid4vciAuthorizationServerSelection
 import com.sphereon.openid.oid4vci.issuer.authorization.Oid4vciCredentialAuthorizationSelection
 import com.sphereon.openid.oid4vci.issuer.authorization.Oid4vciIssuerAuthorizationPolicyProvider
@@ -1279,26 +1281,46 @@ class HandleCredentialRequestCommandImpl(
      * already enabled on the AS, or the deferred session lacks both a pipeline correlation id and
      * a session id). Centralising the bail-outs keeps the mint call site free of `return`s.
      */
-    private fun prepareDeferralTokenMintRequest(
+    private suspend fun prepareDeferralTokenMintRequest(
         session: IssuanceSession?,
-        @Suppress("UnusedParameter") transactionId: String,
+        transactionId: String,
         @Suppress("UnusedParameter") cnfJkt: String?,
     ): DeferralTokenMintRequest? {
-        val mint = mintDeferralScopedTokenCommand
-        val asConfig =
-            oauth2ConfigProvider
-                ?.serverConfig
-                ?.takeUnless { REFRESH_TOKEN_GRANT in it.grantTypesEnabled }
-        val correlationId = session?.lifecycleCorrelationId ?: session?.sessionId
-        return if (mint == null || asConfig == null || correlationId == null) {
-            null
+        val mint = mintDeferralScopedTokenCommand ?: return null
+        val provider = oauth2ConfigProvider ?: return null
+        val deferred = deferredStore.get(transactionId).getOrElse { return null } ?: return null
+        val persistedSession = session ?: sessionStore.get(deferred.issuanceSessionId).getOrElse { return null }
+        val identity = if (persistedSession == null) {
+            credentialRequestIdentityStore.get(deferred.issuanceSessionId).getOrElse { return null }
         } else {
-            DeferralTokenMintRequest(
-                mint = mint,
-                correlationId = correlationId,
-                ttlSeconds = resolveDeferralTokenTtlSeconds(),
-            )
+            null
         }
+        val snapshot = persistedSession?.authorizationPolicySnapshot ?: identity?.authorizationPolicySnapshot ?: return null
+        val issuerInstanceId = persistedSession?.instanceId ?: identity?.instanceId ?: return null
+        if (deferred.instanceId != issuerInstanceId || snapshot.issuerId.toString() != issuerInstanceId ||
+            snapshot.authorizationServerDeployment != Oid4vciAuthorizationServerDeployment.HOSTED
+        ) return null
+        val exactKey = snapshot.authorizationServerRuntimeKey ?: return null
+        if (snapshot.authorizationServerIssuer.isBlank()) return null
+        val captured = try {
+            CapturedAsServerConfig.select(provider.getConfig(), exactKey)
+        } catch (error: IllegalArgumentException) {
+            return null
+        } catch (error: IllegalStateException) {
+            return null
+        }
+        val selectedServer = captured.server ?: return null
+        if (selectedServer.issuer?.let { it != snapshot.authorizationServerIssuer } == true) return null
+        if (REFRESH_TOKEN_GRANT in selectedServer.grantTypesEnabled) return null
+        val correlationId = persistedSession?.lifecycleCorrelationId
+            ?: persistedSession?.sessionId
+            ?: identity?.protocolSessionId
+            ?: return null
+        return DeferralTokenMintRequest(
+            mint = mint,
+            correlationId = correlationId,
+            ttlSeconds = resolveDeferralTokenTtlSeconds(),
+        )
     }
 
     private data class DeferralTokenMintRequest(

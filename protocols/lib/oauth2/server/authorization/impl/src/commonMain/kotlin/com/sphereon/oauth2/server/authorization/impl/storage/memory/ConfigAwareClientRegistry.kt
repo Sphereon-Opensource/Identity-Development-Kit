@@ -24,6 +24,7 @@ import com.sphereon.core.api.conf.configContentRevision
 import com.sphereon.core.api.security.ConstantTime
 import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.di.session.SessionScope
+import com.sphereon.oauth2.server.authorization.provider.ExternalClientSource
 import com.sphereon.oauth2.common.config.ClientRegistrySourcePrecedence
 import com.sphereon.oauth2.common.config.OAuth2ServerInstanceIdProvider
 import com.sphereon.oauth2.common.config.OAuth2ServersConfig
@@ -74,6 +75,7 @@ class ConfigAwareClientRegistry(
     private val opaqueInternalClientSecretVerifier: OpaqueInternalClientSecretVerifier,
     private val clientRegistrationStore: ClientRegistrationStore,
     private val clientSecretHasher: ClientSecretHasher,
+    private val externalClientSources: Set<ExternalClientSource>,
     private val clock: Clock = Clock.System,
     private val configuredClientSetMemoizer: ConfiguredClientSetMemoizer = ConfiguredClientSetMemoizer(),
 ) : ClientRegistry {
@@ -298,15 +300,44 @@ class ConfigAwareClientRegistry(
         val stored = clientRegistrationStore.list(dynamicTenantId(), currentServerId(), limit = Int.MAX_VALUE)
         if (stored.isErr) return emptyMap()
         return stored.value
-            .filter { it.status == ClientRegistrationStatus.ACTIVE }
+            .filter { it.status == ClientRegistrationStatus.ACTIVE && !it.registration.isExpired() }
             .associate { it.clientId to it.toClientRegistration() }
     }
 
     /** Targeted dynamic lookup for the hot read path; avoids materializing the whole tenant set. */
-    private suspend fun dynamicClient(clientId: String): ClientRegistration? {
+    /**
+     * Asks every external source; a client that two sources both claim is ambiguous and is not resolved.
+     */
+    private suspend fun externalClient(clientId: String): IdkResult<ClientRegistration?, AuthorizationServerError.StorageError> {
+        var found: ClientRegistration? = null
+        for (source in externalClientSources) {
+            val resolved = source.resolve(clientId)
+            if (resolved.isErr) return Err(resolved.error)
+            val client = resolved.value ?: continue
+            if (client.clientId != clientId) {
+                return Err(AuthorizationServerError.StorageError("external-client-lookup", "Source returned a different client id"))
+            }
+            if (found != null) {
+                execution.log.warn("VDX_OAUTH2_CLIENT_REGISTRY_AMBIGUOUS_EXTERNAL_CLIENT clientId=$clientId")
+                return Ok(null)
+            }
+            found = client
+        }
+        return Ok(found)
+    }
+
+    private suspend fun dynamicClient(clientId: String): DurableClientLookup {
         val stored = clientRegistrationStore.findByClientId(dynamicTenantId(), currentServerId(), clientId)
-        if (stored.isErr || stored.value?.status != ClientRegistrationStatus.ACTIVE) return null
-        return stored.value!!.toClientRegistration()
+        if (stored.isErr) {
+            return DurableClientLookup.Failed(
+                AuthorizationServerError.StorageError("client-registration-lookup", "The client registration store could not be read"),
+            )
+        }
+        val record = stored.value ?: return DurableClientLookup.Absent
+        if (record.status != ClientRegistrationStatus.ACTIVE) return DurableClientLookup.Blocked
+        // An expired registration no longer admits the client, but it does not bar trust from being established again.
+        if (record.registration.isExpired()) return DurableClientLookup.Absent
+        return DurableClientLookup.Active(record.toClientRegistration())
     }
 
     /** Maps a durable record back onto the full registration model using config-binder defaults. */
@@ -326,11 +357,23 @@ class ConfigAwareClientRegistry(
             allowedAccessTokenAudiences = registration.allowedAccessTokenAudiences,
             principalRoles = registration.principalRoles,
             tokenEndpointAuthMethod = registration.tokenEndpointAuthMethod,
+            tokenEndpointAuthSigningAlg = registration.tokenEndpointAuthSigningAlg,
+            jwks = registration.jwks,
+            jwksUri = registration.jwksUri,
             requirePkce = registration.requirePkce ?: (registration.clientType == ClientType.PUBLIC),
+            requirePushedAuthorizationRequests = registration.requirePushedAuthorizationRequests,
             dpopBoundAccessTokens = registration.dpopBoundAccessTokens,
             accessTokenLifetime = registration.accessTokenLifetime,
+            idTokenSignedResponseAlg = registration.idTokenSignedResponseAlg,
+            requestObjectSigningAlg = registration.requestObjectSigningAlg,
+            requestUris = registration.requestUris,
+            postLogoutRedirectUris = registration.postLogoutRedirectUris,
             additionalMetadata = registration.metadata,
+            expiresAt = registration.expiresAt,
         )
+
+    private fun DynamicClientRegistrationMetadata.isExpired(): Boolean =
+        expiresAt?.let { it <= clock.now().epochSeconds } == true
 
     private suspend fun ClientRegistration.toStored(
         now: Instant,
@@ -353,10 +396,19 @@ class ConfigAwareClientRegistry(
             allowedAccessTokenAudiences = allowedAccessTokenAudiences,
             principalRoles = principalRoles,
             tokenEndpointAuthMethod = tokenEndpointAuthMethod,
+            tokenEndpointAuthSigningAlg = tokenEndpointAuthSigningAlg,
+            jwks = jwks,
+            jwksUri = jwksUri,
             requirePkce = requirePkce,
+            requirePushedAuthorizationRequests = requirePushedAuthorizationRequests,
             dpopBoundAccessTokens = dpopBoundAccessTokens,
             accessTokenLifetime = accessTokenLifetime,
+            idTokenSignedResponseAlg = idTokenSignedResponseAlg,
+            requestObjectSigningAlg = requestObjectSigningAlg,
+            requestUris = requestUris,
+            postLogoutRedirectUris = postLogoutRedirectUris,
             metadata = additionalMetadata.mapValues { (_, value) -> value.toString() },
+            expiresAt = expiresAt,
         )
         return StoredClientRegistration(
             tenantId = dynamicTenantId(),
@@ -382,6 +434,7 @@ class ConfigAwareClientRegistry(
                 opaqueInternalClients = configured.value.opaqueInternalClients,
                 opaqueInternalClientSecretVerifier = opaqueInternalClientSecretVerifier,
                 dynamicLookup = ::dynamicClient,
+                externalLookup = ::externalClient,
                 dynamicSecretVerifier = { clientId, secret ->
                     val stored =
                         clientRegistrationStore.findByClientId(dynamicTenantId(), configured.value.activeServerId, clientId)
@@ -732,6 +785,20 @@ class ConfiguredClientSetMemoizer {
     }
 }
 
+/** What the durable client store says about one client id. */
+private sealed interface DurableClientLookup {
+    /** An active, unexpired registration. */
+    data class Active(val registration: ClientRegistration) : DurableClientLookup
+
+    /** A stored registration that is revoked or suspended; the client is refused by every source. */
+    data object Blocked : DurableClientLookup
+
+    /** No stored registration, or an expired one. */
+    data object Absent : DurableClientLookup
+
+    data class Failed(val error: AuthorizationServerError.StorageError) : DurableClientLookup
+}
+
 private class ConfigAwareClientRegistryRequestView(
     private val owner: ClientRegistry,
     private val configuredClients: Map<String, ClientRegistration>,
@@ -739,23 +806,37 @@ private class ConfigAwareClientRegistryRequestView(
     private val sourcePrecedence: ClientRegistrySourcePrecedence,
     private val opaqueInternalClients: Map<String, OpaqueInternalClientRegistration>,
     private val opaqueInternalClientSecretVerifier: OpaqueInternalClientSecretVerifier,
-    private val dynamicLookup: suspend (String) -> ClientRegistration?,
+    private val dynamicLookup: suspend (String) -> DurableClientLookup,
+    private val externalLookup: suspend (String) -> IdkResult<ClientRegistration?, AuthorizationServerError.StorageError>,
     private val dynamicSecretVerifier: suspend (String, String) -> DurableClientSecretVerification,
     private val shadowedConfiguredClientWarner: suspend (String) -> Unit,
 ) : ClientRegistry by owner {
-    override suspend fun getClient(clientId: String): IdkResult<ClientRegistration?, AuthorizationServerError.StorageError> =
-        Ok(
+    override suspend fun getClient(clientId: String): IdkResult<ClientRegistration?, AuthorizationServerError.StorageError> {
+        var durable: DurableClientLookup? = null
+        suspend fun durable(): DurableClientLookup = durable ?: dynamicLookup(clientId).also { durable = it }
+        val registered =
             when (sourcePrecedence) {
-                ClientRegistrySourcePrecedence.PERSISTENCE_PRIMARY ->
-                    dynamicLookup(clientId)
+                ClientRegistrySourcePrecedence.PERSISTENCE_PRIMARY -> {
+                    val stored = durable()
+                    if (stored is DurableClientLookup.Failed) return Err(stored.error)
+                    (stored as? DurableClientLookup.Active)?.registration
                         ?.also { if (configuredClients.containsKey(clientId)) shadowedConfiguredClientWarner(clientId) }
                         ?: localClients[clientId]
                         ?: configuredClients[clientId]
+                }
 
                 ClientRegistrySourcePrecedence.CONFIGURATION_PRIMARY ->
-                    configuredClients[clientId] ?: localClients[clientId] ?: dynamicLookup(clientId)
-            },
-        )
+                    configuredClients[clientId] ?: localClients[clientId] ?: run {
+                        val stored = durable()
+                        if (stored is DurableClientLookup.Failed) return Err(stored.error)
+                        (stored as? DurableClientLookup.Active)?.registration
+                    }
+            }
+        if (registered != null) return Ok(registered)
+        // A revoked or suspended registration stops the client: no external source may admit it again.
+        if (durable() == DurableClientLookup.Blocked) return Ok(null)
+        return externalLookup(clientId)
+    }
 
     override suspend fun verifyClientCredentials(
         clientId: String,

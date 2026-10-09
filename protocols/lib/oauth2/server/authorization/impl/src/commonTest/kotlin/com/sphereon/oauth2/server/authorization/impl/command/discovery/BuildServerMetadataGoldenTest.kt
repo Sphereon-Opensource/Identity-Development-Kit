@@ -20,7 +20,6 @@ import com.sphereon.crypto.core.KeyInfo
 import com.sphereon.crypto.core.KeyType
 import com.sphereon.crypto.core.generic.SignatureAlgorithm
 import com.sphereon.crypto.core.jose.JwkUse
-import com.sphereon.crypto.resolution.managed.ManagedOptsAlias
 import com.sphereon.crypto.resolution.managed.ManagedOptsKeyInfo
 import com.sphereon.oauth2.common.config.FeaturePolicy
 import com.sphereon.oauth2.common.config.OAuth2ServerInstanceConfig
@@ -30,6 +29,7 @@ import com.sphereon.oauth2.server.authorization.command.BuildServerMetadataArgs
 import com.sphereon.oauth2.server.authorization.impl.testutil.OAuth2ServerTestContext
 import com.sphereon.oauth2.server.authorization.impl.testutil.TestOAuth2ServersConfigProvider
 import com.sphereon.oauth2.server.authorization.impl.testutil.fixedSigningIdentifierResolver
+import com.sphereon.oauth2.server.authorization.impl.testutil.fixedAsInstanceIdProvider
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -51,6 +51,10 @@ import kotlin.test.assertTrue
  */
 class BuildServerMetadataGoldenTest {
     private val ctx = OAuth2ServerTestContext("discovery-golden-test", this)
+
+    private fun publicEs256Descriptor() = ManagedOptsKeyInfo(
+        identifier = KeyInfo<KeyType>(alias = "oidf-basic-es256", kid = "oidf-basic-es256", signatureAlgorithm = SignatureAlgorithm.ECDSA_SHA256),
+    )
 
     private fun oidfBasicConfig(): OAuth2ServerInstanceConfig =
         OAuth2ServerInstanceConfig(
@@ -81,8 +85,8 @@ class BuildServerMetadataGoldenTest {
                 BuildServerMetadataCommandImpl(
                     execution = ctx.execution,
                     configProvider = provider,
-                    signingIdentifierResolver = fixedSigningIdentifierResolver(),
-                    identifierService = ctx.identifierService,
+                    asInstanceIdProvider = fixedAsInstanceIdProvider(),
+                    signingIdentifierResolver = fixedSigningIdentifierResolver(publicEs256Descriptor()),
             grantHandlers = emptyMap(),
                     kmsProviderRegistry = ctx.kmsProviderRegistry,
                     buildSignedMetadata =
@@ -142,8 +146,8 @@ class BuildServerMetadataGoldenTest {
                 BuildServerMetadataCommandImpl(
                     execution = ctx.execution,
                     configProvider = provider,
-                    signingIdentifierResolver = fixedSigningIdentifierResolver(),
-                    identifierService = ctx.identifierService,
+                    asInstanceIdProvider = fixedAsInstanceIdProvider(),
+                    signingIdentifierResolver = fixedSigningIdentifierResolver(publicEs256Descriptor()),
             grantHandlers = emptyMap(),
                     kmsProviderRegistry = ctx.kmsProviderRegistry,
                     buildSignedMetadata =
@@ -165,8 +169,8 @@ class BuildServerMetadataGoldenTest {
                 BuildServerMetadataCommandImpl(
                     execution = ctx.execution,
                     configProvider = provider,
-                    signingIdentifierResolver = fixedSigningIdentifierResolver(),
-                    identifierService = ctx.identifierService,
+                    asInstanceIdProvider = fixedAsInstanceIdProvider(),
+                    signingIdentifierResolver = fixedSigningIdentifierResolver(publicEs256Descriptor()),
             grantHandlers = emptyMap(),
                     kmsProviderRegistry = ctx.kmsProviderRegistry,
                     buildSignedMetadata =
@@ -203,6 +207,7 @@ class BuildServerMetadataGoldenTest {
                 genResult.isOk,
                 "RSA test key must be provisioned: ${if (genResult.isErr) genResult.error.message.defaultMessage else ""}",
             )
+            val registeredReference = requireNotNull(genResult.value.keyReference)
 
             val rsaConfig =
                 oidfBasicConfig().copy(
@@ -217,8 +222,15 @@ class BuildServerMetadataGoldenTest {
                 BuildServerMetadataCommandImpl(
                     execution = ctx.execution,
                     configProvider = provider,
-                    signingIdentifierResolver = fixedSigningIdentifierResolver(ManagedOptsAlias(identifier = alias)),
-                    identifierService = ctx.identifierService,
+                    asInstanceIdProvider = fixedAsInstanceIdProvider(),
+                    signingIdentifierResolver = fixedSigningIdentifierResolver(
+                        ManagedOptsKeyInfo(identifier = KeyInfo<KeyType>(
+                            alias = registeredReference.alias,
+                            kid = registeredReference.kid,
+                            providerId = registeredReference.providerId,
+                            signatureAlgorithm = requireNotNull(registeredReference.signatureAlgorithm),
+                        )),
+                    ),
             grantHandlers = emptyMap(),
                     kmsProviderRegistry = ctx.kmsProviderRegistry,
                     buildSignedMetadata =
@@ -283,6 +295,7 @@ class BuildServerMetadataGoldenTest {
                 BuildServerMetadataCommandImpl(
                     execution = ctx.execution,
                     configProvider = provider,
+                    asInstanceIdProvider = fixedAsInstanceIdProvider(),
                     signingIdentifierResolver =
                         fixedSigningIdentifierResolver(
                             ManagedOptsKeyInfo(
@@ -295,7 +308,6 @@ class BuildServerMetadataGoldenTest {
                                     ),
                             ),
                         ),
-                    identifierService = ctx.identifierService,
             grantHandlers = emptyMap(),
                     kmsProviderRegistry = ctx.kmsProviderRegistry,
                     buildSignedMetadata =

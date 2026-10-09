@@ -24,6 +24,7 @@ import com.sphereon.core.api.events.EventSubsystem
 import com.sphereon.core.api.events.EventSubsystems
 import com.sphereon.core.api.service.ServiceCommand
 import com.sphereon.core.api.service.SessionScopedCommandRegistry
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -31,6 +32,7 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
+import kotlin.test.assertFailsWith
 
 class CommandInvokerTest {
     @Suppress("UNCHECKED_CAST")
@@ -198,6 +200,39 @@ class CommandInvokerTest {
                     .contains("core.test.execute"),
             )
         }
+
+    @Test
+    fun executeRethrowsTheInjectedCancellationFromTheRealInvoker() = runTest {
+        val cancellation = CancellationException("observer child cancelled")
+        val command = TestServiceCommand(
+            commandId = "core.test.observation",
+            executeException = cancellation,
+        )
+        val invoker = SessionScopeCommandInvoker(FakeRegistry(mapOf(command.commandId to command)))
+
+        val escaped = assertFailsWith<CancellationException> {
+            invoker.execute(command, "args")
+        }
+
+        assertSame(cancellation, escaped)
+        assertEquals(1, command.executeCalled)
+    }
+
+    @Test
+    fun executeStillMapsAnOrdinaryObserverExceptionToControlledError() = runTest {
+        val failure = IllegalStateException("observer failed")
+        val command = TestServiceCommand(
+            commandId = "core.test.observation",
+            executeException = failure,
+        )
+        val invoker = SessionScopeCommandInvoker(FakeRegistry(mapOf(command.commandId to command)))
+
+        val result = invoker.execute(command, "args")
+
+        assertTrue(result.isErr)
+        assertEquals("UNKNOWN_ERROR", result.error.code)
+        assertSame(failure, result.error.exception)
+    }
 
     // ========== has / listCommandIds tests ==========
 

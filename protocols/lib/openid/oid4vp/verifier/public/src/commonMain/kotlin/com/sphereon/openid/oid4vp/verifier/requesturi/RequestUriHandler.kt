@@ -207,6 +207,39 @@ sealed class VerifierSignerBinding {
         override val scheme: ClientIdScheme = ClientIdScheme.X509_HASH
         override val bareIdentifier: String = certificateHash
     }
+
+    /**
+     * §5.9.3 `openid_federation`: the original identifier is the verifier's OpenID Federation Entity Identifier. The
+     * wallet resolves the verifier's metadata from a Trust Chain and verifies the request with a key from the `jwks`
+     * of the resolved `openid_credential_verifier` metadata, so the JAR names that key with JOSE `kid`. The key is the
+     * verifier's request-object signing key, never a Federation Entity Key.
+     *
+     * @param entityIdentifier the verifier's Entity Identifier, an https URL without query or fragment
+     * @param kid the `kid` under which the request-object signing key is published in that metadata
+     */
+    data class Federation(
+        val entityIdentifier: String,
+        val kid: String,
+    ) : VerifierSignerBinding() {
+        init {
+            require(isFederationEntityIdentifier(entityIdentifier)) {
+                "An OpenID Federation Entity Identifier is an https URL with a host and no query or fragment (got '$entityIdentifier')"
+            }
+            require(kid.isNotBlank()) { "The request-object signing key needs a kid" }
+        }
+
+        override val clientId: String = "${ClientIdScheme.OPENID_FEDERATION.prefix}:$entityIdentifier"
+        override val scheme: ClientIdScheme = ClientIdScheme.OPENID_FEDERATION
+        override val bareIdentifier: String = entityIdentifier
+    }
+}
+
+/** OpenID Federation 1.1 §1.2: an Entity Identifier is an https URL with a host, optional port and path, and no query or fragment. */
+fun isFederationEntityIdentifier(value: String): Boolean {
+    if (!value.startsWith("https://") || '?' in value || '#' in value || value.any { it.isWhitespace() }) return false
+    val authority = value.removePrefix("https://").substringBefore('/')
+    val host = authority.substringBefore(':')
+    return host.isNotEmpty() && !host.contains('@')
 }
 
 @OptIn(ExperimentalObjCName::class)

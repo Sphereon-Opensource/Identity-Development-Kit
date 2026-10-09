@@ -52,6 +52,9 @@ import com.sphereon.oauth2.server.authorization.model.ClientRegistration
 import com.sphereon.oauth2.server.authorization.model.ClientType
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
+import com.sphereon.oauth2.server.authorization.impl.storage.memory.InMemoryClientAssertionJtiStore
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
@@ -108,8 +111,11 @@ class VerifyRequestObjectKeySelectionTest {
             verifyJwsCommand = verifyJwsCommand,
             fetchRequestUriCommand = FailingFetchRequestUriCommand(ctx.execution),
             serversConfigProvider = TestOAuth2ServersConfigProvider(servers),
+            jtiStore = lazy { jtiStore },
         )
     }
+
+    private val jtiStore = InMemoryClientAssertionJtiStore()
 
     private fun client(
         jwks: List<Jwk>? = null,
@@ -134,6 +140,8 @@ class VerifyRequestObjectKeySelectionTest {
     private suspend fun mintJar(
         includeKid: Boolean = true,
         nowSeconds: Long = Clock.System.now().epochSeconds,
+        extraClaims: Map<String, JsonPrimitive> = emptyMap(),
+        audience: JsonElement = JsonPrimitive(ISSUER),
     ): SignedJar {
         val managedKeyPair = ctx.keyManagerService.generateKeyAsync(alg = SignatureAlgorithm.ECDSA_SHA256)
         val keyInfo: ManagedKeyInfoType<*> = managedKeyPair.joseToManagedKeyInfo(KeyVisibility.PRIVATE)
@@ -148,11 +156,12 @@ class VerifyRequestObjectKeySelectionTest {
         // issuer context, aud/exp/iat are valid for the AS issuer.
         val payload =
             buildJsonObject {
-                put("aud", JsonPrimitive(ISSUER))
+                put("aud", audience)
                 put("exp", JsonPrimitive(nowSeconds + 600))
                 put("iat", JsonPrimitive(nowSeconds))
                 put("response_type", JsonPrimitive("code"))
                 put("scope", JsonPrimitive("openid"))
+                extraClaims.forEach { (name, value) -> put(name, value) }
             }
 
         val opts =
@@ -202,6 +211,37 @@ class VerifyRequestObjectKeySelectionTest {
         )
 
     private fun errorCode(result: IdkResult<*, *>): String? = if (result.isErr) (result.error as? IdkError)?.code else null
+
+    // ─── Single-use Request Objects ─────────────────────────────────────────────────────────────
+
+    @Test
+    fun singleUseRequestObjectsRequireAFreshJtiNoSubAndOnlyThisAudience() =
+        runTest {
+            suspend fun verify(jar: SignedJar) =
+                createCommand(client(jwks = listOf(jar.publicJwk)).copy(singleUseRequestObjects = true)).execute(argsFor(jar.jwt))
+
+            val once = mintJar(extraClaims = mapOf("jti" to JsonPrimitive("jar-1")))
+            assertTrue(verify(once).isOk, "a fresh jti must verify")
+            assertEquals(INVALID_REQUEST_OBJECT_CODE, errorCode(verify(once)), "a replayed jti must be refused")
+
+            assertEquals(INVALID_REQUEST_OBJECT_CODE, errorCode(verify(mintJar())), "a missing jti must be refused")
+            assertEquals(
+                INVALID_REQUEST_OBJECT_CODE,
+                errorCode(verify(mintJar(extraClaims = mapOf("jti" to JsonPrimitive("jar-2"), "sub" to JsonPrimitive(CLIENT_ID))))),
+                "sub must be refused",
+            )
+            val twoAudiences = JsonArray(listOf(JsonPrimitive(ISSUER), JsonPrimitive("https://other.example.com")))
+            assertEquals(
+                INVALID_REQUEST_OBJECT_CODE,
+                errorCode(verify(mintJar(extraClaims = mapOf("jti" to JsonPrimitive("jar-3")), audience = twoAudiences))),
+                "a second audience must be refused",
+            )
+
+            val ordinary = mintJar(extraClaims = mapOf("jti" to JsonPrimitive("jar-4")))
+            val regular = createCommand(client(jwks = listOf(ordinary.publicJwk)))
+            assertTrue(regular.execute(argsFor(ordinary.jwt)).isOk)
+            assertTrue(regular.execute(argsFor(ordinary.jwt)).isOk, "other clients keep their existing rules")
+        }
 
     // ─── Case A: pinned (inline jwks) mode unchanged ──────────────────────────────────────────
 

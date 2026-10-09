@@ -87,6 +87,8 @@ data class TrustValidationResult(
     val validationPath: List<String> = emptyList(),
     val details: String? = null,
     val validatedAt: Instant? = null,
+    /** Earliest verified statement expiry on the accepted chain, when the mechanism supplies one. */
+    val expiresAt: Instant? = null,
     val discoveredEntities: List<DiscoveredEntityInfo> = emptyList(),
     /**
      * Ordered hops from leaf to anchor. Absent means the mechanism produced no chain.

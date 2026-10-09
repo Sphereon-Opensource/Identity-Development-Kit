@@ -20,11 +20,16 @@ import com.sphereon.core.api.service.TypedServiceCommandAdapter
 import com.sphereon.crypto.jose.jws.JwtCompactResult
 import com.sphereon.crypto.jose.jws.command.CreateJwsArgs
 import com.sphereon.crypto.jose.jws.command.CreateJwsCompactCommand
+import com.sphereon.crypto.core.KeyInfo
+import com.sphereon.crypto.core.KeyType
+import com.sphereon.crypto.core.generic.SignatureAlgorithm
 import com.sphereon.crypto.resolution.managed.ManagedOptsAlias
+import com.sphereon.crypto.resolution.managed.ManagedOptsKeyInfo
 import com.sphereon.oauth2.common.config.FeaturePolicy
 import com.sphereon.oauth2.common.config.OAuth2ServerInstanceConfig
 import com.sphereon.oauth2.common.config.OAuth2ServersConfig
 import com.sphereon.oauth2.common.config.OAuth2ServersConfigProvider
+import com.sphereon.oauth2.common.config.TokenFormat
 import com.sphereon.oauth2.common.model.AuthorizationServerMetadata
 import com.sphereon.oauth2.server.authorization.command.BuildServerMetadataArgs
 import com.sphereon.oauth2.server.authorization.command.BuildSignedAuthorizationServerMetadataArgs
@@ -32,6 +37,7 @@ import com.sphereon.oauth2.server.authorization.command.BuildSignedAuthorization
 import com.sphereon.oauth2.server.authorization.impl.testutil.OAuth2ServerTestContext
 import com.sphereon.oauth2.server.authorization.impl.testutil.TestOAuth2ServersConfigProvider
 import com.sphereon.oauth2.server.authorization.impl.testutil.fixedSigningIdentifierResolver
+import com.sphereon.oauth2.server.authorization.impl.testutil.fixedAsInstanceIdProvider
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -66,7 +72,7 @@ class SignedMetadataIntegrationTest {
             // SUPPORTED + no signing key configured → degrade gracefully (no signed_metadata)
             // rather than fail the discovery response. Pinned RPs would notice the missing
             // member and refuse; non-pinned RPs continue to work.
-            val config = OAuth2ServerInstanceConfig(issuer = "https://as.example.com", signedMetadata = FeaturePolicy.SUPPORTED)
+            val config = OAuth2ServerInstanceConfig(issuer = "https://as.example.com", signedMetadata = FeaturePolicy.SUPPORTED, tokenFormat = TokenFormat.OPAQUE)
             val command = newCommand(config = config, signingKeyAlias = null)
             val result = command.execute(BuildServerMetadataArgs())
             assertTrue(result.isOk, "no signing key + SUPPORTED must NOT fail the response")
@@ -97,6 +103,86 @@ class SignedMetadataIntegrationTest {
                 )
             val result = command.execute(BuildServerMetadataArgs())
             assertTrue(result.isErr, "REQUIRED + signing failure must surface as an error")
+        }
+
+    @Test
+    fun requiredMetadataSignsByDefaultWhenSignerIsAvailable() =
+        runTest {
+            val signer = CapturingSignedMetadataStub()
+            val command = newCommand(
+                config = OAuth2ServerInstanceConfig(
+                    issuer = "https://as.example.com",
+                    signedMetadata = FeaturePolicy.REQUIRED,
+                ),
+                signingKeyAlias = "active-key",
+                signCommand = signer,
+            )
+
+            val result = command.execute(BuildServerMetadataArgs())
+
+            assertTrue(result.isOk, "the default discovery request must reach the configured signer")
+            assertEquals("https://as.example.com", result.value.issuer)
+            assertEquals("https://as.example.com/token", result.value.tokenEndpoint)
+            assertEquals("https://as.example.com/authorize", result.value.authorizationEndpoint)
+            assertEquals("captured.signed.jwt", result.value.signedMetadata)
+            assertNotNull(signer.lastCalledArgs, "default REQUIRED discovery must enter the signer")
+        }
+
+    @Test
+    fun explicitUnsignedMetadataSkipsSignerUnderSupportedPolicy() =
+        runTest {
+            val signer = CapturingSignedMetadataStub()
+            val command = newCommand(
+                config = OAuth2ServerInstanceConfig(
+                    issuer = "https://as.example.com",
+                    signedMetadata = FeaturePolicy.SUPPORTED,
+                ),
+                signingKeyAlias = "active-key",
+                signCommand = signer,
+            )
+
+            val result = command.execute(BuildServerMetadataArgs(includeSignedMetadata = false))
+
+            assertTrue(result.isOk, "explicit unsigned discovery must succeed under SUPPORTED")
+            assertEquals("https://as.example.com", result.value.issuer)
+            assertEquals("https://as.example.com/token", result.value.tokenEndpoint)
+            assertEquals("https://as.example.com/authorize", result.value.authorizationEndpoint)
+            assertNull(result.value.signedMetadata)
+            assertNull(signer.lastCalledArgs, "explicit unsigned discovery must not enter the signer")
+        }
+
+    @Test
+    fun explicitUnsignedMetadataSkipsSignerUnderRequiredPolicy() =
+        runTest {
+            val signer = CapturingSignedMetadataStub()
+            val requiredConfig = OAuth2ServerInstanceConfig(
+                issuer = "https://as.example.com",
+                signedMetadata = FeaturePolicy.REQUIRED,
+            )
+            val command = newCommand(
+                config = requiredConfig,
+                signingKeyAlias = "active-key",
+                signCommand = signer,
+            )
+
+            val result = command.execute(BuildServerMetadataArgs(includeSignedMetadata = false))
+
+            assertTrue(result.isOk, "explicit unsigned discovery must succeed under REQUIRED")
+            assertEquals("https://as.example.com", result.value.issuer)
+            assertEquals("https://as.example.com/token", result.value.tokenEndpoint)
+            assertEquals("https://as.example.com/authorize", result.value.authorizationEndpoint)
+            assertNull(result.value.signedMetadata)
+            assertNull(signer.lastCalledArgs, "explicit unsigned discovery must not enter the signer")
+
+            val supportedSigner = CapturingSignedMetadataStub()
+            val supported = newCommand(
+                config = requiredConfig.copy(signedMetadata = FeaturePolicy.SUPPORTED),
+                signingKeyAlias = "active-key",
+                signCommand = supportedSigner,
+            ).execute(BuildServerMetadataArgs(includeSignedMetadata = false))
+            assertTrue(supported.isOk)
+            assertEquals(supported.value, result.value, "selection should yield the same unsigned metadata under either policy")
+            assertNull(supportedSigner.lastCalledArgs)
         }
 
     @Test
@@ -182,8 +268,12 @@ class SignedMetadataIntegrationTest {
         return BuildServerMetadataCommandImpl(
             execution = ctx.execution,
             configProvider = provider,
-            signingIdentifierResolver = fixedSigningIdentifierResolver(signingKeyAlias?.let { ManagedOptsAlias(identifier = it) }),
-            identifierService = ctx.identifierService,
+            asInstanceIdProvider = fixedAsInstanceIdProvider(),
+            signingIdentifierResolver = fixedSigningIdentifierResolver(signingKeyAlias?.let {
+                ManagedOptsKeyInfo(identifier = KeyInfo<KeyType>(
+                    alias = it, kid = it, signatureAlgorithm = SignatureAlgorithm.RSA_SHA256,
+                ))
+            }),
             grantHandlers = emptyMap(),
             kmsProviderRegistry = ctx.kmsProviderRegistry,
             buildSignedMetadata = signCommand,

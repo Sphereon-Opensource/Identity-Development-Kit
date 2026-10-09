@@ -29,6 +29,7 @@ import com.sphereon.crypto.core.jose.Jwk
 import com.sphereon.crypto.resolution.managed.ManagedOptsJwk
 import com.sphereon.di.session.SessionScope
 import com.sphereon.oauth2.common.config.OAuth2ServersConfigProvider
+import com.sphereon.oauth2.common.config.OAuth2ServerInstanceIdProvider
 import com.sphereon.oauth2.common.config.isEnabled
 import com.sphereon.oauth2.common.jarm.CreateJarmResponseArgs
 import com.sphereon.oauth2.common.jarm.CreateJarmResponseCommand
@@ -41,6 +42,8 @@ import com.sphereon.oauth2.server.authorization.command.CreateAuthorizationRespo
 import com.sphereon.oauth2.server.authorization.error.AuthorizationServerError
 import com.sphereon.oauth2.server.authorization.model.ClientRegistration
 import com.sphereon.oauth2.server.authorization.signing.AsServerSigningIdentifierResolver
+import com.sphereon.oauth2.server.authorization.signing.AsSigningRequirement
+import com.sphereon.oauth2.server.authorization.signing.CapturedAsServerConfig
 import com.sphereon.oauth2.server.authorization.storage.ClientRegistry
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.Named
@@ -89,6 +92,7 @@ import kotlin.native.ObjCName
 class CreateAuthorizationResponseCommandImpl(
     execution: SessionExecution,
     private val configProvider: OAuth2ServersConfigProvider,
+    private val asInstanceIdProvider: OAuth2ServerInstanceIdProvider,
     private val clientRegistry: ClientRegistry,
     private val createJarmResponse: CreateJarmResponseCommand,
     private val signingIdentifierResolver: AsServerSigningIdentifierResolver,
@@ -112,6 +116,17 @@ class CreateAuthorizationResponseCommandImpl(
     }
 
     private suspend fun executeInternal(args: CreateAuthorizationResponseArgs): IdkResult<AuthorizationResponseData, AuthorizationServerError> {
+        val root = configProvider.getConfig()
+        val captured =
+            try {
+                CapturedAsServerConfig.select(root, asInstanceIdProvider.currentAsInstanceId())
+            } catch (expected: IllegalArgumentException) {
+                return Err(AuthorizationServerError.InvalidRequest(details = expected.message ?: "Invalid authorization server selection"))
+            } catch (expected: IllegalStateException) {
+                return Err(AuthorizationServerError.InvalidRequest(details = expected.message ?: "Authorization server selection failed"))
+            }
+        val config = captured.server
+            ?: return Err(AuthorizationServerError.InvalidRequest(details = "No hosted authorization server is configured"))
         val parameters = linkedMapOf("code" to args.code)
         args.state?.let { parameters["state"] = it }
         // OIDC Core §3.3 Hybrid Flow — front-channel id_token / access_token ride alongside
@@ -126,13 +141,13 @@ class CreateAuthorizationResponseCommandImpl(
         // RFC 9207 OAuth 2.0 Authorization Server Issuer Identification: include `iss` in the
         // authorization response so the client can detect mix-up attacks where an auth code
         // from one AS is replayed at another. FAPI2-SP §5.3.2.2-7 and HAIP both require this.
-        val configuredIssuer = args.baseUrlOverride?.takeIf { it.isNotBlank() } ?: configProvider.serverConfig.issuer
+        val configuredIssuer = args.baseUrlOverride?.takeIf { it.isNotBlank() } ?: config.issuer
         if (configuredIssuer != null) {
             parameters["iss"] = configuredIssuer
         }
 
         if (args.responseMode.isJarm) {
-            return shapeJarmResponse(args, parameters)
+            return shapeJarmResponse(args, parameters, captured)
         }
 
         val (finalRedirectLocation: String, formPostHtml: String?) =
@@ -156,8 +171,9 @@ class CreateAuthorizationResponseCommandImpl(
     private suspend fun shapeJarmResponse(
         args: CreateAuthorizationResponseArgs,
         parameters: Map<String, String>,
+        captured: CapturedAsServerConfig,
     ): IdkResult<AuthorizationResponseData, AuthorizationServerError> {
-        val config = configProvider.serverConfig
+        val config = checkNotNull(captured.server)
         if (!config.jarm.isEnabled) {
             return Err(
                 AuthorizationServerError.InvalidRequest(
@@ -205,7 +221,9 @@ class CreateAuthorizationResponseCommandImpl(
                 null
             } else {
                 try {
-                    signingIdentifierResolver.resolveSigningIdentifier(signingAlg)
+                    signingIdentifierResolver.selectSigning(captured, AsSigningRequirement.REQUIRED, signingAlg).identifier
+                } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                    throw cancelled
                 } catch (expected: Exception) {
                     return Err(
                         AuthorizationServerError.ServerError(

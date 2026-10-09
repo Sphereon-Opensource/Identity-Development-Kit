@@ -8,6 +8,7 @@ package com.sphereon.oauth2.common.model
 
 import com.sphereon.core.idn.Idna
 import kotlinx.serialization.Serializable
+import kotlin.jvm.JvmInline
 
 /**
  * Canonical issuer URI shared by authorization-server resources and JWT validation.

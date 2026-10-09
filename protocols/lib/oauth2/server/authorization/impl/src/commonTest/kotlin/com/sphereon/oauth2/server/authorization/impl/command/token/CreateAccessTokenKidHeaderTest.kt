@@ -51,6 +51,7 @@ import com.sphereon.oauth2.server.authorization.impl.storage.memory.InMemoryToke
 import com.sphereon.oauth2.server.authorization.impl.testutil.OAuth2ServerTestContext
 import com.sphereon.oauth2.server.authorization.impl.testutil.TestOAuth2ServersConfigProvider
 import com.sphereon.oauth2.server.authorization.impl.testutil.fixedSigningIdentifierResolver
+import com.sphereon.oauth2.server.authorization.impl.testutil.fixedAsInstanceIdProvider
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -90,6 +91,7 @@ class CreateAccessTokenKidHeaderTest {
                     tokenStorage = InMemoryTokenStorageImpl(InMemoryOAuth2BackingStorageImpl()),
                     secureRandom = defaultSecureRandom(),
                     configProvider = configProvider,
+                    asInstanceIdProvider = fixedAsInstanceIdProvider(),
                     signingIdentifierResolver =
                         fixedSigningIdentifierResolver(
                             ManagedOptsKeyInfo(
@@ -138,6 +140,7 @@ class CreateAccessTokenKidHeaderTest {
                     tokenStorage = InMemoryTokenStorageImpl(InMemoryOAuth2BackingStorageImpl()),
                     secureRandom = defaultSecureRandom(),
                     configProvider = configProvider,
+                    asInstanceIdProvider = fixedAsInstanceIdProvider(),
                     signingIdentifierResolver =
                         fixedSigningIdentifierResolver(
                             ManagedOptsKeyInfo(
@@ -195,6 +198,7 @@ class CreateAccessTokenKidHeaderTest {
                     tokenStorage = tokenStorage,
                     secureRandom = defaultSecureRandom(),
                     configProvider = configProvider,
+                    asInstanceIdProvider = fixedAsInstanceIdProvider(),
                     signingIdentifierResolver =
                         fixedSigningIdentifierResolver(
                             ManagedOptsKeyInfo(

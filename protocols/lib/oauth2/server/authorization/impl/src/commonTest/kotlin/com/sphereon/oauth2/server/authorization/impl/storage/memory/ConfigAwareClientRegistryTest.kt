@@ -18,6 +18,9 @@ package com.sphereon.oauth2.server.authorization.impl.storage.memory
 
 import com.sphereon.core.api.Err
 import com.sphereon.core.api.Ok
+import com.sphereon.oauth2.server.authorization.provider.ExternalClientSource
+import com.sphereon.oauth2.server.authorization.error.AuthorizationServerError
+import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.conf.OpaqueSecretResolver
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.log.LogLevel
@@ -325,6 +328,7 @@ class ConfigAwareClientRegistryTest {
                     opaqueInternalClientSecretVerifier = DefaultOpaqueInternalClientSecretVerifier(secrets),
                     clientRegistrationStore = InMemoryClientRegistrationStore(),
                     clientSecretHasher = ClientSecretHasher(defaultSecureRandom()),
+                    externalClientSources = emptySet(),
                 )
 
             val operator = assertNotNull(registry.getClient("operator-cli").value)
@@ -396,6 +400,7 @@ class ConfigAwareClientRegistryTest {
                     opaqueInternalClientSecretVerifier = DefaultOpaqueInternalClientSecretVerifier(secrets),
                     clientRegistrationStore = InMemoryClientRegistrationStore(),
                     clientSecretHasher = ClientSecretHasher(defaultSecureRandom()),
+                    externalClientSources = emptySet(),
                 )
             }
 
@@ -459,6 +464,7 @@ class ConfigAwareClientRegistryTest {
                     opaqueInternalClientSecretVerifier = DefaultOpaqueInternalClientSecretVerifier(secrets),
                     clientRegistrationStore = InMemoryClientRegistrationStore(),
                     clientSecretHasher = ClientSecretHasher(defaultSecureRandom()),
+                    externalClientSources = emptySet(),
                 )
 
             val viewResult = registry.resolveClientRegistryRequestView()
@@ -508,6 +514,7 @@ class ConfigAwareClientRegistryTest {
                         ),
                     clientRegistrationStore = InMemoryClientRegistrationStore(),
                     clientSecretHasher = ClientSecretHasher(defaultSecureRandom()),
+                    externalClientSources = emptySet(),
                 )
 
             val clientId = "tenant-as-service:$tenantId"
@@ -574,6 +581,7 @@ class ConfigAwareClientRegistryTest {
                     opaqueInternalClientSecretVerifier = DefaultOpaqueInternalClientSecretVerifier(secrets),
                     clientRegistrationStore = InMemoryClientRegistrationStore(),
                     clientSecretHasher = ClientSecretHasher(defaultSecureRandom()),
+                    externalClientSources = emptySet(),
                 )
 
             assertNotNull(registry.getClient("operator-client").value)
@@ -612,6 +620,7 @@ class ConfigAwareClientRegistryTest {
                     opaqueInternalClientSecretVerifier = DefaultOpaqueInternalClientSecretVerifier(secrets),
                     clientRegistrationStore = InMemoryClientRegistrationStore(),
                     clientSecretHasher = ClientSecretHasher(defaultSecureRandom()),
+                    externalClientSources = emptySet(),
                     // A new inbound request receives a new SessionScope memoizer. This models a
                     // just-provisioned docs client whose invalidation event has not yet advanced
                     // the old request's property-source revision.
@@ -672,6 +681,7 @@ class ConfigAwareClientRegistryTest {
                     opaqueInternalClientSecretVerifier = DefaultOpaqueInternalClientSecretVerifier(secrets),
                     clientRegistrationStore = InMemoryClientRegistrationStore(),
                     clientSecretHasher = ClientSecretHasher(defaultSecureRandom()),
+                    externalClientSources = emptySet(),
                     configuredClientSetMemoizer = memoizer,
                 )
             }
@@ -717,6 +727,7 @@ class ConfigAwareClientRegistryTest {
                         DefaultOpaqueInternalClientSecretVerifier(rejectingOpaqueSecrets),
                     clientRegistrationStore = InMemoryClientRegistrationStore(),
                     clientSecretHasher = ClientSecretHasher(defaultSecureRandom()),
+                    externalClientSources = emptySet(),
                 )
 
             assertTrue(registry.getClient("tenant-as-service:tenant-123").isErr)
@@ -760,6 +771,7 @@ class ConfigAwareClientRegistryTest {
                         ),
                     clientRegistrationStore = InMemoryClientRegistrationStore(),
                     clientSecretHasher = ClientSecretHasher(defaultSecureRandom()),
+                    externalClientSources = emptySet(),
                 )
 
             assertTrue(registry.verifyClientCredentials("issuer-service", "initial-secret").value)
@@ -870,6 +882,7 @@ class ConfigAwareClientRegistryTest {
                     DefaultOpaqueInternalClientSecretVerifier(rejectingOpaqueSecrets),
                 clientRegistrationStore = InMemoryClientRegistrationStore(),
                 clientSecretHasher = ClientSecretHasher(defaultSecureRandom()),
+                externalClientSources = emptySet(),
             )
 
         val registration = assertNotNull(registry.getClient("platform-operator-cli").value)
@@ -922,6 +935,7 @@ class ConfigAwareClientRegistryTest {
                         DefaultOpaqueInternalClientSecretVerifier(rejectingOpaqueSecrets),
                     clientRegistrationStore = InMemoryClientRegistrationStore(),
                     clientSecretHasher = ClientSecretHasher(defaultSecureRandom()),
+                    externalClientSources = emptySet(),
                 )
 
             val result = registry.getClient("tenant-as-service")
@@ -988,6 +1002,7 @@ class ConfigAwareClientRegistryTest {
                     opaqueInternalClientSecretVerifier = DefaultOpaqueInternalClientSecretVerifier(rejectingOpaqueSecrets),
                     clientRegistrationStore = store,
                     clientSecretHasher = ClientSecretHasher(defaultSecureRandom()),
+                    externalClientSources = emptySet(),
                 )
             val registration =
                 ClientRegistration(
@@ -1220,11 +1235,89 @@ class ConfigAwareClientRegistryTest {
             assertTrue(configurationPrimary.messages.none { it.level == LogLevel.WARN })
         }
 
+    private class RecordingExternalSource(
+        private val answer: IdkResult<ClientRegistration?, AuthorizationServerError.StorageError>,
+    ) : ExternalClientSource {
+        val asked = mutableListOf<String>()
+
+        override suspend fun resolve(clientId: String): IdkResult<ClientRegistration?, AuthorizationServerError.StorageError> {
+            asked += clientId
+            return answer
+        }
+    }
+
+    private fun externalClient(clientId: String) =
+        ClientRegistration(clientId = clientId, grantTypes = listOf(GrantType.AUTHORIZATION_CODE), clientType = ClientType.PUBLIC)
+
+    @Test
+    fun externalSourcesAreAskedOnlyForClientsNeitherConfiguredNorStored() =
+        runTest {
+            val external = "https://rp.example.com"
+            val source = RecordingExternalSource(Ok(externalClient(external)))
+            for (precedence in ClientRegistrySourcePrecedence.entries) {
+                source.asked.clear()
+                val view =
+                    precedenceRegistry(precedence, InMemoryClientRegistrationStore(), externalClientSources = setOf(source))
+                        .resolveClientRegistryRequestView().value
+                assertNotNull(view.getClient(SHARED_CLIENT_ID).value)
+                assertEquals(emptyList(), source.asked)
+                assertEquals(external, view.getClient(external).value?.clientId)
+                assertEquals(listOf(external), source.asked)
+            }
+        }
+
+    @Test
+    fun aRevokedStoredRegistrationIsNotReadmittedByAnExternalSource() =
+        runTest {
+            val external = "https://rp.example.com"
+            for (precedence in ClientRegistrySourcePrecedence.entries) {
+                val store = InMemoryClientRegistrationStore()
+                storeClient(store, clientName = "registered", secret = "registered-secret", clientId = external)
+                assertTrue(store.revoke(TENANT_ID, SERVER_ID, external).value)
+                val source = RecordingExternalSource(Ok(externalClient(external)))
+                val view = precedenceRegistry(precedence, store, externalClientSources = setOf(source))
+                    .resolveClientRegistryRequestView().value
+
+                assertNull(view.getClient(external).value, "a revoked registration stops the client ($precedence)")
+                assertEquals(emptyList(), source.asked, "no external source is consulted for a revoked client ($precedence)")
+            }
+        }
+
+    @Test
+    fun externalClientClaimedByTwoSourcesOrRenamedIsNotResolved() =
+        runTest {
+            val external = "https://rp.example.com"
+            val twice =
+                precedenceRegistry(
+                    ClientRegistrySourcePrecedence.CONFIGURATION_PRIMARY,
+                    InMemoryClientRegistrationStore(),
+                    externalClientSources = setOf(RecordingExternalSource(Ok(externalClient(external))), RecordingExternalSource(Ok(externalClient(external)))),
+                ).resolveClientRegistryRequestView().value
+            assertNull(twice.getClient(external).value)
+
+            val renamed =
+                precedenceRegistry(
+                    ClientRegistrySourcePrecedence.CONFIGURATION_PRIMARY,
+                    InMemoryClientRegistrationStore(),
+                    externalClientSources = setOf(RecordingExternalSource(Ok(externalClient("https://other.example.com")))),
+                ).resolveClientRegistryRequestView().value
+            assertTrue(renamed.getClient(external).isErr)
+
+            val failing =
+                precedenceRegistry(
+                    ClientRegistrySourcePrecedence.CONFIGURATION_PRIMARY,
+                    InMemoryClientRegistrationStore(),
+                    externalClientSources = setOf(RecordingExternalSource(Err(AuthorizationServerError.StorageError("lookup", "unavailable")))),
+                ).resolveClientRegistryRequestView().value
+            assertTrue(failing.getClient(external).isErr)
+        }
+
     private fun precedenceRegistry(
         precedence: ClientRegistrySourcePrecedence,
         store: ClientRegistrationStore,
         extraProperties: Map<String, String> = emptyMap(),
         log: SessionLogService = NoOpSessionLogService,
+        externalClientSources: Set<ExternalClientSource> = emptySet(),
     ): ConfigAwareClientRegistry {
         val configService =
             TypeAwarePrincipalConfigService(
@@ -1265,6 +1358,7 @@ class ConfigAwareClientRegistryTest {
             opaqueInternalClientSecretVerifier = DefaultOpaqueInternalClientSecretVerifier(secrets),
             clientRegistrationStore = store,
             clientSecretHasher = ClientSecretHasher(defaultSecureRandom()),
+            externalClientSources = externalClientSources,
         )
     }
 
@@ -1313,6 +1407,7 @@ class ConfigAwareClientRegistryTest {
                     opaqueInternalClientSecretVerifier = DefaultOpaqueInternalClientSecretVerifier(secrets),
                     clientRegistrationStore = store,
                     clientSecretHasher = ClientSecretHasher(defaultSecureRandom()),
+                    externalClientSources = emptySet(),
                 )
             storeClient(store, clientName = "persisted", secret = "persisted-secret")
 

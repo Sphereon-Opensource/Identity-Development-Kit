@@ -207,6 +207,8 @@ data class DynamicClientRegistrationMetadata(
     val policyIds: List<String> = emptyList(),
     /** Issuance-policy claims minted into access tokens (allowlisted names only at mint time). */
     val metadata: Map<String, String> = emptyMap(),
+    /** Epoch seconds after which the registration is no longer served; null for a registration without expiry. */
+    val expiresAt: Long? = null,
 )
 
 /**

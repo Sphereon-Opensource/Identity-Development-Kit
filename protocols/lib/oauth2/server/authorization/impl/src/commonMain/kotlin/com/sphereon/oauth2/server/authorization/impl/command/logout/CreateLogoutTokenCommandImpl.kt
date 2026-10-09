@@ -33,7 +33,13 @@ import com.sphereon.oauth2.server.authorization.command.logout.CreateLogoutToken
 import com.sphereon.oauth2.server.authorization.command.logout.CreateLogoutTokenCommand
 import com.sphereon.oauth2.server.authorization.error.AuthorizationServerError
 import com.sphereon.oauth2.server.authorization.impl.command.asSigningProtectedHeader
+import com.sphereon.oauth2.server.authorization.impl.config.resolveSigningKeyTenant
 import com.sphereon.oauth2.server.authorization.signing.AsServerSigningIdentifierResolver
+import com.sphereon.oauth2.server.authorization.signing.AsSigningRequirement
+import com.sphereon.oauth2.server.authorization.signing.CapturedAsServerConfig
+import com.sphereon.oauth2.common.config.OAuth2ServerInstanceIdProvider
+import com.sphereon.oauth2.common.config.OAuth2ServersConfigProvider
+import kotlinx.coroutines.CancellationException
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.Named
@@ -62,6 +68,8 @@ class CreateLogoutTokenCommandImpl(
     execution: SessionExecution,
     private val jwtService: JwtService,
     private val signingIdentifierResolver: AsServerSigningIdentifierResolver,
+    private val configProvider: OAuth2ServersConfigProvider,
+    private val asInstanceIdProvider: OAuth2ServerInstanceIdProvider,
     private val secureRandom: SecureRandom,
 ) : TypedServiceCommandAdapter<CreateLogoutTokenArgs, StringResult, IdkError>(
         commandId = CreateLogoutTokenCommand.COMMAND_ID,
@@ -79,7 +87,54 @@ class CreateLogoutTokenCommandImpl(
         applyDuring: (CreateLogoutTokenArgs) -> CreateLogoutTokenArgs,
     ): IdkResult<StringResult, IdkError> {
         val applied = applyDuring(args)
-        val serverIdentifier = signingIdentifierResolver.resolveSigningIdentifier()
+        val trustedTenantId =
+            try {
+                execution.tenantId
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Throwable) {
+                null
+            }
+        val exactKey = asInstanceIdProvider.currentAsInstanceId()
+            ?: return Err(IdkError.INVALID_STATE(message = "Logout signing requires a routed authorization-server binding"))
+        val root = configProvider.getConfig()
+        val captured =
+            try {
+                CapturedAsServerConfig.select(root, exactKey)
+            } catch (expected: IllegalArgumentException) {
+                return Err(IdkError.INVALID_STATE(message = expected.message ?: "Invalid logout server binding"))
+            } catch (expected: IllegalStateException) {
+                return Err(IdkError.INVALID_STATE(message = expected.message ?: "Logout server binding is unavailable"))
+            }
+        val resolvedIssuer =
+            try {
+                val server = checkNotNull(captured.server) { "Logout server binding has no configured server" }
+                val tenantForIssuer =
+                    if (server.issuer == null && server.issuerTemplate != null) {
+                        resolveSigningKeyTenant(trustedTenantId)
+                    } else {
+                        trustedTenantId.orEmpty()
+                    }
+                server.resolveIssuer(exactKey, tenantForIssuer)
+            } catch (expected: IllegalArgumentException) {
+                return Err(IdkError.INVALID_STATE(message = expected.message ?: "Invalid logout issuer binding"))
+            } catch (expected: IllegalStateException) {
+                return Err(IdkError.INVALID_STATE(message = expected.message ?: "Logout issuer binding is unavailable"))
+            }
+        if (resolvedIssuer.isBlank()) {
+            return Err(IdkError.INVALID_STATE(message = "Logout issuer is blank for the routed authorization server"))
+        }
+        if (resolvedIssuer != applied.issuer) {
+            return Err(IdkError.INVALID_STATE(message = "Logout issuer does not match the routed authorization server"))
+        }
+        val serverIdentifier =
+            try {
+                signingIdentifierResolver.selectSigning(captured, AsSigningRequirement.REQUIRED).identifier
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (expected: Exception) {
+                return Err(IdkError.INVALID_STATE(message = "Logout signing key is unavailable: ${expected.message}"))
+            }
         if (serverIdentifier == null) {
             return Err(
                 IdkError.fromDTO(
@@ -93,7 +148,7 @@ class CreateLogoutTokenCommandImpl(
         val now = Clock.System.now().epochSeconds
         val payload =
             buildJsonObject {
-                put("iss", applied.issuer)
+                put("iss", resolvedIssuer)
                 put("aud", applied.clientId)
                 put("iat", now)
                 put("jti", secureRandom.newToken())

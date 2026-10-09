@@ -20,6 +20,7 @@ import com.sphereon.core.api.Encoding
 import com.sphereon.core.api.decodeFrom
 import com.sphereon.core.api.encodeToBase64Url
 import com.sphereon.crypto.core.jose.JwaAlgorithm
+import com.sphereon.crypto.core.jose.hasWellFormedPublicJwkMaterial
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -91,6 +92,7 @@ private fun isCompatible(
     headerAlg: String,
     requirements: SignatureRequirements,
 ): Boolean {
+    if (!hasWellFormedPublicJwkMaterial(jwk)) return false
     if (!jwk.hasValidKnownStringFields()) return false
     if (jwk.stringField("kty") != requirements.kty) return false
     if (jwk.stringField("alg")?.let { it != headerAlg } == true) return false

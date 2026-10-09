@@ -29,6 +29,7 @@ import com.sphereon.crypto.core.jose.Jwk
 import com.sphereon.crypto.resolution.managed.ManagedOptsJwk
 import com.sphereon.di.session.SessionScope
 import com.sphereon.oauth2.common.config.OAuth2ServersConfigProvider
+import com.sphereon.oauth2.common.config.OAuth2ServerInstanceIdProvider
 import com.sphereon.oauth2.common.config.isEnabled
 import com.sphereon.oauth2.common.jarm.CreateJarmResponseArgs
 import com.sphereon.oauth2.common.jarm.CreateJarmResponseCommand
@@ -41,6 +42,8 @@ import com.sphereon.oauth2.server.authorization.command.CreateAuthorizationError
 import com.sphereon.oauth2.server.authorization.error.AuthorizationServerError
 import com.sphereon.oauth2.server.authorization.model.ClientRegistration
 import com.sphereon.oauth2.server.authorization.signing.AsServerSigningIdentifierResolver
+import com.sphereon.oauth2.server.authorization.signing.AsSigningRequirement
+import com.sphereon.oauth2.server.authorization.signing.CapturedAsServerConfig
 import com.sphereon.oauth2.server.authorization.storage.ClientRegistry
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.Named
@@ -79,6 +82,7 @@ import dev.zacsweers.metro.ExposeImplBinding
 class CreateAuthorizationErrorResponseCommandImpl(
     execution: SessionExecution,
     private val configProvider: OAuth2ServersConfigProvider,
+    private val asInstanceIdProvider: OAuth2ServerInstanceIdProvider,
     private val clientRegistry: ClientRegistry,
     private val createJarmResponse: CreateJarmResponseCommand,
     private val signingIdentifierResolver: AsServerSigningIdentifierResolver,
@@ -102,6 +106,17 @@ class CreateAuthorizationErrorResponseCommandImpl(
     }
 
     private suspend fun executeInternal(args: CreateAuthorizationErrorResponseArgs): IdkResult<AuthorizationErrorResponseData, AuthorizationServerError> {
+        val root = configProvider.getConfig()
+        val captured =
+            try {
+                CapturedAsServerConfig.select(root, asInstanceIdProvider.currentAsInstanceId())
+            } catch (expected: IllegalArgumentException) {
+                return Err(AuthorizationServerError.InvalidRequest(details = expected.message ?: "Invalid authorization server selection"))
+            } catch (expected: IllegalStateException) {
+                return Err(AuthorizationServerError.InvalidRequest(details = expected.message ?: "Authorization server selection failed"))
+            }
+        val config = captured.server
+            ?: return Err(AuthorizationServerError.InvalidRequest(details = "No hosted authorization server is configured"))
         // Preserve insertion order so the wire representation is stable and test-friendly.
         val parameters = linkedMapOf("error" to args.error)
         args.errorDescription?.let { parameters["error_description"] = it }
@@ -111,13 +126,13 @@ class CreateAuthorizationErrorResponseCommandImpl(
         // RFC 9207 OAuth 2.0 Authorization Server Issuer Identification: include `iss` in the
         // authorization response (success AND error) so the client can detect mix-up attacks.
         // FAPI2-SP §5.3.2.2-7 and HAIP both require this.
-        val configuredIssuer = args.baseUrlOverride?.takeIf { it.isNotBlank() } ?: configProvider.serverConfig.issuer
+        val configuredIssuer = args.baseUrlOverride?.takeIf { it.isNotBlank() } ?: config?.issuer
         if (configuredIssuer != null) {
             parameters["iss"] = configuredIssuer
         }
 
         if (args.responseMode.isJarm) {
-            return shapeJarmErrorResponse(args, parameters)
+            return shapeJarmErrorResponse(args, parameters, captured)
         }
 
         val (finalRedirectLocation: String, formPostHtml: String?) =
@@ -143,13 +158,14 @@ class CreateAuthorizationErrorResponseCommandImpl(
     private suspend fun shapeJarmErrorResponse(
         args: CreateAuthorizationErrorResponseArgs,
         parameters: Map<String, String>,
+        captured: CapturedAsServerConfig,
     ): IdkResult<AuthorizationErrorResponseData, AuthorizationServerError> {
-        val config = configProvider.serverConfig
         // For error responses, downgrade to the underlying carrier without JARM packaging when
         // JARM cannot be honored (server feature off, client signing alg missing). Fail-open here
         // is intentional: the AS would otherwise be unable to deliver the error to the redirect
         // URI, which the OIDF JARM spec discourages.
         val downgrade = downgradedJarmMode(args.responseMode)
+        val config = checkNotNull(captured.server)
         if (!config.jarm.isEnabled) {
             return shapeBareError(args, parameters, downgrade)
         }
@@ -177,7 +193,13 @@ class CreateAuthorizationErrorResponseCommandImpl(
             if (signingAlg == null) {
                 null
             } else {
-                runCatching { signingIdentifierResolver.resolveSigningIdentifier(signingAlg) }.getOrNull()
+                try {
+                    signingIdentifierResolver.selectSigning(captured, AsSigningRequirement.REQUIRED, signingAlg).identifier
+                } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                    throw cancelled
+                } catch (expected: Exception) {
+                    null
+                }
             }
         if (signingAlg != null && serverIdentifier == null) {
             return shapeBareError(args, parameters, downgrade)

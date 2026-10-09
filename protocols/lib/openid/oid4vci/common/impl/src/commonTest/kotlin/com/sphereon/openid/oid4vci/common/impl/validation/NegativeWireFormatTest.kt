@@ -26,6 +26,7 @@ import com.sphereon.openid.oid4vci.common.model.DeferredCredentialRequest
 import com.sphereon.openid.oid4vci.common.model.MetadataCredentialResponseEncryption
 import com.sphereon.openid.oid4vci.common.model.Oid4vciAuthorizationDetail
 import com.sphereon.openid.oid4vci.common.model.RequestedCredentialResponseEncryption
+import com.sphereon.openid.oid4vci.common.validation.issuerMetadataValidator
 import io.konform.validation.Invalid
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive

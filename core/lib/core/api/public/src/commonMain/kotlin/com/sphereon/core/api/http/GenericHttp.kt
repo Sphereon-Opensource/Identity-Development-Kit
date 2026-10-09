@@ -566,43 +566,54 @@ class CompiledPathPattern private constructor(
         return params
     }
 
-    /** Match greedily while reserving every following pattern segment. Capture ranges only
-     * after a complete match, so failed suffix probes do not copy growing path strings. */
-    private fun matchGreedySegments(
+    /** Match greedily using suffix feasibility. Reconstruct capture ranges only after a complete
+     * match; each greedy row retains its longest viable endpoint without repeated scans. */
+    internal fun matchGreedySegments(
         pathSegments: List<String>,
-        patternIndex: Int = 0,
-        pathIndex: Int = 0,
-        failedStates: MutableSet<Pair<Int, Int>> = mutableSetOf(),
+        onTransition: (() -> Unit)? = null,
     ): List<Pair<Segment, IntRange>>? {
-        val state = patternIndex to pathIndex
-        if (state in failedStates) return null
-        fun fail(): List<Pair<Segment, IntRange>>? {
-            failedStates += state
-            return null
-        }
-        if (patternIndex == segments.size) return if (pathIndex == pathSegments.size) emptyList() else fail()
-        val segment = segments[patternIndex]
-        if (segment is Segment.TailWildcard) return listOf(segment to (pathIndex until pathSegments.size))
-        if (segment is Segment.Parameter && segment.name.endsWith("+")) {
-            for (end in pathSegments.size downTo pathIndex + 1) {
-                val rest = matchGreedySegments(pathSegments, patternIndex + 1, end, failedStates) ?: continue
-                return listOf(segment to (pathIndex until end)) + rest
+        val pathSize = pathSegments.size
+        val next = Array(segments.size + 1) { IntArray(pathSize + 1) { -1 } }
+        next[segments.size][pathSize] = pathSize
+
+        for (patternIndex in segments.indices.reversed()) {
+            val segment = segments[patternIndex]
+            val row = next[patternIndex]
+            val suffix = next[patternIndex + 1]
+            var longestEnd = -1
+            for (pathIndex in pathSize downTo 0) {
+                onTransition?.invoke()
+                row[pathIndex] = when {
+                    segment is Segment.TailWildcard -> pathSize
+                    segment is Segment.Parameter && segment.name.endsWith("+") -> {
+                        // Descending indices encounter the largest viable suffix start first.
+                        // The endpoint must be strictly beyond this start: greedy is nonempty.
+                        if (longestEnd < 0 && pathIndex < pathSize && suffix[pathIndex + 1] >= 0) {
+                            longestEnd = pathIndex + 1
+                        }
+                        longestEnd
+                    }
+                    pathIndex == pathSize || suffix[pathIndex + 1] < 0 -> -1
+                    segment is Segment.Literal ->
+                        if (segment.value == pathSegments[pathIndex]) pathIndex + 1 else -1
+                    segment is Segment.Parameter ->
+                        if (segment.matches(pathSegments[pathIndex])) pathIndex + 1 else -1
+                    else -> error("All segment types are handled above")
+                }
             }
-            return fail()
         }
-        if (pathIndex == pathSegments.size) return fail()
-        val result = when (segment) {
-            is Segment.Literal -> if (segment.value == pathSegments[pathIndex])
-                matchGreedySegments(pathSegments, patternIndex + 1, pathIndex + 1, failedStates) else null
-            is Segment.Parameter -> {
-                if (!segment.matches(pathSegments[pathIndex])) return fail()
-                val rest = matchGreedySegments(pathSegments, patternIndex + 1, pathIndex + 1, failedStates) ?: return fail()
-                listOf(segment to (pathIndex until pathIndex + 1)) + rest
-            }
-            is Segment.TailWildcard -> error("Tail wildcard is handled before ordinary segments")
+
+        if (next[0][0] < 0) return null
+        val captures = mutableListOf<Pair<Segment, IntRange>>()
+        var pathIndex = 0
+        for (patternIndex in segments.indices) {
+            onTransition?.invoke()
+            val segment = segments[patternIndex]
+            val end = next[patternIndex][pathIndex]
+            if (segment !is Segment.Literal) captures.add(segment to (pathIndex until end))
+            pathIndex = end
         }
-        if (result == null) failedStates += state
-        return result
+        return captures
     }
 
     companion object {

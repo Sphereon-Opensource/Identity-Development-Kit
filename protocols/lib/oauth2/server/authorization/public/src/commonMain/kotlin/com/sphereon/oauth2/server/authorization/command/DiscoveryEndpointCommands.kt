@@ -25,11 +25,14 @@ import com.sphereon.oauth2.common.model.AuthorizationServerMetadata
 // ============================================================================
 
 /**
- * Arguments for building authorization server metadata
+ * Arguments for building authorization server metadata.
+ * [includeSignedMetadata] defaults to configured discovery behavior; `false` requests the
+ * unsigned document for server-owned observation without invoking embedded signing.
  */
 data class BuildServerMetadataArgs(
     val serverId: String? = null,
     val baseUrlOverride: String? = null,
+    val includeSignedMetadata: Boolean = true,
 )
 
 /**

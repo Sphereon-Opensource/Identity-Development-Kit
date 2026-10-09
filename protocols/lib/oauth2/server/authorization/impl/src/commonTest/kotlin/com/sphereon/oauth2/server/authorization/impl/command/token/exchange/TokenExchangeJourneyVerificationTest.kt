@@ -32,7 +32,7 @@ import com.sphereon.crypto.core.jose.Jwk
 import com.sphereon.crypto.jose.jws.JwsUtils
 import com.sphereon.crypto.jose.jws.JwtService
 import com.sphereon.crypto.jose.jws.JwtServiceImpl
-import com.sphereon.crypto.resolution.managed.ManagedOptsAlias
+import com.sphereon.crypto.resolution.managed.ManagedOptsKeyInfo
 import com.sphereon.oauth2.common.config.OAuth2ServerInstanceConfig
 import com.sphereon.oauth2.common.config.OAuth2ServersConfig
 import com.sphereon.oauth2.common.model.GrantType
@@ -51,6 +51,7 @@ import com.sphereon.oauth2.server.authorization.impl.testutil.RecordingJwtServic
 import com.sphereon.oauth2.server.authorization.impl.testutil.TestOAuth2ServersConfigProvider
 import com.sphereon.oauth2.server.authorization.impl.trust.NoForeignSubjectTokenIssuerTrust
 import com.sphereon.oauth2.server.authorization.impl.testutil.fixedSigningIdentifierResolver
+import com.sphereon.oauth2.server.authorization.impl.testutil.fixedAsInstanceIdProvider
 import com.sphereon.oauth2.server.authorization.model.ClientRegistration
 import com.sphereon.oauth2.server.authorization.command.token.AuthorizeTokenExchangeCommand
 import com.sphereon.oauth2.server.authorization.command.token.AnchoredSubjectToken
@@ -1044,8 +1045,11 @@ class TokenExchangeJourneyVerificationTest {
                     tokenStorage = InMemoryTokenStorageImpl(InMemoryOAuth2BackingStorageImpl()),
                     secureRandom = defaultSecureRandom(),
                     configProvider = configProvider,
+                    asInstanceIdProvider = fixedAsInstanceIdProvider(),
                     signingIdentifierResolver =
-                        fixedSigningIdentifierResolver(ManagedOptsAlias(identifier = kid)),
+                        fixedSigningIdentifierResolver(ManagedOptsKeyInfo(
+                            identifier = KeyInfo<KeyType>(alias = kid, kid = kid, signatureAlgorithm = SignatureAlgorithm.RSA_SHA256),
+                        )),
                     eventService = null,
                 )
             val minted =

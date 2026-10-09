@@ -237,6 +237,17 @@ data class ClientRegistration(
      */
     val requestObjectSigningAlg: String? = null,
     /**
+     * Request Objects from this client are single-use proofs of key possession: each must carry a `jti` that is
+     * accepted once, must not carry `sub`, and must name this server as its only audience. Set for clients that
+     * register implicitly through their first signed request.
+     */
+    val singleUseRequestObjects: Boolean = false,
+    /**
+     * Epoch seconds after which this registration is no longer served, for registrations that last only as long as
+     * the trust they were made under. Null for a registration without expiry.
+     */
+    val expiresAt: Long? = null,
+    /**
      * RFC 9101 §5.2.2 / OIDC Core §2 `request_uris`: pre-registered list of URIs the client may
      * use as `request_uri` at the authorization endpoint. Empty list means no pre-registration.
      * Consulted only when the server is configured with
