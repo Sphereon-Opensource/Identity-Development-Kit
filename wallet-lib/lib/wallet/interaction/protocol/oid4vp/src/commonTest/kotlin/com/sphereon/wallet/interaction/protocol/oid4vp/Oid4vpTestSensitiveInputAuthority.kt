@@ -35,6 +35,7 @@ internal fun WalletInteractionContext(
     securityGate: WalletSecurityGate = WalletSecurityGate.allow,
     privateSessionStore: WalletInteractionPrivateSessionStore = WalletInteractionPrivateSessionStore.none,
     attributes: Map<String, String> = emptyMap(),
+    diagnostics: WalletInteractionDiagnostics = WalletInteractionDiagnostics.none,
 ): CoreWalletInteractionContext = CoreWalletInteractionContext(
     sessionId = sessionId,
     walletUnitId = walletUnitId,
@@ -47,6 +48,7 @@ internal fun WalletInteractionContext(
     sensitiveInputAuthority = Oid4vpTestSensitiveInputAuthority,
     attributes = attributes,
     counterpartyEncounterRegistry = counterpartyEncounterRegistry,
+    diagnostics = diagnostics,
 )
 
 internal suspend fun CoreWalletInteractionContext.securityGrantAction(grant: WalletSecurityGrant): WalletInteractionAction =
