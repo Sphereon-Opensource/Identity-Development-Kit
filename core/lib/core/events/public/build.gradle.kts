@@ -43,6 +43,7 @@ kotlin {
     sourceSets {
         val commonMain by getting {
             dependencies {
+                api(projects.libCoreCompatAnnotations)
                 // Core API for IdkResult, IdkError, SessionContext, Command, Scopes
                 api(project(":lib-core-api-public"))
 

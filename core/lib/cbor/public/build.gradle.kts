@@ -56,6 +56,7 @@ kotlin {
     sourceSets {
         val commonMain by getting {
             dependencies {
+                api(projects.libCoreCompatAnnotations)
                 api(projects.libCoreApiPublic)
                 implementation(sphereonlib.org.jetbrains.kotlinx.serialization.cbor)
             }

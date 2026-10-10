@@ -46,6 +46,7 @@ kotlin {
         }
         val commonMain by getting {
             dependencies {
+                api(if (rootProject.findProperty("idk.consumeCoreAsArtifacts") == "true") "com.sphereon.idk:lib-core-compat-annotations:$version" else project(":lib-core-compat-annotations"))
                 api(if (rootProject.findProperty("idk.consumeInfrastructureAsArtifacts") == "true") "com.sphereon.idk:lib-conf-theme-core-public:$version" else project(":lib-conf-theme-core-public"))
                 implementation(sphereonlib.co.touchlab.skie.configuration.annotations)
 

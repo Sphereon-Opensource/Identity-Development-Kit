@@ -68,6 +68,7 @@ kotlin {
     sourceSets {
         val commonMain by getting {
             dependencies {
+                api(if (rootProject.findProperty("idk.consumeCoreAsArtifacts") == "true") "com.sphereon.idk:lib-core-compat-annotations:$version" else project(":lib-core-compat-annotations"))
                 implementation(if (rootProject.findProperty("idk.consumeCoreAsArtifacts") == "true") "com.sphereon.idk:lib-core-api-public:$version" else project(":lib-core-api-public"))
                 implementation(sphereonlib.dev.whyoleg.cryptography.core)
                 implementation(sphereonlib.dev.whyoleg.cryptography.provider.optimal)

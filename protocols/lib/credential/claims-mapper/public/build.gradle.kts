@@ -20,6 +20,7 @@ kotlin {
         }
         val commonMain by getting {
             dependencies {
+                api(if (rootProject.findProperty("idk.consumeCoreAsArtifacts") == "true") "com.sphereon.idk:lib-core-compat-annotations:$version" else project(":lib-core-compat-annotations"))
                 api(if (rootProject.findProperty("idk.consumeCoreAsArtifacts") == "true") "com.sphereon.idk:lib-core-api-public:$version" else project(":lib-core-api-public"))
                 api(if (rootProject.findProperty("idk.consumeProtocolsAsArtifacts") == "true") "com.sphereon.idk:lib-openid-oid4vp-common-public:$version" else project(":lib-openid-oid4vp-common-public"))
                 api(sphereonlib.org.jetbrains.kotlinx.serialization.json)
