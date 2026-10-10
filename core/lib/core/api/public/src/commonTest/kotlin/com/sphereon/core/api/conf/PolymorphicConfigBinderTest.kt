@@ -26,6 +26,7 @@ import kotlinx.serialization.modules.polymorphic
 import kotlinx.serialization.modules.subclass
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -54,6 +55,33 @@ data class RestProviderConfig(
     val timeout: Long = 30000,
 ) : TestProviderConfig
 
+@Serializable
+enum class TestCredentialMode {
+    ACCESS_KEY,
+    DEFAULT_CHAIN,
+}
+
+@Serializable
+data class TestAccessKeyOpts(
+    val credentialsSecretId: String,
+    val retryDelayInMS: Long? = null,
+)
+
+@Serializable
+data class TestCredentialOpts(
+    val credentialMode: TestCredentialMode,
+    val accessKeyCredentialOpts: TestAccessKeyOpts? = null,
+)
+
+@Serializable
+@SerialName("cloud")
+data class CloudProviderConfig(
+    override val id: String,
+    override val enabled: Boolean = true,
+    val region: String,
+    val credentialOpts: TestCredentialOpts,
+) : TestProviderConfig
+
 // JSON with polymorphic serializers registered
 // Uses "type" as the class discriminator field
 private val testJson =
@@ -67,6 +95,7 @@ private val testJson =
                 polymorphic(TestProviderConfig::class) {
                     subclass(SoftwareProviderConfig::class, SoftwareProviderConfig.serializer())
                     subclass(RestProviderConfig::class, RestProviderConfig.serializer())
+                    subclass(CloudProviderConfig::class, CloudProviderConfig.serializer())
                 }
             }
     }
@@ -642,6 +671,53 @@ class DefaultPolymorphicConfigBinderTest {
         assertNotNull(config)
         assertTrue(config is SoftwareProviderConfig)
         assertEquals(640, (config as SoftwareProviderConfig).keySize)
+    }
+
+    @Test
+    fun getEntryConfigBindsKebabCaseKeysIntoNestedObjects() {
+        val resolver =
+            createResolver(
+                "providers.cloud-primary.id" to "cloud-primary",
+                "providers.cloud-primary.type" to "cloud",
+                "providers.cloud-primary.region" to "eu-west-1",
+                "providers.cloud-primary.credential-opts.credential-mode" to "ACCESS_KEY",
+                "providers.cloud-primary.credential-opts.access-key-credential-opts.credentials-secret-id" to "sec_cloud",
+                "providers.cloud-primary.credential-opts.access-key-credential-opts.retry-delay-in-ms" to 250L,
+            )
+        val binder =
+            DefaultPolymorphicConfigBinder(
+                prefix = "providers",
+                baseClass = TestProviderConfig::class,
+                json = testJson,
+            )
+
+        val config = assertIs<CloudProviderConfig>(binder.getEntryConfig(resolver, "cloud-primary"))
+
+        assertEquals("cloud-primary", config.id)
+        assertEquals("eu-west-1", config.region)
+        assertEquals(TestCredentialMode.ACCESS_KEY, config.credentialOpts.credentialMode)
+        assertEquals(TestAccessKeyOpts(credentialsSecretId = "sec_cloud", retryDelayInMS = 250L), config.credentialOpts.accessKeyCredentialOpts)
+    }
+
+    @Test
+    fun getEntryConfigBindsCamelCaseKeysIntoNestedObjects() {
+        val resolver =
+            createResolver(
+                "providers.cloud.type" to "cloud",
+                "providers.cloud.region" to "eu-west-1",
+                "providers.cloud.credentialOpts.credentialMode" to "ACCESS_KEY",
+                "providers.cloud.credentialOpts.accessKeyCredentialOpts.credentialsSecretId" to "sec_cloud",
+            )
+        val binder =
+            DefaultPolymorphicConfigBinder(
+                prefix = "providers",
+                baseClass = TestProviderConfig::class,
+                json = testJson,
+            )
+
+        val config = assertIs<CloudProviderConfig>(binder.getEntryConfig(resolver, "cloud"))
+
+        assertEquals("sec_cloud", config.credentialOpts.accessKeyCredentialOpts?.credentialsSecretId)
     }
 }
 

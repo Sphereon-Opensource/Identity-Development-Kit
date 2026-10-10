@@ -23,6 +23,10 @@ import com.sphereon.core.api.Ok
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.PolymorphicSerializer
+import kotlinx.serialization.descriptors.PrimitiveKind
+import kotlinx.serialization.descriptors.SerialDescriptor
+import kotlinx.serialization.descriptors.SerialKind
+import kotlinx.serialization.descriptors.StructureKind
 import kotlinx.serialization.json.Json
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
@@ -303,9 +307,17 @@ class DefaultPolymorphicConfigBinder<T : Any>(
         // Transform keys to support camelCase fields while keeping explicit nested objects (e.g., keystore.*).
         // Keep first value for duplicate output keys so higher-priority sources keep winning.
         val jsonReadyProperties = linkedMapOf<String, Any>()
+        val subtypeDescriptor = subtypeDescriptor(properties)
         for ((key, value) in properties) {
             val normalizedKey = keyNormalizer.normalize(key.removePrefix("."))
             if (normalizedKey in normalizedIgnoredPropertyNames || canonicalizeKey(normalizedKey) in canonicalIgnoredPropertyNames) {
+                continue
+            }
+            val schemaPath = subtypeDescriptor?.let { schemaPath(normalizedKey, it) }
+            if (schemaPath != null) {
+                if (!jsonReadyProperties.containsKey(schemaPath)) {
+                    jsonReadyProperties[schemaPath] = value
+                }
                 continue
             }
             val nestedAlias =
@@ -377,6 +389,51 @@ class DefaultPolymorphicConfigBinder<T : Any>(
     }
 
     private fun canonicalizeKey(normalizedKey: String): String = normalizedKey.replace(PROPERTY_KEY_DELIMITER, "")
+
+    /**
+     * The descriptor of the concrete subtype named by the entry's class discriminator, or null when
+     * the discriminator is missing or names no registered subtype.
+     */
+    private fun subtypeDescriptor(properties: Map<String, Any>): SerialDescriptor? {
+        val discriminator = keyNormalizer.normalize(json.configuration.classDiscriminator)
+        val typeName = properties[discriminator]?.toString()?.takeIf(String::isNotBlank) ?: return null
+        return json.serializersModule.getPolymorphic(baseClass, typeName)?.descriptor
+    }
+
+    /**
+     * Resolves a normalized key against the subtype schema, returning the dotted path of original
+     * field names, or null unless every segment resolves to a field.
+     *
+     * Normalization splits camelCase into segments, so `credential.opts.access.key.credential.opts.region`
+     * cannot be told apart from a single field without the schema. Fields are matched greedily on
+     * their delimiter-free names (longest first) and nested classes are resolved recursively, so a
+     * kebab-case, camelCase or flat lowercase key reaches nested objects at any depth. A key
+     * that ends anywhere but a primitive or enum field (maps, lists, polymorphic values) falls back to
+     * the alias resolution, which keeps such keys verbatim.
+     */
+    private fun schemaPath(
+        normalizedKey: String,
+        descriptor: SerialDescriptor,
+    ): String? {
+        val segments = normalizedKey.split(PROPERTY_KEY_DELIMITER).filter(String::isNotEmpty)
+        val path = mutableListOf<String>()
+        var current = descriptor
+        var start = 0
+        while (start < segments.size) {
+            if (current.kind != StructureKind.CLASS) return null
+            val fields = (0 until current.elementsCount).associateBy { canonicalizeKey(keyNormalizer.normalize(current.getElementName(it))) }
+            val end =
+                (segments.size downTo start + 1).firstOrNull { end ->
+                    segments.subList(start, end).joinToString("") in fields
+                } ?: return null
+            val index = fields.getValue(segments.subList(start, end).joinToString(""))
+            path += current.getElementName(index)
+            current = current.getElementDescriptor(index)
+            start = end
+        }
+        val leafKind = current.kind
+        return if (leafKind is PrimitiveKind || leafKind == SerialKind.ENUM) path.joinToString(PROPERTY_KEY_DELIMITER) else null
+    }
 
     private fun resolveOutputKey(normalizedKey: String): String {
         normalizedPropertyNameAliases[normalizedKey]?.let { return it }

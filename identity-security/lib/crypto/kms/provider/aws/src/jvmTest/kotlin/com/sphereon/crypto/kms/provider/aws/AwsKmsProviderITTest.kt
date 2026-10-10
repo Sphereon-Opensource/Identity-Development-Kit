@@ -24,21 +24,14 @@ import com.sphereon.crypto.core.jose.JwaKeyType
 import com.sphereon.crypto.core.jose.Jwk
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
+import org.junit.jupiter.api.Assumptions.assumeTrue
 import com.sphereon.crypto.core.generic.Curve
 import com.sphereon.crypto.core.generic.DigestAlg
 import com.sphereon.crypto.core.generic.KeyOperations
 import com.sphereon.crypto.core.generic.KeyTypeMapping
 import com.sphereon.crypto.core.generic.ManagedKeyPair
 import com.sphereon.crypto.core.generic.SignatureAlgorithm
-import com.sphereon.crypto.core.kms.model.AccessKeyCredentialOpts
-import com.sphereon.crypto.core.kms.model.AwsKmsClientConfig
-import com.sphereon.crypto.core.kms.model.CredentialMode
-import com.sphereon.crypto.core.kms.model.CredentialOpts
-import com.sphereon.crypto.core.kms.model.ExponentialBackoffRetryOpts
-import com.sphereon.crypto.core.kms.model.KeyProviderConfig
-import com.sphereon.crypto.core.kms.model.KeyProviderSettings
-import com.sphereon.crypto.core.kms.model.KeyProviderType
-import com.sphereon.crypto.kms.aws.BuildKonfig
+import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
@@ -53,27 +46,23 @@ class AwsKmsProviderITTest {
 
     var managedKeyPair: ManagedKeyPair? = null
 
+    private val config = AwsKmsTestConfig(this)
+
     @BeforeTest
     fun setUp() {
-        val awsConfig = AwsKmsClientConfig(
-            applicationId = "aws-kms-test",
-            region = BuildKonfig.AWS_REGION ?: throw IllegalArgumentException("Missing AWS region env var AWS_REGION"),
-            credentialOpts = CredentialOpts(
-                credentialMode = CredentialMode.ACCESS_KEY,
-                accessKeyCredentialOpts = AccessKeyCredentialOpts(
-                    credentialsSecretId = "sec_aws_integration_credential",
-                    accessKeyId = BuildKonfig.AWS_ACCESS_KEY_ID ?: throw IllegalArgumentException("Missing AWS access key id env var AWS_ACCESS_KEY_ID"),
-                    secretAccessKey = BuildKonfig.AWS_SECRET_ACCESS_KEY ?: throw IllegalArgumentException("Missing AWS secret access key env var AWS_SECRET_ACCESS_KEY")
-                )
-            ),
-            exponentialBackoffRetryOpts = ExponentialBackoffRetryOpts(
-                maxRetries = 10, // let's try max 10 times
-                baseDelayInMS = 500, // Wait 0.5 seconds the first time
-                maxDelayInMS = 15000 // Wait for max 15 seconds eventually
-            )
+        // Region comes from runtime configuration (`kms.providers.aws-kms-it.region`, or the
+        // KMS_PROVIDERS_AWS_KMS_IT_REGION environment variable). Credentials come from the AWS SDK
+        // default chain at runtime, so nothing about the target account is compiled into the build.
+        assumeTrue(config.isConfigured("$PROVIDER_PREFIX.region")) {
+            "AWS KMS live test skipped: '$PROVIDER_PREFIX.region' (environment: KMS_PROVIDERS_AWS_KMS_IT_REGION) is not configured"
+        }
+        config.putIfAbsent(
+            "$PROVIDER_PREFIX.id" to PROVIDER_ID,
+            "$PROVIDER_PREFIX.type" to "aws_kms",
+            "$PROVIDER_PREFIX.application-id" to "aws-kms-test",
+            "$PROVIDER_PREFIX.credential-opts.credential-mode" to "DEFAULT_CHAIN",
         )
-        val settings = KeyProviderSettings(id = "aws-kms-test", config = KeyProviderConfig(type = KeyProviderType.AWS_KMS, aws = awsConfig))
-        awsKmsCryptoProvider = AwsKmsCryptoProvider(settings)
+        awsKmsCryptoProvider = config.createProvider(PROVIDER_ID) as AwsKmsCryptoProvider
         runBlocking {
             managedKeyPair = awsKmsCryptoProvider.generateKeyAsync(
                 alias = "aws-kms-test-${System.currentTimeMillis()}",
@@ -200,5 +189,16 @@ class AwsKmsProviderITTest {
                 SignatureAlgorithm.ECDSA_SHA512
             ), algorithms
         )
+    }
+
+    @AfterTest
+    fun tearDown() {
+        if (::awsKmsCryptoProvider.isInitialized) awsKmsCryptoProvider.close()
+        config.reset()
+    }
+
+    private companion object {
+        const val PROVIDER_ID = "aws-kms-it"
+        const val PROVIDER_PREFIX = "kms.providers.$PROVIDER_ID"
     }
 }

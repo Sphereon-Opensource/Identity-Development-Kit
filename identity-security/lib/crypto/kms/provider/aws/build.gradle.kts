@@ -1,5 +1,3 @@
-import com.codingfeline.buildkonfig.compiler.FieldSpec
-
 plugins {
     `maven-publish`
     alias(sphereonplug.plugins.org.jetbrains.kotlin.multiplatform)
@@ -7,7 +5,6 @@ plugins {
     alias(sphereonplug.plugins.org.jetbrains.kotlin.plugin.serialization)
     alias(sphereonplug.plugins.io.kotest.io.kotest.gradle.plugin)
     alias(sphereonplug.plugins.com.google.devtools.ksp.com.google.devtools.ksp.gradle.plugin)
-    alias(sphereonplug.plugins.com.codingfeline.buildkonfig)
     alias(sphereonplug.plugins.com.sphereon.gradle.plugin.integration.tests)
     alias(sphereonplug.plugins.com.sphereon.gradle.plugin.project.publication)
     id("maven-publish")
@@ -62,31 +59,12 @@ kotlin {
         val jvmTest by getting {
             dependencies {
                 implementation(kotlin("test"))
+                implementation(sphereonlib.software.amazon.app.platform.metro.impl)
+                implementation(if (rootProject.findProperty("idk.consumeCoreAsArtifacts") == "true") "com.sphereon.idk:lib-core-api-default:$version" else project(":lib-core-api-default"))
+                implementation(if (rootProject.findProperty("idk.consumeCoreAsArtifacts") == "true") "com.sphereon.idk:lib-core-test:$version" else project(":lib-core-test"))
+                implementation(if (rootProject.findProperty("idk.consumeIdentitySecurityAsArtifacts") == "true") "com.sphereon.idk:lib-crypto-key-persistence-impl:$version" else project(":lib-crypto-key-persistence-impl"))
+                implementation(if (rootProject.findProperty("idk.consumeInfrastructureAsArtifacts") == "true") "com.sphereon.idk:lib-data-link-http-client-impl:$version" else project(":lib-data-link-http-client-impl"))
             }
         }
-    }
-}
-
-buildkonfig {
-    packageName = "com.sphereon.crypto.kms.aws"
-    defaultConfigs {
-        buildConfigField(
-            FieldSpec.Type.STRING,
-            "AWS_REGION",
-            System.getenv("AWS_REGION"),
-            nullable = true,
-        )
-        buildConfigField(
-            FieldSpec.Type.STRING,
-            "AWS_ACCESS_KEY_ID",
-            System.getenv("AWS_ACCESS_KEY_ID"),
-            nullable = true,
-        )
-        buildConfigField(
-            FieldSpec.Type.STRING,
-            "AWS_SECRET_ACCESS_KEY",
-            System.getenv("AWS_SECRET_ACCESS_KEY"),
-            nullable = true,
-        )
     }
 }
