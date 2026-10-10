@@ -38,6 +38,27 @@ gradle.settingsEvaluated { settings ->
     settings.dependencyResolutionManagement.repositoriesMode.set(
         org.gradle.api.initialization.resolve.RepositoriesMode.PREFER_SETTINGS)
     if (!remoteOnly) addPrerequisites(settings.dependencyResolutionManagement.repositories)
+    // Kotlin JS/Wasm downloads its tooling through Ivy repositories that it declares on the project. Under
+    // PREFER_SETTINGS those project repositories are ignored (KT-55620), so the distributions are declared here.
+    def distributions = [
+        [name: 'Node.js distributions', url: 'https://nodejs.org/dist',
+         pattern: 'v[revision]/[artifact](-v[revision]-[classifier]).[ext]', group: 'org.nodejs', module: 'node'],
+        [name: 'Yarn distributions', url: 'https://github.com/yarnpkg/yarn/releases/download',
+         pattern: 'v[revision]/[artifact](-v[revision]).[ext]', group: 'com.yarnpkg', module: 'yarn'],
+        [name: 'Binaryen distributions', url: 'https://github.com/WebAssembly/binaryen/releases/download',
+         pattern: 'version_[revision]/binaryen-version_[revision]-[classifier].[ext]', group: 'com.github.webassembly', module: 'binaryen'],
+        [name: 'D8 distributions', url: 'https://storage.googleapis.com/chromium-v8/official/canary',
+         pattern: '[artifact]-[revision].[ext]', group: 'google.d8', module: 'v8'],
+    ]
+    distributions.each { distribution ->
+        settings.dependencyResolutionManagement.repositories.ivy { repository ->
+            repository.name = distribution.name
+            repository.url = distribution.url
+            repository.patternLayout { layout -> layout.artifact(distribution.pattern) }
+            repository.metadataSources { sources -> sources.artifact() }
+            repository.content { content -> content.includeModule(distribution.group, distribution.module) }
+        }
+    }
 }
 
 gradle.beforeProject { project ->
