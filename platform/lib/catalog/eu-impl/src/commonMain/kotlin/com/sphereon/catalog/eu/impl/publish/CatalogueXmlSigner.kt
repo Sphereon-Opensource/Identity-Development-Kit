@@ -27,6 +27,7 @@ import com.sphereon.core.api.encodeToBase64
 import com.sphereon.core.api.error.ErrorCategory
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.compat.xml.c14n.ExclusiveC14N
+import com.sphereon.core.compat.xml.elementsByTagNameNS
 import com.sphereon.crypto.core.KeyInfo
 import com.sphereon.crypto.core.KeyInfoType
 import com.sphereon.crypto.core.KeyType
@@ -327,7 +328,7 @@ class XAdESCatalogueXmlSigner(
 
     private fun canonicalSignedInfo(xml: String): ByteArray {
         val root = parse(xml).getDocumentElement() ?: throw IllegalArgumentException("No root element")
-        val signature = root.getElementsByTagNameNS(EuCatalogueConstants.XMLDSIG_NAMESPACE, "SignedInfo")
+        val signature = root.elementsByTagNameNS(EuCatalogueConstants.XMLDSIG_NAMESPACE, "SignedInfo")
         val signedInfo = (if (signature.length > 0) signature[0] as? Element else null) ?: throw IllegalArgumentException("No SignedInfo")
         return ExclusiveC14N.canonicalize(signedInfo)
     }

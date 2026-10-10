@@ -19,6 +19,7 @@ package com.sphereon.catalog.eu.impl.digest
 import com.sphereon.catalog.eu.EuCatalogueConstants
 import com.sphereon.catalog.eu.model.EntryReference
 import com.sphereon.core.compat.xml.c14n.ExclusiveC14N
+import com.sphereon.core.compat.xml.elementsByTagNameNS
 import com.sphereon.crypto.core.generic.DigestAlg
 import com.sphereon.crypto.core.generic.hash
 import com.sphereon.di.session.SessionScope
@@ -93,7 +94,7 @@ object CatalogueEntryDigest {
         val root = document.getDocumentElement() ?: throw IllegalArgumentException("No root element")
         val signature =
             if (envelopedTransform) {
-                root.getElementsByTagNameNS(EuCatalogueConstants.XMLDSIG_NAMESPACE, "Signature").let {
+                root.elementsByTagNameNS(EuCatalogueConstants.XMLDSIG_NAMESPACE, "Signature").let {
                     if (it.length > 0) it[0] as? Element else null
                 }
             } else {

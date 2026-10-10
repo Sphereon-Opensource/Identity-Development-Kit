@@ -16,6 +16,7 @@
 
 package com.sphereon.trust.etsi.signature.xmldsig
 
+import com.sphereon.core.compat.xml.elementsByTagNameNS
 import com.sphereon.trust.etsi.signature.xades.SIGNED_PROPERTIES_TYPE
 import com.sphereon.trust.etsi.signature.xades.XADES_NS
 import com.sphereon.trust.etsi.signature.xades.XMLDSIG_NS
@@ -154,7 +155,7 @@ object EnvelopedSignatureCoverage {
         if (algorithm != TRANSFORM_XPATH_FILTER2) {
             return false
         }
-        val xpath = transform.getElementsByTagNameNS(TRANSFORM_XPATH_FILTER2, "XPath")
+        val xpath = transform.elementsByTagNameNS(TRANSFORM_XPATH_FILTER2, "XPath")
         val element = (if (xpath.length > 0) xpath[0] else null) as? Element ?: return false
         return element.getAttribute("Filter") == "subtract" && element.getTextContent()?.contains("Signature") == true
     }
@@ -163,7 +164,7 @@ object EnvelopedSignatureCoverage {
         signatureElement: Element,
         referenceResults: List<ReferenceValidator.ReferenceResult>,
     ): Boolean {
-        val nodes = signatureElement.getElementsByTagNameNS(XADES_NS, "SignedProperties")
+        val nodes = signatureElement.elementsByTagNameNS(XADES_NS, "SignedProperties")
         if (nodes.length != 1) {
             return false
         }

@@ -22,6 +22,7 @@ import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.decodeFrom
 import com.sphereon.core.api.encodeTo
 import com.sphereon.core.compat.xml.c14n.ExclusiveC14N
+import com.sphereon.core.compat.xml.elementsByTagNameNS
 import com.sphereon.crypto.core.KeyInfo
 import com.sphereon.crypto.core.KeyType
 import com.sphereon.crypto.core.kms.KeyManagerService
@@ -107,7 +108,7 @@ class XmlUtilSignatureVerifier(
                 signaturePresent = false,
                 errorMessage = "No root element in document",
             )
-        val signatureNodes = root.getElementsByTagNameNS(XMLDSIG_NS, "Signature")
+        val signatureNodes = root.elementsByTagNameNS(XMLDSIG_NS, "Signature")
 
         if (signatureNodes.length == 0) {
             return if (options.requireSignature) {
@@ -209,7 +210,7 @@ class XmlUtilSignatureVerifier(
 
             // Create KeyInfo with certificate
             val signatureMethod =
-                signedInfo.getElementsByTagNameNS(XMLDSIG_NS, "SignatureMethod").let { if (it.length > 0) it[0] as? Element else null }
+                signedInfo.elementsByTagNameNS(XMLDSIG_NS, "SignatureMethod").let { if (it.length > 0) it[0] as? Element else null }
             val keyInfo =
                 KeyInfo<KeyType>(
                     key = null,
@@ -271,7 +272,7 @@ class XmlUtilSignatureVerifier(
 
             // Signature wrapping defence: the signature must be the only one, sit under the root and cover the whole
             // document (and, when present, its own XAdES SignedProperties).
-            val carriesXades = signatureElement.getElementsByTagNameNS(XADES_NS, "QualifyingProperties").length > 0
+            val carriesXades = signatureElement.elementsByTagNameNS(XADES_NS, "QualifyingProperties").length > 0
             val coverageErrors =
                 EnvelopedSignatureCoverage.violations(
                     EnvelopedSignatureCoverage.inspect(root, signatureElement, signedInfo, referenceResults, signatureNodes.length),
@@ -325,19 +326,19 @@ class XmlUtilSignatureVerifier(
 
     private fun extractCertificatesFromSignature(signatureElement: Element): Pair<List<String>, List<ByteArray>?> {
         try {
-            val keyInfoNodes = signatureElement.getElementsByTagNameNS(XMLDSIG_NS, "KeyInfo")
+            val keyInfoNodes = signatureElement.elementsByTagNameNS(XMLDSIG_NS, "KeyInfo")
             if (keyInfoNodes.length == 0) {
                 return Pair(emptyList(), null)
             }
 
             val keyInfoElement = keyInfoNodes[0] as? Element ?: return Pair(emptyList(), null)
-            val x509DataNodes = keyInfoElement.getElementsByTagNameNS(XMLDSIG_NS, "X509Data")
+            val x509DataNodes = keyInfoElement.elementsByTagNameNS(XMLDSIG_NS, "X509Data")
             if (x509DataNodes.length == 0) {
                 return Pair(emptyList(), null)
             }
 
             val x509DataElement = x509DataNodes[0] as? Element ?: return Pair(emptyList(), null)
-            val x509CertNodes = x509DataElement.getElementsByTagNameNS(XMLDSIG_NS, "X509Certificate")
+            val x509CertNodes = x509DataElement.elementsByTagNameNS(XMLDSIG_NS, "X509Certificate")
 
             if (x509CertNodes.length == 0) {
                 return Pair(emptyList(), null)
@@ -363,7 +364,7 @@ class XmlUtilSignatureVerifier(
 
     private fun extractSignatureValue(signatureElement: Element): ByteArray? {
         try {
-            val signatureValueNodes = signatureElement.getElementsByTagNameNS(XMLDSIG_NS, "SignatureValue")
+            val signatureValueNodes = signatureElement.elementsByTagNameNS(XMLDSIG_NS, "SignatureValue")
             if (signatureValueNodes.length == 0) {
                 return null
             }
@@ -380,7 +381,7 @@ class XmlUtilSignatureVerifier(
     }
 
     private fun extractSignedInfo(signatureElement: Element): Element? {
-        val signedInfoNodes = signatureElement.getElementsByTagNameNS(XMLDSIG_NS, "SignedInfo")
+        val signedInfoNodes = signatureElement.elementsByTagNameNS(XMLDSIG_NS, "SignedInfo")
         return if (signedInfoNodes.length > 0) {
             signedInfoNodes[0] as? Element
         } else {

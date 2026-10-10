@@ -20,6 +20,7 @@ import com.sphereon.core.api.Encoding
 import com.sphereon.core.api.decodeFrom
 import com.sphereon.core.api.encodeTo
 import com.sphereon.core.compat.xml.c14n.ExclusiveC14N
+import com.sphereon.core.compat.xml.elementsByTagNameNS
 import com.sphereon.crypto.core.generic.DigestAlg
 import com.sphereon.crypto.core.generic.hash
 import com.sphereon.trust.etsi.signature.xades.SIGNED_PROPERTIES_TYPE
@@ -74,7 +75,7 @@ object ReferenceValidator {
         document: Document,
         signatureElement: Element,
     ): List<ReferenceResult> {
-        val references = signedInfo.getElementsByTagNameNS(XMLDSIG_NS, "Reference")
+        val references = signedInfo.elementsByTagNameNS(XMLDSIG_NS, "Reference")
         val results = mutableListOf<ReferenceResult>()
 
         for (refNode in references) {
@@ -218,7 +219,7 @@ object ReferenceValidator {
         val transformsEl =
             firstChildElement(reference, XMLDSIG_NS, "Transforms")
                 ?: return emptyList()
-        val transformList = transformsEl.getElementsByTagNameNS(XMLDSIG_NS, "Transform")
+        val transformList = transformsEl.elementsByTagNameNS(XMLDSIG_NS, "Transform")
         val transforms = mutableListOf<Transform>()
 
         for (node in transformList) {
@@ -330,7 +331,7 @@ object ReferenceValidator {
         nsUri: String,
         localName: String,
     ): Element? {
-        val nodes = parent.getElementsByTagNameNS(nsUri, localName)
+        val nodes = parent.elementsByTagNameNS(nsUri, localName)
         return if (nodes.length > 0) {
             nodes[0] as? Element
         } else {

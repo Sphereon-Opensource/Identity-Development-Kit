@@ -18,6 +18,7 @@ package com.sphereon.trust.etsi.signature.xades
 
 import com.sphereon.core.api.Encoding
 import com.sphereon.core.api.decodeFrom
+import com.sphereon.core.compat.xml.elementsByTagNameNS
 import nl.adaptivity.xmlutil.dom2.Element
 import nl.adaptivity.xmlutil.dom2.length
 import kotlin.time.Instant
@@ -49,7 +50,7 @@ object XAdESParser {
      */
     fun parse(signatureElement: Element): QualifyingProperties? {
         // Look for Object elements in the Signature
-        val objectNodes = signatureElement.getElementsByTagNameNS(XMLDSIG_NS, "Object")
+        val objectNodes = signatureElement.elementsByTagNameNS(XMLDSIG_NS, "Object")
 
         for (objNode in objectNodes) {
             if (objNode !is Element) {
@@ -58,7 +59,7 @@ object XAdESParser {
 
             // Look for QualifyingProperties in any recognized XAdES namespace
             for (xadesNs in XADES_NAMESPACES) {
-                val qpNodes = objNode.getElementsByTagNameNS(xadesNs, "QualifyingProperties")
+                val qpNodes = objNode.elementsByTagNameNS(xadesNs, "QualifyingProperties")
                 if (qpNodes.length > 0) {
                     val qpElement = qpNodes[0] as? Element ?: continue
                     return parseQualifyingProperties(qpElement, xadesNs)
@@ -74,13 +75,13 @@ object XAdESParser {
      * Used for Reference validation (the SignedProperties Reference).
      */
     fun findSignedPropertiesElement(signatureElement: Element): Element? {
-        val objectNodes = signatureElement.getElementsByTagNameNS(XMLDSIG_NS, "Object")
+        val objectNodes = signatureElement.elementsByTagNameNS(XMLDSIG_NS, "Object")
         for (objNode in objectNodes) {
             if (objNode !is Element) {
                 continue
             }
             for (xadesNs in XADES_NAMESPACES) {
-                val spNodes = objNode.getElementsByTagNameNS(xadesNs, "SignedProperties")
+                val spNodes = objNode.elementsByTagNameNS(xadesNs, "SignedProperties")
                 if (spNodes.length > 0) {
                     return spNodes[0] as? Element
                 }
@@ -173,7 +174,7 @@ object XAdESParser {
         v2: Boolean,
     ): List<CertDigest> {
         val certs = mutableListOf<CertDigest>()
-        val certNodes = element.getElementsByTagNameNS(ns, "Cert")
+        val certNodes = element.elementsByTagNameNS(ns, "Cert")
 
         for (certNode in certNodes) {
             if (certNode !is Element) {
@@ -237,7 +238,7 @@ object XAdESParser {
         ns: String,
     ): SignedDataObjectProperties {
         val formats = mutableListOf<DataObjectFormat>()
-        val formatNodes = element.getElementsByTagNameNS(ns, "DataObjectFormat")
+        val formatNodes = element.elementsByTagNameNS(ns, "DataObjectFormat")
 
         for (formatNode in formatNodes) {
             if (formatNode !is Element) {
@@ -271,7 +272,7 @@ object XAdESParser {
         ns: String,
     ): UnsignedSignatureProperties {
         val timestamps = mutableListOf<SignatureTimestamp>()
-        val tsNodes = element.getElementsByTagNameNS(ns, "SignatureTimeStamp")
+        val tsNodes = element.elementsByTagNameNS(ns, "SignatureTimeStamp")
 
         for (tsNode in tsNodes) {
             if (tsNode !is Element) {
@@ -296,7 +297,7 @@ object XAdESParser {
         nsUri: String,
         localName: String,
     ): Element? {
-        // Search direct children first, then fall back to getElementsByTagNameNS
+        // Search direct children first, then fall back to elementsByTagNameNS
         for (child in parent.getChildNodes()) {
             if (child is Element &&
                 child.getLocalName() == localName &&
@@ -306,7 +307,7 @@ object XAdESParser {
             }
         }
         // Fallback: search all descendants
-        val nodes = parent.getElementsByTagNameNS(nsUri, localName)
+        val nodes = parent.elementsByTagNameNS(nsUri, localName)
         return if (nodes.length > 0) {
             nodes[0] as? Element
         } else {

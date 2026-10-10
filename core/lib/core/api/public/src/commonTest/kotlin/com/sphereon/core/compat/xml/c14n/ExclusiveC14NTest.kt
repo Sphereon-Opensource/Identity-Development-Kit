@@ -16,6 +16,7 @@
 
 package com.sphereon.core.compat.xml.c14n
 
+import com.sphereon.core.compat.xml.elementsByTagNameNS
 import nl.adaptivity.xmlutil.dom2.Document
 import nl.adaptivity.xmlutil.dom2.Element
 import kotlin.test.Test
@@ -102,7 +103,7 @@ class ExclusiveC14NTest {
         val doc = parseXml(xml)
         val root = doc.getDocumentElement()!!
         // Canonicalize just the child element
-        val child = root.getElementsByTagNameNS("http://used", "child")[0] as Element
+        val child = root.elementsByTagNameNS("http://used", "child")[0] as Element
 
         val result = ExclusiveC14N.canonicalize(child).decodeToString()
 
@@ -142,7 +143,7 @@ class ExclusiveC14NTest {
         val doc = parseXml(xml)
         val root = doc.getDocumentElement()!!
 
-        val signedInfo = root.getElementsByTagNameNS("http://www.w3.org/2000/09/xmldsig#", "SignedInfo")[0] as Element
+        val signedInfo = root.elementsByTagNameNS("http://www.w3.org/2000/09/xmldsig#", "SignedInfo")[0] as Element
         val result = ExclusiveC14N.canonicalize(signedInfo).decodeToString()
 
         // SignedInfo should include ds namespace declaration (not inherited from parent in exc-c14n)

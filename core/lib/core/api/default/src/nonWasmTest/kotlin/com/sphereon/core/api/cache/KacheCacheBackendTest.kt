@@ -154,6 +154,26 @@ class KacheCacheBackendTest {
         }
 
     @Test
+    fun keysFollowEvictionsRemovesOverwritesAndClear() =
+        runTest {
+            val backend = createBackend(maxSize = 2)
+
+            backend.set("a", "1".encodeToByteArray())
+            backend.set("b", "2".encodeToByteArray())
+            backend.set("a", "3".encodeToByteArray())
+            assertEquals(setOf("a", "b"), backend.keys("*").toSet())
+
+            backend.set("c", "4".encodeToByteArray())
+            assertEquals(setOf("a", "c"), backend.keys("*").toSet())
+
+            backend.delete("a")
+            assertEquals(listOf("c"), backend.keys("*"))
+
+            backend.clear()
+            assertTrue(backend.keys("*").isEmpty())
+        }
+
+    @Test
     fun keysReturnsMatchingKeys() =
         runTest {
             val backend = createBackend()

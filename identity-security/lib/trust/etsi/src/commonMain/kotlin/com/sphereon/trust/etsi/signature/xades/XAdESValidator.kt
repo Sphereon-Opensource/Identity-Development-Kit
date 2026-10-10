@@ -21,6 +21,7 @@ import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.decodeFrom
 import com.sphereon.core.api.encodeTo
 import com.sphereon.core.compat.xml.c14n.ExclusiveC14N
+import com.sphereon.core.compat.xml.elementsByTagNameNS
 import com.sphereon.crypto.core.KeyInfo
 import com.sphereon.crypto.core.KeyType
 import com.sphereon.crypto.core.generic.DigestAlg
@@ -226,7 +227,7 @@ class XAdESValidatorImpl(
             }
 
             // Find Signature element
-            val signatureNodes = root.getElementsByTagNameNS(XMLDSIG_NS, "Signature")
+            val signatureNodes = root.elementsByTagNameNS(XMLDSIG_NS, "Signature")
             if (signatureNodes.length == 0) {
                 return XAdESValidationResult(
                     valid = !options.requireXAdESProperties,
@@ -481,7 +482,7 @@ class XAdESValidatorImpl(
     private fun extractCertificates(signatureElement: Element): Pair<List<String>, List<ByteArray>?> {
         val keyInfoEl = firstChild(signatureElement, XMLDSIG_NS, "KeyInfo") ?: return Pair(emptyList(), null)
         val x509DataEl = firstChild(keyInfoEl, XMLDSIG_NS, "X509Data") ?: return Pair(emptyList(), null)
-        val certNodes = x509DataEl.getElementsByTagNameNS(XMLDSIG_NS, "X509Certificate")
+        val certNodes = x509DataEl.elementsByTagNameNS(XMLDSIG_NS, "X509Certificate")
 
         val certs = mutableListOf<String>()
         val chainBytes = mutableListOf<ByteArray>()

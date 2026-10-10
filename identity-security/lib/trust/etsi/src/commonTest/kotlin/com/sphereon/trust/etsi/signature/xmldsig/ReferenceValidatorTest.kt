@@ -19,6 +19,7 @@ package com.sphereon.trust.etsi.signature.xmldsig
 import com.sphereon.core.api.Encoding
 import com.sphereon.core.api.encodeTo
 import com.sphereon.core.compat.xml.c14n.ExclusiveC14N
+import com.sphereon.core.compat.xml.elementsByTagNameNS
 import com.sphereon.crypto.core.generic.DigestAlg
 import com.sphereon.crypto.core.generic.hash
 import com.sphereon.trust.etsi.testutil.parseXmlToDocument
@@ -65,8 +66,8 @@ class ReferenceValidatorTest {
 
         val doc = parseXmlToDocument(xml)
         val root = doc.getDocumentElement()!!
-        val signatureElement = root.getElementsByTagNameNS("http://www.w3.org/2000/09/xmldsig#", "Signature")[0] as Element
-        val signedInfo = signatureElement.getElementsByTagNameNS("http://www.w3.org/2000/09/xmldsig#", "SignedInfo")[0] as Element
+        val signatureElement = root.elementsByTagNameNS("http://www.w3.org/2000/09/xmldsig#", "Signature")[0] as Element
+        val signedInfo = signatureElement.elementsByTagNameNS("http://www.w3.org/2000/09/xmldsig#", "SignedInfo")[0] as Element
 
         val results = ReferenceValidator.validateReferences(signedInfo, doc, signatureElement)
 
@@ -97,8 +98,8 @@ class ReferenceValidatorTest {
 
         val doc = parseXmlToDocument(xml)
         val root = doc.getDocumentElement()!!
-        val signatureElement = root.getElementsByTagNameNS("http://www.w3.org/2000/09/xmldsig#", "Signature")[0] as Element
-        val signedInfo = signatureElement.getElementsByTagNameNS("http://www.w3.org/2000/09/xmldsig#", "SignedInfo")[0] as Element
+        val signatureElement = root.elementsByTagNameNS("http://www.w3.org/2000/09/xmldsig#", "Signature")[0] as Element
+        val signedInfo = signatureElement.elementsByTagNameNS("http://www.w3.org/2000/09/xmldsig#", "SignedInfo")[0] as Element
 
         val results = ReferenceValidator.validateReferences(signedInfo, doc, signatureElement)
 
@@ -128,8 +129,8 @@ class ReferenceValidatorTest {
 
         val doc = parseXmlToDocument(xml)
         val root = doc.getDocumentElement()!!
-        val signatureElement = root.getElementsByTagNameNS("http://www.w3.org/2000/09/xmldsig#", "Signature")[0] as Element
-        val signedInfo = signatureElement.getElementsByTagNameNS("http://www.w3.org/2000/09/xmldsig#", "SignedInfo")[0] as Element
+        val signatureElement = root.elementsByTagNameNS("http://www.w3.org/2000/09/xmldsig#", "Signature")[0] as Element
+        val signedInfo = signatureElement.elementsByTagNameNS("http://www.w3.org/2000/09/xmldsig#", "SignedInfo")[0] as Element
 
         val results = ReferenceValidator.validateReferences(signedInfo, doc, signatureElement)
 
