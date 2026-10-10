@@ -411,6 +411,12 @@ class PackCiTests(unittest.TestCase):
         self.assertEqual(3, len(calls))
         self.assertTrue(all('--refresh-dependencies' in command for command in calls))
 
+    def testPublicCommandsBuildOnlyTargetsTheLinuxRunnerCanProduce(self):
+        stage = {"phase": "check", "pack": "core", "tasks": ["build"], "exclusions": []}
+        command = ci.command(Path("checkout").resolve(), stage, "public", Path("prerequisites").resolve())
+        targets = next(argument for argument in command if argument.startswith("-Dkmp.targets="))
+        self.assertEqual("-Dkmp.targets=jvm,js,wasmjs,linuxx64", targets)
+
     def testExactCommandsUseOnlyCheckoutAndPrivateMaven(self):
         root, repo = Path("checkout").resolve(), Path("prerequisites").resolve()
         stage = {"phase": "check", "pack": "identity-security", "tasks": ["build"],
