@@ -80,16 +80,8 @@ class KacheCacheBackend(
         }
     }
 
-    /**
-     * Keys currently held by [cache]. Kache 2.1.1's getKeys() fails on Kotlin/JS (its prebuilt sequence builder no
-     * longer matches the stdlib), so pattern lookups enumerate this set instead. A key is added before every put and
-     * dropped when Kache reports a removal without a replacement, which covers removes, LRU evictions and failed puts.
-     */
-    private val trackedKeys = LinkedHashSet<String>()
-
     private val cache =
         InMemoryKache<String, CacheEntry>(maxSize) {
-            onEntryRemoved = { _, key, _, newValue -> if (newValue == null) trackedKeys.remove(key) }
             strategy = KacheStrategy.LRU
         }
 
@@ -126,7 +118,6 @@ class KacheCacheBackend(
         ttlMs: Long?,
     ) {
         val expiresAt = ttlMs?.let { Clock.System.now().plus(kotlin.time.Duration.parse("${it}ms")) }
-        trackedKeys.add(key)
         cache.put(key, CacheEntry(value, expiresAt))
     }
 
@@ -170,10 +161,7 @@ class KacheCacheBackend(
         cacheMutex.withLock { keysMatchingPattern(pattern, cacheKeysUnlocked()) }
 
     override suspend fun clear() {
-        cacheMutex.withLock {
-            cache.clear()
-            trackedKeys.clear()
-        }
+        cacheMutex.withLock { cache.clear() }
     }
 
     override suspend fun size(): Long = cacheMutex.withLock { cache.size }
@@ -199,7 +187,11 @@ class KacheCacheBackend(
         cleaned
     }
 
-    private fun cacheKeysUnlocked(): List<String> = trackedKeys.toList()
+    private suspend fun cacheKeysUnlocked(): List<String> {
+        @Suppress("UNCHECKED_CAST")
+        val keys = cache.getKeys() as Iterable<String?>
+        return keys.filterNotNull()
+    }
 }
 
 internal fun keysMatchingPattern(
