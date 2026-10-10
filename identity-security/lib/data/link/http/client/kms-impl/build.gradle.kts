@@ -52,9 +52,8 @@ kotlin {
     sourceSets {
         val commonMain by getting {
             dependencies {
-                // Always the pack-local public API (includeLocal from infra). Artifact mode would
-                // resolve a pre-Wave-1 jar and miss HttpClientBindingPriority / logging helpers.
-                api(project(":lib-data-link-http-client-public"))
+                // Infra owns this API; selected source composites substitute its Maven coordinate.
+                api(if (rootProject.findProperty("idk.consumeInfrastructureAsArtifacts") == "true") "com.sphereon.idk:lib-data-link-http-client-public:$version" else project(":lib-data-link-http-client-public"))
                 implementation(if (rootProject.findProperty("idk.consumeInfrastructureAsArtifacts") == "true") "com.sphereon.idk:lib-data-link-http-client-impl:$version" else project(":lib-data-link-http-client-impl"))
                 api(
                     if (rootProject.findProperty("idk.consumeIdentitySecurityAsArtifacts") == "true") {

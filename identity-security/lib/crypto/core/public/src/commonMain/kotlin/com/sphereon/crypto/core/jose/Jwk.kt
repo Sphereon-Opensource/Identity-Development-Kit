@@ -483,6 +483,17 @@ Jwk
         private fun determineKid(): String = generateJwkThumbprint(this)
 
         /**
+         * Data-class shaped, but private key material (d, p, q, dp, dq, qi, k) is redacted; only its
+         * presence and length are rendered.
+         */
+        override fun toString(): String =
+            "Jwk(generateKid=$generateKid, alg=$alg, crv=$crv, d=${d.maskKeyMaterial()}, p=${p.maskKeyMaterial()}, " +
+                "e=$e, k=${k.maskKeyMaterial()}, q=${q.maskKeyMaterial()}, dP=${dP.maskKeyMaterial()}, " +
+                "dQ=${dQ.maskKeyMaterial()}, qInv=${qInv.maskKeyMaterial()}, key_ops=${key_ops?.contentToString()}, " +
+                "kid=$kid, kty=$kty, n=$n, use=$use, x=$x, x5c=${x5c?.contentToString()}, x5t=$x5t, x5u=$x5u, " +
+                "x5t_S256=$x5t_S256, y=$y)"
+
+        /**
          * Retrieves the algorithm mapping for the current JWK (JSON Web Key) instance.
          *
          * If 'alg' field is present, it is used as the authoritative source.
@@ -1560,6 +1571,9 @@ fun generateJwkThumbprint(jwk: JwkType): String =
  * @throws IllegalArgumentException if key type is unsupported or required parameters are missing.
  */
 fun generateJwkThumbprintUri(jwk: JwkType): String = "urn:ietf:params:oauth:jwk-thumbprint:sha-256:${generateJwkThumbprint(jwk)}"
+
+/** Renders private key material for `toString` output as presence and length only; no character of the value is shown. */
+internal fun String?.maskKeyMaterial(): String? = this?.let { "[REDACTED, ${it.length} chars]" }
 
 /**
  * Represents a JSON Web Key Set (JWKS) as defined by RFC 7517

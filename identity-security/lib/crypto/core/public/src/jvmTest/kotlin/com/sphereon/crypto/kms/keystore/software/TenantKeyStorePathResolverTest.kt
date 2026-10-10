@@ -141,4 +141,32 @@ class TenantKeyStorePathResolverTest {
         assertNotEquals(config.path, a.path)
         assertEquals("/shared/tenant-a/edk-keystore.p12", a.path)
     }
+
+    @Test
+    fun deploymentRootReplacesTheBuiltInDefault() {
+        val config = pkcs12(id = "software")
+        assertEquals("/srv/kms/tenant-a/software.p12", TenantKeyStorePathResolver.resolvePath(config, "tenant-a", "/srv/kms/"))
+        assertEquals(
+            "/srv/kms/tenant-a/connector-vault-content.p12",
+            TenantKeyStorePathResolver.withResolvedPath(pkcs12(path = "connector-vault-content.p12"), "tenant-a", "/srv/kms").path,
+        )
+    }
+
+    @Test
+    fun blankDeploymentRootFallsBackToTheBuiltInDefault() {
+        val config = pkcs12(id = "software")
+        assertEquals("/keystore/tenant-a/software.p12", TenantKeyStorePathResolver.resolvePath(config, "tenant-a", "  "))
+    }
+
+    @Test
+    fun keystoreOwnRootAndExplicitPathWinOverTheDeploymentRoot() {
+        assertEquals(
+            "/own-root/tenant-a/software.p12",
+            TenantKeyStorePathResolver.resolvePath(pkcs12(keystoreRoot = "/own-root"), "tenant-a", "/srv/kms"),
+        )
+        assertEquals(
+            "/shared/tenant-a/edk-keystore.p12",
+            TenantKeyStorePathResolver.resolvePath(pkcs12(path = "/shared/edk-keystore.p12"), "tenant-a", "/srv/kms"),
+        )
+    }
 }

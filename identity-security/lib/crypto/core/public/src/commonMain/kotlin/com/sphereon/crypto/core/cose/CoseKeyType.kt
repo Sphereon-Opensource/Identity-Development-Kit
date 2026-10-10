@@ -46,6 +46,7 @@ import com.sphereon.crypto.core.interop.x509CertificateChainFromPem
 import com.sphereon.crypto.core.jose.Jwk
 import com.sphereon.crypto.core.jose.generateJwkThumbprint
 import com.sphereon.crypto.core.jose.jsonToJwk
+import com.sphereon.crypto.core.jose.maskKeyMaterial
 import com.sphereon.crypto.core.json.cryptoJsonSerializer
 import com.sphereon.crypto.core.x509.Certificate
 import com.sphereon.crypto.core.x509.certificateChainFromPem
@@ -508,7 +509,7 @@ CoseKeyJson
          * @return A string representation of the CoseKeyJson object including its properties.
          */
         override fun toString(): String =
-            "CoseKeyJsonImpl(kty=$kty, kid=$kid, alg=$alg, key_ops=${key_ops?.contentToString()}, baseIV=$baseIV, crv=$crv, x=$x, y=$y, d=$d, x5chain=${x5chain?.contentToString()}, n=$n, rsaE=$rsaE, p=$p, q=$q, dP=$dP, dQ=$dQ, qInv=$qInv, additional=$additional)"
+            "CoseKeyJsonImpl(kty=$kty, kid=$kid, alg=$alg, key_ops=${key_ops?.contentToString()}, baseIV=$baseIV, crv=$crv, x=$x, y=$y, d=${d.maskKeyMaterial()}, x5chain=${x5chain?.contentToString()}, n=$n, rsaE=$rsaE, p=${p.maskKeyMaterial()}, q=${q.maskKeyMaterial()}, dP=${dP.maskKeyMaterial()}, dQ=${dQ.maskKeyMaterial()}, qInv=${qInv.maskKeyMaterial()}, additional=${additional?.let { "[REDACTED]" }})"
 
         /**
          * The Static object provides utility methods for transforming data.
@@ -1317,7 +1318,7 @@ CoseKey
          * @return A String containing values of the CoseKey fields.
          */
         override fun toString(): String =
-            "CoseKeyImpl(kty=$kty, kid=$kid, alg=$alg, key_ops=$key_ops, baseIV=$baseIV, crv=$crv, x=$x, y=$y, d=$d, x5chain=$x5chain, n=$n, rsaE=$rsaE, rsaP=$rsaP, rsaQ=$rsaQ, rsaDP=$rsaDP, rsaDQ=$rsaDQ, rsaQInv=$rsaQInv, additional=$additional)"
+            "CoseKeyImpl(kty=$kty, kid=$kid, alg=$alg, key_ops=$key_ops, baseIV=$baseIV, crv=$crv, x=$x, y=$y, d=${d?.toString().maskKeyMaterial()}, x5chain=$x5chain, n=$n, rsaE=$rsaE, rsaP=${rsaP?.toString().maskKeyMaterial()}, rsaQ=${rsaQ?.toString().maskKeyMaterial()}, rsaDP=${rsaDP?.toString().maskKeyMaterial()}, rsaDQ=${rsaDQ?.toString().maskKeyMaterial()}, rsaQInv=${rsaQInv?.toString().maskKeyMaterial()}, additional=${additional?.let { "[REDACTED]" }})"
 
         /**
          * Builder class for constructing a `CoseKey` object.

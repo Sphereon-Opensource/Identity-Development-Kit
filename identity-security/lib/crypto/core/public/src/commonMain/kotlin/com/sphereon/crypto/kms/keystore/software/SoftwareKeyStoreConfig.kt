@@ -57,7 +57,8 @@ interface SoftwareKeyStoreConfig : KeyStoreConfig {
      * resolves to `<keystoreRoot>/<tenantId>/<id>.<ext>` so each tenant gets its own keystore file
      * and each provider name (`id`) gets its own file within the tenant directory.
      *
-     * Defaults to [TenantKeyStorePathResolver.DEFAULT_KEYSTORE_ROOT] when null/blank.
+     * Defaults to the deployment root ([TenantKeyStorePathResolver.KEYSTORE_ROOT_PROPERTY]), and to
+     * [TenantKeyStorePathResolver.DEFAULT_KEYSTORE_ROOT] when that is unset.
      */
     val keystoreRoot: String?
 

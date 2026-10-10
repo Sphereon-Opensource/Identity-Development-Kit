@@ -215,7 +215,7 @@ class VerifyJwsCommandImpl(
                     }
 
                 if (identifierResult.isErr) {
-                    errorMessages.add("Signature $index: Failed to resolve identifier - ${identifierResult.error.message}")
+                    errorMessages.add("Signature $index: Failed to resolve identifier - ${identifierResult.error.message.defaultMessage}")
                     // Trust establishment failure: no key resolved for this signature.
                     anyResolutionFailed = true
                     continue

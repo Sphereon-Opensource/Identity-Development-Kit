@@ -607,7 +607,7 @@ class DefaultJwtValidationService(
             }
 
             SIGNATURE_INVALID_CODE -> {
-                JwtValidationError.signatureInvalid(idpConfig.issuer)
+                JwtValidationError.signatureInvalid(idpConfig.issuer, cause = reason)
             }
 
             MISSING_KID_CODE -> {

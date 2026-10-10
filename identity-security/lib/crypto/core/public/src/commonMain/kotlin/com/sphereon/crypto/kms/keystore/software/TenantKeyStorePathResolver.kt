@@ -37,6 +37,13 @@ object TenantKeyStorePathResolver {
     /** Default keystore root directory used when no [SoftwareKeyStoreConfig.keystoreRoot] is set. */
     const val DEFAULT_KEYSTORE_ROOT: String = "/keystore"
 
+    /**
+     * App-level property naming the deployment's keystore root, used in place of
+     * [DEFAULT_KEYSTORE_ROOT] for keystores that do not carry their own root. It is
+     * deployment-owned: tenants never supply or observe the host path.
+     */
+    const val KEYSTORE_ROOT_PROPERTY: String = "kms.software.keystore-root"
+
     private const val PATH_SEPARATOR = "/"
     private const val FALLBACK_TENANT_ID = "default"
     private const val FALLBACK_PROVIDER_NAME = "keystore"
@@ -47,11 +54,14 @@ object TenantKeyStorePathResolver {
      * @param config the software keystore config (carries explicit [SoftwareKeyStoreConfig.path] or
      *   the per-tenant derivation inputs)
      * @param tenantId the active tenant id; null/blank falls back to [FALLBACK_TENANT_ID]
+     * @param defaultRoot the deployment's keystore root, used when the config carries no root of
+     *   its own; null/blank falls back to [DEFAULT_KEYSTORE_ROOT]
      * @return the derived per-tenant/per-provider path
      */
     fun resolvePath(
         config: SoftwareKeyStoreConfig,
         tenantId: String?,
+        defaultRoot: String? = null,
     ): String {
         val safeTenant = pathSafeSegment(tenantId, FALLBACK_TENANT_ID)
         val safeProvider = pathSafeSegment(config.id, FALLBACK_PROVIDER_NAME)
@@ -59,7 +69,8 @@ object TenantKeyStorePathResolver {
         val fallbackFileName = "$safeProvider.$ext"
         val explicit = config.path?.trim()?.takeUnless { it.isBlank() }
         val configuredRoot = config.keystoreRoot?.trim()?.takeUnless { it.isBlank() }
-        val root = normalizeRoot(configuredRoot ?: rootFromExplicitPath(explicit) ?: DEFAULT_KEYSTORE_ROOT)
+        val deploymentRoot = defaultRoot?.trim()?.takeUnless { it.isBlank() } ?: DEFAULT_KEYSTORE_ROOT
+        val root = normalizeRoot(configuredRoot ?: rootFromExplicitPath(explicit) ?: deploymentRoot)
         val relativePath =
             explicit
                 ?.let { explicitRelativePath(it, root) }
@@ -78,8 +89,9 @@ object TenantKeyStorePathResolver {
     fun withResolvedPath(
         config: SoftwareKeyStoreConfig,
         tenantId: String?,
+        defaultRoot: String? = null,
     ): SoftwareKeyStoreConfig {
-        val resolved = resolvePath(config, tenantId)
+        val resolved = resolvePath(config, tenantId, defaultRoot)
         return when (config) {
             is Pkcs12KeyStoreConfig -> config.copy(path = resolved)
             is BksKeyStoreConfig -> config.copy(path = resolved)

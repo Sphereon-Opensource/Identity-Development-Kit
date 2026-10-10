@@ -114,12 +114,19 @@ data class JwtValidationError(
                 message = "Token format is invalid: $details",
             )
 
-        fun signatureInvalid(issuer: String?) =
-            JwtValidationError(
-                type = JwtValidationErrorType.SIGNATURE_INVALID,
-                message = "Token signature verification failed",
-                issuer = issuer,
-            )
+        /**
+         * [cause] carries the verifier's reason (for example a key that could not be resolved), so
+         * logs can tell a forged signature from a lookup failure. [message] stays generic.
+         */
+        fun signatureInvalid(
+            issuer: String?,
+            cause: String? = null,
+        ) = JwtValidationError(
+            type = JwtValidationErrorType.SIGNATURE_INVALID,
+            message = "Token signature verification failed",
+            issuer = issuer,
+            cause = cause,
+        )
 
         fun expired(expiresAt: Long) =
             JwtValidationError(

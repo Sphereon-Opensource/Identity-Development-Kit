@@ -865,6 +865,35 @@ class DefaultJwtValidationServiceTest {
             }
         }
 
+    @Test
+    fun signatureFailureKeepsTheVerifierReasonAsCause() =
+        runTest {
+            val token =
+                buildJwt(
+                    mapOf(
+                        "iss" to JsonPrimitive(keycloakIssuer),
+                        "sub" to JsonPrimitive("user-1"),
+                    ),
+                )
+            val signatureError =
+                IdkError.fromDTO(
+                    ResourceServerError.InvalidToken.SignatureInvalid(details = "Signature 0: Failed to resolve identifier"),
+                )
+            val svc = service(stub = StubVerifyJwtCommand.returning(token, Err(signatureError)))
+
+            when (val result = svc.validateAccessToken(token)) {
+                is Ok -> {
+                    fail("Expected Err(SIGNATURE_INVALID) but got Ok=${result.value}")
+                }
+
+                is Err -> {
+                    assertEquals(JwtValidationErrorType.SIGNATURE_INVALID, result.error.type)
+                    assertEquals("Token signature verification failed", result.error.message)
+                    assertEquals("JWT signature invalid: Signature 0: Failed to resolve identifier", result.error.cause)
+                }
+            }
+        }
+
     // ========== 6. Wrong audience ==========
 
     @Test

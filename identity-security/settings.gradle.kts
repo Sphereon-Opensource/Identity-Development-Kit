@@ -230,8 +230,6 @@ includeLocal("lib-crypto-kms-provider-mobile", "lib/crypto/kms/provider/mobile")
 includeLocal("lib-crypto-kms-provider-rest", "lib/crypto/kms/provider/rest")
 includeLocal("lib-crypto-kms-provider-software", "lib/crypto/kms/provider/software")
 includeLocal("lib-crypto-kms-rest-api", "lib/crypto/kms/rest/api")
-// Wave 1 dual-mode: compile kms-impl against in-tree http-client-public (not stale worktree artifacts).
-includeLocal("lib-data-link-http-client-public", "../infra/lib/data/link/http/client/public")
 includeLocal("lib-data-link-http-client-kms-impl", "lib/data/link/http/client/kms-impl")
 includeLocal("lib-crypto-secdsa-impl", "lib/crypto/secdsa/impl")
 includeLocal("lib-crypto-secdsa-public", "lib/crypto/secdsa/public")

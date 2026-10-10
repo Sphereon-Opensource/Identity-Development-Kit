@@ -17,6 +17,7 @@
 
 package com.sphereon.crypto.kms.keystore.software
 
+import com.sphereon.core.api.conf.AppConfigService
 import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.crypto.core.kms.KeyStoreConfig
 import com.sphereon.crypto.core.kms.KeyStoreFactory
@@ -42,6 +43,7 @@ import kotlin.native.ObjCName
 class SoftwareKeyStoreFactoryImpl(
     private val realSoftwareKeyStoreFactory: RealSoftwareKeyStoreFactory,
     app: App,
+    private val appConfig: AppConfigService,
 ) : SoftwareKeyStoreFactory {
     // Note: Serialization registration is now handled automatically via SerializerRegistration
     // when the AppScope is created. No manual registration needed.
@@ -53,6 +55,11 @@ class SoftwareKeyStoreFactoryImpl(
             PlatformInfo.OsFamily.ANDROID -> PredefinedKeyStoreTypes.BKS.keyStoreType
             else -> PredefinedKeyStoreTypes.PKCS12.keyStoreType
         }
+
+    // Deployment-owned, so read from app config only: tenants never supply or observe the host path.
+    private val deploymentKeystoreRoot: String? by lazy {
+        appConfig.getPropertyAsString(TenantKeyStorePathResolver.KEYSTORE_ROOT_PROPERTY)
+    }
 
     override fun create(config: KeyStoreConfig): SoftwareKeyStoreService = realSoftwareKeyStoreFactory.create(config)
 
@@ -68,7 +75,11 @@ class SoftwareKeyStoreFactoryImpl(
     ): SoftwareKeyStoreService {
         val effectiveConfig =
             if (config is SoftwareKeyStoreConfig) {
-                TenantKeyStorePathResolver.withResolvedPath(config, tenantIdForKeystoreResolution(execution))
+                TenantKeyStorePathResolver.withResolvedPath(
+                    config,
+                    tenantIdForKeystoreResolution(execution),
+                    deploymentKeystoreRoot,
+                )
             } else {
                 config
             }
