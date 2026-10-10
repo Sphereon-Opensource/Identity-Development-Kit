@@ -20,3 +20,6 @@ import com.sphereon.crypto.core.createNativeCryptoTestAppGraph
 import com.sphereon.di.app.AppGraph
 
 actual fun createCryptoTestAppGraph(testInstance: Any): AppGraph = createNativeCryptoTestAppGraph(testInstance)
+
+// The software KMS signs prehashed ECDSA digests through the platform provider (OpenSSL on Linux, Apple on iOS).
+actual fun supportsDigestSignatureRoundTrip(): Boolean = true

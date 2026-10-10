@@ -1,5 +1,5 @@
 /*
- * © 2026 Sphereon International B.V.
+ * Copyright 2023-2026 Sphereon International B.V.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,12 +14,11 @@
  * limitations under the License.
  */
 
-package com.sphereon.crypto.core.testutil
+package com.sphereon.crypto.secdsa.impl.testutil
 
-import com.sphereon.crypto.core.createNativeCryptoTestAppGraph
+import com.sphereon.crypto.secdsa.impl.createNativeSecdsaTestAppGraph
 import com.sphereon.di.app.AppGraph
 
-actual fun createCryptoTestAppGraph(testInstance: Any): AppGraph = createNativeCryptoTestAppGraph(testInstance)
+actual fun createSecdsaTestAppGraph(testInstance: Any): AppGraph = createNativeSecdsaTestAppGraph(testInstance)
 
-// The software KMS signs prehashed ECDSA digests through the platform provider (OpenSSL on Linux, Apple on iOS).
-actual fun supportsDigestSignatureRoundTrip(): Boolean = true
+actual fun supportsSecdsaKmsInstructionRoundTrip(): Boolean = true

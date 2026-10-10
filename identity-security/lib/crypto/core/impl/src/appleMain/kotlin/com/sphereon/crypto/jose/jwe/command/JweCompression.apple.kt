@@ -16,12 +16,11 @@
 
 package com.sphereon.crypto.jose.jwe.command
 
-/**
- * Apple targets (iOS / macOS / etc.) — DEFLATE not yet wired here. The right Apple primitive
- * is `compression_stream_*` from `<compression.h>` with `COMPRESSION_ZLIB` (which is raw
- * DEFLATE / RFC 1951 despite the name). When a wallet flow on iOS needs JWE compression,
- * implement against that and replace the throws below.
- */
-internal actual suspend fun deflate(plaintext: ByteArray): ByteArray = throw UnsupportedOperationException("DEFLATE not implemented for Apple targets")
+import com.sphereon.compression.CompressionAlgorithm
+import com.sphereon.compression.compress
+import com.sphereon.compression.decompress
 
-internal actual suspend fun inflate(compressed: ByteArray): ByteArray = throw UnsupportedOperationException("INFLATE not implemented for Apple targets")
+// JWE zip=DEF is raw DEFLATE (RFC 1951); the shared compression library implements it on native through zlib.
+internal actual suspend fun deflate(plaintext: ByteArray): ByteArray = compress(plaintext, CompressionAlgorithm.DEFLATE_RAW)
+
+internal actual suspend fun inflate(compressed: ByteArray): ByteArray = decompress(compressed, CompressionAlgorithm.DEFLATE_RAW)

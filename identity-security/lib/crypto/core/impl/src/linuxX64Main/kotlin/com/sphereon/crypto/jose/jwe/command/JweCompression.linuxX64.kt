@@ -16,15 +16,11 @@
 
 package com.sphereon.crypto.jose.jwe.command
 
-/**
- * Linux native target — DEFLATE not yet wired here. The natural primitive is `zlib` via
- * cinterop (`deflateInit2(..., -MAX_WBITS, ...)` to suppress the zlib header and produce
- * RFC 1951 raw DEFLATE). When a Linux native deployment needs JWE compression, add a
- * cinterop def for `zlib` and replace the throws below.
- *
- * Until then `deflate` / `inflate` throw, and `JweCommandErrorPathsTest`'s round-trip test
- * skips on this target via its UnsupportedOperationException probe.
- */
-internal actual suspend fun deflate(plaintext: ByteArray): ByteArray = throw UnsupportedOperationException("DEFLATE not implemented for linuxX64 target")
+import com.sphereon.compression.CompressionAlgorithm
+import com.sphereon.compression.compress
+import com.sphereon.compression.decompress
 
-internal actual suspend fun inflate(compressed: ByteArray): ByteArray = throw UnsupportedOperationException("INFLATE not implemented for linuxX64 target")
+// JWE zip=DEF is raw DEFLATE (RFC 1951); the shared compression library implements it on native through zlib.
+internal actual suspend fun deflate(plaintext: ByteArray): ByteArray = compress(plaintext, CompressionAlgorithm.DEFLATE_RAW)
+
+internal actual suspend fun inflate(compressed: ByteArray): ByteArray = decompress(compressed, CompressionAlgorithm.DEFLATE_RAW)
