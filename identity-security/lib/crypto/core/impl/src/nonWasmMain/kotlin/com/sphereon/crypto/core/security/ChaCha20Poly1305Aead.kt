@@ -16,7 +16,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
 /**
- * JVM / JS / native AEAD backed by libsodium's `crypto_aead_chacha20poly1305_ietf_*`
+ * JVM / native AEAD backed by libsodium's `crypto_aead_chacha20poly1305_ietf_*`
  * (RFC 8439). libsodium performs the AEAD as a single stateless call, so — unlike the JDK
  * `ChaCha20-Poly1305` cipher, which rejects re-init with a previously-seen key+nonce — an
  * encrypt-then-decrypt round-trip under the same key and nonce works as expected.

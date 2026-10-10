@@ -21,6 +21,7 @@ import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.error.IdkErrorType
+import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.Serializable
 import kotlin.time.Clock
 import kotlin.time.Instant
@@ -451,7 +452,12 @@ data class UserInfo(
  *
  * The `description` constructor parameter carries the user-facing text; the [IdkErrorType.message]
  * override projects it into the [IdkError.Message] shape the framework expects.
+ *
+ * Exported like [IdkErrorType]: Kotlin/JS reads these properties by their exported names, and defaults
+ * declared on a non-exported sub-interface are only registered under mangled names, so callers would see
+ * the [IdkErrorType] defaults instead.
  */
+@JsExportCompat
 sealed interface AuthenticationError : IdkErrorType {
     val description: String
 

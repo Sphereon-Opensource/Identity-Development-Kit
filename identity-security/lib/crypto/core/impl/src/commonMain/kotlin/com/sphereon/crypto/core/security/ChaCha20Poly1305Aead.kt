@@ -14,8 +14,8 @@ package com.sphereon.crypto.core.security
  * Platform AEAD primitive for [ChaCha20Poly1305EncryptionService] (RFC 8439, IETF
  * construction: 32-byte key, 12-byte nonce, 16-byte Poly1305 tag).
  *
- * Backed by libsodium-bindings on JVM / JS / native (`nonWasmMain` actual). libsodium
- * publishes no wasmJs artifact, so the `wasmJsMain` actual throws
+ * Backed by libsodium-bindings on JVM / native (`nonWasmMain` actual) and by `@noble/ciphers`
+ * on JS (`jsMain` actual). libsodium publishes no wasmJs artifact, so the `wasmJsMain` actual throws
  * [UnsupportedOperationException] — ChaCha20-Poly1305 at-rest encryption is unavailable on
  * wasmJs; deployments targeting wasmJs use AES-256-GCM ([AesGcmEncryptionService]) instead.
  *
