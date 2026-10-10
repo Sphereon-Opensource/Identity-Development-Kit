@@ -54,6 +54,7 @@ interface ParseCredentialOfferCommand : ServiceCommand<ParseCredentialOfferArgs,
 // ResolveCredentialOfferCommand
 // ============================================================================
 
+@Serializable
 data class ResolveCredentialOfferArgs(
     val offer: CredentialOffer,
 )
@@ -86,6 +87,7 @@ interface ResolveIssuerMetadataCommand : ServiceCommand<ResolveIssuerMetadataArg
 // SelectAuthorizationServerCommand
 // ============================================================================
 
+@Serializable
 data class SelectAuthorizationServerArgs(
     val issuerMetadata: CredentialIssuerMetadata,
     val preferredAuthorizationServer: String? = null,
@@ -116,6 +118,7 @@ interface SelectAuthorizationServerCommand : ServiceCommand<SelectAuthorizationS
 // RequestNonceCommand
 // ============================================================================
 
+@Serializable
 data class RequestNonceArgs(
     val nonceEndpoint: String,
 )
@@ -149,6 +152,7 @@ interface RequestAttestationChallengeCommand : ServiceCommand<RequestAttestation
 // ExchangePreAuthorizedCodeCommand
 // ============================================================================
 
+@Serializable
 data class ExchangePreAuthorizedCodeArgs(
     val tokenEndpoint: String,
     val preAuthorizedCode: String,
@@ -162,6 +166,7 @@ data class ExchangePreAuthorizedCodeArgs(
     /** Optional PoP JWT for the `OAuth-Client-Attestation-PoP` header. */
     val clientAttestationPopJwt: String? = null,
     /** Optional OAuth2 token endpoint client authentication configuration. */
+    @Serializable(with = NonTransportedClientAuthenticationSerializer::class)
     val clientAuthentication: ClientAuthenticationConfig? = null,
 ) {
     init {
