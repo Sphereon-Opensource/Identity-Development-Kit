@@ -36,7 +36,7 @@ jobs:
     name: Multiplatform Build${{ github.event_name == 'push' && ' & Publish' || '' }}
     if: github.repository == 'Sphereon-Opensource/Identity-Development-Kit'
     runs-on: linux-x64
-    timeout-minutes: 60
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
       - run: chmod +x ./gradlew
