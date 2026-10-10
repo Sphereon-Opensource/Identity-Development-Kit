@@ -243,6 +243,6 @@ class LoginPageHttpEndpointCommandImpl(
         private const val DEFAULT_AS_INSTANCE_ID: String = "default"
         private val SUPPORTED_LOCALES: Set<String> = setOf("en", "nl")
         private val SUPPORTED_DISPLAY_VALUES: Set<String> = setOf("page", "popup", "touch", "wap")
-        private val HOST_PORT_PATTERN = Regex("""(?:[A-Za-z0-9.-]+|\[[0-9A-Fa-f:]+])(?::\d{1,5})?""")
+        private val HOST_PORT_PATTERN = Regex("""(?:[A-Za-z0-9.-]+|\[[0-9A-Fa-f:]+\])(?::\d{1,5})?""")
     }
 }

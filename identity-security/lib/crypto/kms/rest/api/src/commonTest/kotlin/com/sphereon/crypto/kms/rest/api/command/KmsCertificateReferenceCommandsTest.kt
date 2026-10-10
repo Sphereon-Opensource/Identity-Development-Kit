@@ -53,7 +53,7 @@ class KmsCertificateReferenceCommandsTest {
                 publicKeyFingerprint = Base64ByteArray(ByteArray(32)),
             ),
         )
-        val withoutOrigin = encoded.replace(Regex(",?\\\"origin\\\":\\\"[^\\\"]+\\\""), "")
+        val withoutOrigin = encoded.replace(Regex(",?\"origin\":\"[^\"]+\""), "")
 
         assertFailsWith<SerializationException> {
             Json.decodeFromString<CertificateReferenceResponse>(withoutOrigin)

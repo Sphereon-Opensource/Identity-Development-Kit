@@ -130,7 +130,7 @@ class InterpolationPolicyTest {
                     patternPolicies =
                         listOf(
                             InterpolationPolicyPattern(
-                                normalizedKeyRegex = "^oauth2\\.clients\\.\\[\\d+]\\.audience$",
+                                normalizedKeyRegex = "^oauth2\\.clients\\.\\[\\d+\\]\\.audience$",
                                 policy = InterpolationPolicy.APP_ENVIRONMENT,
                             ),
                         ),
@@ -155,12 +155,12 @@ class InterpolationPolicyTest {
     fun exactPoliciesWinAndPatternOrderChangesCacheIdentity() {
         val allow =
             InterpolationPolicyPattern(
-                normalizedKeyRegex = "^oauth2\\.clients\\.\\[\\d+]\\.audience$",
+                normalizedKeyRegex = "^oauth2\\.clients\\.\\[\\d+\\]\\.audience$",
                 policy = InterpolationPolicy.APP_ENVIRONMENT,
             )
         val deny =
             InterpolationPolicyPattern(
-                normalizedKeyRegex = "^oauth2\\.clients\\.\\[\\d+]\\..+$",
+                normalizedKeyRegex = "^oauth2\\.clients\\.\\[\\d+\\]\\..+$",
                 policy = InterpolationPolicy.DENY,
             )
         val allowThenDeny =

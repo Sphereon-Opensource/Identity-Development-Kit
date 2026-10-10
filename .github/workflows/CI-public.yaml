@@ -132,3 +132,13 @@ jobs:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
           NEXUS_USERNAME: ${{ secrets.NEXUS_USERNAME }}
           NEXUS_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}
+
+      # Gradle prints only the exception type of a failing JS or native test; the result files carry the stack traces.
+      - name: Archive failed test results
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: '**/build/test-results/**/*.xml'
+          if-no-files-found: ignore
+          retention-days: 7

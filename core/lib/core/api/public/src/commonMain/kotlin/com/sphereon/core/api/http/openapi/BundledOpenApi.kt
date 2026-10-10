@@ -37,7 +37,7 @@ data class BundledOpenApiSpecEntry(
 
 /** Same normalization used by the service build's bundled-index generator. */
 fun normalizeBundledOpenApiPath(path: String): String {
-    var normalized = path.replace(Regex("\\{[^}]*}"), "{}")
+    var normalized = path.replace(Regex("\\{[^}]*\\}"), "{}")
     if (!normalized.startsWith("/")) normalized = "/$normalized"
     normalized = normalized.replace(Regex("/+"), "/")
     if (normalized.length > 1) normalized = normalized.trimEnd('/')

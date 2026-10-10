@@ -244,6 +244,6 @@ class AccountActionPageHttpEndpointCommandImpl(
          */
         private val SUPPORTED_LOCALES: Set<String> = setOf("en", "nl", "de", "fr", "es", "zh")
         private val THEMED_IMAGE_ELEMENT_IDS: List<String> = listOf("logo", "logoDark", "background", "favicon")
-        private val HOST_PORT_PATTERN = Regex("""(?:[A-Za-z0-9.-]+|\[[0-9A-Fa-f:]+])(?::\d{1,5})?""")
+        private val HOST_PORT_PATTERN = Regex("""(?:[A-Za-z0-9.-]+|\[[0-9A-Fa-f:]+\])(?::\d{1,5})?""")
     }
 }
