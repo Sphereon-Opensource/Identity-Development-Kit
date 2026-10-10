@@ -20,6 +20,7 @@ import com.sphereon.core.api.Ok
 import com.sphereon.core.api.session.asCoreApiServiceGraph
 import com.sphereon.core.defaults.app.staticMinimalTestAppGraph
 import kotlinx.coroutines.test.runTest
+import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -36,6 +37,13 @@ class ParseUriQueryCommandImplTest {
     private val app = staticMinimalTestAppGraph(this, "test-app", "test", "1.0.0")
     private val user = app.userContextManager.getAnonymous()
     private val session = user.sessionContextManager.getAnonymous()
+
+    // The app graph runs an idle-cleanup loop on its root scope. Destroy it so no timer outlives the test; wasm test
+    // runners exit only once nothing is scheduled.
+    @AfterTest
+    fun destroyGraph() {
+        app.destroy()
+    }
 
     private suspend fun parse(uri: String): ParsedUri {
         val sessionContext = session.sessionContext
