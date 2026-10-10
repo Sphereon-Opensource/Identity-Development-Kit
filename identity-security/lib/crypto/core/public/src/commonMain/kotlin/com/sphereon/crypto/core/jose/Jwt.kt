@@ -63,7 +63,7 @@ data class Jwt(
         fun from(
             header: JwtHeader,
             payload: JwtPayload,
-        ): Jwt = Jwt(header.underlying, JsonObject(mapOf()))
+        ): Jwt = Jwt(header.underlying, payload.underlying)
     }
 }
 

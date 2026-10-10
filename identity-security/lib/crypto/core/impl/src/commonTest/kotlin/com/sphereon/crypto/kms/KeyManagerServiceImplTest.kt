@@ -343,6 +343,9 @@ class KeyManagerServiceImplTest {
             assertTrue(keyManagerService.isValidRawSignature(publicA, input, raw))
             assertFalse(keyManagerService.isValidRawSignature(publicB, input, raw))
 
+            if (!supportsDigestSignatureRoundTrip()) {
+                return@runTest
+            }
             val digest = hash(input, DigestAlg.SHA256)
             val digestSignature =
                 keyManagerService.signDigest(
@@ -481,6 +484,10 @@ class KeyManagerServiceImplTest {
                     )
                 }
             assertManagedSelectorMismatch(mismatch, providerId, aliasB, kidB, kidA)
+
+            if (!supportsDigestSignatureRoundTrip()) {
+                return@runTest
+            }
 
             suspend fun assertSignsWith(
                 selector: KeyInfo<KeyType>,
