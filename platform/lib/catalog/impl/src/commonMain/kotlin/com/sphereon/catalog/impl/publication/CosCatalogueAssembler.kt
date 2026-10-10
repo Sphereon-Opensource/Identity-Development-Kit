@@ -66,7 +66,7 @@ object CosCatalogueAssembler {
         val records = publication.records.filter { it.cos != null }
         if (records.isEmpty()) return Ok(null)
         val problems = mutableListOf<String>()
-        val entries = records.groupBy { it.cos!!.schemeName.orEmpty() }.toSortedMap().mapNotNull { (name, group) -> scheme(name, group, problems) }
+        val entries = records.groupBy { it.cos!!.schemeName.orEmpty() }.entries.sortedBy { it.key }.mapNotNull { (name, group) -> scheme(name, group, problems) }
         if (problems.isNotEmpty()) {
             return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "The catalog cannot be served as a catalogue of schemes: ${problems.joinToString("; ")}"))
         }
@@ -117,7 +117,7 @@ object CosCatalogueAssembler {
             }
         }
         val versions =
-            group.groupBy { it.schema.version }.toSortedMap().mapNotNull { (version, versionGroup) -> version(name, version, versionGroup, problems) }
+            group.groupBy { it.schema.version }.entries.sortedBy { it.key }.mapNotNull { (version, versionGroup) -> version(name, version, versionGroup, problems) }
         if (owner == null) return null
         return EaaSchemeEntry(
             name = name,
