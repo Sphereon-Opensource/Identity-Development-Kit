@@ -535,6 +535,21 @@ class PackCiTests(unittest.TestCase):
                 self.assertLess(ordered.index(prerequisite), ordered.index(pack))
         self.assertNotIn("wallet-lib", graph["protocols"])
 
+    def testCurrentCheckoutTestsNeverReachALaterPack(self):
+        # Kotlin/JS resolves every test configuration in kotlinNpmInstall while a pack is still being prepared, so a
+        # test edge to a pack that publishes later cannot resolve until that pack has been published once.
+        root = Path(__file__).resolve().parents[2]
+        modules, _ = ci.inventory(root)
+        ordered = ci.publication_order(ci.pack_graph(root, modules))
+        catalog = ci.internal_catalog(root)
+        later = []
+        for name, module in modules.items():
+            _production, tests = ci.dependencies(module["path"] / "build.gradle.kts", modules, catalog)
+            for dependency in tests:
+                if ordered.index(modules[dependency]["pack"]) > ordered.index(module["pack"]):
+                    later.append(f"{name} -> {dependency}")
+        self.assertEqual([], sorted(later))
+
 
 if __name__ == "__main__":
     unittest.main()

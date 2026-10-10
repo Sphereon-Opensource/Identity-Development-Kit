@@ -111,10 +111,6 @@ kotlin {
                 implementation(projects.libOauth2CommonImpl)
                 implementation(projects.libOauth2ClientImpl)
                 implementation(projects.libOpenidOid4vpHolderImpl)
-                // Wallet interaction is downstream; only on classpath when wallet artifacts are opted in.
-                if (rootProject.findProperty("idk.consumeWalletAsArtifacts") == "true") {
-                    implementation("com.sphereon.idk:lib-wallet-interaction-public:$version")
-                }
                 // Universal OID4VP tests define final Metro graph roots for every
                 // enabled KMP target. Holder Data Integrity presentations require
                 // the command implementation and all supported cryptosuite bindings.
