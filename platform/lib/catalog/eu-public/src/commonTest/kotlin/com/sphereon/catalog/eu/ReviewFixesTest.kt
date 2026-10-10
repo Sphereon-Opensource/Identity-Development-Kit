@@ -33,13 +33,13 @@ class ReviewFixesTest {
     @Test
     fun missingOrEmptyPostalAddressesFailTheParse() {
         val coa = text("synthetic/coa-populated.xml")
-        val stripped = coa.replace(Regex("<PostalAddresses>.*?</PostalAddresses>", RegexOption.DOT_MATCHES_ALL), "<PostalAddresses/>")
+        val stripped = coa.replace(Regex("<PostalAddresses>[\\s\\S]*?</PostalAddresses>"), "<PostalAddresses/>")
         val empty = parser.parseCoa(stripped.encodeToByteArray())
         assertTrue(empty.isErr)
         assertEquals(CatalogErrorCode.SCHEMA_VIOLATION.code, empty.error.code)
         val gone = parser.parseCoa(stripped.replace("<PostalAddresses/>", "").encodeToByteArray())
         assertTrue(gone.isErr)
-        val scheme = text("synthetic/schemes/eu-pid.xml").replace(Regex("<PostalAddresses>.*?</PostalAddresses>", RegexOption.DOT_MATCHES_ALL), "")
+        val scheme = text("synthetic/schemes/eu-pid.xml").replace(Regex("<PostalAddresses>[\\s\\S]*?</PostalAddresses>"), "")
         assertTrue(parser.parseSchemeEntry(scheme.encodeToByteArray()).isErr)
     }
 

@@ -145,7 +145,7 @@ internal fun parseDp(
 // resolve it through tokenFill and paint it with Modifier.tokenGradient or Modifier.tokenBackground.
 // ---------------------------------------------------------------------------
 
-private val linearGradientRegex = Regex("""^linear-gradient\((.*)\)$""", RegexOption.DOT_MATCHES_ALL)
+private val linearGradientRegex = Regex("""^linear-gradient\(([\s\S]*)\)$""")
 
 /** Axis-aligned gradient directions, keyed by the CSS angle or keyword that selects them. */
 private enum class GradientAxis { TopToBottom, BottomToTop, LeftToRight, RightToLeft }
