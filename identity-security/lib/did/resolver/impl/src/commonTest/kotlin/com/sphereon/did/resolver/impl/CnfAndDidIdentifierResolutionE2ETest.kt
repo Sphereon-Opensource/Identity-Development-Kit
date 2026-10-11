@@ -25,7 +25,9 @@ import com.sphereon.crypto.resolution.extern.CnfResolutionSource
 import com.sphereon.crypto.resolution.extern.ExternalIdentifierCnfOpts
 import com.sphereon.crypto.resolution.extern.ExternalIdentifierDidOpts
 import com.sphereon.did.resolver.impl.testutil.createDidResolverTestAppGraph
+import com.sphereon.di.app.AppGraph
 import kotlinx.coroutines.test.runTest
+import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -44,15 +46,27 @@ import kotlin.test.assertTrue
  * 4. DIDs can be resolved via the ExternalIdentifier system
  */
 class CnfAndDidIdentifierResolutionE2ETest {
+    private lateinit var app: AppGraph
     private lateinit var cnfResolver: CnfExternalIdentifierResolutionService
     private lateinit var didResolver: DidExternalIdentifierResolutionService
     private lateinit var didResolverImpl: DidExternalIdentifierResolutionServiceImpl
     private lateinit var didResolverImplForgedSession: DidExternalIdentifierResolutionServiceImpl
 
+    @AfterTest
+    fun tearDown() {
+        if (::app.isInitialized) {
+            try {
+                app.userContextManager.destroyAll()
+            } finally {
+                app.destroy()
+            }
+        }
+    }
+
     @BeforeTest
     fun setUp() {
         // Create the full graph hierarchy via DI
-        val app = createDidResolverTestAppGraph(testInstance = this)
+        app = createDidResolverTestAppGraph(testInstance = this)
 
         val userContext = app.userContextManager.getAnonymous()
         val session = userContext.sessionContextManager.createOrGetFromId("cnf-did-resolution-test", principalType = com.sphereon.di.context.PrincipalType.USER)

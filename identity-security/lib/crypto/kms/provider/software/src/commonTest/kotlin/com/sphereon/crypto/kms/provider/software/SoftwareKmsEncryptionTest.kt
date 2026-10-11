@@ -31,6 +31,7 @@ import com.sphereon.crypto.kms.provider.software.testutil.SoftwareKmsTestContext
 import dev.whyoleg.cryptography.CryptographyProvider
 import dev.whyoleg.cryptography.random.CryptographyRandom
 import kotlinx.coroutines.test.runTest
+import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -48,10 +49,16 @@ import kotlin.test.assertTrue
 class SoftwareKmsEncryptionTest {
     private lateinit var provider: SoftwareKmsProvider
 
-    val ctx = SoftwareKmsTestContext("encryption-test", this)
+    private lateinit var ctx: SoftwareKmsTestContext
+
+    @AfterTest
+    fun tearDown() {
+        if (::ctx.isInitialized) ctx.destroy()
+    }
 
     @BeforeTest
     fun setUp() {
+        ctx = SoftwareKmsTestContext("encryption-test", this)
         val config =
             SoftwareKmsProviderConfig(
                 id = "software",

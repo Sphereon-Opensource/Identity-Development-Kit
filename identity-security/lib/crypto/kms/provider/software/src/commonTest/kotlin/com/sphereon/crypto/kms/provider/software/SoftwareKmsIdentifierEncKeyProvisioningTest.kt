@@ -22,6 +22,7 @@ import com.sphereon.crypto.core.kms.ContentEncryptionAlgorithm
 import com.sphereon.crypto.kms.provider.software.testutil.SoftwareKmsTestContext
 import dev.whyoleg.cryptography.CryptographyProvider
 import kotlinx.coroutines.test.runTest
+import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -37,10 +38,16 @@ import kotlin.test.assertTrue
 class SoftwareKmsIdentifierEncKeyProvisioningTest {
     private lateinit var provider: SoftwareKmsProvider
 
-    val ctx = SoftwareKmsTestContext("idfr-enc-key-test", this)
+    private lateinit var ctx: SoftwareKmsTestContext
+
+    @AfterTest
+    fun tearDown() {
+        if (::ctx.isInitialized) ctx.destroy()
+    }
 
     @BeforeTest
     fun setUp() {
+        ctx = SoftwareKmsTestContext("idfr-enc-key-test", this)
         val config =
             SoftwareKmsProviderConfig(
                 id = "software",

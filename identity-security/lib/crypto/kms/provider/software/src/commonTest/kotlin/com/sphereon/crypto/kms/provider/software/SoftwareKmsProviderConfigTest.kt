@@ -36,6 +36,7 @@ import com.sphereon.di.Order
 import dev.whyoleg.cryptography.CryptographyProvider
 import dev.whyoleg.cryptography.random.CryptographyRandom
 import kotlinx.coroutines.test.runTest
+import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
@@ -60,16 +61,22 @@ class SoftwareKmsProviderConfigTest {
             """"password":"password","path":"test/path","accessMode":"read_write",""" +
             """"keyVisibility":"private","persist":true,"overwriteAlias":true}}"""
 
-    val ctx = SoftwareKmsTestContext("test", this)
+    private lateinit var ctx: SoftwareKmsTestContext
 
     private fun clearConfigCache() {
         ctx.clearConfigCache()
+    }
+
+    @AfterTest
+    fun tearDown() {
+        if (::ctx.isInitialized) ctx.destroy()
     }
 
     @BeforeTest
     fun clearCacheBeforeEachTest() {
         DefaultAppMapPropertySource.getSource().clear()
         DefaultPrincipalMapPropertySource.getSource().clear()
+        ctx = SoftwareKmsTestContext("test", this)
         clearConfigCache()
     }
 

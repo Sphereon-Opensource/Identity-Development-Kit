@@ -28,6 +28,9 @@ import com.sphereon.di.session.SessionInstance
 
 expect fun createSoftwareKmsTestAppGraph(testInstance: Any): AppGraph
 
+// WebCrypto cannot sign an already-computed ECDSA digest without hashing it again.
+expect fun supportsDigestSignatureRoundTrip(): Boolean
+
 class SoftwareKmsTestContext(
     sessionId: String,
     testInstance: Any,
@@ -53,5 +56,13 @@ class SoftwareKmsTestContext(
 
     fun clearConfigCache() {
         (app as DefaultSyncConfigSnapshotCache.Graph).syncConfigSnapshotCache.clear()
+    }
+
+    fun destroy() {
+        try {
+            app.userContextManager.destroyAll()
+        } finally {
+            app.destroy()
+        }
     }
 }

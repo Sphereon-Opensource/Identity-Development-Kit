@@ -86,7 +86,13 @@ class DidManagerCommandBehaviorTest {
 
     @AfterTest
     fun tearDown() {
-        if (::app.isInitialized) app.userContextManager.destroyAll()
+        if (::app.isInitialized) {
+            try {
+                app.userContextManager.destroyAll()
+            } finally {
+                app.destroy()
+            }
+        }
     }
 
     // ============ Capability rejection (immutable methods) ============

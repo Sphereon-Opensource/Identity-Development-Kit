@@ -14,11 +14,11 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runTest
 
 class TrustListResponseClosureMatrixTest {
     @Test
-    fun resolverClosesEveryResponseExactlyOnceAcrossTheRequiredOutcomeMatrix() = runBlocking {
+    fun resolverClosesEveryResponseExactlyOnceAcrossTheRequiredOutcomeMatrix() = runTest {
         runCase(
             name = "success",
             expectedReasonCode = null,
@@ -92,7 +92,7 @@ class TrustListResponseClosureMatrixTest {
     }
 
     @Test
-    fun transportExceptionHasAStableNonSensitiveReason() = runBlocking {
+    fun transportExceptionHasAStableNonSensitiveReason() = runTest {
         val resolver = resolverFor(ThrowingTransport())
         val failure =
             try {
@@ -108,7 +108,7 @@ class TrustListResponseClosureMatrixTest {
     }
 
     @Test
-    fun bodyCancellationFailureCannotReplacePrimaryHttpFailure() = runBlocking {
+    fun bodyCancellationFailureCannotReplacePrimaryHttpFailure() = runTest {
         val tracked = TrackedResponse(plan(statusCode = 503, cancelFailure = IllegalStateException("secret cancel detail")))
         val resolver = resolverFor(QueueTransport(listOf(tracked.response)))
         val failure =
@@ -128,7 +128,7 @@ class TrustListResponseClosureMatrixTest {
     }
 
     @Test
-    fun transportCloseFailureCannotReplacePrimaryBodyLimitFailure() = runBlocking {
+    fun transportCloseFailureCannotReplacePrimaryBodyLimitFailure() = runTest {
         val tracked =
             TrackedResponse(
                 plan(
@@ -155,7 +155,7 @@ class TrustListResponseClosureMatrixTest {
     }
 
     @Test
-    fun successfulResolutionConvertsCleanupFailureToStableFailure() = runBlocking {
+    fun successfulResolutionConvertsCleanupFailureToStableFailure() = runTest {
         val tracked =
             TrackedResponse(
                 plan(

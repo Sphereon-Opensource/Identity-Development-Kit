@@ -10,6 +10,7 @@ import com.sphereon.trust.core.command.CheckRevocationCommand
 import com.sphereon.trust.core.command.GetTrustAnchorsCommand
 import com.sphereon.trust.core.command.RefreshTrustAnchorsCommand
 import com.sphereon.trust.core.command.ValidateTrustCommand
+import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
@@ -28,7 +29,15 @@ class TrustCommandDiTest {
     private val validateEtsiTrustCommandId = "trust.etsi.validate"
     private val resolveEtsiTrustListCommandId = "trust.etsi.resolve"
 
-    private fun createContext() = TrustTestContext("trust-di-test", this)
+    private val contexts = mutableListOf<TrustTestContext>()
+
+    private fun createContext() = TrustTestContext("trust-di-test", this).also(contexts::add)
+
+    @AfterTest
+    fun tearDown() {
+        contexts.forEach { it.destroy() }
+        contexts.clear()
+    }
 
     @Test
     fun coreCommandsAreRegistered() {

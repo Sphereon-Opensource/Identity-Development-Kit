@@ -20,3 +20,5 @@ import com.sphereon.crypto.kms.provider.software.createSoftwareProviderWasmJsTes
 import com.sphereon.di.app.AppGraph
 
 actual fun createSoftwareKmsTestAppGraph(testInstance: Any): AppGraph = createSoftwareProviderWasmJsTestAppGraph(testInstance)
+
+actual fun supportsDigestSignatureRoundTrip(): Boolean = false

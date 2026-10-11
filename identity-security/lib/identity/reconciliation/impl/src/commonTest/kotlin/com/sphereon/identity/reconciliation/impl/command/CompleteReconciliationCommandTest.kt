@@ -26,13 +26,15 @@ import com.sphereon.identity.reconciliation.model.ReconciliationSessionStatus
 import com.sphereon.identity.reconciliation.model.ResolvedIdentity
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
+import kotlin.test.AfterTest
+import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class CompleteReconciliationCommandTest {
-    private val ctx = ReconciliationTestContext("complete-recon-test", this)
+    private lateinit var ctx: ReconciliationTestContext
     private val json = Json { ignoreUnknownKeys = true }
 
     private val testProvider =
@@ -47,6 +49,16 @@ class CompleteReconciliationCommandTest {
         val encrypted = session.encryptedIdentity ?: return null
         // Test crypto service passes plaintext through as ciphertext
         return json.decodeFromString(ResolvedIdentity.serializer(), encrypted.ciphertext)
+    }
+
+    @BeforeTest
+    fun setUp() {
+        ctx = ReconciliationTestContext("complete-recon-test", this)
+    }
+
+    @AfterTest
+    fun tearDown() {
+        if (::ctx.isInitialized) ctx.destroy()
     }
 
     @Test

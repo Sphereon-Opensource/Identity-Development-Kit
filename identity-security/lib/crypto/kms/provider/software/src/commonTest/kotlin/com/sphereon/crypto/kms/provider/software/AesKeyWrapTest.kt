@@ -27,6 +27,7 @@ import com.sphereon.crypto.kms.provider.software.testutil.SoftwareKmsTestContext
 import dev.whyoleg.cryptography.CryptographyProvider
 import dev.whyoleg.cryptography.random.CryptographyRandom
 import kotlinx.coroutines.test.runTest
+import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
@@ -47,10 +48,16 @@ import kotlin.test.assertTrue
 class AesKeyWrapTest {
     private lateinit var softwareKMSProvider: SoftwareKmsProvider
 
-    val ctx = SoftwareKmsTestContext("aes-kw-test", this)
+    private lateinit var ctx: SoftwareKmsTestContext
+
+    @AfterTest
+    fun tearDown() {
+        if (::ctx.isInitialized) ctx.destroy()
+    }
 
     @BeforeTest
     fun setUp() {
+        ctx = SoftwareKmsTestContext("aes-kw-test", this)
         val config =
             SoftwareKmsProviderConfig(
                 id = "aes-kw-test-provider",

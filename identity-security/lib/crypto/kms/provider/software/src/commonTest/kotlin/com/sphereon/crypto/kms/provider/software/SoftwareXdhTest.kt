@@ -19,6 +19,7 @@ import com.sphereon.crypto.core.interop.toXdhPublicKey
 import com.sphereon.crypto.kms.provider.software.testutil.SoftwareKmsTestContext
 import dev.whyoleg.cryptography.CryptographyProvider
 import kotlinx.coroutines.test.runTest
+import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
@@ -44,10 +45,16 @@ import kotlin.test.assertTrue
  */
 class SoftwareXdhTest {
     private lateinit var provider: SoftwareKmsProvider
-    val ctx = SoftwareKmsTestContext("test-xdh", this)
+    private lateinit var ctx: SoftwareKmsTestContext
+
+    @AfterTest
+    fun tearDown() {
+        if (::ctx.isInitialized) ctx.destroy()
+    }
 
     @BeforeTest
     fun setUp() {
+        ctx = SoftwareKmsTestContext("test-xdh", this)
         val config = SoftwareKmsProviderConfig(id = "test-xdh", cryptographyProvider = CryptographyProvider.Default.name)
         provider = ctx.softwareKmsProviderFactory.create(config, ctx.session.sessionExecution)
     }

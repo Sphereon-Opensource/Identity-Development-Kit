@@ -40,4 +40,12 @@ class DidResolverTestContext(
     val jwkDidResolver: JwkDidResolver = (session.graph as JwkDidResolver.Graph).jwkDidResolver
     val cnfResolver: CnfExternalIdentifierResolutionService = (session.graph as CnfExternalIdentifierResolutionService.Graph).cnfExternalIdentifierResolutionService
     val didResolver: DidExternalIdentifierResolutionService = (session.graph as DidExternalIdentifierResolutionServiceImpl.Graph).didExternalIdentifierResolutionService
+
+    fun destroy() {
+        try {
+            app.userContextManager.destroyAll()
+        } finally {
+            app.destroy()
+        }
+    }
 }

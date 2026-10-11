@@ -25,12 +25,14 @@ import com.sphereon.identity.reconciliation.model.GetReconciliationSessionArgs
 import com.sphereon.identity.reconciliation.model.ReconciliationProvider
 import com.sphereon.identity.reconciliation.model.ReconciliationSessionStatus
 import kotlinx.coroutines.test.runTest
+import kotlin.test.AfterTest
+import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 class ReconciliationCommandsTest {
-    private val ctx = ReconciliationTestContext("reconciliation-cmd-test", this)
+    private lateinit var ctx: ReconciliationTestContext
 
     private val testProvider =
         ReconciliationProvider(
@@ -39,6 +41,16 @@ class ReconciliationCommandsTest {
             oidcClientId = "test-oidc-client",
             identifierAttributeName = "sub",
         )
+
+    @BeforeTest
+    fun setUp() {
+        ctx = ReconciliationTestContext("reconciliation-cmd-test", this)
+    }
+
+    @AfterTest
+    fun tearDown() {
+        if (::ctx.isInitialized) ctx.destroy()
+    }
 
     @Test
     fun getSessionReturnsCreatedSession() =

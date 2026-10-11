@@ -20,3 +20,5 @@ import com.sphereon.crypto.kms.provider.software.createNativeSoftwareProviderTes
 import com.sphereon.di.app.AppGraph
 
 actual fun createSoftwareKmsTestAppGraph(testInstance: Any): AppGraph = createNativeSoftwareProviderTestAppGraph(testInstance)
+
+actual fun supportsDigestSignatureRoundTrip(): Boolean = true

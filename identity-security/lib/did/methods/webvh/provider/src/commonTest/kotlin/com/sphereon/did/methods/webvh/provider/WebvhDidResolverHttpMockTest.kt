@@ -85,7 +85,11 @@ class WebvhDidResolverHttpMockTest {
     @AfterTest
     fun tearDown() {
         if (::app.isInitialized) {
-            app.userContextManager.destroyAll()
+            try {
+                app.userContextManager.destroyAll()
+            } finally {
+                app.destroy()
+            }
         }
     }
 

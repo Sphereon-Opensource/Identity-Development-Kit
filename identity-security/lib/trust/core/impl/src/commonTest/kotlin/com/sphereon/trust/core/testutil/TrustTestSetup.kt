@@ -22,4 +22,12 @@ class TrustTestContext(
 
     val commandRegistry: SessionScopedCommandRegistry
         get() = (session.graph as SessionScopedCommandRegistry.Graph).sessionScopedCommandRegistry
+
+    fun destroy() {
+        try {
+            app.userContextManager.destroyAll()
+        } finally {
+            app.destroy()
+        }
+    }
 }

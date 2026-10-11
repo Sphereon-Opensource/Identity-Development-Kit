@@ -21,6 +21,7 @@ import com.sphereon.crypto.core.jose.JwaKeyType
 import com.sphereon.crypto.kms.provider.software.testutil.SoftwareKmsTestContext
 import dev.whyoleg.cryptography.CryptographyProvider
 import kotlinx.coroutines.test.runTest
+import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -40,10 +41,16 @@ import kotlin.test.assertTrue
  */
 class SoftwareEdDsaTest {
     private lateinit var provider: SoftwareKmsProvider
-    val ctx = SoftwareKmsTestContext("test-eddsa", this)
+    private lateinit var ctx: SoftwareKmsTestContext
+
+    @AfterTest
+    fun tearDown() {
+        if (::ctx.isInitialized) ctx.destroy()
+    }
 
     @BeforeTest
     fun setUp() {
+        ctx = SoftwareKmsTestContext("test-eddsa", this)
         val config = SoftwareKmsProviderConfig(id = "test-eddsa", cryptographyProvider = CryptographyProvider.Default.name)
         provider = ctx.softwareKmsProviderFactory.create(config, ctx.session.sessionExecution)
     }

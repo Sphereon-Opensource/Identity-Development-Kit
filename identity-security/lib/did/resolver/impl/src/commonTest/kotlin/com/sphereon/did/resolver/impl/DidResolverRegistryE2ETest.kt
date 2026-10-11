@@ -20,6 +20,7 @@ package com.sphereon.did.resolver.impl
 import com.sphereon.did.models.VerificationPurpose
 import com.sphereon.did.resolver.impl.testutil.DidResolverTestContext
 import kotlinx.coroutines.test.runTest
+import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -38,6 +39,11 @@ import kotlin.test.fail
  */
 class DidResolverRegistryE2ETest {
     private lateinit var ctx: DidResolverTestContext
+
+    @AfterTest
+    fun tearDown() {
+        if (::ctx.isInitialized) ctx.destroy()
+    }
 
     @BeforeTest
     fun setUp() {

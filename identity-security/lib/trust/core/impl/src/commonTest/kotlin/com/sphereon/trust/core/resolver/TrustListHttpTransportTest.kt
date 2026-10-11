@@ -11,11 +11,11 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runTest
 
 class TrustListHttpTransportTest {
     @Test
-    fun streamingLimitCancelsTheBodyBeforeReturningTheStructuredFailure() = runBlocking {
+    fun streamingLimitCancelsTheBodyBeforeReturningTheStructuredFailure() = runTest {
         val body = ChunkedBody(listOf(byteArrayOf(1, 2), byteArrayOf(3, 4)))
         val response = response(body)
 
@@ -27,7 +27,7 @@ class TrustListHttpTransportTest {
     }
 
     @Test
-    fun responseCloseRunsTheTransportCloseActionEvenWhenBodyCancellationFails() = runBlocking {
+    fun responseCloseRunsTheTransportCloseActionEvenWhenBodyCancellationFails() = runTest {
         var transportClosed = false
         val response =
             TrustListHttpResponse(

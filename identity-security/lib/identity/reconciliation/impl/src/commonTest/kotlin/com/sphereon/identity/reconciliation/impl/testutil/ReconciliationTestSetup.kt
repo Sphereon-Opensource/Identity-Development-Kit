@@ -47,4 +47,12 @@ class ReconciliationTestContext(
 
     val sessionStore: ReconciliationSessionStore = reconciliation.reconciliationSessionStore
     val providerStore: ReconciliationProviderStore = reconciliation.reconciliationProviderStore
+
+    fun destroy() {
+        try {
+            app.userContextManager.destroyAll()
+        } finally {
+            app.destroy()
+        }
+    }
 }

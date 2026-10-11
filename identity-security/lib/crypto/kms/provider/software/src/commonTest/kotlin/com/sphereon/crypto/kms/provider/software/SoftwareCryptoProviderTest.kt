@@ -35,9 +35,11 @@ import com.sphereon.crypto.core.kms.command.EcPointMultiplyOutput
 import com.sphereon.crypto.core.kms.command.EcdhDeriveMode
 import com.sphereon.crypto.core.kms.command.SignatureEncoding
 import com.sphereon.crypto.kms.provider.software.testutil.SoftwareKmsTestContext
+import com.sphereon.crypto.kms.provider.software.testutil.supportsDigestSignatureRoundTrip
 import com.sphereon.crypto.secdsa.impl.DefaultSecdsaPrimitives
 import dev.whyoleg.cryptography.CryptographyProvider
 import kotlinx.coroutines.test.runTest
+import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
@@ -50,10 +52,16 @@ import kotlin.test.assertTrue
 class SoftwareCryptoProviderTest {
     private lateinit var softwareKMSProvider: SoftwareKmsProvider
 
-    val ctx = SoftwareKmsTestContext("test", this)
+    private lateinit var ctx: SoftwareKmsTestContext
+
+    @AfterTest
+    fun tearDown() {
+        if (::ctx.isInitialized) ctx.destroy()
+    }
 
     @BeforeTest
     fun setUp() {
+        ctx = SoftwareKmsTestContext("test", this)
         val config = SoftwareKmsProviderConfig(id = "test-ecdsa", cryptographyProvider = CryptographyProvider.Default.name)
         softwareKMSProvider = ctx.softwareKmsProviderFactory.create(config, ctx.session.sessionExecution)
     }
@@ -416,6 +424,8 @@ class SoftwareCryptoProviderTest {
                 }
             assertTrue(digestMismatch.message.orEmpty().contains("resolved to kid '$kidB'"))
 
+            if (!supportsDigestSignatureRoundTrip()) return@runTest
+
             val digestSignature =
                 softwareKMSProvider.signDigest(
                     KeyInfo<Jwk>(alias = aliasB, kid = kidB, providerId = providerId, signatureAlgorithm = SignatureAlgorithm.ECDSA_SHA256),
@@ -453,6 +463,8 @@ class SoftwareCryptoProviderTest {
     @Test
     fun testDigestSignatureSignsDigestWithoutHashingAgain() =
         runTest {
+            if (!supportsDigestSignatureRoundTrip()) return@runTest
+
             val managedKeyPair = softwareKMSProvider.generateKeyAsync(alg = SignatureAlgorithm.ECDSA_SHA256)
             val keyInfo = managedKeyPair.joseToManagedKeyInfo(visibility = KeyVisibility.PRIVATE)
             val digest = hash("secdsa message".encodeToByteArray(), DigestAlg.SHA256)
@@ -537,6 +549,8 @@ class SoftwareCryptoProviderTest {
             val nchPublicKey = primitives.pointFromJwk(managedKeyPair.jose.publicJwk)
             val pinDerivedPublicKey = primitives.multiply(pinScalar, nchPublicKey)
             val digest = hash("secdsa split signing".encodeToByteArray(), DigestAlg.SHA256)
+
+            if (!supportsDigestSignatureRoundTrip()) return@runTest
 
             val signature =
                 primitives.splitSign(

@@ -17,14 +17,16 @@ import com.sphereon.trust.core.TrustDiagnosticReasonCodes
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.test.runTest
 import kotlin.time.Clock
 import kotlin.time.Duration.Companion.minutes
 
 class TrustListResolutionCachePolicyTest {
     @Test
-    fun stricterCallerBodyLimitCannotReuseCachedBytes() = runBlocking {
+    fun stricterCallerBodyLimitCannotReuseCachedBytes() = runTest {
         val transport = QueueTrustListHttpTransport()
         transport.enqueue(response(body = "cached"))
         transport.enqueue(response(body = "fresh"))
@@ -39,7 +41,7 @@ class TrustListResolutionCachePolicyTest {
     }
 
     @Test
-    fun stricterCallerCacheAgeCannotReuseCachedBytes() = runBlocking {
+    fun stricterCallerCacheAgeCannotReuseCachedBytes() = runTest {
         val transport = QueueTrustListHttpTransport()
         transport.enqueue(response(body = "cached"))
         transport.enqueue(response(body = "fresh"))
@@ -58,7 +60,7 @@ class TrustListResolutionCachePolicyTest {
     }
 
     @Test
-    fun stricterCallerSignedNextUpdateCannotReuseCachedBytes() = runBlocking {
+    fun stricterCallerSignedNextUpdateCannotReuseCachedBytes() = runTest {
         val now = Clock.System.now().toEpochMilliseconds()
         val transport = QueueTrustListHttpTransport()
         transport.enqueue(response(body = "cached"))
@@ -89,7 +91,7 @@ class TrustListResolutionCachePolicyTest {
     }
 
     @Test
-    fun legacyRawBase64CacheEntryIsFetchedBeforeReuse() = runBlocking {
+    fun legacyRawBase64CacheEntryIsFetchedBeforeReuse() = runTest {
         val transport = QueueTrustListHttpTransport()
         transport.enqueue(response(body = "fresh"))
         val fixture = fixtureFor(transport)
@@ -103,7 +105,7 @@ class TrustListResolutionCachePolicyTest {
     }
 
     @Test
-    fun incompleteFreshnessMetadataIsFetchedBeforeReuse() = runBlocking {
+    fun incompleteFreshnessMetadataIsFetchedBeforeReuse() = runTest {
         val transport = QueueTrustListHttpTransport()
         transport.enqueue(response(body = "fresh"))
         val fixture = fixtureFor(transport)
@@ -117,7 +119,7 @@ class TrustListResolutionCachePolicyTest {
     }
 
     @Test
-    fun futureRetrievedAtMetadataIsFetchedBeforeReuse() = runBlocking {
+    fun futureRetrievedAtMetadataIsFetchedBeforeReuse() = runTest {
         val now = Clock.System.now().toEpochMilliseconds()
         val transport = QueueTrustListHttpTransport()
         transport.enqueue(response(body = "fresh"))
@@ -132,7 +134,7 @@ class TrustListResolutionCachePolicyTest {
     }
 
     @Test
-    fun expiredCachedEntryIsReplacedAndReportsTheExpiryReason() = runBlocking {
+    fun expiredCachedEntryIsReplacedAndReportsTheExpiryReason() = runTest {
         val transport = QueueTrustListHttpTransport()
         transport.enqueue(response(body = "first"))
         transport.enqueue(response(body = "second"))
@@ -140,7 +142,8 @@ class TrustListResolutionCachePolicyTest {
         val uri = "https://example.com/cache-expiry.xml"
 
         resolver.resolve(uri, ResolutionOptions(maxCacheAgeMs = 1, maxBodyBytes = 128))
-        delay(25)
+        // Cache freshness uses Clock.System, so this delay must advance wall time.
+        withContext(Dispatchers.Default) { delay(25) }
         val refreshed = resolver.resolve(uri, ResolutionOptions(maxCacheAgeMs = 1, maxBodyBytes = 128))
 
         assertEquals("second", refreshed.data.decodeToString())
@@ -152,7 +155,7 @@ class TrustListResolutionCachePolicyTest {
     }
 
     @Test
-    fun noCacheResponseIsReturnedButNeverReusedAndReportsRevalidation() = runBlocking {
+    fun noCacheResponseIsReturnedButNeverReusedAndReportsRevalidation() = runTest {
         val transport = QueueTrustListHttpTransport()
         transport.enqueue(response(body = "first", headers = mapOf("Cache-Control" to "no-cache")))
         transport.enqueue(response(body = "second", headers = mapOf("Cache-Control" to "no-cache")))
@@ -172,7 +175,7 @@ class TrustListResolutionCachePolicyTest {
     }
 
     @Test
-    fun signedNextUpdateAndHttpExpiresAreExposedAndCapReuse() = runBlocking {
+    fun signedNextUpdateAndHttpExpiresAreExposedAndCapReuse() = runTest {
         val now = kotlin.time.Clock.System.now().toEpochMilliseconds()
         val transport = QueueTrustListHttpTransport()
         transport.enqueue(
