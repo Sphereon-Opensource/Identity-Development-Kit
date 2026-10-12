@@ -372,13 +372,14 @@ class ETSITrustListParserTest {
         assertEquals("European Union LOTL", additionalInfo.textualInformation.forLang("en"))
         assertEquals("Euroopan unionin LOTL", additionalInfo.textualInformation.forLang("fi"))
 
-        // OtherInformation - contains TSLType, SchemeTerritory, MimeType, SchemeOperatorName
-        assertEquals(4, additionalInfo.otherInformation.size)
-        // Verify one contains TSLType
-        assert(additionalInfo.otherInformation.any { it.contains("EUlistofthelists") })
-        // Verify one contains SchemeTerritory
-        assert(additionalInfo.otherInformation.any { it.contains("EU") })
-        // Verify one contains MimeType
-        assert(additionalInfo.otherInformation.any { it.contains("application/vnd.etsi.tsl+xml") })
+        // Operator names are preserved as structured multilingual pointer data, not a raw marker.
+        assertEquals(1, pointer.schemeOperatorName.size)
+        assertEquals("European Commission", pointer.schemeOperatorName.forLang("en"))
+        assertEquals("EU", pointer.schemeTerritory)
+        assertEquals("application/vnd.etsi.tsl+xml", additionalInfo.mimeType)
+        assertEquals(
+            listOf("http://uri.etsi.org/TrstSvc/TrustedList/TSLType/EUlistofthelists", "EU", "application/vnd.etsi.tsl+xml"),
+            additionalInfo.otherInformation,
+        )
     }
 }

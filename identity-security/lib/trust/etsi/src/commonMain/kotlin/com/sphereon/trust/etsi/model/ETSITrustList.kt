@@ -109,6 +109,10 @@ data class ETSILoTE(
      * Pointers to other LoTEs (was pointersToOtherTSL)
      */
     val pointersToOtherLoTE: List<ETSIOtherLoTEPointer> = emptyList(),
+    /** Original 602 information for lossless conversion; not an independent trust assertion.
+     * Reverse conversion rejects edits to this projection instead of discarding them.
+     */
+    val sourceLoTE: com.sphereon.trust.etsi.lote.model.LoTE? = null,
 )
 
 /**
@@ -258,6 +262,8 @@ data class ETSIServiceInformation(
      * Expired certificates revocation information date/time
      */
     val expiredCertsRevocationInfo: Instant? = null,
+    /** Explicit 602 source data, including absent status/time; null for native 612. */
+    val sourceLoTEInformation: com.sphereon.trust.etsi.lote.model.LoTEServiceInformation? = null,
 )
 
 /**

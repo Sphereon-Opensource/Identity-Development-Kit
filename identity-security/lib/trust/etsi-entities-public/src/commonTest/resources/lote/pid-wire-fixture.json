@@ -1,0 +1,35 @@
+{
+  "LoTE": {
+    "ListAndSchemeInformation": {
+      "LoTEVersionIdentifier": 1,
+      "LoTESequenceNumber": 7,
+      "LoTEType": "http://uri.etsi.org/19602/LoTEType/EUPIDProvidersList",
+      "SchemeOperatorName": [{"lang":"en","value":"Independent fixture operator"}],
+      "SchemeOperatorAddress": {
+        "SchemeOperatorPostalAddress": [{"lang":"en","StreetAddress":"1 Example Street","Country":"NL"}],
+        "SchemeOperatorElectronicAddress": [{"lang":"en","uriValue":"mailto:operator@example.com"}]
+      },
+      "ListIssueDateTime": "2026-10-01T00:00:00Z",
+      "NextUpdate": "2026-11-01T00:00:00Z"
+    },
+    "TrustedEntitiesList": [{
+      "TrustedEntityInformation": {
+        "TEName": [{"lang":"en","value":"Example PID provider"}],
+        "TEAddress": {
+          "TEPostalAddress": [{"lang":"en","StreetAddress":"2 Example Street","Country":"NL"}],
+          "TEElectronicAddress": [{"lang":"en","uriValue":"mailto:provider@example.com"}]
+        },
+        "TEInformationURI": [{"lang":"en","uriValue":"https://example.com/provider"}]
+      },
+      "TrustedEntityServices": [{
+        "ServiceInformation": {
+          "ServiceTypeIdentifier": "http://uri.etsi.org/19602/SvcType/PID/Issuance",
+          "ServiceName": [{"lang":"en","value":"PID issuance"}],
+          "ServiceDigitalIdentity": {"X509Certificates":[{"val":"Y2VydGlmaWNhdGU=","encoding":"urn:example:der","specRef":"X.509"}]},
+          "ServiceSupplyPoints": [{"uriValue":"https://example.com/issuance","ServiceType":"urn:example:openid4vci"}],
+          "ServiceDefinitionURI": [{"lang":"en","uriValue":"https://example.com/service"}]
+        }
+      }]
+    }]
+  }
+}

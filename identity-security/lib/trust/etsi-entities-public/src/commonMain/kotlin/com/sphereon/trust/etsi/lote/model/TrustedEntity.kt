@@ -18,6 +18,7 @@
 package com.sphereon.trust.etsi.lote.model
 
 import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.trust.etsi.lote.serialization.TrustedEntityAddressSerializer
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
@@ -44,6 +45,7 @@ data class TrustedEntityInformation(
     val name: List<MultiLangString>,
     @SerialName("TETradeName")
     val tradeName: List<MultiLangString> = emptyList(),
+    @Serializable(with = TrustedEntityAddressSerializer::class)
     @SerialName("TEAddress")
     val address: OperatorAddress? = null,
     @SerialName("TEInformationURI")

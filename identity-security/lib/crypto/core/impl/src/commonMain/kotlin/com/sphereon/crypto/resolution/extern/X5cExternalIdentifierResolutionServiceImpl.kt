@@ -26,6 +26,8 @@ import com.sphereon.core.api.error.IdkErrorType
 import com.sphereon.core.compat.LocalDateTimeKMP
 import com.sphereon.crypto.core.ResolvedKeyInfo
 import com.sphereon.crypto.core.interop.getPublicKeyJwk
+import com.sphereon.crypto.core.jose.JwaKeyType
+import com.sphereon.crypto.core.jose.JwkType
 import com.sphereon.crypto.core.x509.X509VerificationRequest
 import com.sphereon.crypto.core.x509.X509VerifyService
 import com.sphereon.crypto.core.x509.certificateFromPem
@@ -87,14 +89,17 @@ class X5cExternalIdentifierResolutionServiceImpl(
                 ),
             )
 
+        val publicKey = verificationResult.publicKey!!
+        val extractedKeyInfo = certificateKeyInfo(publicKey)
+
         return ExternalIdentifierResult
             .X5c(
                 identifierOpts = opts,
                 x5c = opts.identifier,
                 verificationResult = verificationResult,
                 certificates = certificates,
-                jwks = certificates.map { ResolvedKeyInfo.Companion.fromKey(it.getPublicKeyJwk()) }.toTypedArray(),
-                keyInfo = ResolvedKeyInfo.Companion.fromKey(verificationResult.publicKey!!),
+                jwks = certificates.map { certificateKeyInfo(it.getPublicKeyJwk()) }.toTypedArray(),
+                keyInfo = extractedKeyInfo,
             ).asOkResult()
             .also { log.debug("Resolved external X5C identifier: ${args.identifier.toString().take(100)}") }
     }
@@ -105,6 +110,16 @@ class X5cExternalIdentifierResolutionServiceImpl(
             externalArgs is ExternalIdentifierX5cOpts ||
                 externalArgs.method?.let { isSupportedIdentifierMethod(it) } == true
         return methodSupported && isSupportedIdentifier(externalArgs.identifier)
+    }
+
+    private fun certificateKeyInfo(publicKey: JwkType) = ResolvedKeyInfo.fromDTO(ResolvedKeyInfo.fromKey(publicKey)).let { keyInfo ->
+        // rsaEncryption certificates provide no JOSE padding/digest constraint. The
+        // generic JWK convenience default is not authoritative certificate policy.
+        if (publicKey.kty == JwaKeyType.RSA && publicKey.alg == null) {
+            keyInfo.copy(signatureAlgorithm = null)
+        } else {
+            keyInfo
+        }
     }
 
     override suspend fun isSupportedIdentifier(identifier: Any): Boolean {

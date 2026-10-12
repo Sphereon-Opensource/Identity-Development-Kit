@@ -32,7 +32,7 @@ import kotlin.test.assertTrue
 class EidasRoleTest {
     @Test
     fun registrarsAndRegistersIsNotRegistrationCertificateProvider() {
-        assertNull(EidasRole.fromLoTEType(LoTEType.EU_REGISTRARS))
+        assertEquals(EidasRole.REGISTRAR_AND_REGISTER, EidasRole.fromLoTEType(LoTEType.EU_REGISTRARS))
         assertEquals("Access Certificate Authority", EidasRole.ACCESS_CA.description)
     }
 
@@ -40,7 +40,7 @@ class EidasRoleTest {
     fun task1SeparatesQeaaFromLoTEProfiles() {
         assertNull(EidasRole.QEAA_PROVIDER.loTEType)
         assertEquals("http://uri.etsi.org/TrstSvc/Svctype/EAA/Q", EidasRole.QEAA_PROVIDER.issuanceServiceType)
-        assertEquals(6, EidasRole.entries.size)
+        assertEquals(7, EidasRole.entries.size)
     }
 
     @Test
@@ -86,7 +86,7 @@ class EidasRoleTest {
         assertEquals(EidasRole.PUB_EAA_PROVIDER, EidasRole.fromLoTEType(LoTEType.EU_PUB_EAA_PROVIDERS))
         assertEquals(EidasRole.ACCESS_CA, EidasRole.fromLoTEType(LoTEType.EU_WRPAC_PROVIDERS))
         assertEquals(EidasRole.REGISTRATION_CERTIFICATE_PROVIDER, EidasRole.fromLoTEType(LoTEType.EU_WRPRC_PROVIDERS))
-        assertNull(EidasRole.fromLoTEType(LoTEType.EU_REGISTRARS))
+        assertEquals(EidasRole.REGISTRAR_AND_REGISTER, EidasRole.fromLoTEType(LoTEType.EU_REGISTRARS))
     }
 
     @Test
@@ -164,6 +164,6 @@ class EidasRoleTest {
 
     @Test
     fun allEntriesAreEnumerable() {
-        assertEquals(6, EidasRole.entries.size)
+        assertEquals(7, EidasRole.entries.size)
     }
 }

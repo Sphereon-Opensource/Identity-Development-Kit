@@ -273,3 +273,40 @@ includeLocal("services-oauth2-as-rest", "services/oauth2-as/rest")
 includeLocal("services-oid4vci-issuer-rest", "services/oid4vci-issuer/rest")
 includeLocal("services-oid4vp-verifier-rest", "services/oid4vp-verifier/rest")
 includeLocal("services-statuslist-rest", "services/statuslist/rest")
+
+// Kotlin's npm resolver looks up source dependencies in this build's direct
+// includes. Outer composite siblings alone do not provide that lookup. Retain
+// artifact mode unless both web targets and the dependency pack are selected.
+val webSourceTargets = (System.getProperty("kmp.targets") ?: "jvm")
+    .split(",").map { it.trim().lowercase() }
+val selectedSourcePacks = System.getenv("IDK_LOCAL_PACKS").orEmpty()
+    .split(",").map { it.trim() }.filter { it.isNotEmpty() }.toSet()
+val selectedSourceModules = System.getenv("WORKSPACE_SOURCE_MODULES")
+    ?.split(",")?.map { it.trim() }?.filter { it.isNotEmpty() }?.toSet()
+if (webSourceTargets.any { it in setOf("js", "wasmjs", "all") }) {
+    listOf("core", "identity-security", "infra").filter { it in selectedSourcePacks }.forEach { pack ->
+        val packRoot = idkRoot.resolve(pack)
+        val packSettings = packRoot.resolve("settings.gradle.kts")
+        require(packSettings.isFile) { "Missing pack settings: ${packSettings.absolutePath}" }
+        // Match the root composite's names and substitutions so repeated paths
+        // identify the same build, rather than introducing duplicate producers.
+        val modulePattern = Regex("""include(?:Local|Mapped)\s*\(\s*"([^"]+)"\s*,\s*"[^"]+"\s*\)""")
+        val modules = packSettings.readLines()
+            .filter { line ->
+                val trimmed = line.trim()
+                !trimmed.startsWith("//") && !trimmed.startsWith("/*") && !trimmed.startsWith("*")
+            }
+            .mapNotNull { modulePattern.find(it)?.groupValues?.get(1) }.distinct()
+        require(modules.isNotEmpty()) { "No pack modules in ${packSettings.absolutePath}" }
+        includeBuild(packRoot) {
+            name = "idk-$pack"
+            dependencySubstitution {
+                // includeLocal applies the same filter; never substitute a project
+                // that the selected dependency build did not configure.
+                modules.filter { selectedSourceModules == null || it in selectedSourceModules }.forEach { moduleName ->
+                    substitute(module("com.sphereon.idk:$moduleName")).using(project(":$moduleName"))
+                }
+            }
+        }
+    }
+}

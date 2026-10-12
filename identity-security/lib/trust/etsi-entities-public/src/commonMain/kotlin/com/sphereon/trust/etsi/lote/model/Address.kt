@@ -29,9 +29,9 @@ import kotlinx.serialization.Serializable
 @JsExportCompat
 @Serializable
 data class OperatorAddress(
-    @SerialName("PostalAddresses")
+    @SerialName("SchemeOperatorPostalAddress")
     val postalAddresses: List<LoTEPostalAddress> = emptyList(),
-    @SerialName("ElectronicAddress")
+    @SerialName("SchemeOperatorElectronicAddress")
     val electronicAddress: List<MultiLangURI> = emptyList(),
 )
 
@@ -41,7 +41,7 @@ data class OperatorAddress(
 @JsExportCompat
 @Serializable
 data class LoTEPostalAddress(
-    val lang: String? = null,
+    val lang: String,
     @SerialName("StreetAddress")
     val streetAddress: String,
     @SerialName("Locality")
@@ -50,6 +50,6 @@ data class LoTEPostalAddress(
     val stateOrProvince: String? = null,
     @SerialName("PostalCode")
     val postalCode: String? = null,
-    @SerialName("CountryName")
+    @SerialName("Country")
     val countryName: String,
 )

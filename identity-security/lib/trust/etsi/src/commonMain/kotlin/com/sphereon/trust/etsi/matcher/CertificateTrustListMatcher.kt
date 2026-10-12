@@ -91,6 +91,9 @@ object CertificateTrustListMatcher {
                     )
                 }
 
+                // 602 history is audit evidence, not current membership. Historical
+                // validation needs explicit intervals and must not reuse this lookup.
+                if (trustList.sourceLoTE != null) continue
                 // Check service history
                 for (historicService in service.serviceHistory) {
                     val historicMatch =
@@ -126,21 +129,19 @@ object CertificateTrustListMatcher {
         allowCAChainMatch: Boolean,
     ): ServiceMatch? {
         // Check if service was active at validation time
-        if (validationTime != null && validationTime < serviceInfo.statusStartingTime) {
+        val effectiveStart = serviceInfo.sourceLoTEInformation?.let { it.statusStartingTime }
+            ?: serviceInfo.statusStartingTime.takeIf { serviceInfo.sourceLoTEInformation == null }
+        if (validationTime != null && effectiveStart != null && validationTime < effectiveStart) {
             return null
         }
 
-        val serviceCertBase64 = serviceInfo.serviceDigitalIdentity.x509Certificates.firstOrNull() ?: return null
-        val serviceCertDER = serviceCertBase64.decodeFrom(Encoding.BASE64)
-
-        // Direct match: certificate exactly matches service certificate
-        if (serviceCertDER.contentEquals(certDER)) {
-            return ServiceMatch(TspMatchType.DIRECT_MATCH, emptyList())
-        }
-
-        // CA chain match: certificate was issued by this service certificate
+        // Every listed certificate participates in rollover, not only the first.
+        val certificates = serviceInfo.serviceDigitalIdentity.x509Certificates.map { it.decodeFrom(Encoding.BASE64) }
+        if (certificates.any { it.contentEquals(certDER) }) return ServiceMatch(TspMatchType.DIRECT_MATCH, emptyList())
         if (allowCAChainMatch && chain != null) {
-            return checkCAChainMatch(certDER, serviceCertDER, chain)
+            for (serviceCertDER in certificates) {
+                checkCAChainMatch(certDER, serviceCertDER, chain)?.let { return it }
+            }
         }
 
         return null

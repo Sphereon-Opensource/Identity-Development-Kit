@@ -131,6 +131,21 @@ class X509VerifyServiceJvmAdapter :
                         .toSet()
                 }
 
+            // Explicit certificate trust can pin the target signing certificate, independently
+            // of CA path trust. Compare complete DER, never merely subject or public key.
+            // The pin is only for the supplied leaf, not another element of its chain.
+            val leaf = cf.generateCertificate(ByteArrayInputStream(certificateChain.first().der)) as X509Certificate
+            if (!trustedCertsPemArray.isNullOrEmpty() && anchors.any { it.trustedCert.encoded.contentEquals(leaf.encoded) }) {
+                leaf.checkValidity(validationDate)
+                require(leaf.keyUsage == null || leaf.keyUsage.getOrNull(0) == true) { "Explicitly pinned certificate does not permit digital signatures" }
+                // Unlike PKIX, a direct pin has no path checker to process extensions.
+                // Only basic constraints and key usage are understood by this branch.
+                require(leaf.criticalExtensionOIDs.orEmpty().all { it == "2.5.29.19" || it == "2.5.29.15" }) {
+                    "Explicitly pinned certificate contains an unhandled critical extension"
+                }
+                return verifyContext.successResult()
+            }
+
             // Build and validate CertPath
             val params =
                 PKIXParameters(anchors).apply {

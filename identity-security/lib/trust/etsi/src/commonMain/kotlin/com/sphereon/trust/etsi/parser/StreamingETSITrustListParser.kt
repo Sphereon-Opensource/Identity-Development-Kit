@@ -172,14 +172,14 @@ class StreamingETSITrustListParser : ETSITrustListParser {
                 when (reader.localName) {
                     "TSLVersionIdentifier" -> tslVersionIdentifier = reader.readSimpleElement().toIntOrNull() ?: 5
                     "TSLSequenceNumber" -> tslSequenceNumber = reader.readSimpleElement().toIntOrNull()
-                    "TSLType" -> tslType = reader.readSimpleElement()
+                    "TSLType" -> tslType = reader.readSimpleElement().trim()
                     "SchemeTerritory" -> schemeTerritory = reader.readSimpleElement()
                     "ListIssueDateTime" -> listIssueDateTime = Instant.parse(reader.readSimpleElement())
                     "NextUpdate" -> nextUpdate = parseNextUpdate(reader)
                     "SchemeOperatorName" -> schemeOperatorName = parseMultiLangStrings(reader)
                     "SchemeName" -> schemeName = parseMultiLangStrings(reader)
                     "SchemeInformationURI" -> schemeInformationURI = parseMultiLangURIs(reader)
-                    "StatusDeterminationApproach" -> statusDeterminationApproach = reader.readSimpleElement()
+                    "StatusDeterminationApproach" -> statusDeterminationApproach = reader.readSimpleElement().trim()
                     "SchemeTypeCommunityRules" -> schemeTypeCommunityRules = parseMultiLangURIs(reader)
                     "PolicyOrLegalNotice" -> policyOrLegalNotice = parseMultiLangStrings(reader)
                     "HistoricalInformationPeriod" -> historicalInformationPeriod = reader.readSimpleElement().toIntOrNull()
@@ -311,6 +311,7 @@ class StreamingETSITrustListParser : ETSITrustListParser {
         var schemeOperatorName = listOf<MultiLangString>()
         val serviceDigitalIdentities = mutableListOf<ETSIServiceDigitalIdentity>()
         var additionalInfo: ETSIAdditionalInformation? = null
+        var pointerMimeType: String? = null
 
         val elementName = reader.localName
         val depth = reader.depth
@@ -321,7 +322,7 @@ class StreamingETSITrustListParser : ETSITrustListParser {
             if (reader.eventType == EventType.START_ELEMENT) {
                 when (reader.localName) {
                     "TSLLocation" -> {
-                        tslLocation = reader.readSimpleElement()
+                        tslLocation = reader.readSimpleElement().trim()
                     }
 
                     "SchemeTerritory" -> {
@@ -332,6 +333,8 @@ class StreamingETSITrustListParser : ETSITrustListParser {
                         schemeOperatorName = parseMultiLangStrings(reader)
                     }
 
+                    "MimeType" -> pointerMimeType = reader.readSimpleElement().trim()
+
                     "ServiceDigitalIdentities" -> {
                         serviceDigitalIdentities.addAll(parseServiceDigitalIdentities(reader))
                     }
@@ -339,6 +342,9 @@ class StreamingETSITrustListParser : ETSITrustListParser {
                     "AdditionalInformation" -> {
                         val parsed = parseAdditionalInformation(reader)
                         additionalInfo = parsed.additionalInformation
+                        if (schemeOperatorName.isEmpty()) {
+                            schemeOperatorName = parsed.schemeOperatorName
+                        }
                         if (schemeTerritory == null && parsed.schemeTerritory != null) {
                             schemeTerritory = parsed.schemeTerritory
                         }
@@ -356,7 +362,9 @@ class StreamingETSITrustListParser : ETSITrustListParser {
             schemeTerritory = schemeTerritory ?: throw ETSIParseException("SchemeTerritory is required"),
             location = tslLocation ?: throw ETSIParseException("TSLLocation is required"),
             serviceDigitalIdentities = serviceDigitalIdentities,
-            additionalInformation = additionalInfo,
+            additionalInformation = pointerMimeType?.let {
+                (additionalInfo ?: ETSIAdditionalInformation()).copy(mimeType = it)
+            } ?: additionalInfo,
         )
     }
 
@@ -425,6 +433,7 @@ class StreamingETSITrustListParser : ETSITrustListParser {
         val otherInformation = mutableListOf<String>()
         var mimeType: String? = null
         var schemeTerritory: String? = null
+        val schemeOperatorName = mutableListOf<MultiLangString>()
 
         val elementName = reader.localName
         val depth = reader.depth
@@ -443,7 +452,9 @@ class StreamingETSITrustListParser : ETSITrustListParser {
                     }
 
                     "OtherInformation" -> {
-                        val content = parseOtherInformationElement(reader)
+                        val parsed = parseOtherInformationElement(reader)
+                        val content = parsed.values
+                        schemeOperatorName.addAll(parsed.schemeOperatorName)
                         if (content.containsKey("mimeType")) {
                             mimeType = content["mimeType"]
                         }
@@ -470,16 +481,23 @@ class StreamingETSITrustListParser : ETSITrustListParser {
                 )
             }
 
-        return AdditionalInformationParsed(additionalInfo, schemeTerritory)
+        return AdditionalInformationParsed(additionalInfo, schemeTerritory, schemeOperatorName)
     }
 
     private data class AdditionalInformationParsed(
         val additionalInformation: ETSIAdditionalInformation?,
         val schemeTerritory: String?,
+        val schemeOperatorName: List<MultiLangString>,
     )
 
-    private fun parseOtherInformationElement(reader: XmlReader): Map<String, String> {
+    private data class OtherInformationParsed(
+        val values: Map<String, String>,
+        val schemeOperatorName: List<MultiLangString>,
+    )
+
+    private fun parseOtherInformationElement(reader: XmlReader): OtherInformationParsed {
         val result = mutableMapOf<String, String>()
+        val schemeOperatorName = mutableListOf<MultiLangString>()
         val textBuilder = StringBuilder()
 
         val depth = reader.depth
@@ -509,6 +527,8 @@ class StreamingETSITrustListParser : ETSITrustListParser {
                             result["tslType"] = reader.readSimpleElement().trim()
                         }
 
+                        "SchemeOperatorName" -> schemeOperatorName.addAll(parseMultiLangStrings(reader))
+
                         else -> {
                             result["skipped"] = elName
                             reader.skipElement()
@@ -524,7 +544,7 @@ class StreamingETSITrustListParser : ETSITrustListParser {
             }
         }
 
-        return result
+        return OtherInformationParsed(result, schemeOperatorName)
     }
 
     private fun parseTrustServiceProviderList(reader: XmlReader): List<ETSITrustedEntity> {
@@ -755,7 +775,7 @@ class StreamingETSITrustListParser : ETSITrustListParser {
             if (reader.eventType == EventType.START_ELEMENT) {
                 when (reader.localName) {
                     "ServiceTypeIdentifier" -> {
-                        serviceTypeIdentifier = reader.readSimpleElement()
+                        serviceTypeIdentifier = reader.readSimpleElement().trim()
                     }
 
                     "ServiceName" -> {
@@ -767,7 +787,7 @@ class StreamingETSITrustListParser : ETSITrustListParser {
                     }
 
                     "ServiceStatus" -> {
-                        serviceStatus = reader.readSimpleElement()
+                        serviceStatus = reader.readSimpleElement().trim()
                     }
 
                     "StatusStartingTime" -> {

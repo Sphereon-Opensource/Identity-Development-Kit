@@ -24,6 +24,10 @@ import com.sphereon.crypto.core.KeyInfo
 import com.sphereon.crypto.core.KeyType
 import com.sphereon.crypto.core.generic.DigestAlg
 import com.sphereon.crypto.core.generic.hash
+import com.sphereon.crypto.core.interop.getPublicKeyJwk
+import com.sphereon.crypto.core.interop.x509CertificateFromDer
+import com.sphereon.crypto.core.jose.JwaAlgorithm
+import com.sphereon.crypto.core.jose.JwaCurve
 import com.sphereon.crypto.core.kms.KeyManagerService
 import com.sphereon.crypto.core.x509.X509VerificationRequest
 import com.sphereon.crypto.core.x509.X509VerifyService
@@ -161,16 +165,10 @@ class JAdESValidatorImpl(
                 }
             val signatureBytes = parsed.signature.decodeFrom(Encoding.BASE64URL)
 
-            val keyInfo =
-                KeyInfo<KeyType>(
-                    key = null,
-                    x5c = x5c.toTypedArray(),
-                )
-
             val signatureValid =
                 try {
                     keyManagerService.isValidRawSignature(
-                        keyInfo = keyInfo,
+                        keyInfo = verificationKey(headerObj, x5c),
                         input = signingInput,
                         signature = signatureBytes,
                     )
@@ -375,6 +373,33 @@ class JAdESValidatorImpl(
         val primitive = element as? JsonPrimitive ?: return null
         if (primitive.isString || !INTEGER_NUMERIC_DATE.matches(primitive.content)) return null
         return primitive.content.toLongOrNull()
+    }
+
+    private fun verificationKey(header: JsonObject, x5c: List<String>): KeyInfo<KeyType> {
+        val protectedAlg = header["alg"] as? JsonPrimitive
+        require(protectedAlg?.isString == true) { "A protected JWS signing algorithm is required" }
+        val algorithm = JwaAlgorithm.fromValue(protectedAlg.content)
+        require(algorithm in setOf(
+            JwaAlgorithm.RS256, JwaAlgorithm.RS384, JwaAlgorithm.RS512,
+            JwaAlgorithm.PS256, JwaAlgorithm.PS384, JwaAlgorithm.PS512,
+            JwaAlgorithm.ES256, JwaAlgorithm.ES384, JwaAlgorithm.ES512,
+            JwaAlgorithm.EdDSA,
+        )) { "Unsupported JWS signing algorithm" }
+        requireNotNull(algorithm)
+        // An X.509 RSA public key identifies neither JWS padding nor digest. Bind the
+        // protected algorithm to the extracted key instead of accepting an inferred default.
+        // Certificate trust is still checked separately against the configured signer roots.
+        val key = x509CertificateFromDer(x5c.first().decodeFrom(Encoding.BASE64))
+            .getPublicKeyJwk(x5c = x5c.toTypedArray(), alg = algorithm)
+        require(key.kty == algorithm.keyType) { "JWS signing algorithm does not match the certificate key type" }
+        val requiredCurve = when (algorithm) {
+            JwaAlgorithm.ES256 -> JwaCurve.P_256
+            JwaAlgorithm.ES384 -> JwaCurve.P_384
+            JwaAlgorithm.ES512 -> JwaCurve.P_521
+            else -> null
+        }
+        require(requiredCurve == null || key.crv == requiredCurve) { "JWS signing algorithm does not match the certificate curve" }
+        return KeyInfo(key = key, x5c = x5c.toTypedArray())
     }
 
     private fun parseSignedDataReference(obj: JsonObject): SignedDataReference =

@@ -98,6 +98,14 @@ enum class EidasRole(
         trustListProfile = EtsiTrustListProfile.TS_119_602_LOTE,
         description = "Registration Certificate Provider",
     ),
+    REGISTRAR_AND_REGISTER(
+        loTEType = LoTEType.EU_REGISTRARS,
+        issuanceServiceType = LoTEServiceType.REGISTER,
+        revocationServiceType = null,
+        legacyServiceTypes = emptyList(),
+        trustListProfile = EtsiTrustListProfile.TS_119_602_LOTE,
+        description = "Registrar and register",
+    ),
     ;
 
     companion object {

@@ -289,7 +289,7 @@ class LoTERoleVerificationServiceImpl(
         fromCache: Boolean,
         verificationTime: Instant,
     ): RoleVerificationResult {
-        val (trusted, trustStatus) = evaluateServiceStatus(match.serviceInfo.serviceStatus)
+        val (trusted, trustStatus) = LoTERoleTrustListStatusPolicy.evaluate(match.serviceInfo, role, trustList, verificationTime)
         val reasonCodes =
             when {
                 trustStatus == TrustStatus.REVOKED -> listOf(TrustDiagnosticReasonCodes.SERVICE_REVOKED)

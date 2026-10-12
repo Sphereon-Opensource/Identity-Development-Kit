@@ -49,6 +49,8 @@ data class LoTEServiceDigitalIdentity(
 @JsExportCompat
 @Serializable
 data class PkiObject(
-    @SerialName("pkiOb")
+    @SerialName("val")
     val value: String,
+    val encoding: String? = null,
+    val specRef: String? = null,
 )

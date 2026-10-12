@@ -316,15 +316,15 @@ class VerifyJwsCommandImpl(
                 // Decode signature
                 val signatureBytes = signature.signature.decodeFrom(Encoding.BASE64URL)
 
-                // Verify signature. JWKS URL resolution is a public-key trust path (OAuth/OIDC
-                // issuer metadata). It must not depend on a configured tenant KMS provider,
-                // because platform-issued tokens are verified before a tenant provider exists.
+                // Validated X.509 and JWKS URL results carry resolved public keys. After the
+                // trust and compatibility gates above, verify with the protected algorithm;
+                // an unconstrained RSA certificate does not choose a JOSE padding or digest.
                 log.debug("Verifying signature with keyInfo.signatureAlgorithm = ${keyInfo.signatureAlgorithm}")
                 stage = "cryptographic-verification"
                 anyCryptoAttempted = true
                 val isValid =
                     try {
-                        if (identifierOptsOrResult is ExternalIdentifierResult.JwksUrl) {
+                        if (identifierOptsOrResult is ExternalIdentifierResult.JwksUrl || identifierOptsOrResult is ExternalIdentifierResult.X5c) {
                             verifyResolvedPublicJwkSignature(
                                 keyInfo = keyInfo,
                                 headerAlg = algValue,

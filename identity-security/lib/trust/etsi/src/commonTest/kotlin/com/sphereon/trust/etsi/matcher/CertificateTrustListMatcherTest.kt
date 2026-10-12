@@ -36,6 +36,19 @@ import kotlin.test.assertNull
 import kotlin.time.Instant
 
 class CertificateTrustListMatcherTest {
+    @Test
+    fun matchesSecondRolloverCertificate() {
+        val list = buildTrustList()
+        val entity = list.trustedEntities.single()
+        val service = entity.trustedEntityServices.single()
+        val rollover = list.copy(trustedEntities = listOf(entity.copy(trustedEntityServices = listOf(service.copy(
+            serviceInformation = service.serviceInformation.copy(serviceDigitalIdentity = ETSIServiceDigitalIdentity(x509Certificates = listOf(otherCertBase64, certBase64))),
+        )))))
+        val result = CertificateTrustListMatcher.findMatchingEntity(rollover, certBytes, null, null, false)
+        assertNotNull(result)
+        assertEquals(TspMatchType.DIRECT_MATCH, result.matchType)
+    }
+
     // Simulated certificate DER bytes
     private val certBytes = "test-certificate-data".encodeToByteArray()
     private val certBase64 = certBytes.encodeTo(Encoding.BASE64)

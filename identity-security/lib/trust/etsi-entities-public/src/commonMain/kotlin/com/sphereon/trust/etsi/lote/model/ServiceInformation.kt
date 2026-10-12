@@ -30,7 +30,7 @@ import kotlin.time.Instant
 @Serializable
 data class LoTEServiceInformation(
     @SerialName("ServiceTypeIdentifier")
-    val serviceTypeIdentifier: String,
+    val serviceTypeIdentifier: String? = null,
     @SerialName("ServiceName")
     val serviceName: List<MultiLangString>,
     @SerialName("ServiceDigitalIdentity")
@@ -40,16 +40,56 @@ data class LoTEServiceInformation(
     @SerialName("StatusStartingTime")
     val statusStartingTime: Instant? = null,
     @SerialName("ServiceSupplyPoints")
-    val serviceSupplyPoints: List<String> = emptyList(),
+    val serviceSupplyPoints: List<LoTEServiceSupplyPoint> = emptyList(),
     @SerialName("SchemeServiceDefinitionURI")
     val schemeServiceDefinitionURI: List<MultiLangURI> = emptyList(),
-    @SerialName("TEServiceDefinitionURI")
+    @SerialName("ServiceDefinitionURI")
     val teServiceDefinitionURI: List<MultiLangURI> = emptyList(),
     @SerialName("ServiceInformationExtensions")
     val serviceInformationExtensions: List<JsonElement> = emptyList(),
 )
 
-/**
- * Service history instance — reuses the LoTEServiceInformation shape.
- */
-typealias ServiceHistoryInstance = LoTEServiceInformation
+/** A typed supply point preserves its optional service discriminator. */
+@JsExportCompat
+@Serializable
+data class LoTEServiceSupplyPoint(
+    val uriValue: String,
+    @SerialName("ServiceType")
+    val serviceType: String? = null,
+)
+
+/** Historical entries require status and time and have no supply-point fields. */
+@JsExportCompat
+@Serializable
+data class ServiceHistoryInstance(
+    @SerialName("ServiceName")
+    val serviceName: List<MultiLangString>,
+    @SerialName("ServiceDigitalIdentity")
+    val serviceDigitalIdentity: LoTEServiceDigitalIdentity,
+    @SerialName("ServiceStatus")
+    val serviceStatus: String,
+    @SerialName("StatusStartingTime")
+    val statusStartingTime: Instant,
+    @SerialName("ServiceTypeIdentifier")
+    val serviceTypeIdentifier: String? = null,
+    @SerialName("ServiceInformationExtensions")
+    val serviceInformationExtensions: List<JsonElement> = emptyList(),
+) {
+    fun toServiceInformation(): LoTEServiceInformation = LoTEServiceInformation(
+        serviceTypeIdentifier = serviceTypeIdentifier,
+        serviceName = serviceName,
+        serviceDigitalIdentity = serviceDigitalIdentity,
+        serviceStatus = serviceStatus,
+        statusStartingTime = statusStartingTime,
+        serviceInformationExtensions = serviceInformationExtensions,
+    )
+}
+
+fun LoTEServiceInformation.toHistoryInstance(): ServiceHistoryInstance = ServiceHistoryInstance(
+    serviceTypeIdentifier = serviceTypeIdentifier,
+    serviceName = serviceName,
+    serviceDigitalIdentity = serviceDigitalIdentity,
+    serviceStatus = requireNotNull(serviceStatus) { "Historical ServiceStatus is required" },
+    statusStartingTime = requireNotNull(statusStartingTime) { "Historical StatusStartingTime is required" },
+    serviceInformationExtensions = serviceInformationExtensions,
+)

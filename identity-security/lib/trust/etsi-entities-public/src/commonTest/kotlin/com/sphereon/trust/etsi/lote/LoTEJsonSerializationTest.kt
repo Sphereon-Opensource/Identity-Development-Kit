@@ -19,6 +19,7 @@ package com.sphereon.trust.etsi.lote
 
 import com.sphereon.trust.etsi.lote.model.ListAndSchemeInformation
 import com.sphereon.trust.etsi.lote.model.LoTE
+import com.sphereon.trust.etsi.lote.model.ServiceHistoryInstance
 import com.sphereon.trust.etsi.lote.model.LoTEPostalAddress
 import com.sphereon.trust.etsi.lote.model.LoTEQualifier
 import com.sphereon.trust.etsi.lote.model.LoTEServiceDigitalIdentity
@@ -42,6 +43,7 @@ import com.sphereon.trust.etsi.lote.parser.DefaultLoTEParser
 import com.sphereon.trust.etsi.lote.parser.LoTESerializationFormat
 import com.sphereon.trust.etsi.lote.serialization.LoTEJson
 import kotlin.test.Test
+import kotlin.test.assertFailsWith
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
@@ -201,12 +203,12 @@ class LoTEJsonSerializationTest {
         val parsed = LoTEJson.parse(json)
 
         assertEquals(2, parsed.listAndSchemeInformation.policyOrLegalNotice.size)
-        assertEquals("en", parsed.listAndSchemeInformation.policyOrLegalNotice[0].lang)
+        assertEquals(null, parsed.listAndSchemeInformation.policyOrLegalNotice[0].lang)
         assertEquals("Legal notice text", parsed.listAndSchemeInformation.policyOrLegalNotice[0].notice)
     }
 
     @Test
-    fun testIgnoreUnknownKeys() {
+    fun testRejectUnknownKeys() {
         val jsonWithUnknownKeys =
             """
             {
@@ -222,9 +224,7 @@ class LoTEJsonSerializationTest {
             }
             """.trimIndent()
 
-        val parsed = LoTEJson.parse(jsonWithUnknownKeys)
-        assertEquals(1, parsed.listAndSchemeInformation.versionIdentifier)
-        assertEquals(1, parsed.listAndSchemeInformation.sequenceNumber)
+        assertFailsWith<IllegalArgumentException> { LoTEJson.parse("{\"LoTE\":$jsonWithUnknownKeys}") }
     }
 
     @Test
@@ -285,6 +285,7 @@ class LoTEJsonSerializationTest {
                     TrustedEntity(
                         trustedEntityInformation =
                             TrustedEntityInformation(
+                                address = OperatorAddress(listOf(LoTEPostalAddress("en", "Test Street", countryName = "NL")), listOf(MultiLangURI("en", "mailto:test@example.com"))),
                                 name = listOf(MultiLangString("en", "Test Entity")),
                                 informationURI = listOf(MultiLangURI("en", "https://example.com/entity")),
                             ),
@@ -321,10 +322,12 @@ class LoTEJsonSerializationTest {
                     pointersToOtherLoTE =
                         listOf(
                             OtherLoTEPointer(
+                                serviceDigitalIdentities = listOf(LoTEServiceDigitalIdentity(x509Certificates = listOf(PkiObject("Y2VydA==")))),
                                 location = "https://example.com/member-state-lote.json",
                                 qualifiers =
                                     listOf(
                                         LoTEQualifier(
+                                mimeType = "application/json",
                                             loTEType = LoTEType.EU_PID_PROVIDERS,
                                             schemeTerritory = "NL",
                                             schemeOperatorName = listOf(MultiLangString("en", "NL Authority")),
@@ -393,6 +396,8 @@ class LoTEJsonSerializationTest {
                     TrustedEntity(
                         trustedEntityInformation =
                             TrustedEntityInformation(
+                                address = OperatorAddress(listOf(LoTEPostalAddress("en", "Test Street", countryName = "NL")), listOf(MultiLangURI("en", "mailto:test@example.com"))),
+                                informationURI = listOf(MultiLangURI("en", "https://example.com/entity")),
                                 name = listOf(MultiLangString("en", "Entity")),
                             ),
                         trustedEntityServices =
@@ -408,7 +413,7 @@ class LoTEJsonSerializationTest {
                                         ),
                                     serviceHistory =
                                         listOf(
-                                            LoTEServiceInformation(
+                                            ServiceHistoryInstance(
                                                 serviceTypeIdentifier = LoTEServiceType.PID_ISSUANCE,
                                                 serviceName = listOf(MultiLangString("en", "Service")),
                                                 serviceDigitalIdentity = LoTEServiceDigitalIdentity(),

@@ -69,6 +69,8 @@ sealed interface WalletProviderVerifierMaterial {
         /** Standard-base64 DER certificate, never a path or a private-key reference. */
         val certificateDerBase64: String,
         val fingerprint: String,
+        /** Governance provenance for an explicitly selected custom scheme, never an EU role. */
+        val customLoTE: CustomLoTEWalletProviderProvenance? = null,
     ) : WalletProviderVerifierMaterial {
         override val mechanism: WalletProviderTrustMechanism = WalletProviderTrustMechanism.X509
 
@@ -100,6 +102,29 @@ sealed interface WalletProviderVerifierMaterial {
             requireBase64(certificateDerBase64, "TS 119 602 service certificate")
             requireSha256(certificateFingerprint, "TS 119 602 certificate fingerprint")
         }
+    }
+}
+
+/** Public proof identity carried with X.509 material; callers must re-resolve current policy for each use. */
+@Serializable
+data class CustomLoTEWalletProviderProvenance(
+    val tenantId: String,
+    val domainId: String,
+    val policyId: String,
+    val policyVersion: Long,
+    val policyDigest: String,
+    val providerId: String,
+    val serviceTypeIdentifier: String,
+    val snapshotId: String,
+    val artifactDigest: String,
+) {
+    init {
+        listOf(tenantId, domainId, policyId, providerId, snapshotId).forEach { requireCanonicalId(it, "custom LoTE proof identity") }
+        require(policyVersion > 0) { "custom LoTE policy version must be positive" }
+        requireSha256(policyDigest, "custom LoTE policy digest")
+        requireSha256(artifactDigest, "custom LoTE artifact digest")
+        require(serviceTypeIdentifier.isNotBlank() && serviceTypeIdentifier == serviceTypeIdentifier.trim() &&
+            serviceTypeIdentifier.none(Char::isWhitespace)) { "custom LoTE service identity must be exact" }
     }
 }
 
@@ -142,7 +167,7 @@ fun interface WalletProviderTrustResolver {
 }
 
 const val ETSI_TS_119_602_WALLET_PROVIDER_SERVICE_TYPE: String =
-    "http://uri.etsi.org/TrstSvc/Svctype/WalletProvider"
+    "http://uri.etsi.org/19602/SvcType/WalletSolution/Issuance"
 
 private val SHA256 = Regex("^sha256:[0-9a-f]{64}$")
 private val BASE64 = Regex("^[A-Za-z0-9+/]+={0,2}$")

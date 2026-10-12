@@ -43,6 +43,7 @@ import com.sphereon.trust.core.resolver.ResolutionOptions
 import com.sphereon.trust.core.resolver.TrustListResolver
 import com.sphereon.trust.etsi.lote.model.forLang
 import com.sphereon.trust.etsi.model.ETSILoTE
+import com.sphereon.trust.etsi.model.GenericTrustAnchorExportPolicy
 import com.sphereon.trust.etsi.parser.ETSITrustListParser
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.ContributesIntoSet
@@ -283,6 +284,7 @@ class ETSITrustListIdentifierResolutionServiceImpl(
      * Extracts trust anchors from the trust list.
      */
     private fun extractTrustAnchors(trustList: ETSILoTE): List<TrustAnchor> {
+        if (!GenericTrustAnchorExportPolicy.permits(trustList)) return emptyList()
         return trustList.trustedEntities.flatMap { entity ->
             entity.trustedEntityServices.mapNotNull { service ->
                 val serviceInfo = service.serviceInformation

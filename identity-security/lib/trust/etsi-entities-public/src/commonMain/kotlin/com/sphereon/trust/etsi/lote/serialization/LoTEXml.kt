@@ -17,6 +17,9 @@
 
 package com.sphereon.trust.etsi.lote.serialization
 
+import com.sphereon.trust.etsi.lote.model.LoTEServiceSupplyPoint
+import com.sphereon.trust.etsi.lote.model.toHistoryInstance
+
 import com.sphereon.trust.etsi.lote.model.ListAndSchemeInformation
 import com.sphereon.trust.etsi.lote.model.LoTE
 import com.sphereon.trust.etsi.lote.model.LoTEPostalAddress
@@ -258,7 +261,7 @@ object LoTEXml {
         if (service.serviceHistory.isNotEmpty()) {
             writer.startTag(NAMESPACE_602, "ServiceHistory", "")
             for (history in service.serviceHistory) {
-                writeServiceInformation(writer, history, "ServiceHistoryInstance")
+                writeServiceInformation(writer, history.toServiceInformation(), "ServiceHistoryInstance")
             }
             writer.endTag(NAMESPACE_602, "ServiceHistory", "")
         }
@@ -271,7 +274,7 @@ object LoTEXml {
         elementName: String,
     ) {
         writer.startTag(NAMESPACE_602, elementName, "")
-        writer.writeSimpleElement(NAMESPACE_602, "ServiceTypeIdentifier", info.serviceTypeIdentifier)
+        info.serviceTypeIdentifier?.let { writer.writeSimpleElement(NAMESPACE_602, "ServiceTypeIdentifier", it) }
         writer.writeMultiLangStrings(NAMESPACE_602, "ServiceName", "Name", info.serviceName)
         writeServiceDigitalIdentity(writer, info.serviceDigitalIdentity)
         info.serviceStatus?.let { writer.writeSimpleElement(NAMESPACE_602, "ServiceStatus", it) }
@@ -279,7 +282,10 @@ object LoTEXml {
         if (info.serviceSupplyPoints.isNotEmpty()) {
             writer.startTag(NAMESPACE_602, "ServiceSupplyPoints", "")
             for (uri in info.serviceSupplyPoints) {
-                writer.writeSimpleElement(NAMESPACE_602, "URI", uri)
+                writer.startTag(NAMESPACE_602, "URI", "")
+                uri.serviceType?.let { writer.attribute("", "ServiceType", "", it) }
+                writer.text(uri.uriValue)
+                writer.endTag(NAMESPACE_602, "URI", "")
             }
             writer.endTag(NAMESPACE_602, "ServiceSupplyPoints", "")
         }
@@ -630,7 +636,7 @@ object LoTEXml {
         }
 
         return LoTEPostalAddress(
-            lang = lang,
+            lang = requireNotNull(lang) { "Postal address language is required" },
             streetAddress = streetAddress,
             locality = locality,
             stateOrProvince = stateOrProvince,
@@ -945,7 +951,7 @@ object LoTEXml {
         var serviceDigitalIdentity = LoTEServiceDigitalIdentity()
         var serviceStatus: String? = null
         var statusStartingTime: Instant? = null
-        val serviceSupplyPoints = mutableListOf<String>()
+        val serviceSupplyPoints = mutableListOf<LoTEServiceSupplyPoint>()
         var schemeServiceDefinitionURI = listOf<MultiLangURI>()
         var teServiceDefinitionURI = listOf<MultiLangURI>()
 
@@ -965,7 +971,7 @@ object LoTEXml {
                     "ServiceDigitalIdentity" -> serviceDigitalIdentity = parseServiceDigitalIdentity(reader)
                     "ServiceStatus" -> serviceStatus = reader.readSimpleElement()
                     "StatusStartingTime" -> statusStartingTime = Instant.parse(reader.readSimpleElement())
-                    "ServiceSupplyPoints" -> serviceSupplyPoints.addAll(parseDistributionPoints(reader))
+                    "ServiceSupplyPoints" -> serviceSupplyPoints.addAll(parseSupplyPoints(reader))
                     "SchemeServiceDefinitionURI" -> schemeServiceDefinitionURI = parseMultiLangURIs(reader)
                     "TEServiceDefinitionURI" -> teServiceDefinitionURI = parseMultiLangURIs(reader)
                     else -> reader.skipElement()
@@ -974,9 +980,7 @@ object LoTEXml {
         }
 
         return LoTEServiceInformation(
-            serviceTypeIdentifier =
-                serviceTypeIdentifier
-                    ?: throw IllegalArgumentException("ServiceTypeIdentifier is required"),
+            serviceTypeIdentifier = serviceTypeIdentifier,
             serviceName = serviceName,
             serviceDigitalIdentity = serviceDigitalIdentity,
             serviceStatus = serviceStatus,
@@ -985,6 +989,21 @@ object LoTEXml {
             schemeServiceDefinitionURI = schemeServiceDefinitionURI,
             teServiceDefinitionURI = teServiceDefinitionURI,
         )
+    }
+
+    private fun parseSupplyPoints(reader: XmlReader): List<LoTEServiceSupplyPoint> {
+        val result = mutableListOf<LoTEServiceSupplyPoint>()
+        val depth = reader.depth
+        val elementName = reader.localName
+        while (reader.hasNext()) {
+            reader.next()
+            if (reader.hasExitedElement(depth, elementName)) break
+            if (reader.eventType == EventType.START_ELEMENT && reader.localName == "URI") {
+                val type = reader.getAttributeValue("", "ServiceType")
+                result.add(LoTEServiceSupplyPoint(reader.readSimpleElement(), type))
+            }
+        }
+        return result
     }
 
     private fun parseServiceHistoryList(reader: XmlReader): List<ServiceHistoryInstance> {
@@ -998,7 +1017,7 @@ object LoTEXml {
                 break
             }
             if (reader.eventType == EventType.START_ELEMENT && reader.localName == "ServiceHistoryInstance") {
-                result.add(parseServiceInformation(reader))
+                result.add(parseServiceInformation(reader).toHistoryInstance())
             }
         }
 

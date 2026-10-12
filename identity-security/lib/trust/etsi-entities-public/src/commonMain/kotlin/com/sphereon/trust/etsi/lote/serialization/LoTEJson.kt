@@ -18,7 +18,11 @@
 package com.sphereon.trust.etsi.lote.serialization
 
 import com.sphereon.trust.etsi.lote.model.LoTE
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.decodeFromJsonElement
+import kotlinx.serialization.json.encodeToJsonElement
 
 /**
  * JSON serialization/deserialization for ETSI TS 119 602 LoTE.
@@ -29,7 +33,7 @@ import kotlinx.serialization.json.Json
 object LoTEJson {
     val json =
         Json {
-            ignoreUnknownKeys = true
+            ignoreUnknownKeys = false
             encodeDefaults = false
             prettyPrint = false
         }
@@ -37,12 +41,22 @@ object LoTEJson {
     /**
      * Parses a LoTE from a JSON string.
      */
-    fun parse(jsonString: String): LoTE = json.decodeFromString(jsonString)
+    fun parse(jsonString: String): LoTE {
+        val document = json.parseToJsonElement(jsonString)
+        LoTEJsonStructure.validate(document)
+        return json.decodeFromJsonElement<LoTEDocument>(document).lote
+    }
 
     /**
      * Encodes a LoTE to a JSON string.
      */
-    fun encode(lote: LoTE): String = json.encodeToString(LoTE.serializer(), lote)
+    fun encode(lote: LoTE): String = encodeWith(json, lote)
+
+    private fun encodeWith(format: Json, lote: LoTE): String {
+        val document = format.encodeToJsonElement(LoTEDocument(lote))
+        LoTEJsonStructure.validate(document)
+        return format.encodeToString(kotlinx.serialization.json.JsonElement.serializer(), document)
+    }
 
     /**
      * Encodes a LoTE to a pretty-printed JSON string.
@@ -52,6 +66,9 @@ object LoTEJson {
             Json(json) {
                 prettyPrint = true
             }
-        return prettyJson.encodeToString(LoTE.serializer(), lote)
+        return encodeWith(prettyJson, lote)
     }
 }
+
+@Serializable
+private data class LoTEDocument(@SerialName("LoTE") val lote: LoTE)

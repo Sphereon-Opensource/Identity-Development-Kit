@@ -33,6 +33,7 @@ internal object LoTERoleTrustListRouting {
             LoTEType.EU_WRPAC_PROVIDERS,
             LoTEType.EU_WRPRC_PROVIDERS,
             LoTEType.EU_PUB_EAA_PROVIDERS,
+            LoTEType.EU_REGISTRARS,
         )
 
     fun findPointersForRole(

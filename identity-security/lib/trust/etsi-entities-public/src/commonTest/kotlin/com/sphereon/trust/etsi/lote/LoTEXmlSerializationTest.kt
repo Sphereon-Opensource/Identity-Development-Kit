@@ -19,6 +19,8 @@ package com.sphereon.trust.etsi.lote
 
 import com.sphereon.trust.etsi.lote.model.ListAndSchemeInformation
 import com.sphereon.trust.etsi.lote.model.LoTE
+import com.sphereon.trust.etsi.lote.model.LoTEServiceSupplyPoint
+import com.sphereon.trust.etsi.lote.model.ServiceHistoryInstance
 import com.sphereon.trust.etsi.lote.model.LoTEPostalAddress
 import com.sphereon.trust.etsi.lote.model.LoTEQualifier
 import com.sphereon.trust.etsi.lote.model.LoTEServiceDigitalIdentity
@@ -209,8 +211,8 @@ class LoTEXmlSerializationTest {
 
         val service = parsed.trustedEntitiesList[0].trustedEntityServices[0]
         assertEquals(2, service.serviceInformation.serviceSupplyPoints.size)
-        assertEquals("https://issuer.example.com/pid", service.serviceInformation.serviceSupplyPoints[0])
-        assertEquals("https://issuer.example.com/pid/alt", service.serviceInformation.serviceSupplyPoints[1])
+        assertEquals("https://issuer.example.com/pid", service.serviceInformation.serviceSupplyPoints[0].uriValue)
+        assertEquals("https://issuer.example.com/pid/alt", service.serviceInformation.serviceSupplyPoints[1].uriValue)
     }
 
     @Test
@@ -323,6 +325,7 @@ class LoTEXmlSerializationTest {
                     TrustedEntity(
                         trustedEntityInformation =
                             TrustedEntityInformation(
+                                address = OperatorAddress(listOf(LoTEPostalAddress("en", "Test Street", countryName = "NL")), listOf(MultiLangURI("en", "mailto:test@example.com"))),
                                 name = listOf(MultiLangString("en", "Test Entity")),
                                 informationURI = listOf(MultiLangURI("en", "https://example.com/entity")),
                             ),
@@ -440,6 +443,8 @@ class LoTEXmlSerializationTest {
                     TrustedEntity(
                         trustedEntityInformation =
                             TrustedEntityInformation(
+                                address = OperatorAddress(listOf(LoTEPostalAddress("en", "Test Street", countryName = "NL")), listOf(MultiLangURI("en", "mailto:test@example.com"))),
+                                informationURI = listOf(MultiLangURI("en", "https://example.com/entity")),
                                 name = listOf(MultiLangString("en", "Entity")),
                             ),
                         trustedEntityServices =
@@ -455,7 +460,7 @@ class LoTEXmlSerializationTest {
                                         ),
                                     serviceHistory =
                                         listOf(
-                                            LoTEServiceInformation(
+                                            ServiceHistoryInstance(
                                                 serviceTypeIdentifier = LoTEServiceType.PID_ISSUANCE,
                                                 serviceName = listOf(MultiLangString("en", "Service")),
                                                 serviceDigitalIdentity = LoTEServiceDigitalIdentity(),
@@ -501,6 +506,8 @@ class LoTEXmlSerializationTest {
                     TrustedEntity(
                         trustedEntityInformation =
                             TrustedEntityInformation(
+                                address = OperatorAddress(listOf(LoTEPostalAddress("en", "Test Street", countryName = "NL")), listOf(MultiLangURI("en", "mailto:test@example.com"))),
+                                informationURI = listOf(MultiLangURI("en", "https://example.com/entity")),
                                 name = listOf(MultiLangString("en", "Entity")),
                             ),
                         trustedEntityServices =
@@ -513,8 +520,8 @@ class LoTEXmlSerializationTest {
                                             serviceDigitalIdentity = LoTEServiceDigitalIdentity(),
                                             serviceSupplyPoints =
                                                 listOf(
-                                                    "https://issuer.example.com/pid",
-                                                    "https://issuer.example.com/pid/alt",
+                                                    LoTEServiceSupplyPoint("https://issuer.example.com/pid"),
+                                                    LoTEServiceSupplyPoint("https://issuer.example.com/pid/alt"),
                                                 ),
                                         ),
                                 ),
@@ -538,6 +545,8 @@ class LoTEXmlSerializationTest {
                     TrustedEntity(
                         trustedEntityInformation =
                             TrustedEntityInformation(
+                                address = OperatorAddress(listOf(LoTEPostalAddress("en", "Test Street", countryName = "NL")), listOf(MultiLangURI("en", "mailto:test@example.com"))),
+                                informationURI = listOf(MultiLangURI("en", "https://example.com/entity")),
                                 name = listOf(MultiLangString("en", "Entity")),
                             ),
                         trustedEntityServices =
@@ -572,6 +581,8 @@ class LoTEXmlSerializationTest {
                     TrustedEntity(
                         trustedEntityInformation =
                             TrustedEntityInformation(
+                                address = OperatorAddress(listOf(LoTEPostalAddress("en", "Test Street", countryName = "NL")), listOf(MultiLangURI("en", "mailto:test@example.com"))),
+                                informationURI = listOf(MultiLangURI("en", "https://example.com/entity")),
                                 name = listOf(MultiLangString("en", "Entity")),
                             ),
                         trustedEntityServices =

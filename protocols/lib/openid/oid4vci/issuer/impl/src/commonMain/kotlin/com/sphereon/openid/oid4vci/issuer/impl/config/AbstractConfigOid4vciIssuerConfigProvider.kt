@@ -450,17 +450,20 @@ abstract class AbstractConfigOid4vciIssuerConfigProvider(
     override suspend fun credentialSigningConfigs(): Map<String, CredentialSigningConfig> {
         val ids = credentialConfigIds() ?: return emptyMap()
         val resolver = keyNameResolver?.invoke()
+        val issuerKeyName = if (keyNameResolver == null) metadataSigningKeyName() else null
         val tenantId = if (resolver != null) tenantId() else null
         val instanceId = if (resolver != null) instanceId() else null
-        val issuerKeyName = if (keyNameResolver == null) metadataSigningKeyName() else null
         return ids.associateWith { id ->
-            val signingKeyName =
-                if (resolver != null && tenantId != null && instanceId != null) {
-                    resolver.resolveCredentialSigningKeyName(tenantId, instanceId, id)?.takeIf { it.isNotBlank() }
-                } else {
-                    issuerKeyName
-                }
-            buildCredentialSigningConfig(id, signingKeyName)
+            // The bound resolver owns credential-specific selection and any legitimate default.
+            // A refused credential binding must never fall back to the metadata key here.
+            val keyName = if (resolver == null) {
+                issuerKeyName
+            } else if (tenantId == null || instanceId == null) {
+                null
+            } else {
+                resolver.resolveCredentialSigningKeyName(tenantId, instanceId, id)?.takeIf { it.isNotBlank() }
+            }
+            buildCredentialSigningConfig(id, keyName)
         }
     }
 

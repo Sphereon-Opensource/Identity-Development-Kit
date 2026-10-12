@@ -51,6 +51,7 @@ import com.sphereon.trust.core.TrustValidationService
 import com.sphereon.trust.etsi.extractor.EtsiEntityMapper
 import com.sphereon.trust.etsi.lote.model.forLang
 import com.sphereon.trust.etsi.model.ETSILoTE
+import com.sphereon.trust.etsi.model.GenericTrustAnchorExportPolicy
 import com.sphereon.trust.etsi.model.ETSIServiceInformation
 import com.sphereon.trust.etsi.model.ETSIServiceStatus
 import com.sphereon.trust.etsi.model.ETSITrustedEntity
@@ -271,6 +272,9 @@ class ETSITrustValidator(
             val context = TrustContext(type = TrustContext.TYPE_ETSI_TSL)
             val trustList = loadTrustList(context)
 
+            // A 602 list requires profile-specific purpose and membership evaluation.
+            // This generic 612 anchor exporter has no such context.
+            if (!GenericTrustAnchorExportPolicy.permits(trustList)) return emptyList()
             trustList.trustedEntities.flatMap { entity ->
                 entity.trustedEntityServices.mapNotNull { service ->
                     val serviceInfo = service.serviceInformation

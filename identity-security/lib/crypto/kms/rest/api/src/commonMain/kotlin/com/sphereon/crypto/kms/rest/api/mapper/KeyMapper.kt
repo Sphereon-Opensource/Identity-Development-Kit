@@ -120,6 +120,7 @@ fun JwkType.toRest(): JwkRest =
         p = this.p,
         q = this.q,
         dp = this.dP,
+        dq = this.dQ,
         qi = this.qInv,
         k = this.k,
         x5c = this.x5c,
@@ -166,6 +167,7 @@ fun JwkRest.toSdk(): JwkType =
         p = this.p,
         q = this.q,
         dP = this.dp,
+        dQ = this.dq,
         qInv = this.qi,
         k = this.k,
         x5c = this.x5c,
@@ -282,7 +284,7 @@ fun ManagedKeyInfoRest.toSdk(): ManagedKeyInfoType<*> =
                 providerId = this.providerId,
                 signatureAlgorithm =
                     this.signatureAlgorithm
-                        ?.let { algo -> algo::class.simpleName }
+                        ?.let { algo -> algo.value }
                         ?.let { name -> SignatureAlgorithm.fromValue(name) },
                 keyVisibility = this.keyVisibility?.let { KeyVisibility.valueOf(it.name) },
                 x5c = this.x5c,
@@ -319,7 +321,7 @@ fun ResolvedKeyInfoRest.toSdk(): ResolvedKeyInfoType<*> =
         providerId = this.providerId,
         signatureAlgorithm =
             this.signatureAlgorithm
-                ?.let { algo -> algo::class.simpleName }
+                ?.let { algo -> algo.value }
                 ?.let { name -> SignatureAlgorithm.fromValue(name) },
         keyVisibility = this.keyVisibility?.let { KeyVisibility.valueOf(it.name) },
         x5c = this.x5c,
@@ -336,7 +338,7 @@ fun KeyInfoRest.toSdk(): KeyInfoType<*> =
         providerId = this.providerId,
         signatureAlgorithm =
             this.signatureAlgorithm
-                ?.let { algo -> algo::class.simpleName }
+                ?.let { algo -> algo.value }
                 ?.let { name -> SignatureAlgorithm.fromValue(name) },
         keyVisibility = this.keyVisibility?.let { KeyVisibility.valueOf(it.name) },
         x5c = this.x5c,

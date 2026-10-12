@@ -17,6 +17,18 @@ import kotlin.test.assertTrue
 
 class ResolvedWalletProviderTrustContractTest {
     @Test
+    fun customLoTEKeepsGovernanceProvenanceWithoutClaimingPublishedWalletProfile() {
+        val proof = CustomLoTEWalletProviderProvenance("tenant", "domain", "policy", 2, SHA256,
+            "provider", "https://customer.example/services/wallet", "snapshot", SECOND_SHA256)
+        val material = WalletProviderVerifierMaterial.X509("AQID", THIRD_SHA256, proof)
+        assertEquals(WalletProviderTrustMechanism.X509, material.mechanism)
+        assertEquals(proof, material.customLoTE)
+        val encoded = Json.encodeToString(WalletProviderVerifierMaterial.serializer(), material)
+        assertEquals(material, Json.decodeFromString(WalletProviderVerifierMaterial.serializer(), encoded))
+        assertFailsWith<IllegalArgumentException> { proof.copy(policyVersion = 0) }
+        assertFailsWith<IllegalArgumentException> { proof.copy(policyDigest = "unverified") }
+    }
+    @Test
     fun resolvedTrustCarriesTypedPublicVerifierMaterialAndAttachmentPolicy() {
         val jwk = publicJwk()
         val trust =
@@ -111,6 +123,29 @@ class ResolvedWalletProviderTrustContractTest {
         }
     }
 
+    @Test
+    fun ts119602AcceptsOnlyCanonicalWalletIssuanceService() {
+        fun material(serviceType: String) = WalletProviderVerifierMaterial.Ts119602(
+            providerId = "wallet-provider-1",
+            serviceTypeIdentifier = serviceType,
+            snapshotId = "snapshot-7",
+            artifactDigest = THIRD_SHA256,
+            certificateDerBase64 = "BAUG",
+            certificateFingerprint = FOURTH_SHA256,
+        )
+
+        val canonical = "http://uri.etsi.org/19602/SvcType/WalletSolution/Issuance"
+        assertEquals(canonical, material(canonical).serviceTypeIdentifier)
+        listOf(
+            "http://uri.etsi.org/TrstSvc/Svctype/WalletProvider",
+            "http://uri.etsi.org/19602/SvcType/WalletSolution/Revocation",
+            "http://uri.etsi.org/19602/SvcType/PID/Issuance",
+            "http://uri.etsi.org/19602/SvcType/PubEAA/Issuance",
+        ).forEach { otherService ->
+            assertFailsWith<IllegalArgumentException>(otherService) { material(otherService) }
+        }
+    }
+
     private fun publicJwk(): Jwk =
         Jwk.fromJsonObject(
             Json.parseToJsonElement(
@@ -123,6 +158,6 @@ class ResolvedWalletProviderTrustContractTest {
         const val SECOND_SHA256 = "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
         const val THIRD_SHA256 = "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
         const val FOURTH_SHA256 = "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
-        const val ETSI_WALLET_PROVIDER = "http://uri.etsi.org/TrstSvc/Svctype/WalletProvider"
+        const val ETSI_WALLET_PROVIDER = "http://uri.etsi.org/19602/SvcType/WalletSolution/Issuance"
     }
 }

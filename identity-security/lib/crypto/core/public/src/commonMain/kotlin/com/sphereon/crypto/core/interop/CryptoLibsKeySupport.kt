@@ -441,17 +441,12 @@ fun SubjectPublicKeyInfo.toJwk(
 
         RSA_ENCRYPTION_OID -> {
             val rsaKey = decodeRsaPublicKey()
-            val bitLen = rsaKey.modulus.magnitude.size * 8
             Builder()
                 .withGenerateKid(generateKid)
                 .withKty(JwaKeyType.RSA)
-                .withAlg(
-                    alg ?: when {
-                        bitLen <= 2048 -> JwaAlgorithm.PS256
-                        bitLen <= 3072 -> JwaAlgorithm.PS384
-                        else -> JwaAlgorithm.PS512
-                    },
-                ).withE(rsaKey.publicExponent.magnitude.toJwkProp())
+                // rsaEncryption identifies key material, not a JOSE padding or digest policy.
+                // Retain a caller's explicit constraint; an absent constraint stays absent.
+                .withAlg(alg).withE(rsaKey.publicExponent.magnitude.toJwkProp())
                 .withN(rsaKey.modulus.magnitude.toJwkProp())
                 .withX5c(x5c)
                 .build()

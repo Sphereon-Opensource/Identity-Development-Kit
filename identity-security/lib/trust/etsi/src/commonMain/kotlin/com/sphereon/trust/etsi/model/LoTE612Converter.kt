@@ -19,6 +19,8 @@ package com.sphereon.trust.etsi.model
 
 import com.sphereon.trust.etsi.lote.model.ListAndSchemeInformation
 import com.sphereon.trust.etsi.lote.model.LoTE
+import com.sphereon.trust.etsi.lote.model.LoTEServiceSupplyPoint
+import com.sphereon.trust.etsi.lote.model.toHistoryInstance
 import com.sphereon.trust.etsi.lote.model.LoTEPostalAddress
 import com.sphereon.trust.etsi.lote.model.LoTEQualifier
 import com.sphereon.trust.etsi.lote.model.LoTEServiceDigitalIdentity
@@ -65,14 +67,21 @@ object LoTE612Converter {
             historicalInformationPeriod = info.historicalInformationPeriod,
             trustedEntities = trustedEntitiesList.map { it.toETSITrustedEntity() },
             pointersToOtherLoTE = info.pointersToOtherLoTE.map { it.toETSIOtherLoTEPointer() },
+            sourceLoTE = this,
         )
     }
 
     /**
      * Converts an ETSILoTE (612 model) to a 602 LoTE.
      */
-    fun ETSILoTE.toLoTE(): LoTE =
-        LoTE(
+    fun ETSILoTE.toLoTE(): LoTE {
+        sourceLoTE?.let { original ->
+            require(copy(sourceLoTE = null) == original.toETSILoTE().copy(sourceLoTE = null)) {
+                "Cannot reverse an edited 612 projection of a 602 list; edit the original LoTE instead"
+            }
+            return original
+        }
+        return LoTE(
             listAndSchemeInformation =
                 ListAndSchemeInformation(
                     versionIdentifier = versionIdentifier,
@@ -97,6 +106,8 @@ object LoTE612Converter {
                 ),
             trustedEntitiesList = trustedEntities.map { it.toTrustedEntity() },
         )
+
+    }
 
     private fun TrustedEntity.toETSITrustedEntity(): ETSITrustedEntity =
         ETSITrustedEntity(
@@ -130,19 +141,20 @@ object LoTE612Converter {
     private fun TrustedEntityService.toETSI(): ETSITrustedEntityService =
         ETSITrustedEntityService(
             serviceInformation = serviceInformation.toETSI(),
-            serviceHistory = serviceHistory.map { it.toETSI() },
+            serviceHistory = serviceHistory.map { it.toServiceInformation().toETSI() },
         )
 
     private fun LoTEServiceInformation.toETSI(): ETSIServiceInformation =
         ETSIServiceInformation(
-            serviceTypeIdentifier = serviceTypeIdentifier,
+            serviceTypeIdentifier = serviceTypeIdentifier ?: "",
             serviceName = serviceName,
             serviceDigitalIdentity = serviceDigitalIdentity.toETSI(),
             serviceStatus = serviceStatus ?: "",
             statusStartingTime = statusStartingTime ?: kotlin.time.Instant.fromEpochMilliseconds(0),
-            serviceSupplyPoints = serviceSupplyPoints.map { ServiceSupplyPoint(uri = it) },
+            serviceSupplyPoints = serviceSupplyPoints.map { ServiceSupplyPoint(uri = it.uriValue, type = it.serviceType) },
             schemeServiceDefinitionURI = schemeServiceDefinitionURI,
             tspServiceDefinitionURI = teServiceDefinitionURI,
+            sourceLoTEInformation = this,
         )
 
     private fun LoTEServiceDigitalIdentity.toETSI(): ETSIServiceDigitalIdentity =
@@ -206,6 +218,7 @@ object LoTE612Converter {
             postalAddresses =
                 postalAddresses.map {
                     LoTEPostalAddress(
+                        lang = "en",
                         streetAddress = it.streetAddress,
                         locality = it.locality,
                         stateOrProvince = it.stateOrProvince,
@@ -219,7 +232,7 @@ object LoTE612Converter {
     private fun ETSITrustedEntityService.toLoTE(): TrustedEntityService =
         TrustedEntityService(
             serviceInformation = serviceInformation.toLoTE(),
-            serviceHistory = serviceHistory.map { it.toLoTE() },
+            serviceHistory = serviceHistory.map { it.toLoTE().toHistoryInstance() },
         )
 
     private fun ETSIServiceInformation.toLoTE(): LoTEServiceInformation =
@@ -229,7 +242,7 @@ object LoTE612Converter {
             serviceDigitalIdentity = serviceDigitalIdentity.toLoTE(),
             serviceStatus = serviceStatus,
             statusStartingTime = statusStartingTime,
-            serviceSupplyPoints = serviceSupplyPoints.map { it.uri },
+            serviceSupplyPoints = serviceSupplyPoints.map { LoTEServiceSupplyPoint(it.uri, it.type) },
             schemeServiceDefinitionURI = schemeServiceDefinitionURI,
             teServiceDefinitionURI = tspServiceDefinitionURI,
         )

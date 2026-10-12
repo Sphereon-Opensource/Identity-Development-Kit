@@ -190,11 +190,53 @@ class IssuerKeyNameSeamTest {
             )
         }
 
-    private fun seamProvider(resolver: IssuerKeyNameResolver): RegistryBackedOid4vciIssuerConfigProvider {
+    @Test
+    fun credentialKeysResolveIndependentlyFromMetadataAndKeepConfiguredChains() = runTest {
+        val calls = mutableListOf<String>()
+        val resolver = object : IssuerKeyNameResolver {
+            override suspend fun resolveMetadataSigningKeyName(tenantId: String, issuerInstanceId: String) = "metadata-ec-key"
+            override suspend fun resolveRequestDecryptionKeyName(tenantId: String, issuerInstanceId: String): String? = null
+            override suspend fun resolveCredentialSigningKeyName(tenantId: String, issuerInstanceId: String, credentialConfigurationId: String): String {
+                assertEquals(TENANT_ID, tenantId)
+                assertEquals(INSTANCE_ID, issuerInstanceId)
+                calls += credentialConfigurationId
+                return if (credentialConfigurationId == "EuPid") "credential-rsa-key" else "degree-ec-key"
+            }
+        }
+        val ns = "oid4vci.issuers.$INSTANCE_ID"
+        val provider = seamProvider(resolver, PLANTED_PROPERTIES + mapOf(
+            "$ns.credentialConfigurationIds" to "EuPid,Degree",
+            "$ns.credentials.[EuPid].signingKeyMode" to "x5c",
+            "$ns.credentials.[EuPid].signingX5c" to "[\"leaf-der\",\"root-der\"]",
+            "$ns.credentials.[Degree].signingKeyAlias" to "planted-degree-alias",
+        ))
+        val configs = provider.credentialSigningConfigs()
+        assertEquals(listOf("EuPid", "Degree"), calls)
+        assertEquals("credential-rsa-key", configs["EuPid"]?.signingKeyAlias)
+        assertEquals("degree-ec-key", configs["Degree"]?.signingKeyAlias)
+        assertEquals(listOf("leaf-der", "root-der"), configs["EuPid"]?.signingX5c?.toList())
+        assertEquals("metadata-ec-key", provider.metadataSigningKeyName())
+    }
+
+    @Test
+    fun refusedCredentialKeyCannotUseAvailableMetadataOrConfiguredAliases() = runTest {
+        for (refused in listOf(null, "", "  ")) {
+            val resolver = object : IssuerKeyNameResolver {
+                override suspend fun resolveMetadataSigningKeyName(tenantId: String, issuerInstanceId: String) = SERVER_SIGNING_KEY
+                override suspend fun resolveRequestDecryptionKeyName(tenantId: String, issuerInstanceId: String): String? = null
+                override suspend fun resolveCredentialSigningKeyName(tenantId: String, issuerInstanceId: String, credentialConfigurationId: String): String? = refused
+            }
+            val provider = seamProvider(resolver)
+            assertNull(provider.credentialSigningConfigs()["EuPid"]?.signingKeyAlias)
+            assertEquals(SERVER_SIGNING_KEY, provider.metadataSigningKeyName())
+        }
+    }
+
+    private fun seamProvider(resolver: IssuerKeyNameResolver, properties: Map<String, Any> = PLANTED_PROPERTIES): RegistryBackedOid4vciIssuerConfigProvider {
         val holder = DefaultOid4vciIssuerInstanceIdProvider()
         holder.setCurrentInstanceId(INSTANCE_ID)
         return RegistryBackedOid4vciIssuerConfigProvider(
-            execution = TenantScopedIssuerTestSessionExecution(TestPrincipalConfigService(PLANTED_PROPERTIES), TENANT_ID),
+            execution = TenantScopedIssuerTestSessionExecution(TestPrincipalConfigService(properties), TENANT_ID),
             instanceIdProvider = holder,
             authorizationPolicyProvider = TestOid4vciAuthorizationPolicyProvider(),
             keyNameResolver = { resolver },

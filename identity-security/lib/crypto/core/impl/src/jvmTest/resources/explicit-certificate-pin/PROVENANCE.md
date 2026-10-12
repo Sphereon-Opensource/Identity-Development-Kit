@@ -1,0 +1,4 @@
+Synthetic RSA-3072 leaf and RSA-2048 test CA generated for explicit certificate pin regressions. Certificates are valid 2026-01-01 through 2036-01-01. No private key is retained. signed.jwt uses the leaf key with RS256. same-key-other-cert differs in DER serial only; no-signature forbids signing; unknown-critical has an unhandled critical OID. These are test-only public vectors.
+ec-leaf.pem and ec-signed.jwt provide an independent P-256/ES256 non-self-signed leaf and compact signature, same validity interval; no private EC key retained.
+
+rsa-unconstrained.pem is a separate RSA-2048 non-self-signed leaf, signed by an independent test CA, valid 2026-01-01 through 2036-01-01. rsa-ps256.jwt and rsa-rs256.jwt carry real PSS (SHA-256, MGF1 SHA-256, 32-byte salt) and PKCS#1 v1.5 SHA-256 signatures under that same leaf. No private key is retained.
