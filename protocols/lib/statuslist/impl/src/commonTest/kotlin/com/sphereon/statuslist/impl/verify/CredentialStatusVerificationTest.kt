@@ -19,6 +19,7 @@ package com.sphereon.statuslist.impl.verify
 import com.sphereon.core.api.Err
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
+import com.sphereon.core.api.encodeToBase64
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.crypto.core.x509.X509VerificationRequestType
 import com.sphereon.crypto.core.x509.X509VerificationResult
@@ -215,6 +216,44 @@ class CredentialStatusVerificationTest {
             assertTrue(result.isOk)
             assertTrue(resolver.lastArgs?.trustedCerts!!.contentEquals(arrayOf("configured-root")))
             assertTrue(resolver.lastArgs?.expectedCertificate!!.contentEquals(certificate))
+        }
+
+    @Test
+    fun callerAuthorizedMdocTrustRootsReplaceTheConfiguredRootsAsAWhole() =
+        runTest {
+            val resolver = FakeResolver(StatusValues.VALID)
+            val verifier = mdocVerifier(resolver)
+            val anchor = certificateFromPem(TEST_CERTIFICATE_PEM).der.encodeToBase64()
+            val reference = CredentialStatusReference(
+                mechanism = MdocCredentialStatusVerifier.MECHANISM,
+                uri = "https://x/mdoc",
+                index = 1,
+                trustedCertificates = listOf(anchor),
+            )
+
+            assertTrue(verifier.resolve(reference).isOk)
+
+            val trusted = resolver.lastArgs?.trustedCerts!!
+            assertEquals(1, trusted.size)
+            assertTrue(trusted.single().contains("BEGIN CERTIFICATE"))
+            assertTrue("configured-root" !in trusted)
+        }
+
+    @Test
+    fun emptyOrMalformedCallerAuthorizedMdocTrustRootsFailClosedBeforeResolving() =
+        runTest {
+            for (roots in listOf(emptyList(), listOf("%%%"))) {
+                val resolver = FakeResolver(StatusValues.VALID)
+                val reference = CredentialStatusReference(
+                    mechanism = MdocCredentialStatusVerifier.MECHANISM,
+                    uri = "https://x/mdoc",
+                    index = 1,
+                    trustedCertificates = roots,
+                )
+
+                assertTrue(mdocVerifier(resolver).resolve(reference).isErr)
+                assertNull(resolver.lastArgs, "explicit roots must not fall back to the configured roots")
+            }
         }
 
     @Test

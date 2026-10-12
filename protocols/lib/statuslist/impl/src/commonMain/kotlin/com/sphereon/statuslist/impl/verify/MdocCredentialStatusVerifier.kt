@@ -123,8 +123,13 @@ class MdocCredentialStatusVerifier(
         }
         // The certificate carried by the MSO is an authenticated chain pin, not a trust anchor.
         // Never replace the tenant's configured trust roots with an arbitrary certificate fetched
-        // from a credential or a status-list response.
-        val trustedCerts = resolveTrustedCerts()
+        // from a credential or a status-list response. Caller-authorized roots replace the
+        // configured ones only as a whole; they never widen them.
+        val trustedCerts = reference.trustedCertificates?.let { explicit ->
+            explicitTrustedCerts(explicit) ?: return Err(
+                StatusListErrors.verificationFailed(reference.uri, "mdoc status reference trust roots cannot be decoded"),
+            )
+        } ?: resolveTrustedCerts()
         if (trustedCerts.isEmpty()) {
             return Err(
                 StatusListErrors.verificationFailed(
@@ -162,6 +167,10 @@ class MdocCredentialStatusVerifier(
             ),
         )
     }
+
+    private fun explicitTrustedCerts(certificates: List<String>): Array<String>? =
+        runCatching { certificates.map { x509DerOrPemToPem(it.trim()) }.toTypedArray() }.getOrNull()
+            ?.takeIf { converted -> converted.all { it.isNotBlank() } && converted.size == certificates.size }
 
     private suspend fun resolveTrustedCerts(): Array<String> {
         val pinned = x509VerifyService.getTrustedCerts()?.filter { it.isNotBlank() }.orEmpty()

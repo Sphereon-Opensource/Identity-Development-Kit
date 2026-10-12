@@ -93,6 +93,9 @@ kotlin {
                 // Include the persistent managed-key selector so the graph's KeyManagerService
                 // delegates registered-key authority lookups to the shared in-memory fixture store.
                 implementation(if (rootProject.findProperty("idk.consumeLowerAsArtifacts") == "true") "com.sphereon.idk:lib-crypto-key-persistence-impl:$version" else project(":lib-crypto-key-persistence-impl"))
+                // Metro merges its contributed CertificateReferenceStoreFactoryMultibindings into the public
+                // WalletAppGraph, so every consumer compiling against the graph needs that supertype.
+                api(if (rootProject.findProperty("idk.consumeLowerAsArtifacts") == "true") "com.sphereon.idk:lib-crypto-certificate-persistence-api:$version" else project(":lib-crypto-certificate-persistence-api"))
             }
         }
     }

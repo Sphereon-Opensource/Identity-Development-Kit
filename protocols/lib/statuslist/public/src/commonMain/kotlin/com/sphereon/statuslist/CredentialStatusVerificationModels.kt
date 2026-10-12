@@ -35,6 +35,13 @@ data class CredentialStatusReference(
     val certificate: ByteArray? = null,
     /** W3C Bitstring `statusSize` of the status entry, when the entry declares one. */
     val statusSize: Int? = null,
+    /**
+     * Trust roots (base64 DER or PEM) the caller has authorized for this credential, such as the
+     * issuer anchors its verifier policy resolved. When set, exactly these roots verify the status
+     * artifact and an empty or malformed list fails closed; when null, the verifier's own
+     * configured roots apply.
+     */
+    val trustedCertificates: List<String>? = null,
 )
 
 /**

@@ -19,6 +19,7 @@ package com.sphereon.openid.oid4vp.universal.impl.describe
 import com.sphereon.core.api.http.describe.HttpAdapterDescription
 import com.sphereon.core.api.http.describe.HttpAdapterDescriptorProvider
 import com.sphereon.core.api.http.describe.HttpAdapterMount
+import com.sphereon.core.api.http.command.TenantPathPolicy
 import com.sphereon.openid.oid4vp.universal.CreateAuthRequestEndpointCommand
 import com.sphereon.openid.oid4vp.universal.DeleteAuthRequestEndpointCommand
 import com.sphereon.openid.oid4vp.universal.GetAuthRequestStatusEndpointCommand
@@ -57,6 +58,9 @@ class UniversalOid4vpDescriptorProvider : HttpAdapterDescriptorProvider {
                 HttpAdapterMount(
                     serverPrefix = "",
                     adapterBasePath = basePath,
+                    // Same leading-slug peel as the verifier protocol adapter, so a tenant-scoped
+                    // public prefix (`/oid4vp/{slug}/oid4vp/backend/...`) routes to these endpoints.
+                    tenantPathPolicy = TenantPathPolicy.LeadingSlug(maxDepth = 2),
                 ),
             endpoints =
                 listOf(

@@ -65,6 +65,7 @@ import com.sphereon.openid.oid4vp.verifier.CredentialIssuerRef
 import com.sphereon.openid.oid4vp.verifier.CredentialTrustValidation
 import com.sphereon.openid.oid4vp.verifier.CredentialTrustValidationMode
 import com.sphereon.openid.oid4vp.verifier.TrustedAuthenticationResolution
+import com.sphereon.crypto.resolution.extern.ExternalIdentifierX5cOpts
 import com.sphereon.openid.oid4vp.verifier.TrustedAuthenticationPurpose
 import com.sphereon.openid.oid4vp.verifier.MatchedCredential
 import com.sphereon.openid.oid4vp.verifier.VerifiedCredentialEvidence
@@ -840,7 +841,11 @@ class ValidateAuthorizationResponseCommandImpl(
         // wired; otherwise skipped entirely. `extractDisclosedClaims` strips the `status` claim,
         // so we read the full credential payload separately. A REJECT discards the presentation
         // per OID4VP §10, the same as a holder-binding failure.
-        val statusInput = credentialStatusInputFor(presentation, requireNotNull(detectedCredentialFormat))
+        val statusInput = credentialStatusInputFor(
+            presentation,
+            requireNotNull(detectedCredentialFormat),
+            mdocStatusTrustAnchors(processedArgs.trustedAuthentications),
+        )
         val statusPolicy = statusPolicies[queryId] ?: CredentialStatusPolicy()
         var statusEvaluation = CredentialStatusEvaluation(CredentialStatusDecision.SKIPPED)
         if (credentialStatusVerifiers.isEmpty()) {
@@ -2258,6 +2263,7 @@ class ValidateAuthorizationResponseCommandImpl(
     private fun credentialStatusInputFor(
         presentation: String,
         format: CredentialFormat,
+        mdocTrustAnchors: List<String>? = null,
     ): CredentialStatusInput? =
         when (format) {
             CredentialFormat.SD_JWT_VC, CredentialFormat.W3C_VC_SD_JWT -> {
@@ -2274,7 +2280,7 @@ class ValidateAuthorizationResponseCommandImpl(
             }
 
             CredentialFormat.MSO_MDOC -> {
-                extractMdocStatusMetadata(presentation)?.let { metadata ->
+                extractMdocStatusMetadata(presentation, mdocTrustAnchors)?.let { metadata ->
                     CredentialStatusInput(metadata = metadata)
                 }
             }
@@ -2289,7 +2295,7 @@ class ValidateAuthorizationResponseCommandImpl(
      * claim shape. This is deliberately metadata-only: MSO status never becomes an ordinary
      * disclosed namespace claim.
      */
-    private fun extractMdocStatusMetadata(presentation: String): CredentialStatusMetadata? {
+    private fun extractMdocStatusMetadata(presentation: String, trustAnchors: List<String>?): CredentialStatusMetadata? {
         val deviceResponseBytes = runCatching { presentation.decodeFromBase64Url() }.getOrNull() ?: return null
         val response = deviceResponseCborCodec.decode(deviceResponseBytes).getOrNull()?.value ?: return null
         val statuses = response.documents
@@ -2312,6 +2318,7 @@ class ValidateAuthorizationResponseCommandImpl(
                             // Int.MAX_VALUE wrap into a valid-looking negative/low index.
                             index = if (statusList.idx <= Int.MAX_VALUE.toUInt()) statusList.idx.toInt() else -1,
                             certificate = statusList.certificate,
+                            trustedCertificates = trustAnchors,
                         ),
                     )
                 }
@@ -2323,6 +2330,7 @@ class ValidateAuthorizationResponseCommandImpl(
                             index = 0,
                             identifier = identifierList.id,
                             certificate = identifierList.certificate,
+                            trustedCertificates = trustAnchors,
                         ),
                     )
                 }
@@ -2690,3 +2698,17 @@ class ValidateAuthorizationResponseCommandImpl(
             }
     }
 }
+
+/**
+ * X.509 roots of the credential-issuer authentications the verifier's persisted trust policy
+ * resolved for this session. An mdoc revocation artifact is signed by its issuer, so these are the
+ * roots that may verify it. Holder authentications and non-X.509 issuer evidence never contribute;
+ * null when the session resolved no X.509 issuer evidence, so the status verifier keeps its own roots.
+ */
+internal fun mdocStatusTrustAnchors(trustedAuthentications: List<TrustedAuthenticationResolution>): List<String>? =
+    trustedAuthentications
+        .filter { it.purpose == TrustedAuthenticationPurpose.CREDENTIAL_ISSUER }
+        .mapNotNull { it.identifier as? ExternalIdentifierX5cOpts }
+        .flatMap { it.identifier }
+        .distinct()
+        .takeIf { it.isNotEmpty() }
