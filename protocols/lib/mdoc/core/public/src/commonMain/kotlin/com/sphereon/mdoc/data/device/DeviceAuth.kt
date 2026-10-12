@@ -24,6 +24,8 @@ import com.sphereon.crypto.core.cose.COSE_Sign1
 import com.sphereon.crypto.core.cose.CoseMac0Cbor
 import com.sphereon.mdoc.transfer.reader.Iso18013Oid4vpHandover
 import com.sphereon.mdoc.transfer.reader.SessionTranscript
+import com.sphereon.mdoc.oid4vp.Oid4vpDeviceAuthenticationContext
+import com.sphereon.mdoc.oid4vp.toSessionTranscript
 import com.sphereon.util.stringify
 import kotlinx.serialization.Serializable
 import kotlin.experimental.ExperimentalObjCName
@@ -180,6 +182,21 @@ data class DeviceAuthentication(
                 original = null,
             )
         }
+
+        /** Build DeviceAuthentication from mode-specific, validated OID4VP request context. */
+        @JsStatic
+        @JvmStatic
+        fun fromOid4vp(
+            context: Oid4vpDeviceAuthenticationContext,
+            docType: DocType,
+            deviceNamespaces: DeviceNameSpaces,
+        ): DeviceAuthentication =
+            DeviceAuthentication(
+                sessionTranscript = context.toSessionTranscript(),
+                docType = docType,
+                deviceNamespaces = deviceNamespaces,
+                original = null,
+            )
 
         /**
          * Build DeviceAuthentication for ISO/IEC TS 18013-7 Annex B.

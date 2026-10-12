@@ -17,6 +17,7 @@
 package com.sphereon.mdoc
 
 import com.sphereon.cbor.CborArray
+import com.sphereon.cbor.Cbor
 import com.sphereon.cbor.CborByteString
 import com.sphereon.cbor.CborEncodedItem
 import com.sphereon.cbor.CborItem
@@ -27,7 +28,11 @@ import com.sphereon.cbor.encodeToCborByteArray
 import com.sphereon.cbor.toCborByteString
 import com.sphereon.cbor.toCborItem
 import com.sphereon.core.api.Encoding
+import com.sphereon.core.api.Err
+import com.sphereon.core.api.IdkResult
+import com.sphereon.core.api.Ok
 import com.sphereon.core.api.context.SessionExecution
+import com.sphereon.core.api.error.IdkError
 import com.sphereon.crypto.core.CoseCryptoServiceImpl
 import com.sphereon.crypto.core.CoseJoseKeyMappingService
 import com.sphereon.crypto.core.CoseSign1Result
@@ -41,9 +46,12 @@ import com.sphereon.crypto.core.ResolvedKeyInfoType
 import com.sphereon.crypto.core.cose.CoseAlgorithm
 import com.sphereon.crypto.core.cose.CoseHeaderCbor
 import com.sphereon.crypto.core.cose.CoseKey
+import com.sphereon.crypto.core.cose.CoseKeyCborCodecImpl
 import com.sphereon.crypto.core.cose.CoseKeyType
 import com.sphereon.crypto.core.cose.CoseKeyTypeEnum
 import com.sphereon.crypto.core.cose.CoseSign1Input
+import com.sphereon.crypto.core.cose.CoseSign1
+import com.sphereon.crypto.core.cose.CoseHeaderCborCodecImpl
 import com.sphereon.crypto.core.generic.KeyTypeMapping
 import com.sphereon.crypto.core.generic.SignatureAlgorithm
 import com.sphereon.crypto.core.defaultCreateMac0
@@ -302,6 +310,215 @@ class MdocSignServiceImpl(
             original = null,
         ).also { log.info("Device signed document done: ${it.docType}") }
     }
+
+    override suspend fun prepareDeviceAuthenticationSigning(
+        request: DocRequest,
+        document: Document,
+        deviceAuthentication: DeviceAuthentication,
+        deviceKeyInfo: KeyInfoType<*>?,
+        unprotectedHeader: CoseHeaderCbor?,
+        protectedHeader: CoseHeaderCbor?,
+    ): IdkResult<PreparedMdocDeviceAuthenticationSigning, IdkError> {
+        return try {
+            Ok(
+                createPreparedDeviceAuthenticationSigning(
+                    request = request,
+                    document = document,
+                    deviceAuthentication = deviceAuthentication,
+                    deviceKeyInfo = deviceKeyInfo,
+                    unprotectedHeader = unprotectedHeader,
+                    protectedHeader = protectedHeader,
+                ),
+            )
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: IllegalArgumentException) {
+            Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Unable to prepare mdoc DeviceAuthentication signing"))
+        } catch (_: Exception) {
+            Err(IdkError.UNKNOWN_ERROR(message = "Unable to prepare mdoc DeviceAuthentication signing"))
+        }
+    }
+
+    override suspend fun completeDeviceAuthenticationSigning(
+        request: DocRequest,
+        document: Document,
+        deviceAuthentication: DeviceAuthentication,
+        deviceKeyInfo: KeyInfoType<*>?,
+        prepared: PreparedMdocDeviceAuthenticationSigning,
+        signature: ByteArray,
+        unprotectedHeader: CoseHeaderCbor?,
+        protectedHeader: CoseHeaderCbor?,
+    ): IdkResult<Document, IdkError> {
+        return try {
+            if (prepared.version != PreparedMdocDeviceAuthenticationSigning.CURRENT_VERSION) {
+                return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Unsupported prepared mdoc signing version"))
+            }
+            val preparedPublicKey = decodeCanonicalPublicDeviceKey(prepared.publicDeviceKeyCbor)
+                ?: return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Prepared mdoc public device key is invalid"))
+            val current =
+                createPreparedDeviceAuthenticationSigning(
+                    request = request,
+                    document = document,
+                    deviceAuthentication = deviceAuthentication,
+                    deviceKeyInfo = deviceKeyInfo,
+                    unprotectedHeader = unprotectedHeader,
+                    protectedHeader = protectedHeader,
+                )
+            if (!samePreparedSigning(current, prepared)) {
+                return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Prepared mdoc DeviceAuthentication signing input changed"))
+            }
+            if (signature.isEmpty()) {
+                return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Remote mdoc DeviceAuthentication signature is empty"))
+            }
+
+            val preparedProtectedHeader = CoseHeaderCborCodecImpl().decode(prepared.protectedHeaderCbor)
+                .getOrElse { return Err(it) }.value
+            val signatureAlgorithm = preparedProtectedHeader.alg?.let { SignatureAlgorithm.fromCose(it) }
+                ?: return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Prepared mdoc signing algorithm is missing"))
+            val preparedUnprotectedHeader = prepared.unprotectedHeaderCbor?.let { encoded ->
+                CoseHeaderCborCodecImpl().decode(encoded).getOrElse { return Err(it) }.value
+            }
+            val verification =
+                coseCryptoService.verify1(
+                    input =
+                        CoseSign1<DeviceAuthentication>(
+                            protectedHeader = preparedProtectedHeader,
+                            unprotectedHeader = preparedUnprotectedHeader,
+                            payload = CborByteString(prepared.deviceAuthenticationPayload),
+                            signature = CborByteString(signature),
+                        ),
+                    keyInfo =
+                        KeyInfo<CoseKeyType>(
+                            key = preparedPublicKey,
+                            signatureAlgorithm = signatureAlgorithm,
+                        ),
+                    requireX5Chain = false,
+                )
+            if (verification.error) {
+                return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Remote mdoc DeviceAuthentication signature did not verify"))
+            }
+
+            val detachedSignature =
+                CoseSign1<DeviceAuthentication>(
+                    protectedHeader = preparedProtectedHeader,
+                    unprotectedHeader = preparedUnprotectedHeader,
+                    payload = null,
+                    signature = CborByteString(signature),
+                )
+            Ok(
+                Document(
+                    docType = request.itemsRequest.docType,
+                    deviceSigned =
+                        DeviceSigned(
+                            nameSpaces = deviceAuthentication.deviceNamespaces,
+                            deviceAuth = DeviceAuth(deviceSignature = detachedSignature, original = null),
+                            original = null,
+                        ),
+                    issuerSigned = document.limitDisclosures(request),
+                    original = null,
+                ),
+            )
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: IllegalArgumentException) {
+            Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Unable to complete mdoc DeviceAuthentication signing"))
+        } catch (_: Exception) {
+            Err(IdkError.UNKNOWN_ERROR(message = "Unable to complete mdoc DeviceAuthentication signing"))
+        }
+    }
+
+    private fun createPreparedDeviceAuthenticationSigning(
+        request: DocRequest,
+        document: Document,
+        deviceAuthentication: DeviceAuthentication,
+        deviceKeyInfo: KeyInfoType<*>?,
+        unprotectedHeader: CoseHeaderCbor?,
+        protectedHeader: CoseHeaderCbor?,
+    ): PreparedMdocDeviceAuthenticationSigning {
+        require(request.itemsRequest.docType == document.docType) { "Request document type mismatch" }
+        require(deviceAuthentication.docType == document.docType) { "DeviceAuthentication document type mismatch" }
+        val mso = decodeMso(document)
+        val selectedKeyInfo = getDeviceSigningKeyInfo(keyInfo = deviceKeyInfo, mso = mso)
+        val resolvedPublicKey = getSuppliedOrMSODerivedCborKeyInfo(keyInfo = deviceKeyInfo, mso = mso)
+        require(publicKeyMaterialMatches(resolvedPublicKey.key, mso.deviceKeyInfo.deviceKey)) { "Device public key does not match MSO" }
+        val publicKey = resolvedPublicKey.key.toPublicKey() as? CoseKey
+            ?: throw IllegalArgumentException("Device public key has an unsupported representation")
+        require(isPublicOnlyDeviceKey(publicKey)) { "Device public key contains private material" }
+        val keyReference = selectedKeyInfo.alias ?: selectedKeyInfo.kid ?: resolvedPublicKey.kid
+        require(!keyReference.isNullOrBlank()) { "Device signing key reference is missing" }
+        val signatureAlgorithm =
+            selectedKeyInfo.signatureAlgorithm
+                ?: selectedKeyInfo.key?.alg?.let { SignatureAlgorithm.fromCose(CoseAlgorithm.fromValue(toIntExact(it.value, "COSE alg"))) }
+                ?: publicKey.alg?.let { SignatureAlgorithm.fromCose(CoseAlgorithm.fromValue(toIntExact(it.value, "COSE alg"))) }
+                ?: throw IllegalArgumentException("Device signing algorithm is missing")
+        val protected = CoseHeaderCbor.copyOrInit(protectedHeader, alg = signatureAlgorithm.cose)
+        val payload =
+            CoseSign1Input.Builder()
+                .withPayload(encodeDeviceAuthentication(deviceAuthentication))
+                .withEncodePayloadAsDataItem(true)
+                .withProtectedHeader(protected)
+                .withUnprotectedHeader(unprotectedHeader)
+                .build()
+                .payload
+        val protectedBytes = CoseHeaderCborCodecImpl().encode(protected).getOrThrow()
+        val unprotectedHeaderBytes = unprotectedHeader?.let { CoseHeaderCborCodecImpl().encode(it).getOrThrow() }
+        val algorithm = requireNotNull(protected.alg) { "Prepared COSE algorithm is missing" }
+        val sigStructure =
+            Cbor.encode(
+                CborArray(
+                    mutableListOf(
+                        CborString("Signature1"),
+                        CborByteString(protectedBytes),
+                        CborByteString(byteArrayOf()),
+                        payload,
+                    ),
+                ),
+            )
+        return PreparedMdocDeviceAuthenticationSigning(
+            docType = document.docType.toString(),
+            keyReference = keyReference,
+            providerId = selectedKeyInfo.providerId,
+            algorithm = algorithm,
+            sessionTranscriptCbor = sessionTranscriptCborCodec.encode(deviceAuthentication.sessionTranscript).getOrThrow(),
+            deviceAuthenticationPayload = payload.value,
+            protectedHeaderCbor = protectedBytes,
+            unprotectedHeaderCbor = unprotectedHeaderBytes,
+            publicDeviceKeyCbor = CoseKeyCborCodecImpl().encode(publicKey.copy(original = null)).getOrThrow(),
+            sigStructure = sigStructure,
+        )
+    }
+
+    private fun samePreparedSigning(
+        current: PreparedMdocDeviceAuthenticationSigning,
+        prepared: PreparedMdocDeviceAuthenticationSigning,
+    ): Boolean =
+        current.version == prepared.version &&
+            current.docType == prepared.docType &&
+            current.keyReference == prepared.keyReference &&
+            current.providerId == prepared.providerId &&
+            current.algorithm == prepared.algorithm &&
+            current.sessionTranscriptCbor.contentEquals(prepared.sessionTranscriptCbor) &&
+            current.deviceAuthenticationPayload.contentEquals(prepared.deviceAuthenticationPayload) &&
+            current.sigStructure.contentEquals(prepared.sigStructure) &&
+            current.protectedHeaderCbor.contentEquals(prepared.protectedHeaderCbor) &&
+            nullableBytes(current.unprotectedHeaderCbor).contentEquals(nullableBytes(prepared.unprotectedHeaderCbor)) &&
+            current.publicDeviceKeyCbor.contentEquals(prepared.publicDeviceKeyCbor)
+
+    private fun decodeCanonicalPublicDeviceKey(encoded: ByteArray): CoseKey? =
+        runCatching {
+            val codec = CoseKeyCborCodecImpl()
+            val decoded = codec.decode(encoded).getOrThrow().value
+            require(isPublicOnlyDeviceKey(decoded)) { "COSE_Key contains private material" }
+            val publicKey = (decoded.toPublicKey() as? CoseKey)?.copy(original = null)
+                ?: throw IllegalArgumentException("COSE_Key has an unsupported public representation")
+            require(codec.encode(publicKey).getOrThrow().contentEquals(encoded)) { "COSE_Key encoding is not canonical" }
+            publicKey
+        }.getOrNull()
+
+    private fun isPublicOnlyDeviceKey(key: CoseKey): Boolean =
+        key.d == null && key.rsaP == null && key.rsaQ == null && key.rsaDP == null && key.rsaDQ == null && key.rsaQInv == null && key.additional == null
+
+    private fun nullableBytes(value: ByteArray?): ByteArray = value ?: byteArrayOf()
 
     /**
      * Creates the ISO detached COSE_Mac0 form using the reader-advertised MAC keys.

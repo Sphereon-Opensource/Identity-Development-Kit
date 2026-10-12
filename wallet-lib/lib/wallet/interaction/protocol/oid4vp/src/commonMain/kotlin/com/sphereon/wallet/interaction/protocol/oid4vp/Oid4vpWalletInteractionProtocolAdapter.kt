@@ -889,6 +889,7 @@ class Oid4vpWalletInteractionProtocolAdapter(
             attendedAuthorizationRegistry: WalletAttendedAuthorizationRegistry = WalletAttendedAuthorizationRegistry.none,
             priority: Int = 90,
             preparedJwtSigningProvider: Oid4vpPreparedJwtSigningProvider? = null,
+            mdocHolderSigningProvider: Oid4vpMdocHolderSigningProvider? = null,
         ): Oid4vpWalletInteractionProtocolAdapter {
             val resolver = WalletStoreOid4vpCredentialResolver(credentialStore, holderIdentityResolver, holderVerificationMethodResolver)
             return Oid4vpWalletInteractionProtocolAdapter(
@@ -903,6 +904,7 @@ class Oid4vpWalletInteractionProtocolAdapter(
                         sdJwtHolderBindingProvider = sdJwtHolderBindingProvider,
                         dataIntegrityHolderBindingProvider = dataIntegrityHolderBindingProvider,
                         preparedJwtSigningProvider = preparedJwtSigningProvider,
+                        mdocHolderSigningProvider = mdocHolderSigningProvider,
                     ),
                 candidateResolver = resolver,
                 securityContextResolver = resolver,

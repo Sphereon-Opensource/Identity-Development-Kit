@@ -49,6 +49,7 @@ import com.sphereon.mdoc.transfer.reader.Iso18013Oid4vpHandover
 import com.sphereon.mdoc.transfer.reader.Handover
 import com.sphereon.mdoc.transfer.reader.NfcHandover
 import com.sphereon.mdoc.transfer.reader.OID4VPHandover
+import com.sphereon.mdoc.transfer.reader.OID4VPDCAPIHandover
 import com.sphereon.mdoc.transfer.reader.QrHandover
 import com.sphereon.mdoc.transfer.reader.ReaderAuthentication
 import com.sphereon.mdoc.transfer.reader.RestApiHandover
@@ -490,6 +491,24 @@ private fun encodeHandoverItem(value: Handover<*, CborItem<*>>): CborItem<*> =
             )
         }
 
+        is OID4VPDCAPIHandover -> {
+            // OID4VP 1.0 final §B.2.6.2:
+            // OpenID4VPDCAPIHandover = ["OpenID4VPDCAPIHandover", SHA-256(CBOR([origin, nonce, thumbprint|null]))]
+            val handoverInfoBytes =
+                cborArray {
+                    add(value.origin)
+                    add(value.nonce)
+                    if (value.jwkThumbprint != null) add(value.jwkThumbprint) else addNull()
+                }.encode()
+            val handoverInfoHash = hash(handoverInfoBytes, DigestAlg.SHA256)
+            CborArray(
+                mutableListOf(
+                    CborString("OpenID4VPDCAPIHandover"),
+                    CborByteString(handoverInfoHash),
+                ),
+            )
+        }
+
         else -> {
             throw IllegalArgumentException("Unsupported handover type: ${value::class.simpleName}")
         }
@@ -539,7 +558,7 @@ private fun decodeArrayHandover(item: CborArray<CborItem<*>>): Handover<*, CborI
     // NFC encodes byte strings (or nil) in both slots, so the type tag of element 0 is the
     // unambiguous discriminator: text string => OID4VP, byte string => NFC.
     val first = item.value[0]
-    if (first is CborString && first.value == "OpenID4VPHandover") {
+    if (first is CborString && first.value in setOf("OpenID4VPHandover", "OpenID4VPDCAPIHandover")) {
         // Decoding a §B.2.6 handover from CBOR alone cannot recover the original
         // handoverInfo inputs (`client_id`, `nonce`, `jwkThumbprint`, `response_uri`) —
         // they were SHA-256-hashed and discarded by the encoder per spec. This codec
@@ -548,7 +567,7 @@ private fun decodeArrayHandover(item: CborArray<CborItem<*>>): Handover<*, CborI
         // authorization request inputs (and re-encode), which is the spec-intended
         // model — there's no wire format that carries the handover.
         throw IllegalArgumentException(
-            "Cannot decode an OID4VP §B.2.6 OpenID4VPHandover from CBOR — the original " +
+                "Cannot decode an OID4VP §B.2.6 handover from CBOR — the original " +
                 "inputs were hashed and are not recoverable. Reconstruct it from the " +
                 "authorization request via OID4VPHandover.fromOid4vpInputs(...).",
         )

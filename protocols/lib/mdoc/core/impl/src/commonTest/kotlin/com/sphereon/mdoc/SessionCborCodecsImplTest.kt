@@ -41,6 +41,7 @@ import com.sphereon.mdoc.transfer.reader.Iso18013Oid4vpHandover
 import com.sphereon.mdoc.transfer.reader.Handover
 import com.sphereon.mdoc.transfer.reader.NfcHandover
 import com.sphereon.mdoc.transfer.reader.OID4VPHandover
+import com.sphereon.mdoc.transfer.reader.OID4VPDCAPIHandover
 import com.sphereon.mdoc.transfer.reader.QrHandover
 import com.sphereon.mdoc.transfer.reader.ReaderAuthentication
 import com.sphereon.mdoc.transfer.reader.RestApiHandover
@@ -268,6 +269,27 @@ class SessionCborCodecsImplTest {
 
         assertContentEquals(
             "82714f70656e494434565048616e646f7665725820048bc053c00442af9b8eed494cefdd9d95240d254b046b11b68013722aad38ac"
+                .decodeFromHex(),
+            encoded,
+        )
+    }
+
+    @Test
+    fun oid4vpDigitalCredentialsHandover_matchesPublishedB_2_6_2Vector() {
+        val handover =
+            OID4VPDCAPIHandover.fromInputs(
+                origin = "https://example.com",
+                nonce = "exc7gBkxjx1rdc9udRrveKvSsJIq80avlXeLHhGwqtA",
+                jwkThumbprint =
+                    "4283ec927ae0f208daaa2d026a814f2b22dca52cf85ffa8f3f8626c6bd669047"
+                        .decodeFromHex(),
+            )
+
+        @Suppress("UNCHECKED_CAST")
+        val encoded = handoverCodec.encode(handover as Handover<*, CborItem<*>>).getOrThrow()
+
+        assertContentEquals(
+            "82764f70656e4944345650444341504948616e646f7665725820fbece366f4212f9762c74cfdbf83b8c69e371d5d68cea09cb4c48ca6daab761a"
                 .decodeFromHex(),
             encoded,
         )

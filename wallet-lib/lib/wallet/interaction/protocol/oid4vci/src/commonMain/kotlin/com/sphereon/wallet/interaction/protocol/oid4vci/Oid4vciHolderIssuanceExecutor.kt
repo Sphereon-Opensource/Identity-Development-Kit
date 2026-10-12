@@ -104,6 +104,12 @@ private data class CredentialRequestEncryptionSelection(
     val enc: String,
 )
 
+/** Exactly one OID4VCI credential selector is placed on the Credential Request wire model. */
+internal data class Oid4vciCredentialRequestTarget(
+    val credentialConfigurationId: String? = null,
+    val credentialIdentifier: String? = null,
+)
+
 /**
  * Namespaced launch attributes accepted by the OID4VCI wallet interaction API. These are
  * per-interaction protocol inputs, not process configuration. Composition roots may map them to
@@ -1864,15 +1870,9 @@ class Oid4vciHolderIssuanceExecutor(
         proofs: CredentialRequestProofs?,
         tokenAuthorizationDetails: List<JsonElement>? = null,
     ): IdkResult<CredentialResponse, IdkError> {
-        // OID4VCI 1.0: when the token's authorization_details authorize credential_identifiers,
-        // the credential request MUST reference one of them and MUST NOT carry
-        // credential_configuration_id (the two are mutually exclusive on the wire).
-        // A batch request is identified by its configuration, never by one credential identifier;
-        // selecting the first authorization detail would silently request only one sibling while
-        // sending multiple proofs.
-        val credentialIdentifier =
-            if (options.batchSize == 1) authorizedCredentialIdentifier(tokenAuthorizationDetails, credentialConfigurationId) else null
-        val requestConfigurationId = credentialConfigurationId.takeIf { credentialIdentifier == null }
+        val requestTarget =
+            selectCredentialRequestTarget(tokenAuthorizationDetails, credentialConfigurationId)
+                .getOrElse { return Err(it) }
         // OID4VCI 1.0 final performs batch issuance at the ordinary Credential Endpoint.
         // The separate Batch Credential Endpoint existed only in older drafts.
         val credentialEndpoint = resolvedOffer.issuerMetadata.credentialEndpoint
@@ -1882,8 +1882,8 @@ class Oid4vciHolderIssuanceExecutor(
                 credentialEndpoint = credentialEndpoint,
                 accessToken = accessToken,
                 dpopProofJwt = dpopProofJwt,
-                credentialConfigurationId = requestConfigurationId,
-                credentialIdentifier = credentialIdentifier,
+                credentialConfigurationId = requestTarget.credentialConfigurationId,
+                credentialIdentifier = requestTarget.credentialIdentifier,
                 proofs = proofs,
                 requestEncryptionJwk = requestEncryption?.jwk,
                 requestEncryptionAlg = requestEncryption?.alg,
@@ -1898,8 +1898,8 @@ class Oid4vciHolderIssuanceExecutor(
             credentialEndpoint = credentialEndpoint,
             accessToken = accessToken,
             dpopProofJwt = retryDpop,
-            credentialConfigurationId = requestConfigurationId,
-            credentialIdentifier = credentialIdentifier,
+            credentialConfigurationId = requestTarget.credentialConfigurationId,
+            credentialIdentifier = requestTarget.credentialIdentifier,
             proofs = proofs,
             requestEncryptionJwk = requestEncryption?.jwk,
             requestEncryptionAlg = requestEncryption?.alg,
@@ -1971,28 +1971,6 @@ class Oid4vciHolderIssuanceExecutor(
             metadata.encValuesSupported.firstOrNull()
                 ?: throw IllegalArgumentException("oid4vci.credential_request_encryption_enc_missing")
         return CredentialRequestEncryptionSelection(jwk = jwk, alg = alg, enc = enc)
-    }
-
-    /**
-     * The `openid_credential` authorization detail matching the requested configuration (or the
-     * only authorized detail) supplies the exact credential identifier the issuer expects.
-     */
-    private fun authorizedCredentialIdentifier(
-        tokenAuthorizationDetails: List<JsonElement>?,
-        credentialConfigurationId: String?,
-    ): String? {
-        val details =
-            tokenAuthorizationDetails
-                .orEmpty()
-                .mapNotNull { it as? JsonObject }
-                .filter { (it["type"] as? JsonPrimitive)?.contentOrNull == "openid_credential" }
-        if (details.isEmpty()) return null
-        val matching =
-            details.firstOrNull {
-                (it["credential_configuration_id"] as? JsonPrimitive)?.contentOrNull == credentialConfigurationId
-            } ?: details.singleOrNull()
-        return (matching?.get("credential_identifiers") as? JsonArray)
-            ?.firstNotNullOfOrNull { (it as? JsonPrimitive)?.contentOrNull }
     }
 
     private suspend fun exchangeAuthorizationCodeAndRequestCredential(
@@ -2745,6 +2723,71 @@ private const val HAIP_PREFERRED_CREDENTIAL_FORMAT: String = "dc+sd-jwt"
 private const val JWT_PROOF_TYPE: String = "jwt"
 private const val DEFERRAL_ACCESS_TOKEN_PARAMETER: String = "deferral_access_token"
 private const val DEFAULT_DEFERRED_INTERVAL_SECONDS: Int = 5
+
+/**
+ * Resolves the Credential Request selector from the Token Response. OID4VCI 1.0 §8.2
+ * requires `credential_identifier` whenever an `openid_credential` authorization detail
+ * returned `credential_identifiers`; batch proofs still identify the same dataset and do not
+ * switch the request back to `credential_configuration_id`.
+ */
+internal fun selectCredentialRequestTarget(
+    tokenAuthorizationDetails: List<JsonElement>?,
+    credentialConfigurationId: String?,
+): IdkResult<Oid4vciCredentialRequestTarget, IdkError> {
+    if (tokenAuthorizationDetails == null) {
+        return credentialConfigurationTarget(credentialConfigurationId)
+    }
+    if (tokenAuthorizationDetails.isEmpty()) return invalidCredentialRequestTarget()
+
+    val credentialDetails = mutableListOf<Pair<String, List<String>>>()
+    for (element in tokenAuthorizationDetails) {
+        val detail = element as? JsonObject ?: return invalidCredentialRequestTarget()
+        val type = detail["type"].stringContentOrNull() ?: return invalidCredentialRequestTarget()
+        if (type != "openid_credential") continue
+
+        val detailConfigurationId =
+            detail["credential_configuration_id"].stringContentOrNull()
+                ?.takeIf(String::isNotBlank)
+                ?: return invalidCredentialRequestTarget()
+        val identifiers = detail["credential_identifiers"] as? JsonArray ?: return invalidCredentialRequestTarget()
+        val parsedIdentifiers =
+            identifiers.map { it.stringContentOrNull()?.takeIf(String::isNotBlank) ?: return invalidCredentialRequestTarget() }
+        if (parsedIdentifiers.isEmpty() || parsedIdentifiers.distinct().size != parsedIdentifiers.size) {
+            return invalidCredentialRequestTarget()
+        }
+        credentialDetails += detailConfigurationId to parsedIdentifiers
+    }
+
+    if (credentialDetails.isEmpty()) return credentialConfigurationTarget(credentialConfigurationId)
+    val requestedConfigurationId = credentialConfigurationId?.takeIf(String::isNotBlank) ?: return invalidCredentialRequestTarget()
+    val matchingDetails = credentialDetails.filter { (configurationId, _) -> configurationId == requestedConfigurationId }
+    if (matchingDetails.size != 1) return invalidCredentialRequestTarget()
+
+    return Ok(
+        Oid4vciCredentialRequestTarget(
+            credentialIdentifier = matchingDetails.single().second.first(),
+        ),
+    )
+}
+
+private fun credentialConfigurationTarget(credentialConfigurationId: String?): IdkResult<Oid4vciCredentialRequestTarget, IdkError> =
+    credentialConfigurationId
+        ?.takeIf(String::isNotBlank)
+        ?.let { Ok(Oid4vciCredentialRequestTarget(credentialConfigurationId = it)) }
+        ?: invalidCredentialRequestTarget()
+
+private fun invalidCredentialRequestTarget(): IdkResult<Oid4vciCredentialRequestTarget, IdkError> =
+    Err(
+        IdkError.fromString(
+            code = "oid4vci.credential_request_authorization_details_invalid",
+            message = "Token authorization details do not unambiguously authorize the requested credential configuration",
+        ),
+    )
+
+private fun JsonElement?.stringContentOrNull(): String? =
+    (this as? JsonPrimitive)
+        ?.takeIf { it.isString }
+        ?.contentOrNull
 
 private fun String.toIssuerRef(): IdentifierRef =
     IdentifierRef(

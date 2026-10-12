@@ -18,6 +18,9 @@
 package com.sphereon.mdoc.oid4vp
 
 import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.core.api.IdkResult
+import com.sphereon.core.api.error.IdkError
+import com.sphereon.mdoc.PreparedMdocDeviceAuthenticationSigning
 import com.sphereon.crypto.core.KeyInfoType
 import com.sphereon.crypto.core.cose.CoseKeyType
 import com.sphereon.mdoc.data.DeviceResponseDocumentErrorAlias
@@ -28,6 +31,40 @@ import com.sphereon.mdoc.data.device.Document
 import com.sphereon.mdoc.transfer.reader.SessionTranscript
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
+import kotlinx.serialization.Serializable
+
+/** Prepared mdoc DeviceAuth signing operation associated with its OID4VP input descriptor. */
+@Serializable
+@JsExportCompat
+data class PreparedMdocDeviceResponseSigning(
+    val descriptorId: String,
+    val signing: PreparedMdocDeviceAuthenticationSigning,
+)
+
+/** External raw COSE signature associated with a prepared OID4VP input descriptor. */
+@Serializable
+@JsExportCompat
+data class MdocDeviceResponseSignature(
+    val descriptorId: String,
+    val signature: ByteArray,
+)
+
+/** Exact validated OID4VP request inputs used to build the holder's mdoc transcript. */
+@Serializable
+@JsExportCompat
+data class Oid4vpDeviceAuthenticationContext(
+    val responseMode: String,
+    val clientId: String,
+    val authorizationRequestNonce: String,
+    val responseUri: String? = null,
+    val redirectUri: String? = null,
+    /** Raw browser origin from validated Digital Credentials API transport context. */
+    val callerOrigin: String? = null,
+    /** Raw 32-byte RFC 7638 thumbprint of the exact selected response-encryption JWK. */
+    val verifierEncryptionJwkThumbprint: ByteArray? = null,
+    /** Non-null only when explicitly using ISO/IEC TS 18013-7 Annex B. */
+    val iso18013MdocGeneratedNonce: String? = null,
+)
 
 @JsExportCompat
 @OptIn(ExperimentalObjCName::class)
@@ -66,16 +103,41 @@ interface MdocOid4vpService {
         matchingDocuments: Array<DocumentDescriptorMatchResult>,
         presentationDefinition: IOid4VPPresentationDefinition,
         clientId: String,
-        responseUri: String,
+        responseUri: String?,
         authorizationRequestNonce: String,
         verifierEncryptionJwkThumbprint: ByteArray?,
         /** Non-null only for the ISO/IEC TS 18013-7 Annex B profile. */
         iso18013MdocGeneratedNonce: String? = null,
+        context: Oid4vpDeviceAuthenticationContext? = null,
     ): DeviceResponse
+
+    suspend fun prepareDeviceResponseSignings(
+        matchingDocuments: Array<DocumentDescriptorMatchResult>,
+        presentationDefinition: IOid4VPPresentationDefinition,
+        clientId: String,
+        responseUri: String?,
+        authorizationRequestNonce: String,
+        verifierEncryptionJwkThumbprint: ByteArray?,
+        iso18013MdocGeneratedNonce: String? = null,
+        context: Oid4vpDeviceAuthenticationContext? = null,
+    ): IdkResult<List<PreparedMdocDeviceResponseSigning>, IdkError>
+
+    suspend fun createDeviceResponseWithSignatures(
+        matchingDocuments: Array<DocumentDescriptorMatchResult>,
+        presentationDefinition: IOid4VPPresentationDefinition,
+        clientId: String,
+        responseUri: String?,
+        authorizationRequestNonce: String,
+        verifierEncryptionJwkThumbprint: ByteArray?,
+        preparedSignings: List<PreparedMdocDeviceResponseSigning>,
+        signatures: List<MdocDeviceResponseSignature>,
+        iso18013MdocGeneratedNonce: String? = null,
+        context: Oid4vpDeviceAuthenticationContext? = null,
+    ): IdkResult<DeviceResponse, IdkError>
 
     suspend fun signDocument(
         clientId: String,
-        responseUri: String,
+        responseUri: String?,
         mdocNonce: String,
         authorizationRequestNonce: String,
         verifierEncryptionJwkThumbprint: ByteArray?,
@@ -87,6 +149,7 @@ interface MdocOid4vpService {
         presentationDefinition: IOid4VPPresentationDefinition,
         /** Non-null only for the ISO/IEC TS 18013-7 Annex B profile. */
         iso18013MdocGeneratedNonce: String? = null,
+        context: Oid4vpDeviceAuthenticationContext? = null,
     ): Oid4vpSignResult
 
     fun filterApplicableDocumentsPerInputDescriptor(

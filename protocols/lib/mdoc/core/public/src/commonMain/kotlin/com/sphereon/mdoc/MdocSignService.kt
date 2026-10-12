@@ -23,6 +23,8 @@ import com.sphereon.crypto.core.KeyInfoType
 import com.sphereon.crypto.core.ManagedKeyInfoType
 import com.sphereon.crypto.core.cose.CoseHeaderCbor
 import com.sphereon.crypto.core.generic.SignatureAlgorithm
+import com.sphereon.core.api.IdkResult
+import com.sphereon.core.api.error.IdkError
 import com.sphereon.mdoc.data.device.DeviceAuthentication
 import com.sphereon.mdoc.data.device.DocRequest
 import com.sphereon.mdoc.data.device.Document
@@ -77,4 +79,35 @@ interface MdocSignService {
         requireDeviceX5Chain: Boolean = false,
         macKeys: MacKeys? = null,
     ): Document
+
+    /**
+     * Derives the exact DeviceAuthentication COSE signing operation without resolving or using
+     * private key material. Callers may prepare an external, context-bound signer for the returned
+     * `keyReference` and `sigStructure`.
+     */
+    suspend fun prepareDeviceAuthenticationSigning(
+        request: DocRequest,
+        document: Document,
+        deviceAuthentication: DeviceAuthentication,
+        deviceKeyInfo: KeyInfoType<*>? = null,
+        unprotectedHeader: CoseHeaderCbor? = null,
+        protectedHeader: CoseHeaderCbor? = null,
+    ): IdkResult<PreparedMdocDeviceAuthenticationSigning, IdkError>
+
+    /**
+     * Re-derives and byte-compares the prepared operation against the current request, document,
+     * transcript, namespaces and key before verifying and assembling an externally produced
+     * signature. This method never invokes the configured signing callback.
+     */
+    suspend fun completeDeviceAuthenticationSigning(
+        request: DocRequest,
+        document: Document,
+        deviceAuthentication: DeviceAuthentication,
+        deviceKeyInfo: KeyInfoType<*>? = null,
+        prepared: PreparedMdocDeviceAuthenticationSigning,
+        signature: ByteArray,
+        /** Independent expected headers; completion never treats serialized snapshot headers as authority. */
+        unprotectedHeader: CoseHeaderCbor? = null,
+        protectedHeader: CoseHeaderCbor? = null,
+    ): IdkResult<Document, IdkError>
 }

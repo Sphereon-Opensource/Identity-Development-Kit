@@ -42,13 +42,13 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import kotlinx.serialization.json.long
 import kotlin.time.Clock
 
 /**
- * Verifies JWT key-binding proofs per OID4VCI 1.0 Appendix F.2.1.
+ * Verifies JWT key-binding proofs per OID4VCI 1.0 Appendix F.1.
  *
  * Delegates cryptographic signature verification to [VerifyJwsCommand] (lib-crypto-core),
  * then performs OID4VCI-specific protocol validation (typ, aud, nonce).
@@ -123,27 +123,71 @@ class JwtProofVerifier(
             )
         }
 
+        // Appendix F.1 requires kid, jwk, and x5c to be mutually exclusive. JWS verification
+        // above already resolved/validated the signature key; reject before nonce consumption
+        // or the subsequent holder-binding-key resolution so malformed proofs have no effects.
+        val keySelectorCount = listOf("kid", "jwk", "x5c").count(protectedHeader::containsKey)
+        if (keySelectorCount > 1) {
+            return Err(
+                IdkError.fromString(
+                    code = "invalid_proof",
+                    message = "Invalid JWT proof: kid, jwk, and x5c are mutually exclusive (§F.1)",
+                ),
+            )
+        }
+
         // 5. Payload claims validation (already decoded during verification)
         val claims = jwsResult.parsedPayload
 
-        val aud = claims["aud"]?.jsonPrimitive?.content
+        val aud = (claims["aud"] as? JsonPrimitive)?.takeIf { it.isString }?.contentOrNull
+            ?: return Err(IdkError.fromString(code = "invalid_proof", message = "Invalid JWT proof: aud must be a string (§F.1)"))
         if (aud != expectedAudience) {
             return Err(IdkError.fromString(code = "invalid_proof", message = "Invalid JWT proof: aud '$aud' does not match expected '$expectedAudience'"))
         }
 
         val iat =
-            claims["iat"]?.jsonPrimitive?.long
-                ?: return Err(IdkError.fromString(code = "invalid_proof", message = "Invalid JWT proof: iat is required"))
+            (claims["iat"] as? JsonPrimitive)?.takeUnless { it.isString }?.doubleOrNull?.takeIf { it.isFinite() }
+                ?: return Err(IdkError.fromString(code = "invalid_proof", message = "Invalid JWT proof: iat must be a NumericDate (§F.1)"))
 
         if (iat > Clock.System.now().epochSeconds + CLOCK_SKEW_SECONDS) {
             return Err(IdkError.fromString(code = "invalid_proof", message = "Invalid JWT proof: iat is in the future"))
         }
 
+        val issuerClaim = claims["iss"]
+        val holderIdentifier =
+            when (issuerClaim) {
+                null -> null
+                is JsonPrimitive ->
+                    issuerClaim.contentOrNull?.takeIf { issuerClaim.isString }
+                        ?: return Err(IdkError.fromString(code = "invalid_proof", message = "Invalid JWT proof: iss must be a string when present (§F.1)"))
+                else -> return Err(IdkError.fromString(code = "invalid_proof", message = "Invalid JWT proof: iss must be a string when present (§F.1)"))
+            }
+
+        // Appendix F.1 makes iss optional, but when present it must match the token-bound
+        // client_id. An absent client id does not prove which grant was used; fail closed because
+        // the claim cannot be matched. This also enforces omission for anonymous pre-authorized access.
+        if (expectedClientId == null && holderIdentifier != null) {
+            return Err(
+                IdkError.fromString(
+                    code = "invalid_proof",
+                    message = "Invalid JWT proof: iss cannot be validated without a token-bound client_id (§F.1)",
+                ),
+            )
+        }
+        if (holderIdentifier != null && expectedClientId != null && holderIdentifier != expectedClientId) {
+            return Err(
+                IdkError.fromString(
+                    code = "invalid_proof",
+                    message = "Invalid JWT proof: iss does not match access-token client_id (§F.1)",
+                ),
+            )
+        }
+
         // 6. Consume nonce (single-use). Per §F.1 the nonce is REQUIRED when the issuer exposes
         //    a Nonce Endpoint — this deployment always does.
         val nonce =
-            claims["nonce"]?.jsonPrimitive?.content
-                ?: return Err(IdkError.fromString(code = "invalid_nonce", message = "Invalid JWT proof: nonce is required"))
+            (claims["nonce"] as? JsonPrimitive)?.takeIf { it.isString }?.contentOrNull
+                ?: return Err(IdkError.fromString(code = "invalid_nonce", message = "Invalid JWT proof: nonce must be a string (§F.1)"))
 
         if (expectedNonce != null && nonce != expectedNonce) {
             return Err(IdkError.fromString(code = "invalid_nonce", message = "Invalid JWT proof: nonce does not match the credential request nonce"))
@@ -155,18 +199,7 @@ class JwtProofVerifier(
             }
         }
 
-        // 7. §F.1 mutual exclusion of kid / jwk / x5c.
-        //
-        //    The spec says each MUST NOT be present if another is present. Strict wallets
-        //    already comply; some don't. Rather than reject, we apply a deterministic
-        //    trust priority and use only the strongest available binding:
-        //
-        //      x5c  (certificate chain)      — strongest (CA-anchored)
-        //      kid  (only when a DID URL)    — anchored in a DID document
-        //      jwk  (raw public key)         — weakest, trust-on-first-use
-        //
-        //    A non-DID `kid` without jwk/x5c has no referent we can resolve in this service
-        //    (no JWKS-lookup context) — rejected.
+        // Resolve exactly the single selector permitted by Appendix F.1.
         val jwkHeader = protectedHeader["jwk"]
         val kid = protectedHeader["kid"]?.jsonPrimitive?.content
         val x5cHeader =
@@ -212,21 +245,6 @@ class JwtProofVerifier(
                     )
                 }
             }
-
-        val holderIdentifier = claims["iss"]?.jsonPrimitive?.content
-
-        // OID4VCI 1.0 §7.2.1.2: when the proof carries an `iss` claim, its value MUST be the
-        // client_id of the client making the credential request — i.e. the client_id bound to
-        // the access token. Catches access-token replay across clients (e.g. a wallet using
-        // client A's token to fetch a credential bound to client B's holder key).
-        if (holderIdentifier != null && expectedClientId != null && holderIdentifier != expectedClientId) {
-            return Err(
-                IdkError.fromString(
-                    code = "invalid_proof",
-                    message = "Invalid JWT proof: iss '$holderIdentifier' does not match access-token client_id '$expectedClientId'",
-                ),
-            )
-        }
 
         // 8. OID4VCI 1.0 §7.2 + §11.2.3 — key attestation. The attestation rides as a JOSE
         //    header parameter `key_attestation` on the proof JWT (carrier #1). When the

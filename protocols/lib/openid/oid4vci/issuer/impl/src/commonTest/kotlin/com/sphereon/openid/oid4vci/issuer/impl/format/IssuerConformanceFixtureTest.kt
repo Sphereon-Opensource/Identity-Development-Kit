@@ -223,6 +223,38 @@ class IssuerConformanceFixtureTest {
     // ========================================================================
 
     @Test
+    fun sdJwtVcOmitsExpirationWhenNoValidityPeriodIsConfigured() =
+        runTest {
+            val signer = FakeSdJwtService()
+            val handler = createSdJwtVcHandler(signer)
+            val context = makeContext(makeSdJwtVcConfig("https://example.com/credentials/identity"))
+
+            val result = handler.issueCredential(makeRequest("dc+sd-jwt"), context)
+
+            assertTrue(result.isOk)
+            val claims = signer.lastArgs!!.payload.claims
+            assertTrue(claims.containsKey("iat"))
+            assertFalse(claims.containsKey("exp"), "Optional validity must not become an invented expiration")
+        }
+
+    @Test
+    fun sdJwtVcPreservesAnExplicitValidityPeriod() =
+        runTest {
+            val signer = FakeSdJwtService()
+            val handler = createSdJwtVcHandler(signer)
+            val context = makeContext(makeSdJwtVcConfig("https://example.com/credentials/identity"))
+                .copy(expirationInDays = 7)
+
+            val result = handler.issueCredential(makeRequest("dc+sd-jwt"), context)
+
+            assertTrue(result.isOk)
+            val claims = signer.lastArgs!!.payload.claims
+            val issuedAt = (claims.getValue("iat") as JsonPrimitive).content.toLong()
+            val expiresAt = (claims.getValue("exp") as JsonPrimitive).content.toLong()
+            assertEquals(7L * 24L * 60L * 60L, expiresAt - issuedAt)
+        }
+
+    @Test
     fun sdJwtVcIssuesWithVct() =
         runTest {
             val fakeSdJwtService = FakeSdJwtService()

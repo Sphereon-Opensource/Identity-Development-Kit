@@ -31,6 +31,9 @@ import com.sphereon.openid.oid4vp.holder.FinalizeJwtVpResponseCommand
 import com.sphereon.openid.oid4vp.holder.HolderJwtVpPreparationCredential
 import com.sphereon.openid.oid4vp.holder.HolderJwtVpSigningResult
 import com.sphereon.openid.oid4vp.holder.HolderPreparedJwtVpResponse
+import com.sphereon.openid.oid4vp.holder.PreparedMdocCredentialSigning
+import com.sphereon.openid.oid4vp.holder.PreparedOid4vpJweRecipientBinding
+import com.sphereon.openid.oid4vp.holder.MdocCredentialSigningSignature
 import com.sphereon.openid.oid4vp.holder.JarmOptions
 import com.sphereon.openid.oid4vp.holder.Oid4vpHolder
 import com.sphereon.openid.oid4vp.holder.Oid4vpHolder.Commands
@@ -116,6 +119,46 @@ class Oid4vpHolderServiceImpl(
         CreateAuthorizationResponseArgs(request, selectedCredentials, preparedPresentations, preparedJwtVp, signatures),
     )
 
+    override suspend fun prepareMdocDeviceAuthenticationSignatures(
+        request: ResolvedOid4vpRequest,
+        selectedCredentials: List<SelectedCredential>,
+    ): IdkResult<List<PreparedMdocCredentialSigning>, IdkError> =
+        createAuthorizationResponseCommand.prepareMdocDeviceAuthenticationSignatures(request, selectedCredentials)
+
+    override suspend fun createAuthorizationResponseWithPreparedMdocDeviceAuthenticationSignatures(
+        request: ResolvedOid4vpRequest,
+        selectedCredentials: List<SelectedCredential>,
+        preparedPresentations: List<PreparedPresentation>,
+        preparedMdocSignings: List<PreparedMdocCredentialSigning>,
+        signatures: List<MdocCredentialSigningSignature>,
+    ): IdkResult<AuthorizationResponse, IdkError> =
+        createAuthorizationResponseCommand.createAuthorizationResponseWithPreparedMdocDeviceAuthenticationSignatures(
+            request,
+            selectedCredentials,
+            preparedPresentations,
+            preparedMdocSignings,
+            signatures,
+        )
+
+    override suspend fun createAuthorizationResponseWithPreparedSignatures(
+        request: ResolvedOid4vpRequest,
+        selectedCredentials: List<SelectedCredential>,
+        preparedPresentations: List<PreparedPresentation>,
+        preparedJwtVp: HolderPreparedJwtVpResponse?,
+        jwtSignatures: List<HolderJwtVpSigningResult>,
+        preparedMdocSignings: List<PreparedMdocCredentialSigning>,
+        mdocSignatures: List<MdocCredentialSigningSignature>,
+    ): IdkResult<AuthorizationResponse, IdkError> =
+        createAuthorizationResponseCommand.createAuthorizationResponseWithPreparedSignatures(
+            request,
+            selectedCredentials,
+            preparedPresentations,
+            preparedJwtVp,
+            jwtSignatures,
+            preparedMdocSignings,
+            mdocSignatures,
+        )
+
     override suspend fun prepareJwtVpResponse(
         request: ResolvedOid4vpRequest,
         selectedCredentials: List<SelectedCredential>,
@@ -141,5 +184,24 @@ class Oid4vpHolderServiceImpl(
         response: AuthorizationResponse,
         responseMode: ResponseMode?,
         jarmOptions: JarmOptions?,
-    ): IdkResult<SubmissionResult, IdkError> = submitAuthorizationResponseCommand.execute(SubmitAuthorizationResponseArgs(resolvedRequest, response, responseMode, jarmOptions))
+    ): IdkResult<SubmissionResult, IdkError> = submitAuthorizationResponseCommand.execute(
+        SubmitAuthorizationResponseArgs(resolvedRequest, response, responseMode, jarmOptions, null),
+    )
+
+    override suspend fun submitAuthorizationResponse(
+        resolvedRequest: ResolvedOid4vpRequest,
+        response: AuthorizationResponse,
+        responseMode: ResponseMode?,
+        jarmOptions: JarmOptions?,
+        preparedOid4vpJweRecipientBinding: PreparedOid4vpJweRecipientBinding,
+    ): IdkResult<SubmissionResult, IdkError> =
+        submitAuthorizationResponseCommand.execute(
+            SubmitAuthorizationResponseArgs(
+                resolvedRequest,
+                response,
+                responseMode,
+                jarmOptions,
+                preparedOid4vpJweRecipientBinding,
+            ),
+        )
 }

@@ -24,8 +24,11 @@ import com.sphereon.cbor.CborString
 import com.sphereon.crypto.core.cose.COSE_Sign1
 import com.sphereon.crypto.core.cose.CoseAlgorithm
 import com.sphereon.crypto.core.cose.CoseHeaderCbor
+import com.sphereon.mdoc.oid4vp.Oid4vpDeviceAuthenticationContext
+import com.sphereon.mdoc.transfer.reader.OID4VPDCAPIHandover
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFails
 import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
@@ -224,6 +227,70 @@ class DeviceAuthTest {
         assertEquals(docType, deviceAuth.docType)
         assertEquals(deviceNamespaces, deviceAuth.deviceNamespaces)
         assertNotNull(deviceAuth.sessionTranscript)
+    }
+
+    @Test
+    fun deviceAuthenticationUsesValidatedDcApiOriginAndModeSpecificHandover() {
+        val context =
+            Oid4vpDeviceAuthenticationContext(
+                responseMode = "dc_api",
+                clientId = "origin:https://wallet-caller.example",
+                authorizationRequestNonce = "request-nonce",
+                callerOrigin = "https://wallet-caller.example",
+            )
+        val authentication =
+            DeviceAuthentication.fromOid4vp(
+                context = context,
+                docType = DocType("org.iso.18013.5.1.mDL"),
+                deviceNamespaces = DeviceNameSpaces(),
+            )
+
+        val handover = authentication.sessionTranscript.handover as OID4VPDCAPIHandover
+        assertEquals("https://wallet-caller.example", handover.origin)
+        assertEquals("request-nonce", handover.nonce)
+        assertEquals(null, handover.jwkThumbprint)
+    }
+
+    @Test
+    fun deviceAuthenticationRejectsMissingOrPrefixedDcApiOriginAndModeMismatch() {
+        val base =
+            Oid4vpDeviceAuthenticationContext(
+                responseMode = "dc_api",
+                clientId = "origin:https://wallet-caller.example",
+                authorizationRequestNonce = "request-nonce",
+            )
+        val docType = DocType("org.iso.18013.5.1.mDL")
+        val namespaces = DeviceNameSpaces()
+
+        assertFails { DeviceAuthentication.fromOid4vp(base, docType, namespaces) }
+        assertFails {
+            DeviceAuthentication.fromOid4vp(
+                base.copy(callerOrigin = "origin:https://wallet-caller.example"),
+                docType,
+                namespaces,
+            )
+        }
+        assertFails {
+            DeviceAuthentication.fromOid4vp(
+                base.copy(callerOrigin = "https://wallet-caller.example", responseUri = "https://verifier.example/response"),
+                docType,
+                namespaces,
+            )
+        }
+        assertFails {
+            DeviceAuthentication.fromOid4vp(
+                base.copy(responseMode = "direct_post", callerOrigin = "https://wallet-caller.example"),
+                docType,
+                namespaces,
+            )
+        }
+        assertFails {
+            DeviceAuthentication.fromOid4vp(
+                base.copy(responseMode = "dc_api.jwt", callerOrigin = "https://wallet-caller.example"),
+                docType,
+                namespaces,
+            )
+        }
     }
 
     @Test

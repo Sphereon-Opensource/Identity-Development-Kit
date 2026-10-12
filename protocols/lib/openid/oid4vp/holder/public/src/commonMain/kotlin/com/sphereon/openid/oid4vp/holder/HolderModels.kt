@@ -17,6 +17,7 @@
 package com.sphereon.openid.oid4vp.holder
 
 import com.sphereon.crypto.core.generic.SignatureAlgorithm
+import com.sphereon.mdoc.PreparedMdocDeviceAuthenticationSigning
 import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.core.compat.JsExportIgnoreCompat
 import com.sphereon.oauth2.common.model.AuthorizationRequest
@@ -206,6 +207,46 @@ data class SelectedCredential(
     val holderJwtVpOperationBinding: String? = null,
     /** Wallet unit owning [holderKeyRef]; never inferred from a key alias or tenant fallback. */
     val holderJwtVpWalletUnitId: String? = null,
+)
+
+/**
+ * Prepared OpenID4VP encrypted-response recipient bound to mdoc DeviceAuthentication.
+ * The JSON contains only the public JWK; its RFC 7638 thumbprint is also embedded
+ * in the prepared DeviceAuthentication transcript and checked again before JWE creation.
+ */
+@Serializable
+@JsExportCompat
+data class PreparedOid4vpJweRecipientBinding(
+    val publicJwkJson: String,
+    val rfc7638Thumbprint: String,
+    val keyEncryptionAlgorithm: String,
+    val contentEncryptionAlgorithm: String,
+    val responseMode: String,
+    val clientId: String,
+    val authorizationRequestNonce: String,
+    val responseUri: String? = null,
+    val redirectUri: String? = null,
+    val callerOrigin: String? = null,
+)
+
+/** Prepared mdoc DeviceAuth signing operation bound to one selected credential and query. */
+@Serializable
+@JsExportCompat
+data class PreparedMdocCredentialSigning(
+    val credentialId: String,
+    val credentialQueryId: String,
+    val docType: String,
+    val keyReference: String,
+    val signing: PreparedMdocDeviceAuthenticationSigning,
+    val recipientBinding: PreparedOid4vpJweRecipientBinding? = null,
+)
+
+/** Raw COSE signature returned by the context-bound signer for one prepared mdoc credential. */
+@Serializable
+@JsExportCompat
+data class MdocCredentialSigningSignature(
+    val credentialId: String,
+    val signature: ByteArray,
 )
 
 /**

@@ -54,6 +54,35 @@ interface Oid4vpHolderService {
         preparedPresentations: List<PreparedPresentation> = emptyList(),
     ): IdkResult<AuthorizationResponse, IdkError>
 
+    /** Prepare exact mdoc DeviceAuth signing operations without performing a private-key signature. */
+    suspend fun prepareMdocDeviceAuthenticationSignatures(
+        request: ResolvedOid4vpRequest,
+        selectedCredentials: List<SelectedCredential>,
+    ): IdkResult<List<PreparedMdocCredentialSigning>, IdkError> =
+        com.sphereon.core.api.Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Prepared mdoc DeviceAuth signing is not configured"))
+
+    /** Compose the response from the exact prepared mdoc operations and their external signatures. */
+    suspend fun createAuthorizationResponseWithPreparedMdocDeviceAuthenticationSignatures(
+        request: ResolvedOid4vpRequest,
+        selectedCredentials: List<SelectedCredential>,
+        preparedPresentations: List<PreparedPresentation>,
+        preparedMdocSignings: List<PreparedMdocCredentialSigning>,
+        signatures: List<MdocCredentialSigningSignature>,
+    ): IdkResult<AuthorizationResponse, IdkError> =
+        com.sphereon.core.api.Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Prepared mdoc DeviceAuth signing is not configured"))
+
+    /** Compose one response using the externally signed JWT-VP and mdoc DeviceAuth operations. */
+    suspend fun createAuthorizationResponseWithPreparedSignatures(
+        request: ResolvedOid4vpRequest,
+        selectedCredentials: List<SelectedCredential>,
+        preparedPresentations: List<PreparedPresentation>,
+        preparedJwtVp: HolderPreparedJwtVpResponse? = null,
+        jwtSignatures: List<HolderJwtVpSigningResult> = emptyList(),
+        preparedMdocSignings: List<PreparedMdocCredentialSigning> = emptyList(),
+        mdocSignatures: List<MdocCredentialSigningSignature> = emptyList(),
+    ): IdkResult<AuthorizationResponse, IdkError> =
+        com.sphereon.core.api.Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Prepared holder signing is not configured"))
+
     /** Combines finalized JWT VPs with the other selected formats in the canonical response builder. */
     suspend fun createAuthorizationResponseWithPreparedJwtVp(
         request: ResolvedOid4vpRequest,
@@ -82,6 +111,21 @@ interface Oid4vpHolderService {
         responseMode: ResponseMode? = null,
         jarmOptions: JarmOptions? = null,
     ): IdkResult<SubmissionResult, IdkError>
+
+    /**
+     * Binding-aware overload. Legacy adapters remain source-compatible and refuse non-null
+     * bindings rather than silently dropping the prepared-recipient constraint.
+     */
+    suspend fun submitAuthorizationResponse(
+        resolvedRequest: ResolvedOid4vpRequest,
+        response: AuthorizationResponse,
+        responseMode: ResponseMode?,
+        jarmOptions: JarmOptions?,
+        preparedOid4vpJweRecipientBinding: PreparedOid4vpJweRecipientBinding,
+    ): IdkResult<SubmissionResult, IdkError> =
+        com.sphereon.core.api.Err(
+            IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Prepared OID4VP JWE recipient binding is not supported by this holder service"),
+        )
 }
 
 /**

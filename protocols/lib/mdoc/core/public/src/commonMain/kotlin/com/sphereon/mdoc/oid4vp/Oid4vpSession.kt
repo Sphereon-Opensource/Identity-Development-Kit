@@ -19,7 +19,61 @@ package com.sphereon.mdoc.oid4vp
 
 import com.sphereon.mdoc.data.device.DataElementIdentifier
 import com.sphereon.mdoc.data.device.NameSpace
+import com.sphereon.mdoc.transfer.reader.SessionTranscript
 import com.sphereon.mdoc.transfer.reader.OID4VPHandover
+import com.sphereon.mdoc.transfer.reader.OID4VPDCAPIHandover
+
+/** Construct the final OID4VP or explicitly selected ISO Annex B transcript from validated inputs. */
+fun Oid4vpDeviceAuthenticationContext.toSessionTranscript(): SessionTranscript {
+    require(clientId.isNotBlank()) { "OID4VP client_id is required" }
+    val nonce = authorizationRequestNonce
+    require(nonce.isNotBlank()) { "OID4VP nonce is required" }
+    if (iso18013MdocGeneratedNonce != null) {
+        val uri = responseUri ?: redirectUri ?: error("ISO OID4VP handover requires a response endpoint")
+        return SessionTranscript.fromIso18013Oid4vp(clientId, uri, iso18013MdocGeneratedNonce, nonce)
+    }
+    val jwkThumbprint = verifierEncryptionJwkThumbprint
+    require(jwkThumbprint == null || jwkThumbprint.size == 32) { "OID4VP JWK thumbprint must be 32 bytes" }
+    return when (responseMode) {
+        "direct_post", "iae_post" -> {
+            require(jwkThumbprint == null) { "Plain OID4VP response mode must not use a JWK thumbprint" }
+            require(redirectUri == null) { "OID4VP direct-post response mode must use response_uri" }
+            val uri = responseUri ?: error("OID4VP direct-post response mode requires response_uri")
+            SessionTranscript.fromOid4vpClientIdAndResponseUri(clientId, nonce, null, uri)
+        }
+        "direct_post.jwt", "iae_post.jwt" -> {
+            require(jwkThumbprint != null) { "Encrypted OID4VP response mode requires a JWK thumbprint" }
+            require(redirectUri == null) { "OID4VP direct-post response mode must use response_uri" }
+            val uri = responseUri ?: error("OID4VP direct-post response mode requires response_uri")
+            SessionTranscript.fromOid4vpClientIdAndResponseUri(clientId, nonce, jwkThumbprint, uri)
+        }
+        "fragment", "query" -> {
+            require(jwkThumbprint == null) { "Plain OID4VP response mode must not use a JWK thumbprint" }
+            require(responseUri == null) { "OID4VP redirect response mode must use redirect_uri" }
+            val uri = redirectUri ?: error("OID4VP redirect response mode requires redirect_uri")
+            SessionTranscript.fromOid4vpClientIdAndResponseUri(clientId, nonce, null, uri)
+        }
+        "dc_api" -> {
+            require(jwkThumbprint == null) { "Plain OID4VP response mode must not use a JWK thumbprint" }
+            require(responseUri == null && redirectUri == null) { "OID4VP DC API response mode must not use a response endpoint" }
+            SessionTranscript.fromOid4vpDigitalCredentialsApi(
+                origin = callerOrigin ?: error("OID4VP DC API requires validated caller origin"),
+                nonce = nonce,
+                jwkThumbprint = null,
+            )
+        }
+        "dc_api.jwt" -> {
+            require(jwkThumbprint != null) { "Encrypted OID4VP response mode requires a JWK thumbprint" }
+            require(responseUri == null && redirectUri == null) { "OID4VP DC API response mode must not use a response endpoint" }
+            SessionTranscript.fromOid4vpDigitalCredentialsApi(
+                origin = callerOrigin ?: error("OID4VP DC API requires validated caller origin"),
+                nonce = nonce,
+                jwkThumbprint = jwkThumbprint,
+            )
+        }
+        else -> error("Unsupported OID4VP response mode for mdoc DeviceAuthentication")
+    }
+}
 
 /**
  * Construct an OID4VP 1.0 final §B.2.6 OpenID4VPHandover.

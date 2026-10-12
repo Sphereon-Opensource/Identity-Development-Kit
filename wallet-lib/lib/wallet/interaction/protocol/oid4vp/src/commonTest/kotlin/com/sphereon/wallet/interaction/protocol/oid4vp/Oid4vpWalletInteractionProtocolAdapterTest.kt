@@ -29,6 +29,7 @@ import com.sphereon.openid.oid4vp.dcql.w3cVcMeta
 import com.sphereon.openid.oid4vp.holder.JarmOptions
 import com.sphereon.openid.oid4vp.holder.DigitalCredentialsAuthorizationRequest
 import com.sphereon.openid.oid4vp.holder.Oid4vpHolderService
+import com.sphereon.openid.oid4vp.holder.PreparedOid4vpJweRecipientBinding
 import com.sphereon.openid.oid4vp.holder.PreparedPresentation
 import com.sphereon.openid.oid4vp.holder.ResolvedOid4vpRequest
 import com.sphereon.openid.oid4vp.holder.SelectedCredential
@@ -120,6 +121,35 @@ import kotlin.test.assertTrue
 import kotlin.time.Clock
 
 class Oid4vpWalletInteractionProtocolAdapterTest {
+    @Test
+    fun legacyHolderSubmitOverrideRefusesPreparedRecipientBinding() = runTest {
+        val holder = RecordingOid4vpHolderService()
+        val request = ResolvedOid4vpRequest(
+            request = AuthorizationRequest(clientId = "verifier", responseType = "vp_token", nonce = "nonce"),
+            verifierInfo = VerifierInfo("verifier", ClientIdScheme.PRE_REGISTERED),
+        )
+        val binding = PreparedOid4vpJweRecipientBinding(
+            publicJwkJson = "{}",
+            rfc7638Thumbprint = "thumbprint",
+            keyEncryptionAlgorithm = "ECDH-ES",
+            contentEncryptionAlgorithm = "A256GCM",
+            responseMode = ResponseMode.DIRECT_POST_JWT.value,
+            clientId = "verifier",
+            authorizationRequestNonce = "nonce",
+        )
+
+        val result = holder.submitAuthorizationResponse(
+            request,
+            AuthorizationResponse(code = ""),
+            ResponseMode.DIRECT_POST_JWT,
+            JarmOptions(issuer = "wallet"),
+            binding,
+        )
+
+        assertTrue(result.isErr)
+        assertEquals(0, holder.submitCalls)
+    }
+
     private val preparedOnlyHolderBindingProvider =
         Oid4vpSdJwtHolderBindingProvider { request -> Ok(request.selectedCredentials) }
 

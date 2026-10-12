@@ -56,6 +56,9 @@ kotlin {
                 // OID4VP common (for type-safe extensions)
                 api(projects.libOpenidOid4vpCommonPublic)
 
+                // Prepared mdoc DeviceAuth signing records expose the public core snapshot type.
+                api(projects.libMdocCorePublic)
+
                 // DCQL (for query parsing)
                 api(projects.libOpenidOid4vpDcql)
 

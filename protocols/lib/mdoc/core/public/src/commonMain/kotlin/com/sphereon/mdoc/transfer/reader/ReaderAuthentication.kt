@@ -98,6 +98,30 @@ data class SessionTranscript(
         )
 
         /**
+         * Build a SessionTranscript for OpenID4VP 1.0 §B.2.6.2 (Digital Credentials API).
+         * [origin] is the raw, validated browser origin. It must not be the `origin:`-prefixed
+         * `client_id`; the caller obtains it from trusted Digital Credentials API context.
+         */
+        @JsStatic
+        @JvmStatic
+        fun fromOid4vpDigitalCredentialsApi(
+            origin: String,
+            nonce: String,
+            jwkThumbprint: ByteArray?,
+        ): SessionTranscript {
+            val handover =
+                OID4VPDCAPIHandover.fromInputs(
+                    origin = origin,
+                    nonce = nonce,
+                    jwkThumbprint = jwkThumbprint,
+                )
+            return SessionTranscript(
+                handover = handover as Handover<*, CborItem<*>>,
+                original = null,
+            )
+        }
+
+        /**
          * Build the ISO/IEC TS 18013-7 Annex B OID4VP handover.
          *
          * This is intentionally a separate factory from [fromOid4vpClientIdAndResponseUri].
@@ -253,6 +277,35 @@ data class OID4VPHandover(
             jwkThumbprint = jwkThumbprint,
             responseUri = responseUri,
         )
+    }
+}
+
+/** OpenID4VP 1.0 final §B.2.6.2 handover for Digital Credentials API invocation. */
+@JsExportCompat
+@OptIn(ExperimentalObjCName::class)
+@ObjCName("OID4VPDCAPIHandover", exact = true)
+data class OID4VPDCAPIHandover(
+    /** Raw browser origin, without the `origin:` client-id prefix. */
+    val origin: String,
+    val nonce: String,
+    /** Raw 32-byte RFC 7638 thumbprint for dc_api.jwt; null for dc_api. */
+    val jwkThumbprint: ByteArray?,
+) : Handover<OID4VPDCAPIHandover, CborArray<CborItem<*>>>() {
+    override fun equals(other: Any?): Boolean =
+        other is OID4VPDCAPIHandover && origin == other.origin && nonce == other.nonce &&
+            (jwkThumbprint?.contentEquals(other.jwkThumbprint ?: return false) ?: (other.jwkThumbprint == null))
+
+    override fun hashCode(): Int = 31 * (31 * origin.hashCode() + nonce.hashCode()) + (jwkThumbprint?.contentHashCode() ?: 0)
+
+    companion object {
+        @JsStatic
+        @JvmStatic
+        fun fromInputs(origin: String, nonce: String, jwkThumbprint: ByteArray?): OID4VPDCAPIHandover {
+            require(origin.isNotBlank() && !origin.startsWith("origin:")) { "OID4VP DC API handover requires raw caller origin" }
+            require(nonce.isNotBlank()) { "OID4VP DC API handover requires nonce" }
+            require(jwkThumbprint == null || jwkThumbprint.size == 32) { "OID4VP DC API JWK thumbprint must be 32 bytes" }
+            return OID4VPDCAPIHandover(origin, nonce, jwkThumbprint)
+        }
     }
 }
 

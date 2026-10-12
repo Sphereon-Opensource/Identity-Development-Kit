@@ -29,6 +29,7 @@ import com.sphereon.core.api.service.TypedServiceCommandAdapter
 import com.sphereon.core.compat.Uuid
 import com.sphereon.crypto.core.KeyInfo
 import com.sphereon.crypto.core.KeyVisibility
+import com.sphereon.crypto.core.jose.Jwk
 import com.sphereon.crypto.core.jose.tryGenerateJwkThumbprint
 import com.sphereon.crypto.dataintegrity.command.AddProofServiceCommand
 import com.sphereon.crypto.jose.jws.StrictCompactJws
@@ -39,6 +40,9 @@ import com.sphereon.mdoc.data.device.IssuerSigned
 import com.sphereon.mdoc.data.device.IssuerSignedCborCodec
 import com.sphereon.mdoc.data.mso.MobileSecurityObjectCborCodec
 import com.sphereon.mdoc.oid4vp.MdocOid4vpService
+import com.sphereon.mdoc.oid4vp.PreparedMdocDeviceResponseSigning
+import com.sphereon.mdoc.oid4vp.MdocDeviceResponseSignature
+import com.sphereon.mdoc.oid4vp.Oid4vpDeviceAuthenticationContext
 import com.sphereon.mdoc.oid4vp.Oid4VPConstraintField
 import com.sphereon.mdoc.oid4vp.Oid4VPConstraints
 import com.sphereon.mdoc.oid4vp.Oid4VPFormat
@@ -47,6 +51,7 @@ import com.sphereon.mdoc.oid4vp.Oid4VPPresentationDefinition
 import com.sphereon.mdoc.oid4vp.Oid4VPPresentationSubmission
 import com.sphereon.mdoc.oid4vp.Oid4VPSupportedAlgorithm
 import com.sphereon.oauth2.common.model.AuthorizationResponse
+import com.sphereon.oauth2.common.jarm.JarmConfig
 import com.sphereon.openid.oid4vc.common.PresentationFormat
 import com.sphereon.openid.oid4vc.common.vcdm.VcdmClassifier
 import com.sphereon.openid.oid4vc.common.vcdm.VcdmDocumentKind
@@ -67,6 +72,9 @@ import com.sphereon.openid.oid4vp.holder.HolderJwtVpSigningRequest
 import com.sphereon.openid.oid4vp.holder.HolderJwtVpSigningResult
 import com.sphereon.openid.oid4vp.holder.HolderPreparedJwtVp
 import com.sphereon.openid.oid4vp.holder.HolderPreparedJwtVpResponse
+import com.sphereon.openid.oid4vp.holder.PreparedMdocCredentialSigning
+import com.sphereon.openid.oid4vp.holder.PreparedOid4vpJweRecipientBinding
+import com.sphereon.openid.oid4vp.holder.MdocCredentialSigningSignature
 import com.sphereon.openid.oid4vp.holder.PreparedPresentation
 import com.sphereon.openid.oid4vp.holder.ResolvedOid4vpRequest
 import com.sphereon.openid.oid4vp.holder.SelectedCredential
@@ -90,6 +98,11 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
+
+private sealed interface MdocPresentationResolution {
+    data class WireValue(val value: String) : MdocPresentationResolution
+    data class PreparedSigning(val value: PreparedMdocCredentialSigning) : MdocPresentationResolution
+}
 
 /**
  * Implementation of CreateAuthorizationResponseCommand for OpenID4VP.
@@ -152,6 +165,64 @@ class CreateAuthorizationResponseCommandImpl(
         preparedPresentations: List<PreparedPresentation>,
     ): IdkResult<AuthorizationResponse, IdkError> = execute(CreateAuthorizationResponseArgs(request, selectedCredentials, preparedPresentations))
 
+    override suspend fun createAuthorizationResponseWithPreparedMdocDeviceAuthenticationSignatures(
+        request: ResolvedOid4vpRequest,
+        selectedCredentials: List<SelectedCredential>,
+        preparedPresentations: List<PreparedPresentation>,
+        preparedMdocSignings: List<PreparedMdocCredentialSigning>,
+        signatures: List<MdocCredentialSigningSignature>,
+    ): IdkResult<AuthorizationResponse, IdkError> = execute(
+        CreateAuthorizationResponseArgs(
+            request = request,
+            selectedCredentials = selectedCredentials,
+            preparedPresentations = preparedPresentations,
+            preparedMdocSignings = preparedMdocSignings,
+            preparedMdocSignatures = signatures,
+        ),
+    )
+
+    override suspend fun createAuthorizationResponseWithPreparedSignatures(
+        request: ResolvedOid4vpRequest,
+        selectedCredentials: List<SelectedCredential>,
+        preparedPresentations: List<PreparedPresentation>,
+        preparedJwtVp: HolderPreparedJwtVpResponse?,
+        jwtSignatures: List<HolderJwtVpSigningResult>,
+        preparedMdocSignings: List<PreparedMdocCredentialSigning>,
+        mdocSignatures: List<MdocCredentialSigningSignature>,
+    ): IdkResult<AuthorizationResponse, IdkError> = execute(
+        CreateAuthorizationResponseArgs(
+            request = request,
+            selectedCredentials = selectedCredentials,
+            preparedPresentations = preparedPresentations,
+            preparedJwtVp = preparedJwtVp,
+            preparedJwtVpSignatures = jwtSignatures,
+            preparedMdocSignings = preparedMdocSignings,
+            preparedMdocSignatures = mdocSignatures,
+        ),
+    )
+
+    override suspend fun prepareMdocDeviceAuthenticationSignatures(
+        request: ResolvedOid4vpRequest,
+        selectedCredentials: List<SelectedCredential>,
+    ): IdkResult<List<PreparedMdocCredentialSigning>, IdkError> = withCounterpartyEgress {
+        validateSelectedCredentialFormats(request, selectedCredentials).getOrElse { return@withCounterpartyEgress Err(it) }
+        if (selectedCredentials.map { it.credentialId }.toSet().size != selectedCredentials.size) {
+            return@withCounterpartyEgress Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Selected credential IDs must be unique"))
+        }
+        val mdocCredentials = selectedCredentials.filter { it.credentialFormat.isMdoc }
+        if (mdocCredentials.isEmpty()) {
+            return@withCounterpartyEgress Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "At least one selected mdoc credential is required"))
+        }
+        val result = mutableListOf<PreparedMdocCredentialSigning>()
+        for (credential in mdocCredentials) {
+            val prepared = resolveMdocPresentation(request, credential, prepareOnly = true).getOrElse { return@withCounterpartyEgress Err(it) }
+            val record = (prepared as? MdocPresentationResolution.PreparedSigning)?.value
+                ?: return@withCounterpartyEgress Err(IdkError.UNKNOWN_ERROR(message = "mdoc signing preparation did not return a signing snapshot"))
+            result += record
+        }
+        Ok(result)
+    }
+
     // Everything a holder command fetches runs under the counterparty egress rule, also in the components shared with servers.
     override suspend fun doExecute(
         args: CreateAuthorizationResponseArgs,
@@ -185,8 +256,9 @@ class CreateAuthorizationResponseCommandImpl(
         // vp_token + presentation_submission shape.
         val presentationDefinition = parsePresentationDefinition(request)
         if (presentationDefinition != null) {
-            if (processedArgs.preparedJwtVp != null || processedArgs.preparedJwtVpSignatures.isNotEmpty()) {
-                return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Prepared JWT VPs require a DCQL response"))
+            if (processedArgs.preparedJwtVp != null || processedArgs.preparedJwtVpSignatures.isNotEmpty() ||
+                processedArgs.preparedMdocSignings.isNotEmpty() || processedArgs.preparedMdocSignatures.isNotEmpty()) {
+                return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Prepared holder signatures require a DCQL response"))
             }
             if (selectedCredentials.size != 1 || presentationDefinition.input_descriptors.size != 1) {
                 return Err(
@@ -223,7 +295,15 @@ class CreateAuthorizationResponseCommandImpl(
         // key, the holder produces a Key Binding JWT (RFC 9901 §4.3) binding the presentation to
         // the verifier (audience = client_id) and the request nonce; other formats pass through.
         val vpToken =
-            buildVpToken(request, selectedCredentials, preparedPresentations, processedArgs.preparedJwtVp, processedArgs.preparedJwtVpSignatures).getOrElse { error ->
+            buildVpToken(
+                request,
+                selectedCredentials,
+                preparedPresentations,
+                processedArgs.preparedJwtVp,
+                processedArgs.preparedJwtVpSignatures,
+                processedArgs.preparedMdocSignings,
+                processedArgs.preparedMdocSignatures,
+            ).getOrElse { error ->
                 return Err(error)
             }
 
@@ -269,10 +349,14 @@ class CreateAuthorizationResponseCommandImpl(
         preparedPresentations: List<PreparedPresentation>,
         preparedJwtVp: HolderPreparedJwtVpResponse?,
         signatures: List<HolderJwtVpSigningResult>,
+        preparedMdocSignings: List<PreparedMdocCredentialSigning>,
+        mdocSignatures: List<MdocCredentialSigningSignature>,
     ): IdkResult<VpToken, IdkError> {
         validateSelectedCredentialFormats(request, credentials).getOrElse { return Err(it) }
         validatePreparedPresentations(request, credentials, preparedPresentations).getOrElse { return Err(it) }
         val preparedJwtById = validatePreparedJwtPresentations(request, credentials, preparedJwtVp, signatures)
+            .getOrElse { return Err(it) }
+        val preparedMdocById = validatePreparedMdocSignings(credentials, preparedMdocSignings, mdocSignatures)
             .getOrElse { return Err(it) }
         val withPresentations = mutableListOf<Pair<String, JsonElement>>()
         val preparedByCredentialId = preparedPresentations.flatMap { prepared ->
@@ -290,7 +374,12 @@ class CreateAuthorizationResponseCommandImpl(
             } ?: run {
                 val presentation =
                     preparedJwtById[credential.credentialId]
-                        ?: resolvePresentation(request, credential).getOrElse { return Err(it) }
+                        ?: resolvePresentation(
+                            request,
+                            credential,
+                            preparedMdocById[credential.credentialId]?.first,
+                            preparedMdocById[credential.credentialId]?.second,
+                        ).getOrElse { return Err(it) }
                 withPresentations += credential.credentialQueryId to presentation
             }
         }
@@ -300,6 +389,37 @@ class CreateAuthorizationResponseCommandImpl(
                 .groupBy({ it.first }, { it.second })
 
         return Ok(VpToken(grouped))
+    }
+
+    private fun validatePreparedMdocSignings(
+        credentials: List<SelectedCredential>,
+        prepared: List<PreparedMdocCredentialSigning>,
+        signatures: List<MdocCredentialSigningSignature>,
+    ): IdkResult<Map<String, Pair<PreparedMdocCredentialSigning, MdocCredentialSigningSignature>>, IdkError> {
+        val selected = credentials.filter { it.credentialFormat.isMdoc }
+        if (prepared.isEmpty() && signatures.isEmpty()) return Ok(emptyMap())
+        if (prepared.size != selected.size || signatures.size != selected.size) {
+            return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Prepared mdoc signing must cover every selected mdoc credential exactly once"))
+        }
+        val preparedById = prepared.associateBy { it.credentialId }
+        val signaturesById = signatures.associateBy { it.credentialId }
+        val selectedById = selected.associateBy { it.credentialId }
+        if (preparedById.size != prepared.size || signaturesById.size != signatures.size ||
+            selectedById.size != selected.size || preparedById.keys != selectedById.keys || signaturesById.keys != selectedById.keys) {
+            return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Prepared mdoc signing records do not match selected credentials"))
+        }
+        val result = mutableMapOf<String, Pair<PreparedMdocCredentialSigning, MdocCredentialSigningSignature>>()
+        for ((credentialId, credential) in selectedById) {
+            val record = preparedById.getValue(credentialId)
+            if (record.credentialQueryId != credential.credentialQueryId ||
+                record.keyReference != credential.holderKeyRef ||
+                record.docType != record.signing.docType ||
+                record.signing.keyReference != record.keyReference) {
+                return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Prepared mdoc signing is bound to different selected credential inputs"))
+            }
+            result[credentialId] = record to signaturesById.getValue(credentialId)
+        }
+        return Ok(result)
     }
 
     /** Revalidates ownership, query mapping and the exact canonical payload without signing again. */
@@ -429,6 +549,8 @@ class CreateAuthorizationResponseCommandImpl(
     private suspend fun resolvePresentation(
         request: ResolvedOid4vpRequest,
         credential: SelectedCredential,
+        preparedMdocSigning: PreparedMdocCredentialSigning? = null,
+        mdocSignature: MdocCredentialSigningSignature? = null,
     ): IdkResult<JsonElement, IdkError> {
         val format = credential.credentialFormat
         val holderKeyRef = credential.holderKeyRef
@@ -460,8 +582,11 @@ class CreateAuthorizationResponseCommandImpl(
         }
 
         if (format.isMdoc) {
-            val presentation = resolveMdocPresentation(request, credential).getOrElse { return Err(it) }
-            return Ok(JsonPrimitive(presentation))
+            val presentation = resolveMdocPresentation(request, credential, preparedMdocSigning, mdocSignature).getOrElse { return Err(it) }
+            return when (presentation) {
+                is MdocPresentationResolution.WireValue -> Ok(JsonPrimitive(presentation.value))
+                is MdocPresentationResolution.PreparedSigning -> Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "mdoc signing preparation cannot be used as a wire presentation"))
+            }
         }
 
         if (format == CredentialFormat.JWT_VC_JSON || format == CredentialFormat.JWT_VC_JSON_LD) {
@@ -966,7 +1091,10 @@ class CreateAuthorizationResponseCommandImpl(
     private suspend fun resolveMdocPresentation(
         request: ResolvedOid4vpRequest,
         credential: SelectedCredential,
-    ): IdkResult<String, IdkError> {
+        preparedMdocSigning: PreparedMdocCredentialSigning? = null,
+        mdocSignature: MdocCredentialSigningSignature? = null,
+        prepareOnly: Boolean = false,
+    ): IdkResult<MdocPresentationResolution, IdkError> {
         val nonce =
             request.request.nonce
                 ?: return Err(
@@ -976,18 +1104,16 @@ class CreateAuthorizationResponseCommandImpl(
                                 "authorization request has no nonce",
                     ),
                 )
-        // The verifier reconstructs the §B.2.6 handover from the request's client_id +
-        // response_uri; the holder MUST use the identical values or DeviceAuth fails.
+        // The transcript inputs are response-mode-specific. In particular, DC API uses the
+        // validated browser origin carried in an internal marker by the parser, never client_id.
         val clientId = request.request.clientId
-        val responseUri =
-            request.request.responseUri
-                ?: return Err(
-                    IdkError.ILLEGAL_ARGUMENT_ERROR(
-                        message =
-                            "Cannot create mdoc DeviceResponse for query '${credential.credentialQueryId}': " +
-                                "authorization request has no response_uri",
-                    ),
-                )
+        val responseMode = request.request.responseMode ?: ResponseMode.DIRECT_POST.value
+        val responseUri = request.request.responseUri
+        val redirectUri = request.request.redirectUri
+        val callerOrigin =
+            request.request.additionalParameters[DIGITAL_CREDENTIAL_ORIGIN_PARAMETER]
+                ?.jsonPrimitive
+                ?.contentOrNull
 
         val issuerSignedBytes =
             try {
@@ -1148,8 +1274,9 @@ class CreateAuthorizationResponseCommandImpl(
                 matchResults
             }
 
+        var recipientBinding: PreparedOid4vpJweRecipientBinding? = null
         val verifierEncryptionJwkThumbprint =
-            when (ResponseMode.fromValue(request.request.responseMode ?: ResponseMode.DIRECT_POST.value)) {
+            when (ResponseMode.fromValue(responseMode)) {
                 ResponseMode.DIRECT_POST_JWT,
                 ResponseMode.DC_API_JWT,
                 ResponseMode.IAE_POST_JWT -> {
@@ -1164,9 +1291,33 @@ class CreateAuthorizationResponseCommandImpl(
                                             "encryption JWK with an alg",
                                 ),
                             )
+                    if (encryptionJwk.d != null || encryptionJwk.k != null || encryptionJwk.p != null || encryptionJwk.q != null ||
+                        encryptionJwk.dP != null || encryptionJwk.dQ != null || encryptionJwk.qInv != null
+                    ) {
+                        return Err(
+                            IdkError.ILLEGAL_ARGUMENT_ERROR(
+                                message = "Cannot create mdoc DeviceResponse using a verifier JWK that contains private key material",
+                            ),
+                        )
+                    }
                     val encodedThumbprint =
                         tryGenerateJwkThumbprint(encryptionJwk)
                             .getOrElse { return Err(it) }
+                    recipientBinding =
+                        PreparedOid4vpJweRecipientBinding(
+                            publicJwkJson = Jwk.from(encryptionJwk.toPublicKey()).toJsonString(),
+                            rfc7638Thumbprint = encodedThumbprint,
+                            keyEncryptionAlgorithm = encryptionJwk.alg!!.value,
+                            contentEncryptionAlgorithm =
+                                request.clientMetadata?.encryptedResponseEncValuesSupported?.firstOrNull()
+                                    ?: JarmConfig.DEFAULT_CONTENT_ENCRYPTION_ALG,
+                            responseMode = responseMode,
+                            clientId = clientId,
+                            authorizationRequestNonce = nonce,
+                            responseUri = responseUri,
+                            redirectUri = redirectUri,
+                            callerOrigin = callerOrigin,
+                        )
                     try {
                         encodedThumbprint.decodeFromBase64Url()
                     } catch (expected: Exception) {
@@ -1184,24 +1335,89 @@ class CreateAuthorizationResponseCommandImpl(
                 else -> null
             }
 
-        val deviceResponse =
+        val deviceAuthenticationContext =
+            Oid4vpDeviceAuthenticationContext(
+                responseMode = responseMode,
+                clientId = clientId,
+                authorizationRequestNonce = nonce,
+                responseUri = responseUri,
+                redirectUri = redirectUri,
+                callerOrigin = callerOrigin,
+                verifierEncryptionJwkThumbprint = verifierEncryptionJwkThumbprint,
+            )
+
+        if (prepareOnly) {
+            if (holderKeyAlias.isNullOrBlank()) {
+                return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Selected mdoc credential has no holder key reference"))
+            }
+            val prepared = mdocOid4vpService.prepareDeviceResponseSignings(
+                matchingDocuments = signableMatchResults,
+                presentationDefinition = presentationDefinition,
+                clientId = clientId,
+                responseUri = responseUri,
+                authorizationRequestNonce = nonce,
+                verifierEncryptionJwkThumbprint = verifierEncryptionJwkThumbprint,
+                context = deviceAuthenticationContext,
+            ).getOrElse { return Err(it) }
+            if (prepared.size != 1 || prepared.single().descriptorId != docType.toString()) {
+                return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "mdoc signing preparation did not match the selected credential"))
+            }
+            return Ok(
+                MdocPresentationResolution.PreparedSigning(
+                    PreparedMdocCredentialSigning(
+                        credentialId = credential.credentialId,
+                        credentialQueryId = credential.credentialQueryId,
+                        docType = docType.toString(),
+                        keyReference = holderKeyAlias,
+                        signing = prepared.single().signing,
+                        recipientBinding = recipientBinding,
+                    ),
+                ),
+            )
+        }
+
+        val deviceResponseResult = if (preparedMdocSigning != null || mdocSignature != null) {
+            val prepared = preparedMdocSigning
+                ?: return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Prepared mdoc signing record is missing"))
+            val signature = mdocSignature
+                ?: return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Prepared mdoc signature is missing"))
+            if (prepared.credentialId != credential.credentialId || prepared.credentialQueryId != credential.credentialQueryId ||
+                prepared.docType != docType.toString() || prepared.keyReference != holderKeyAlias) {
+                return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Prepared mdoc signing does not match the selected credential"))
+            }
+            mdocOid4vpService.createDeviceResponseWithSignatures(
+                matchingDocuments = signableMatchResults,
+                presentationDefinition = presentationDefinition,
+                clientId = clientId,
+                responseUri = responseUri,
+                authorizationRequestNonce = nonce,
+                verifierEncryptionJwkThumbprint = verifierEncryptionJwkThumbprint,
+                context = deviceAuthenticationContext,
+                preparedSignings = listOf(PreparedMdocDeviceResponseSigning(docType.toString(), prepared.signing)),
+                signatures = listOf(MdocDeviceResponseSignature(docType.toString(), signature.signature)),
+            )
+        } else {
+            if (preparedMdocSigning != null || mdocSignature != null) {
+                return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Prepared mdoc signing record and signature must be supplied together"))
+            }
             try {
-                mdocOid4vpService.createDeviceResponse(
-                    matchingDocuments = signableMatchResults,
-                    presentationDefinition = presentationDefinition,
-                    clientId = clientId,
-                    responseUri = responseUri,
-                    authorizationRequestNonce = nonce,
-                    verifierEncryptionJwkThumbprint = verifierEncryptionJwkThumbprint,
-                )
-            } catch (expected: Exception) {
-                return Err(
-                    IdkError.UNKNOWN_ERROR(
-                        message = "Failed to build mdoc DeviceResponse for query '${credential.credentialQueryId}': ${expected.message}",
+                Ok(
+                    mdocOid4vpService.createDeviceResponse(
+                        matchingDocuments = signableMatchResults,
+                        presentationDefinition = presentationDefinition,
+                        clientId = clientId,
+                        responseUri = responseUri,
+                        authorizationRequestNonce = nonce,
+                        verifierEncryptionJwkThumbprint = verifierEncryptionJwkThumbprint,
+                        context = deviceAuthenticationContext,
                     ),
                 )
+            } catch (expected: Exception) {
+                Err(IdkError.UNKNOWN_ERROR(message = "Failed to build mdoc DeviceResponse for query '${credential.credentialQueryId}': ${expected.message}"))
             }
+        }
 
+        val deviceResponse = deviceResponseResult.getOrElse { return Err(it) }
         if (deviceResponse.documents.isNullOrEmpty()) {
             return Err(
                 IdkError.UNKNOWN_ERROR(
@@ -1225,7 +1441,7 @@ class CreateAuthorizationResponseCommandImpl(
                     )
                 }
 
-        return Ok(deviceResponseBytes.encodeToBase64Url())
+        return Ok(MdocPresentationResolution.WireValue(deviceResponseBytes.encodeToBase64Url()))
     }
 
     private fun parsePresentationDefinition(request: ResolvedOid4vpRequest): Oid4VPPresentationDefinition? {

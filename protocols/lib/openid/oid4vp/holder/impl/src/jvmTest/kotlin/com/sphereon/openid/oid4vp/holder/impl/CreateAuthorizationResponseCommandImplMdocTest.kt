@@ -80,6 +80,7 @@ import com.sphereon.openid.oid4vp.common.responseUri
 import com.sphereon.openid.oid4vp.common.vpToken
 import com.sphereon.openid.oid4vc.common.CredentialFormat
 import com.sphereon.openid.oid4vp.holder.CreateAuthorizationResponseArgs
+import com.sphereon.openid.oid4vp.holder.MdocCredentialSigningSignature
 import com.sphereon.openid.oid4vp.holder.ResolvedOid4vpRequest
 import com.sphereon.openid.oid4vp.holder.SelectedCredential
 import com.sphereon.openid.oid4vp.holder.VerifierInfo
@@ -95,6 +96,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
@@ -303,6 +305,32 @@ class CreateAuthorizationResponseCommandImplMdocTest {
             // The disclosed issuer-signed elements survive.
             assertNotNull(doc.issuerSigned.getIssuerSignedItem(docTypeNamespace, DataElementIdentifier("given_name")))
 
+            // Prepare the same credential without signing, then compose using the exact raw
+            // DeviceAuth signature from the independent legacy signer. The prepared path must
+            // re-derive the transcript and verify the supplied signature before creating the wire
+            // response; it must not fall back to another local signature.
+            val preparedSignings = command.prepareMdocDeviceAuthenticationSignatures(resolvedRequest, selected)
+            if (preparedSignings.isErr) error("mdoc signing preparation failed: ${preparedSignings.error.message.defaultMessage}")
+            val prepared = preparedSignings.getOrThrow()
+            assertEquals(1, prepared.size)
+            assertEquals("mdoc-1", prepared.single().credentialId)
+            assertEquals(docType.toString(), prepared.single().signing.docType)
+            val detachedSignature = requireNotNull(doc.deviceSigned!!.deviceAuth.deviceSignature).signature.value
+            val remotelyCompleted = command.createAuthorizationResponseWithPreparedSignatures(
+                request = resolvedRequest,
+                selectedCredentials = selected,
+                preparedPresentations = emptyList(),
+                preparedJwtVp = null,
+                jwtSignatures = emptyList(),
+                preparedMdocSignings = prepared,
+                mdocSignatures = listOf(MdocCredentialSigningSignature("mdoc-1", detachedSignature)),
+            )
+            if (remotelyCompleted.isErr) error("prepared mdoc response failed: ${remotelyCompleted.error.message.defaultMessage}")
+            val remotePresentation = remotelyCompleted.getOrThrow().vpToken?.getSinglePresentation("businesscard_mdoc")
+            assertNotNull(remotePresentation)
+            val remoteDocument = DeviceResponseCborCodecImpl().decode(remotePresentation.decodeFromBase64Url()).getOrThrow().value.documents!!.single()
+            assertNotNull(remoteDocument.deviceSigned?.deviceAuth?.deviceSignature)
+
             // 5. For an encrypted response the holder must bind DeviceAuth to the exact
             // verifier JWK selected for the response JWE. This is the OpenID4VP 1.0 final
             // B.2.6 slot that used to be signed as null and caused verifier rejection.
@@ -378,26 +406,65 @@ class CreateAuthorizationResponseCommandImplMdocTest {
                         ),
                 )
             assertTrue(oldNullBinding.error, "encrypted DeviceAuth must reject the old null-thumbprint transcript")
+
+            // Digital Credentials API mode has no response_uri/redirect_uri. Its transcript
+            // uses the browser origin supplied by the validated transport parser, not the
+            // `origin:` client_id value.
+            val callerOrigin = "https://wallet.example.test"
+            val dcApiRequest =
+                resolvedRequest(
+                    responseMode = ResponseMode.DC_API,
+                    callerOrigin = callerOrigin,
+                )
+            assertEquals(null, dcApiRequest.request.responseUri)
+            assertEquals(null, dcApiRequest.request.redirectUri)
+            val dcApiResult = command.execute(CreateAuthorizationResponseArgs(dcApiRequest, selected))
+            if (dcApiResult.isErr) error("dc_api command failed: ${dcApiResult.error.message.defaultMessage}")
+            val dcApiPresentation =
+                dcApiResult.getOrThrow().vpToken?.getSinglePresentation("businesscard_mdoc")
+            assertNotNull(dcApiPresentation)
+            val dcApiDocument =
+                DeviceResponseCborCodecImpl()
+                    .decode(dcApiPresentation.decodeFromBase64Url())
+                    .getOrThrow()
+                    .value.documents!!.single()
+            val dcApiTranscript = SessionTranscript.fromOid4vpDigitalCredentialsApi(callerOrigin, "test-nonce", null)
+            val dcApiBinding = deviceAuthValidation.verifyDeviceAuth(dcApiDocument, dcApiTranscript)
+            assertFalse(dcApiBinding.error, "dc_api DeviceAuth must bind raw caller origin: ${dcApiBinding.message}")
+            assertFailsWith<IllegalArgumentException>("DC API transcript factory must reject origin-prefixed client_id") {
+                SessionTranscript.fromOid4vpDigitalCredentialsApi("origin:$callerOrigin", "test-nonce", null)
+            }
+
+            val missingOriginRequest = resolvedRequest(responseMode = ResponseMode.DC_API)
+            val missingOriginResult = command.execute(CreateAuthorizationResponseArgs(missingOriginRequest, selected))
+            assertTrue(missingOriginResult.isErr, "dc_api mdoc signing must fail closed without parser-provided origin")
         }
 
     private fun resolvedRequest(
         responseMode: ResponseMode = ResponseMode.DIRECT_POST,
         clientMetadata: ClientMetadata? = null,
+        callerOrigin: String? = null,
     ): ResolvedOid4vpRequest {
+        val isDigitalCredentialsApi = responseMode == ResponseMode.DC_API || responseMode == ResponseMode.DC_API_JWT
+        val isDirectPost = responseMode == ResponseMode.DIRECT_POST || responseMode == ResponseMode.DIRECT_POST_JWT
+        val clientId = if (isDigitalCredentialsApi) "origin:${callerOrigin ?: "https://wallet.example.test"}" else "https://verifier.acme.example"
         val authRequest =
             AuthorizationRequest(
-                clientId = "https://verifier.acme.example",
-                redirectUri = "https://verifier.acme.example/callback",
+                clientId = clientId,
+                redirectUri = if (isDigitalCredentialsApi || isDirectPost) null else "https://verifier.acme.example/callback",
                 responseType = "vp_token",
                 responseMode = responseMode.value,
                 scope = null,
                 state = "test-state",
                 nonce = "test-nonce",
                 additionalParameters =
-                    mapOf(
-                        "response_uri" to JsonPrimitive("https://verifier.acme.example/oid4vp/auth/response"),
-                        "response_mode" to JsonPrimitive(responseMode.value),
-                    ),
+                    buildMap {
+                        if (isDirectPost) {
+                            put("response_uri", JsonPrimitive("https://verifier.acme.example/oid4vp/auth/response"))
+                        }
+                        put("response_mode", JsonPrimitive(responseMode.value))
+                        callerOrigin?.let { put(DIGITAL_CREDENTIAL_ORIGIN_PARAMETER, JsonPrimitive(it)) }
+                    },
             )
         return ResolvedOid4vpRequest(
             request = authRequest,
@@ -405,7 +472,7 @@ class CreateAuthorizationResponseCommandImplMdocTest {
             clientMetadata = clientMetadata,
             verifierInfo =
                 VerifierInfo(
-                    clientId = "https://verifier.acme.example",
+                    clientId = clientId,
                     clientIdScheme = ClientIdScheme.PRE_REGISTERED,
                     displayName = "Acme Verifier",
                 ),

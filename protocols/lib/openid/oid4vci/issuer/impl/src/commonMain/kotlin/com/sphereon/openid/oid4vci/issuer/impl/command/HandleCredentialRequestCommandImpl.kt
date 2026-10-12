@@ -852,16 +852,9 @@ class HandleCredentialRequestCommandImpl(
                                 "refusing to issue without platform config",
                     ),
                 )
-        val expirationInDays =
-            signingConfig.expirationInDays
-                ?: return Err(
-                    IdkError.fromString(
-                        code = "invalid_credential_configuration",
-                        message =
-                            "Credential configuration '$configId' has no validity period; " +
-                                "refusing to issue without platform config",
-                    ),
-                )
+        // A configured validity period is optional. Preserve its absence for the format
+        // handler, which owns the credential's temporal representation and requirements.
+        val expirationInDays = signingConfig.expirationInDays
 
         // 7b. Resolve the status-list binding, failing closed: a configuration that declares a
         // status list whose binding cannot be resolved must abort the request — issuing without

@@ -923,9 +923,30 @@ components:
         evidence:
           $ref: '#/components/schemas/StringMap'
 
+    ActivationOperation:
+      type: object
+      description: One approved holder-key signature, binding its WSCD key reference to the hash of the signing input.
+      required: [operationKeyRef, operationHash]
+      properties:
+        operationKeyRef:
+          type: string
+          minLength: 1
+        operationHash:
+          type: string
+          minLength: 1
+
     BeginPasskeyActivationRequest:
       type: object
-      description: Starts an operation-bound passkey assertion for Wallet Unit activation with remote WSCD signing remaining behind the signing endpoints.
+      description: |
+        Starts an operation-bound passkey assertion. An omitted or empty operations
+        list approves a single operation. A non-empty list approves its ordered
+        holder-key signatures; operationKeyRef must be null, no operation may use
+        activationKeyRef, and every operationHash must be unique. The top-level
+        operationHash binds the exact ordered list: SHA-256 of the UTF-8 string
+        "activation-operations\n" followed by each operationKeyRef, a newline,
+        and its operationHash, with newline separators between operations.
+        The resulting operationHash is "sha256:" followed by the hexadecimal digest.
+        Remote WSCD signing remains behind the signing endpoints.
       required: [walletUnitId, walletAccountId, activationKeyRef, operationKeyRef, operationType, operationBinding, operationHash, nonce, audience, ownerScope, rpPolicy, expectedOrigin]
       properties:
         walletUnitId:
@@ -936,7 +957,15 @@ components:
           type: string
         operationKeyRef:
           type: string
+          nullable: true
           minLength: 1
+          description: WSCD key for a single operation, or null for a listed approval or an operation that uses no key.
+        operations:
+          type: array
+          default: []
+          description: Exact ordered signatures approved by the ceremony. Operation hashes must be unique; key references may repeat.
+          items:
+            $ref: '#/components/schemas/ActivationOperation'
         operationType:
           type: string
         operationBinding:
@@ -961,7 +990,12 @@ components:
 
     FinishPasskeyActivationDecisionRequest:
       type: object
-      description: Finishes a passkey wallet activation assertion and issues an operation-bound activation decision.
+      description: |
+        Finishes a passkey assertion and issues an operation-bound activation
+        decision. The operations list must match the ceremony's original ordered
+        list exactly, including each key reference and signing-input hash. For
+        a non-empty list, operationKeyRef must be null and operationHash must
+        bind the list using the algorithm described by BeginPasskeyActivationRequest.
       required: [walletUnitId, walletAccountId, activationKeyRef, operationKeyRef, operationType, operationBinding, operationHash, nonce, audience, assertion]
       properties:
         walletUnitId:
@@ -972,7 +1006,15 @@ components:
           type: string
         operationKeyRef:
           type: string
+          nullable: true
           minLength: 1
+          description: WSCD key for a single operation, or null for a listed approval or an operation that uses no key.
+        operations:
+          type: array
+          default: []
+          description: Same ordered signatures as at ceremony begin; each operation hash occurs once.
+          items:
+            $ref: '#/components/schemas/ActivationOperation'
         operationType:
           type: string
           minLength: 1
@@ -1054,7 +1096,14 @@ components:
 
     ActivationDecisionRecord:
       type: object
-      description: Persisted authorization decision for one activation operation. Accepted decisions are single-use inputs to gated wallet-key signing.
+      description: |
+        Persisted authorization decision for one operation or an ordered list of
+        holder-key signatures. A singular accepted decision is consumed by its
+        authorized operation. A listed decision authorizes each exact key/hash
+        pair once; usedOperationHashes records progress and consumedAt is set
+        only when all listed signatures have been authorized. Repeated or
+        unlisted signatures are refused. For a listed decision, operationKeyRef
+        is null and operationHash binds the exact ordered operations list.
       required: [decisionId, status, walletUnitId, walletAccountId, profileId, activationKeyRef, operationKeyRef, operationType, operationBinding, operationHash, nonce, sequence, audience, expiresAt, assuranceLevel, retryState, policyEvidence, issuedAt]
       example:
         decisionId: act-20260702-0001
@@ -1103,7 +1152,23 @@ components:
           type: string
         operationKeyRef:
           type: string
+          nullable: true
           minLength: 1
+          description: WSCD key for a single operation, or null for a listed approval or an operation that uses no key.
+        operations:
+          type: array
+          default: []
+          description: Ordered holder-key signatures bound to this decision.
+          items:
+            $ref: '#/components/schemas/ActivationOperation'
+        usedOperationHashes:
+          type: array
+          default: []
+          uniqueItems: true
+          description: Hashes of listed operations already authorized; each must belong to operations.
+          items:
+            type: string
+            minLength: 1
         operationType:
           type: string
         operationBinding:
@@ -3092,7 +3157,7 @@ components:
 
     WalletRawSignHttpRequest:
       type: object
-      description: Requests a policy-gated raw signature. The activation decision must be accepted, unconsumed, unexpired, and match the requested operation details exactly.
+      description: Requests a policy-gated raw signature. The activation decision must be accepted, unconsumed and unexpired, with matching wallet, operation, nonce and audience bindings. A listed decision must contain the exact requested key and operationHash pair, which must not have been used already.
       required: [walletUnitId, walletAccountId, activationDecisionId, key, operationType, operationBinding, operationHash, nonce, audience, inputBase64Url]
       example:
         walletUnitId: wu-7f9d
@@ -3153,7 +3218,7 @@ components:
 
     WalletDigestSignHttpRequest:
       type: object
-      description: Requests a policy-gated digest signature. This is the preferred signing form when callers have already calculated the operation digest.
+      description: Requests a policy-gated digest signature. This is the preferred signing form when callers have already calculated the operation digest. A listed approval authorizes only an exact key and operationHash pair from its operations list, once per listed hash; all other wallet, operation, nonce and audience bindings must still match.
       required: [walletUnitId, walletAccountId, activationDecisionId, key, operationType, operationBinding, operationHash, nonce, audience, digestBase64Url, signatureAlgorithm]
       example:
         walletUnitId: wu-7f9d
@@ -3210,7 +3275,7 @@ components:
 
     WalletHsmPolicyGrant:
       type: object
-      description: Policy grant bound to a consumed activation decision and one wallet-key operation.
+      description: Policy grant bound to one authorized wallet-key operation. Its activation decision is consumed immediately for a singular approval, or after the last operation of a listed approval.
       required: [activationDecisionId, walletUnitId, walletAccountId, keyRef, operationType, operationBinding, operationHash, nonce, audience, sequence, evidence]
       example:
         activationDecisionId: act-20260702-0001

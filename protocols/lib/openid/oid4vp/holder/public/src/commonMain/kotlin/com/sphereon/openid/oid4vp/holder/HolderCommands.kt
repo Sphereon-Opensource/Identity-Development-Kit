@@ -149,6 +149,8 @@ data class CreateAuthorizationResponseArgs(
     val preparedPresentations: List<PreparedPresentation> = emptyList(),
     val preparedJwtVp: HolderPreparedJwtVpResponse? = null,
     val preparedJwtVpSignatures: List<HolderJwtVpSigningResult> = emptyList(),
+    val preparedMdocSignings: List<PreparedMdocCredentialSigning> = emptyList(),
+    val preparedMdocSignatures: List<MdocCredentialSigningSignature> = emptyList(),
 )
 
 /**
@@ -159,6 +161,32 @@ data class CreateAuthorizationResponseArgs(
 @JsExportCompat
 interface CreateAuthorizationResponseCommand : ServiceCommand<CreateAuthorizationResponseArgs, AuthorizationResponse, IdkError> {
     override val commandId: String get() = COMMAND_ID
+
+    suspend fun prepareMdocDeviceAuthenticationSignatures(
+        request: ResolvedOid4vpRequest,
+        selectedCredentials: List<SelectedCredential>,
+    ): IdkResult<List<PreparedMdocCredentialSigning>, IdkError> =
+        com.sphereon.core.api.Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Prepared mdoc DeviceAuth signing is not configured"))
+
+    suspend fun createAuthorizationResponseWithPreparedMdocDeviceAuthenticationSignatures(
+        request: ResolvedOid4vpRequest,
+        selectedCredentials: List<SelectedCredential>,
+        preparedPresentations: List<PreparedPresentation>,
+        preparedMdocSignings: List<PreparedMdocCredentialSigning>,
+        signatures: List<MdocCredentialSigningSignature>,
+    ): IdkResult<AuthorizationResponse, IdkError> =
+        com.sphereon.core.api.Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Prepared mdoc DeviceAuth signing is not configured"))
+
+    suspend fun createAuthorizationResponseWithPreparedSignatures(
+        request: ResolvedOid4vpRequest,
+        selectedCredentials: List<SelectedCredential>,
+        preparedPresentations: List<PreparedPresentation>,
+        preparedJwtVp: HolderPreparedJwtVpResponse?,
+        jwtSignatures: List<HolderJwtVpSigningResult>,
+        preparedMdocSignings: List<PreparedMdocCredentialSigning>,
+        mdocSignatures: List<MdocCredentialSigningSignature>,
+    ): IdkResult<AuthorizationResponse, IdkError> =
+        com.sphereon.core.api.Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Prepared holder signing is not configured"))
 
     companion object {
         const val COMMAND_ID = "oid4vp.holder.createresponse"
@@ -176,6 +204,32 @@ interface CreateAuthorizationResponseCommandService {
         selectedCredentials: List<SelectedCredential>,
         preparedPresentations: List<PreparedPresentation> = emptyList(),
     ): IdkResult<AuthorizationResponse, IdkError>
+
+    suspend fun prepareMdocDeviceAuthenticationSignatures(
+        request: ResolvedOid4vpRequest,
+        selectedCredentials: List<SelectedCredential>,
+    ): IdkResult<List<PreparedMdocCredentialSigning>, IdkError> =
+        com.sphereon.core.api.Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Prepared mdoc DeviceAuth signing is not configured"))
+
+    suspend fun createAuthorizationResponseWithPreparedMdocDeviceAuthenticationSignatures(
+        request: ResolvedOid4vpRequest,
+        selectedCredentials: List<SelectedCredential>,
+        preparedPresentations: List<PreparedPresentation>,
+        preparedMdocSignings: List<PreparedMdocCredentialSigning>,
+        signatures: List<MdocCredentialSigningSignature>,
+    ): IdkResult<AuthorizationResponse, IdkError> =
+        com.sphereon.core.api.Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Prepared mdoc DeviceAuth signing is not configured"))
+
+    suspend fun createAuthorizationResponseWithPreparedSignatures(
+        request: ResolvedOid4vpRequest,
+        selectedCredentials: List<SelectedCredential>,
+        preparedPresentations: List<PreparedPresentation>,
+        preparedJwtVp: HolderPreparedJwtVpResponse?,
+        jwtSignatures: List<HolderJwtVpSigningResult>,
+        preparedMdocSignings: List<PreparedMdocCredentialSigning>,
+        mdocSignatures: List<MdocCredentialSigningSignature>,
+    ): IdkResult<AuthorizationResponse, IdkError> =
+        com.sphereon.core.api.Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Prepared holder signing is not configured"))
 }
 
 /**
@@ -216,6 +270,8 @@ data class SubmitAuthorizationResponseArgs(
     val response: AuthorizationResponse,
     val responseMode: ResponseMode? = null,
     val jarmOptions: JarmOptions? = null,
+    /** Holder-private binding to the verifier JWK used by prepared mdoc DeviceAuthentication. */
+    val preparedOid4vpJweRecipientBinding: PreparedOid4vpJweRecipientBinding? = null,
 )
 
 /**
@@ -244,4 +300,19 @@ interface SubmitAuthorizationResponseCommandService {
         responseMode: ResponseMode? = null,
         jarmOptions: JarmOptions? = null,
     ): IdkResult<SubmissionResult, IdkError>
+
+    /**
+     * Binding-aware overload. Legacy command-service implementations remain source-compatible,
+     * but fail closed when asked to submit a response that requires a prepared recipient binding.
+     */
+    suspend fun submitAuthorizationResponse(
+        resolvedRequest: ResolvedOid4vpRequest,
+        response: AuthorizationResponse,
+        responseMode: ResponseMode?,
+        jarmOptions: JarmOptions?,
+        preparedOid4vpJweRecipientBinding: PreparedOid4vpJweRecipientBinding,
+    ): IdkResult<SubmissionResult, IdkError> =
+        com.sphereon.core.api.Err(
+            IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Prepared OID4VP JWE recipient binding is not supported by this holder service"),
+        )
 }

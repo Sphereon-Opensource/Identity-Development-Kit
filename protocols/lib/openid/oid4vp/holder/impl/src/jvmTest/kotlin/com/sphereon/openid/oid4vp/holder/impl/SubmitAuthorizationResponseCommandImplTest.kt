@@ -28,6 +28,12 @@ import com.sphereon.crypto.resolution.IIdentifierMethod
 import com.sphereon.crypto.resolution.extern.ExternalIdentifierOpts
 import com.sphereon.crypto.resolution.extern.ExternalIdentifierOptsOrResult
 import com.sphereon.crypto.resolution.extern.ExternalIdentifierResult
+import com.sphereon.crypto.core.jose.JwaAlgorithm
+import com.sphereon.crypto.core.jose.JwaCurve
+import com.sphereon.crypto.core.jose.JwaKeyType
+import com.sphereon.crypto.core.jose.Jwk
+import com.sphereon.crypto.core.jose.JwkSet
+import com.sphereon.crypto.core.jose.tryGenerateJwkThumbprint
 import com.sphereon.crypto.resolution.extern.MultiExternalIdentifierService
 import com.sphereon.di.session.SessionContext
 import com.sphereon.ktor.http.client.provider.HttpClientEngineType
@@ -37,14 +43,20 @@ import com.sphereon.ktor.http.client.provider.UrlValidationPolicy
 import com.sphereon.oauth2.common.jarm.CreateJarmResponseArgs
 import com.sphereon.oauth2.common.jarm.CreateJarmResponseCommand
 import com.sphereon.oauth2.common.jarm.CreateJarmResponseResult
+import com.sphereon.oauth2.common.jarm.JarmConfig
 import com.sphereon.oauth2.common.jarm.JarmMode
 import com.sphereon.oauth2.common.model.AuthorizationRequest
 import com.sphereon.openid.oid4vp.common.ClientIdScheme
+import com.sphereon.openid.oid4vp.common.ClientMetadata
 import com.sphereon.openid.oid4vp.common.ResponseMode
 import com.sphereon.openid.oid4vp.common.buildOid4vpAuthorizationResponse
+import com.sphereon.openid.oid4vp.dcql.DcqlCredentialQuery
+import com.sphereon.openid.oid4vp.dcql.DcqlQuery
 import com.sphereon.openid.oid4vp.holder.ResolvedOid4vpRequest
 import com.sphereon.openid.oid4vp.holder.SubmissionResult
 import com.sphereon.openid.oid4vp.holder.SubmitAuthorizationResponseArgs
+import com.sphereon.openid.oid4vp.holder.JarmOptions
+import com.sphereon.openid.oid4vp.holder.PreparedOid4vpJweRecipientBinding
 import com.sphereon.openid.oid4vp.holder.VerifierInfo
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
@@ -59,6 +71,7 @@ import io.ktor.http.headersOf
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
@@ -179,11 +192,13 @@ class SubmitAuthorizationResponseCommandImplTest {
     private fun createMockHttpClientFactory(
         responseStatus: HttpStatusCode = HttpStatusCode.OK,
         responseBody: String = """{"redirect_uri": "https://verifier.example.com/complete"}""",
+        onRequest: () -> Unit = {},
     ): HttpClientFactory =
         object : HttpClientFactory {
             override fun createClient(options: HttpClientOptions): HttpClient =
                 HttpClient(
                     MockEngine { request ->
+                        onRequest()
                         respond(
                             content = responseBody,
                             status = responseStatus,
@@ -231,20 +246,22 @@ class SubmitAuthorizationResponseCommandImplTest {
     /**
      * Create a mock CreateJarmResponseCommand for testing
      */
-    private fun createMockJarmCommand(): CreateJarmResponseCommand =
+    private fun createMockJarmCommand(onExecute: () -> Unit = {}): CreateJarmResponseCommand =
         object : CreateJarmResponseCommand {
             override val commandId: String = CreateJarmResponseCommand.COMMAND_ID
             override val isEnabled: Boolean = true
             override val inputTypeToken: TypeToken<CreateJarmResponseArgs> = typeToken<CreateJarmResponseArgs>()
             override val outputTypeToken: TypeToken<CreateJarmResponseResult> = typeToken<CreateJarmResponseResult>()
 
-            override suspend fun execute(args: CreateJarmResponseArgs): IdkResult<CreateJarmResponseResult, IdkError> =
-                Ok(
+            override suspend fun execute(args: CreateJarmResponseArgs): IdkResult<CreateJarmResponseResult, IdkError> {
+                onExecute()
+                return Ok(
                     CreateJarmResponseResult(
                         jarmJwt = "mock.jarm.jwt",
                         mode = JarmMode.SIGNED,
                     ),
                 )
+            }
         }
 
     // =============================
@@ -687,6 +704,388 @@ class SubmitAuthorizationResponseCommandImplTest {
             // DIRECT_POST_JWT mode requires jarmOptions - without it, should return ILLEGAL_ARGUMENT error
             assertIs<Err<*>>(result)
             assertTrue(result.error.code.contains("ILLEGAL_ARGUMENT"))
+        }
+
+    @Test
+    fun `final direct_post jwt refuses signed only before JARM signing`() =
+        runTest {
+            val command =
+                SubmitAuthorizationResponseCommandImpl(
+                    execution = TestExecutionContext.createExecution(),
+                    httpClientFactory = createMockHttpClientFactory(),
+                    externalIdentifierService = createMockExternalIdentifierService(),
+                    createJarmCommand = createMockJarmCommand(),
+                )
+            val request = createResolvedRequestDirectPost()
+            val response =
+                buildOid4vpAuthorizationResponse {
+                    vpToken("test_query", "eyJhbGciOiJFUzI1NiJ9.payload.signature")
+                }
+
+            val result =
+                command.execute(
+                    SubmitAuthorizationResponseArgs(
+                        resolvedRequest = request,
+                        response = response,
+                        responseMode = ResponseMode.DIRECT_POST_JWT,
+                        jarmOptions = JarmOptions(issuer = "wallet", jarmConfig = JarmConfig.signed()),
+                    ),
+                )
+
+            assertIs<Err<*>>(result)
+            assertTrue(result.error.message.defaultMessage.contains("unsigned encrypted"))
+        }
+
+    @Test
+    fun `final dc_api jwt requires response JWE recipient to match transcript JWK`() =
+        runTest {
+            val selectedForTranscript =
+                Jwk(
+                    kty = JwaKeyType.EC,
+                    crv = JwaCurve.P_256,
+                    x = "0_3S7HedSywaxlekdt6Or8pkcR13hQaCPMqt9cuZBVc",
+                    y = "ZVXSCL3HlnMQWKrwMyIAe5wsAIWd3Eu1misKFr3POdA",
+                    use = "enc",
+                    alg = JwaAlgorithm.ECDH_ES,
+                    kid = "transcript-key",
+                )
+            val notSelectedForTranscript =
+                selectedForTranscript.copy(
+                    x = "eR0Yq1ZC1TZ6T5FKKjJfJ7H6yEqWa7LKvdp6sY2yodw",
+                    kid = "recipient-drift-key",
+                    alg = null,
+                )
+            val callerOrigin = "https://wallet.example.test"
+            val dcApiClientId = "origin:$callerOrigin"
+            fun dcApiRequest(metadata: ClientMetadata) =
+                createResolvedRequestDirectPost().copy(
+                    request =
+                        createResolvedRequestDirectPost().request.copy(
+                            clientId = dcApiClientId,
+                            redirectUri = null,
+                            responseMode = ResponseMode.DC_API_JWT.value,
+                            nonce = "test-nonce",
+                            additionalParameters =
+                                mapOf(
+                                    "nonce" to JsonPrimitive("test-nonce"),
+                                    DIGITAL_CREDENTIAL_ORIGIN_PARAMETER to JsonPrimitive(callerOrigin),
+                                ),
+                        ),
+                    verifierInfo = createResolvedRequestDirectPost().verifierInfo.copy(
+                        clientId = dcApiClientId,
+                        clientIdScheme = ClientIdScheme.ORIGIN,
+                    ),
+                    clientMetadata = metadata,
+                )
+            val matchingRequest = dcApiRequest(ClientMetadata(jwks = JwkSet(arrayOf(selectedForTranscript))))
+            val driftedRequest = dcApiRequest(ClientMetadata(jwks = JwkSet(arrayOf(notSelectedForTranscript, selectedForTranscript))))
+            val response =
+                buildOid4vpAuthorizationResponse {
+                    vpToken("test_query", "eyJhbGciOiJFUzI1NiJ9.payload.signature")
+                }
+            var httpRequests = 0
+            var jarmExecutions = 0
+            val command =
+                SubmitAuthorizationResponseCommandImpl(
+                    execution = TestExecutionContext.createExecution(),
+                    httpClientFactory = createMockHttpClientFactory(onRequest = { httpRequests++ }),
+                    externalIdentifierService = createMockExternalIdentifierService(),
+                    createJarmCommand = createMockJarmCommand(onExecute = { jarmExecutions++ }),
+                )
+            val binding =
+                PreparedOid4vpJweRecipientBinding(
+                    publicJwkJson = Jwk.from(selectedForTranscript.toPublicKey()).toJsonString(),
+                    rfc7638Thumbprint = tryGenerateJwkThumbprint(selectedForTranscript).getOrThrow(),
+                    keyEncryptionAlgorithm = "ECDH-ES",
+                    contentEncryptionAlgorithm = JarmConfig.DEFAULT_CONTENT_ENCRYPTION_ALG,
+                    responseMode = ResponseMode.DC_API_JWT.value,
+                    clientId = dcApiClientId,
+                    authorizationRequestNonce = "test-nonce",
+                    responseUri = null,
+                    redirectUri = null,
+                    callerOrigin = callerOrigin,
+                )
+            val options = JarmOptions(issuer = "wallet", jarmConfig = JarmConfig.encrypted("ECDH-ES"))
+
+            val matchingResult =
+                command.execute(
+                    SubmitAuthorizationResponseArgs(
+                        resolvedRequest = matchingRequest,
+                        response = response,
+                        responseMode = ResponseMode.DC_API_JWT,
+                        jarmOptions = options,
+                        preparedOid4vpJweRecipientBinding = binding,
+                    ),
+                )
+            assertIs<Ok<*>>(matchingResult)
+            assertEquals(0, httpRequests)
+            assertEquals(1, jarmExecutions)
+
+            val result =
+                command.execute(
+                    SubmitAuthorizationResponseArgs(
+                        resolvedRequest = driftedRequest,
+                        response = response,
+                        responseMode = ResponseMode.DC_API_JWT,
+                        jarmOptions = options,
+                        preparedOid4vpJweRecipientBinding = binding,
+                    ),
+                )
+
+            assertIs<Err<*>>(result)
+            assertTrue(result.error.message.defaultMessage.contains("does not match the prepared DeviceAuthentication binding"))
+            assertEquals(0, httpRequests)
+            assertEquals(1, jarmExecutions)
+        }
+
+    @Test
+    fun `prepared recipient binding rejects changed nonce response uri and caller origin`() =
+        runTest {
+            val encryptionJwk =
+                Jwk(
+                    kty = JwaKeyType.EC,
+                    crv = JwaCurve.P_256,
+                    x = "0_3S7HedSywaxlekdt6Or8pkcR13hQaCPMqt9cuZBVc",
+                    y = "ZVXSCL3HlnMQWKrwMyIAe5wsAIWd3Eu1misKFr3POdA",
+                    use = "enc",
+                    alg = JwaAlgorithm.ECDH_ES,
+                    kid = "enc-key",
+                )
+            val callerOrigin = "https://wallet.example.test"
+            val dcApiClientId = "origin:$callerOrigin"
+            val base =
+                createResolvedRequestDirectPost().copy(
+                    request =
+                        createResolvedRequestDirectPost().request.copy(
+                            clientId = dcApiClientId,
+                            redirectUri = null,
+                            responseMode = ResponseMode.DC_API_JWT.value,
+                            nonce = "test-nonce",
+                            additionalParameters = mapOf(DIGITAL_CREDENTIAL_ORIGIN_PARAMETER to JsonPrimitive(callerOrigin)),
+                        ),
+                    verifierInfo = createResolvedRequestDirectPost().verifierInfo.copy(
+                        clientId = dcApiClientId,
+                        clientIdScheme = ClientIdScheme.ORIGIN,
+                    ),
+                    clientMetadata = ClientMetadata(jwks = JwkSet(arrayOf(encryptionJwk))),
+                )
+            val binding =
+                PreparedOid4vpJweRecipientBinding(
+                    publicJwkJson = Jwk.from(encryptionJwk.toPublicKey()).toJsonString(),
+                    rfc7638Thumbprint = tryGenerateJwkThumbprint(encryptionJwk).getOrThrow(),
+                    keyEncryptionAlgorithm = "ECDH-ES",
+                    contentEncryptionAlgorithm = JarmConfig.DEFAULT_CONTENT_ENCRYPTION_ALG,
+                    responseMode = ResponseMode.DC_API_JWT.value,
+                    clientId = dcApiClientId,
+                    authorizationRequestNonce = "test-nonce",
+                    responseUri = null,
+                    redirectUri = null,
+                    callerOrigin = callerOrigin,
+                )
+            var httpRequests = 0
+            var jarmExecutions = 0
+            val command =
+                SubmitAuthorizationResponseCommandImpl(
+                    execution = TestExecutionContext.createExecution(),
+                    httpClientFactory = createMockHttpClientFactory(onRequest = { httpRequests++ }),
+                    externalIdentifierService = createMockExternalIdentifierService(),
+                    createJarmCommand = createMockJarmCommand(onExecute = { jarmExecutions++ }),
+                )
+            val response = buildOid4vpAuthorizationResponse { vpToken("test", "eyJhbGciOiJFUzI1NiJ9.payload.signature") }
+            val options = JarmOptions(issuer = "wallet", jarmConfig = JarmConfig.encrypted("ECDH-ES"))
+
+            val baseline =
+                command.execute(
+                    SubmitAuthorizationResponseArgs(
+                        base,
+                        response,
+                        ResponseMode.DC_API_JWT,
+                        options,
+                        binding,
+                    ),
+                )
+            assertIs<Ok<*>>(baseline)
+            assertEquals(0, httpRequests)
+            assertEquals(1, jarmExecutions)
+
+            suspend fun assertTranscriptMutationRejected(changed: ResolvedOid4vpRequest) {
+                val result =
+                    command.execute(
+                        SubmitAuthorizationResponseArgs(
+                            changed,
+                            response,
+                            ResponseMode.DC_API_JWT,
+                            options,
+                            binding,
+                        ),
+                    )
+                assertIs<Err<*>>(result)
+                assertTrue(result.error.message.defaultMessage.contains("transcript inputs changed"))
+                assertEquals(0, httpRequests)
+                assertEquals(1, jarmExecutions)
+            }
+
+            assertTranscriptMutationRejected(
+                base.copy(request = base.request.copy(nonce = "changed")),
+            )
+            assertTranscriptMutationRejected(
+                base.copy(request = base.request.copy(additionalParameters = base.request.additionalParameters + ("response_uri" to JsonPrimitive("https://other.example/response")))),
+            )
+            assertTranscriptMutationRejected(
+                base.copy(request = base.request.copy(additionalParameters = base.request.additionalParameters + (DIGITAL_CREDENTIAL_ORIGIN_PARAMETER to JsonPrimitive("https://other.example")))),
+            )
+            assertTranscriptMutationRejected(
+                base.copy(request = base.request.copy(clientId = "origin:https://other.example")),
+            )
+            assertTranscriptMutationRejected(
+                base.copy(request = base.request.copy(responseMode = ResponseMode.DIRECT_POST_JWT.value)),
+            )
+            assertTranscriptMutationRejected(
+                base.copy(request = base.request.copy(redirectUri = "https://verifier.example.com/callback")),
+            )
+        }
+
+    @Test
+    fun `legacy four argument submit remains compatible for selected mdoc and unselected alternatives`() =
+        runTest {
+            val encryptionJwk =
+                Jwk(
+                    kty = JwaKeyType.EC,
+                    crv = JwaCurve.P_256,
+                    x = "0_3S7HedSywaxlekdt6Or8pkcR13hQaCPMqt9cuZBVc",
+                    y = "ZVXSCL3HlnMQWKrwMyIAe5wsAIWd3Eu1misKFr3POdA",
+                    use = "enc",
+                    alg = JwaAlgorithm.ECDH_ES,
+                    kid = "enc-key",
+                )
+            val callerOrigin = "https://wallet.example.test"
+            val dcApiClientId = "origin:$callerOrigin"
+            val request =
+                createResolvedRequestDirectPost().copy(
+                    request =
+                        createResolvedRequestDirectPost().request.copy(
+                            clientId = dcApiClientId,
+                            redirectUri = null,
+                            responseMode = ResponseMode.DC_API_JWT.value,
+                            nonce = "test-nonce",
+                            additionalParameters = mapOf(DIGITAL_CREDENTIAL_ORIGIN_PARAMETER to JsonPrimitive(callerOrigin)),
+                        ),
+                    verifierInfo = createResolvedRequestDirectPost().verifierInfo.copy(
+                        clientId = dcApiClientId,
+                        clientIdScheme = ClientIdScheme.ORIGIN,
+                    ),
+                    dcqlQuery =
+                        DcqlQuery(
+                            credentials =
+                                listOf(
+                                    DcqlCredentialQuery(
+                                        id = "mdl",
+                                        format = "mso_mdoc",
+                                        meta = Json.parseToJsonElement("""{"doctype_value":"org.example.mdl"}""").jsonObject,
+                                    ),
+                                    DcqlCredentialQuery(
+                                        id = "sd",
+                                        format = "dc+sd-jwt",
+                                        meta = Json.parseToJsonElement("""{"vct_values":["https://example.test/vct"]}""").jsonObject,
+                                    ),
+                                ),
+                        ),
+                    clientMetadata = ClientMetadata(jwks = JwkSet(arrayOf(encryptionJwk))),
+                )
+            val command =
+                SubmitAuthorizationResponseCommandImpl(
+                    execution = TestExecutionContext.createExecution(),
+                    httpClientFactory = createMockHttpClientFactory(),
+                    externalIdentifierService = createMockExternalIdentifierService(),
+                    createJarmCommand = createMockJarmCommand(),
+                )
+            val options = JarmOptions(issuer = "wallet", jarmConfig = JarmConfig.encrypted("ECDH-ES"))
+            val mdocResponse = buildOid4vpAuthorizationResponse { vpToken("mdl", "bWV0YQ") }
+            val legacyMdocSubmit =
+                command.execute(
+                    SubmitAuthorizationResponseArgs(request, mdocResponse, ResponseMode.DC_API_JWT, options),
+                )
+            assertIs<Ok<*>>(legacyMdocSubmit)
+
+            val alternativeResponse =
+                buildOid4vpAuthorizationResponse { vpToken("sd", "eyJhbGciOiJFUzI1NiJ9.payload.signature") }
+            val nonMdocAlternative =
+                command.execute(
+                    SubmitAuthorizationResponseArgs(request, alternativeResponse, ResponseMode.DC_API_JWT, options),
+                )
+            assertIs<Ok<*>>(nonMdocAlternative)
+        }
+
+    @Test
+    fun `prepared encrypted response cannot be downgraded before plain submission or JARM`() =
+        runTest {
+            var httpRequests = 0
+            var jarmExecutions = 0
+            val encryptionJwk =
+                Jwk(
+                    kty = JwaKeyType.EC,
+                    crv = JwaCurve.P_256,
+                    x = "0_3S7HedSywaxlekdt6Or8pkcR13hQaCPMqt9cuZBVc",
+                    y = "ZVXSCL3HlnMQWKrwMyIAe5wsAIWd3Eu1misKFr3POdA",
+                    use = "enc",
+                    alg = JwaAlgorithm.ECDH_ES,
+                    kid = "enc-key",
+                )
+            val callerOrigin = "https://wallet.example.test"
+            val dcApiClientId = "origin:$callerOrigin"
+            val request =
+                createResolvedRequestDirectPost().copy(
+                    request =
+                        createResolvedRequestDirectPost().request.copy(
+                            clientId = dcApiClientId,
+                            redirectUri = null,
+                            responseMode = ResponseMode.DC_API_JWT.value,
+                            nonce = "test-nonce",
+                            additionalParameters = mapOf(DIGITAL_CREDENTIAL_ORIGIN_PARAMETER to JsonPrimitive(callerOrigin)),
+                        ),
+                    verifierInfo = createResolvedRequestDirectPost().verifierInfo.copy(
+                        clientId = dcApiClientId,
+                        clientIdScheme = ClientIdScheme.ORIGIN,
+                    ),
+                    clientMetadata = ClientMetadata(jwks = JwkSet(arrayOf(encryptionJwk))),
+                )
+            val response = buildOid4vpAuthorizationResponse { vpToken("mdl", "bWV0YQ") }
+            val command =
+                SubmitAuthorizationResponseCommandImpl(
+                    execution = TestExecutionContext.createExecution(),
+                    httpClientFactory = createMockHttpClientFactory(onRequest = { httpRequests++ }),
+                    externalIdentifierService = createMockExternalIdentifierService(),
+                    createJarmCommand = createMockJarmCommand(onExecute = { jarmExecutions++ }),
+                )
+            val binding =
+                PreparedOid4vpJweRecipientBinding(
+                    publicJwkJson = Jwk.from(encryptionJwk.toPublicKey()).toJsonString(),
+                    rfc7638Thumbprint = tryGenerateJwkThumbprint(encryptionJwk).getOrThrow(),
+                    keyEncryptionAlgorithm = "ECDH-ES",
+                    contentEncryptionAlgorithm = JarmConfig.DEFAULT_CONTENT_ENCRYPTION_ALG,
+                    responseMode = ResponseMode.DC_API_JWT.value,
+                    clientId = dcApiClientId,
+                    authorizationRequestNonce = "test-nonce",
+                    responseUri = null,
+                    redirectUri = null,
+                    callerOrigin = callerOrigin,
+                )
+
+            val result =
+                command.execute(
+                    SubmitAuthorizationResponseArgs(
+                        resolvedRequest = request,
+                        response = response,
+                        responseMode = ResponseMode.DIRECT_POST,
+                        jarmOptions = JarmOptions(issuer = "wallet", jarmConfig = JarmConfig.encrypted("ECDH-ES")),
+                        preparedOid4vpJweRecipientBinding = binding,
+                    ),
+                )
+
+            assertIs<Err<*>>(result)
+            assertTrue(result.error.message.defaultMessage.contains("transcript inputs changed"))
+            assertEquals(0, httpRequests)
+            assertEquals(0, jarmExecutions)
         }
 
     // =============================

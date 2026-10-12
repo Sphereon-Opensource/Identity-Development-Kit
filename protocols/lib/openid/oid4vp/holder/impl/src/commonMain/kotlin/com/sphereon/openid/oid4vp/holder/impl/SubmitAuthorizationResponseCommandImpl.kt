@@ -25,6 +25,9 @@ import com.sphereon.core.api.encodeUrlGraph
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.TypedServiceCommandAdapter
 import com.sphereon.crypto.core.ResolvedKeyInfo
+import com.sphereon.crypto.core.jose.Jwk
+import com.sphereon.crypto.core.jose.JwkType
+import com.sphereon.crypto.core.jose.tryGenerateJwkThumbprint
 import com.sphereon.crypto.resolution.AdditionalIdentifierLookup
 import com.sphereon.crypto.resolution.extern.JwksKeySelectionPurpose
 import com.sphereon.crypto.resolution.extern.ExternalIdentifierJwksUrlOpts
@@ -51,6 +54,7 @@ import com.sphereon.openid.oid4vp.holder.SubmissionResult
 import com.sphereon.openid.oid4vp.holder.SubmitAuthorizationResponseArgs
 import com.sphereon.openid.oid4vp.holder.SubmitAuthorizationResponseCommand
 import com.sphereon.openid.oid4vp.holder.SubmitAuthorizationResponseCommandService
+import com.sphereon.openid.oid4vp.holder.PreparedOid4vpJweRecipientBinding
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import io.ktor.client.request.forms.submitForm
@@ -130,7 +134,25 @@ class SubmitAuthorizationResponseCommandImpl(
         response: AuthorizationResponse,
         responseMode: ResponseMode?,
         jarmOptions: JarmOptions?,
-    ): IdkResult<SubmissionResult, IdkError> = execute(SubmitAuthorizationResponseArgs(resolvedRequest, response, responseMode, jarmOptions))
+    ): IdkResult<SubmissionResult, IdkError> =
+        execute(SubmitAuthorizationResponseArgs(resolvedRequest, response, responseMode, jarmOptions))
+
+    override suspend fun submitAuthorizationResponse(
+        resolvedRequest: ResolvedOid4vpRequest,
+        response: AuthorizationResponse,
+        responseMode: ResponseMode?,
+        jarmOptions: JarmOptions?,
+        preparedOid4vpJweRecipientBinding: PreparedOid4vpJweRecipientBinding,
+    ): IdkResult<SubmissionResult, IdkError> =
+        execute(
+            SubmitAuthorizationResponseArgs(
+                resolvedRequest,
+                response,
+                responseMode,
+                jarmOptions,
+                preparedOid4vpJweRecipientBinding,
+            ),
+        )
 
     // Everything a holder command fetches runs under the counterparty egress rule, also in the components shared with servers.
     override suspend fun doExecute(
@@ -151,6 +173,27 @@ class SubmitAuthorizationResponseCommandImpl(
             processedArgs.responseMode
                 ?: resolvedRequest.request.responseMode?.let { ResponseMode.fromValue(it) }
                 ?: ResponseMode.DIRECT_POST
+
+        // A managed mdoc response is signed against this exact OID4VP transcript.
+        // Validate the typed binding before dispatching by response mode so a caller
+        // cannot downgrade a prepared encrypted response into a plain response path.
+        processedArgs.preparedOid4vpJweRecipientBinding?.let { binding ->
+            val requestMode = resolvedRequest.request.responseMode ?: ResponseMode.DIRECT_POST.value
+            val callerOrigin =
+                resolvedRequest.request.additionalParameters[DIGITAL_CREDENTIAL_ORIGIN_PARAMETER]
+                    ?.let { (it as? JsonPrimitive)?.contentOrNull }
+            if (binding.responseMode !in setOf(ResponseMode.DIRECT_POST_JWT.value, ResponseMode.DC_API_JWT.value) ||
+                binding.responseMode != requestMode ||
+                binding.responseMode != effectiveResponseMode.value ||
+                binding.clientId != resolvedRequest.request.clientId ||
+                binding.authorizationRequestNonce != resolvedRequest.request.nonce ||
+                binding.responseUri != resolvedRequest.request.responseUri ||
+                binding.redirectUri != resolvedRequest.request.redirectUri ||
+                binding.callerOrigin != callerOrigin
+            ) {
+                return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "OID4VP request transcript inputs changed after mdoc signing preparation"))
+            }
+        }
 
         log.debug("Submitting authorization response with mode: ${effectiveResponseMode.value}")
 
@@ -339,14 +382,12 @@ class SubmitAuthorizationResponseCommandImpl(
     /**
      * Submit authorization response using direct_post.jwt mode (JARM).
      *
-     * Per OpenID4VP 1.0 Section 8.4:
+     * Per OpenID4VP 1.0 final response-mode profile:
      * - POST to response_uri with form parameter "response" containing the JWT
-     * - JWT is signed/encrypted per JARM configuration from client_metadata
-     *
-     * JARM mode is determined by client_metadata:
-     * - authorization_signed_response_alg only: Signed (JWS)
-     * - authorization_encrypted_response_alg only: Encrypted (JWE)
-     * - Both present: Signed then encrypted (nested JWT)
+     * - The `.jwt` response is unsigned and encrypted; signed-only and nested
+     *   signed-plus-encrypted JARM configurations are rejected before JARM creation.
+     * - The JWE recipient is checked against the typed mdoc preparation binding when
+     *   DeviceAuthentication was prepared for this response.
      *
      * @param args The submission args including JARM options
      * @return SubmissionResult with optional redirect_uri
@@ -400,6 +441,25 @@ class SubmitAuthorizationResponseCommandImpl(
                     ),
                 )
 
+        // OpenID4VP 1.0 §8.3/§8.4's final `.jwt` modes require an unsigned,
+        // encrypted response. The same embedded JWK selected while preparing
+        // mdoc DeviceAuthentication must also be the key used for this JWE.
+        // Reject explicit legacy JARM profiles or key-selection drift before
+        // creating/signing any response token.
+        val finalOid4vpJwtMode =
+            digitalCredentialsApi ||
+                args.responseMode == ResponseMode.DIRECT_POST_JWT ||
+                resolvedRequest.request.responseMode == ResponseMode.DIRECT_POST_JWT.value
+        if (finalOid4vpJwtMode) {
+            if (jarmConfig.mode != JarmMode.ENCRYPTED) {
+                return Err(
+                    IdkError.ILLEGAL_ARGUMENT_ERROR(
+                        message = "OpenID4VP .jwt response modes require an unsigned encrypted JARM response",
+                    ),
+                )
+            }
+        }
+
         // Validate signing key is present for signing modes
         if ((jarmConfig.mode == JarmMode.SIGNED || jarmConfig.mode == JarmMode.SIGNED_ENCRYPTED) &&
             jarmOptions.signingKey == null
@@ -424,6 +484,69 @@ class SubmitAuthorizationResponseCommandImpl(
             } else {
                 null
             }
+
+        if (finalOid4vpJwtMode) {
+            val binding = args.preparedOid4vpJweRecipientBinding
+            if (binding != null) {
+                val boundJwk =
+                    try {
+                        json.decodeFromString(Jwk.serializer(), binding.publicJwkJson)
+                    } catch (_: Exception) {
+                        return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Prepared OID4VP JWE recipient binding contains an invalid public JWK"))
+                    }
+                if (boundJwk.d != null || boundJwk.k != null || boundJwk.p != null || boundJwk.q != null ||
+                    boundJwk.dP != null || boundJwk.dQ != null || boundJwk.qInv != null
+                ) {
+                    return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Prepared OID4VP JWE recipient binding must contain public key material only"))
+                }
+                val boundThumbprint = tryGenerateJwkThumbprint(boundJwk).getOrElse { return Err(it) }
+                if (boundThumbprint != binding.rfc7638Thumbprint) {
+                    return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Prepared OID4VP JWE recipient binding thumbprint is inconsistent"))
+                }
+                if (binding.keyEncryptionAlgorithm != jarmConfig.encryptionAlgorithm ||
+                    binding.contentEncryptionAlgorithm !=
+                    (jarmConfig.contentEncryptionAlgorithm ?: JarmConfig.DEFAULT_CONTENT_ENCRYPTION_ALG)
+                ) {
+                    return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Prepared OID4VP JWE recipient binding algorithms changed after mdoc preparation"))
+                }
+                val transcriptJwk =
+                    resolvedRequest.clientMetadata?.selectEncryptedResponseJwk()
+                        ?: return Err(
+                            IdkError.ILLEGAL_ARGUMENT_ERROR(
+                                message = "OpenID4VP .jwt mdoc responses require the embedded encryption JWK used by DeviceAuthentication",
+                            ),
+                        )
+                if (transcriptJwk.d != null || transcriptJwk.k != null || transcriptJwk.p != null || transcriptJwk.q != null ||
+                    transcriptJwk.dP != null || transcriptJwk.dQ != null || transcriptJwk.qInv != null
+                ) {
+                    return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Verifier encryption JWK must contain public key material only"))
+                }
+                val transcriptThumbprint = tryGenerateJwkThumbprint(transcriptJwk).getOrElse { return Err(it) }
+                if (transcriptThumbprint != binding.rfc7638Thumbprint) {
+                    return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Verifier encryption JWK changed after mdoc DeviceAuthentication preparation"))
+                }
+                if (boundJwk.alg?.value != binding.keyEncryptionAlgorithm ||
+                    transcriptJwk.alg?.value != binding.keyEncryptionAlgorithm
+                ) {
+                    return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Verifier encryption algorithm changed after mdoc DeviceAuthentication preparation"))
+                }
+            }
+            val recipientJwk = encryptionRecipient?.identifier?.key as? JwkType
+                ?: return Err(
+                    IdkError.ILLEGAL_ARGUMENT_ERROR(
+                        message = "OpenID4VP .jwt response recipient must be the embedded encryption JWK used by DeviceAuthentication",
+                    ),
+                )
+            val recipientThumbprint = tryGenerateJwkThumbprint(recipientJwk).getOrElse { return Err(it) }
+            val preparedBinding = args.preparedOid4vpJweRecipientBinding
+            val recipientAlgorithm = recipientJwk.alg?.value
+            if (preparedBinding != null &&
+                (preparedBinding.rfc7638Thumbprint != recipientThumbprint ||
+                    recipientAlgorithm != preparedBinding.keyEncryptionAlgorithm)
+            ) {
+                return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "OpenID4VP .jwt response encryption key does not match the prepared DeviceAuthentication binding"))
+            }
+        }
 
         log.debug("Creating JARM authorization response with mode: ${jarmConfig.mode}")
 
