@@ -31,6 +31,7 @@ import com.sphereon.oauth2.server.authorization.command.VerifyPreAuthorizedCodeG
 import com.sphereon.oauth2.server.authorization.command.token.GrantContext
 import com.sphereon.oauth2.server.authorization.command.token.GrantHandler
 import com.sphereon.oauth2.server.authorization.command.token.GrantHandlerKeys
+import com.sphereon.oauth2.server.authorization.provider.CredentialIssuerAudienceResolver
 import com.sphereon.oauth2.server.authorization.wallet.accessTokenClaims
 import dev.zacsweers.metro.ContributesIntoMap
 import dev.zacsweers.metro.Inject
@@ -58,6 +59,7 @@ class PreAuthorizedCodeGrantHandlerImpl(
     private val verifyPreAuthorizedCodeGrant: VerifyPreAuthorizedCodeGrantCommand,
     private val createAccessToken: CreateAccessTokenCommand,
     private val createTokenResponse: CreateTokenResponseCommand,
+    private val credentialIssuerAudienceResolver: CredentialIssuerAudienceResolver,
 ) : GrantHandler {
     override val grantType: String = GrantHandlerKeys.PRE_AUTHORIZED_CODE
 
@@ -111,7 +113,9 @@ class PreAuthorizedCodeGrantHandlerImpl(
                     CreateAccessTokenArgs(
                         subject = verified.subject ?: tokenRequest.clientId,
                         clientId = tokenRequest.clientId,
-                        audience = listOfNotNull(verified.issuerIdentifier),
+                        audience = listOfNotNull(
+                            credentialIssuerAudienceResolver.preAuthorizedCodeAccessTokenAudience(verified.issuerIdentifier),
+                        ),
                         dpopJkt = proofJkt,
                         certificateThumbprintS256 = certThumbprint,
                         additionalClaims = accessTokenClaims,

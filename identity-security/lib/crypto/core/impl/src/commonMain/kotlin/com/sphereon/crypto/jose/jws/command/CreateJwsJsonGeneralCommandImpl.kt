@@ -151,7 +151,7 @@ class CreateJwsJsonGeneralCommandImpl(
 }
 
 /** Keep a caller's explicit managed selector separate from the public JWS projection. */
-private fun managedSigningSelector(
+internal fun managedSigningSelector(
     issuer: ManagedIdentifierOptsOrResult?,
     resolved: KeyInfoType<*>,
 ): KeyInfoType<*>? {

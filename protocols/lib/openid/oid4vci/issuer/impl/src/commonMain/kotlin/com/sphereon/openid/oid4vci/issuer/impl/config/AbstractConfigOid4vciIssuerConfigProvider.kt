@@ -449,8 +449,19 @@ abstract class AbstractConfigOid4vciIssuerConfigProvider(
 
     override suspend fun credentialSigningConfigs(): Map<String, CredentialSigningConfig> {
         val ids = credentialConfigIds() ?: return emptyMap()
-        val issuerKeyName = metadataSigningKeyName()
-        return ids.associateWith { id -> buildCredentialSigningConfig(id, issuerKeyName) }
+        val resolver = keyNameResolver?.invoke()
+        val tenantId = if (resolver != null) tenantId() else null
+        val instanceId = if (resolver != null) instanceId() else null
+        val issuerKeyName = if (keyNameResolver == null) metadataSigningKeyName() else null
+        return ids.associateWith { id ->
+            val signingKeyName =
+                if (resolver != null && tenantId != null && instanceId != null) {
+                    resolver.resolveCredentialSigningKeyName(tenantId, instanceId, id)?.takeIf { it.isNotBlank() }
+                } else {
+                    issuerKeyName
+                }
+            buildCredentialSigningConfig(id, signingKeyName)
+        }
     }
 
     // -------------------------------------------------------------------------
@@ -756,7 +767,7 @@ abstract class AbstractConfigOid4vciIssuerConfigProvider(
         // While an [IssuerKeyNameResolver] is bound it is the only source of the signing key name, so
         // neither `credentials.[<id>].signingKeyAlias` nor `credentialDefaults.signingKeyAlias` is
         // read: a per-credential configuration value must never name key material, and a null
-        // issuer key means refuse rather than fall back. Without a bound seam the deployment's own
+        // resolved key means refuse rather than fall back. Without a bound seam the deployment's own
         // configured alias applies, falling back to the issuer-level signing key so a deployment
         // provisioning a single tenant key need not repeat it on every credential configuration.
         val signingKeyName =

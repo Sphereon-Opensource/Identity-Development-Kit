@@ -55,6 +55,42 @@ import kotlin.time.Clock
  */
 class Oid4vciIssuedCredentialAcceptanceTest {
     @Test
+    fun verificationRefusalsRetainDistinctReasonsAndOriginalProviderCause() = runTest {
+        val issuer = "https://issuer.example"
+        val raw = buildTestJwtVc(
+            """{"@context":["https://www.w3.org/ns/credentials/v2"],"type":["VerifiableCredential"],"issuer":"$issuer","credentialSubject":{"id":"did:example:holder"}}""",
+            headerJson = """{"alg":"ES256","typ":"vc+jwt"}""",
+        )
+        val authentication = WalletIssuerAuthenticationResult(
+            issuer = issuer,
+            trustedJwks = Json.parseToJsonElement("""{"keys":[{"kty":"EC","crv":"P-256","x":"x","y":"y","kid":"issuer-test"}]}""").jsonObject,
+            provenance = listOf(WalletIssuerAuthenticationProvenance("pinned-jwks", "issuer-policy")),
+        )
+        val providerFailure = IdkError.fromString(code = "TEST_PROVIDER_REFUSED", message = "private-provider-details")
+        val cases = listOf(
+            Triple(false, true, true) to IssuedCredentialVerificationReason.JWS_INVALID,
+            Triple(true, false, true) to IssuedCredentialVerificationReason.JWS_UNTRUSTED,
+            Triple(true, true, false) to IssuedCredentialVerificationReason.JWS_CRYPTO_UNVERIFIED,
+        )
+        for ((flags, reason) in cases) {
+            val verifier = RecordingVerifyJwsCommand(valid = flags.first, trusted = flags.second, crypto = flags.third)
+            val result = testAcceptance(verifyJws = verifier).verify(
+                "employee", CredentialFormat.JWT_VC_JSON_LD,
+                listOf(testInstance(raw, CredentialFormat.JWT_VC_JSON_LD)), authentication,
+            )
+            assertTrue(result.isErr)
+            assertEquals(reason, (result.error as IssuedCredentialVerificationError).reason)
+        }
+        val failed = testAcceptance(verifyJws = RecordingVerifyJwsCommand(failure = providerFailure)).verify(
+            "employee", CredentialFormat.JWT_VC_JSON_LD,
+            listOf(testInstance(raw, CredentialFormat.JWT_VC_JSON_LD)), authentication,
+        )
+        assertTrue(failed.isErr)
+        assertEquals(IssuedCredentialVerificationReason.JWS_COMMAND_FAILED, (failed.error as IssuedCredentialVerificationError).reason)
+        assertTrue(failed.error.causes.single() === providerFailure, "retain provider error identity for diagnosis")
+    }
+
+    @Test
     fun verifyVcdm11JwtRejectsMalformedCredentialAfterClassification() =
         runTest {
             val verify = RecordingVerifyJwsCommand()
@@ -540,7 +576,12 @@ private fun testAcceptance(
         vcdmDataIntegrityVerifier = vcdmDataIntegrityVerifier,
     )
 
-private class RecordingVerifyJwsCommand : VerifyJwsCommand {
+private class RecordingVerifyJwsCommand(
+    private val valid: Boolean = true,
+    private val trusted: Boolean = true,
+    private val crypto: Boolean = true,
+    private val failure: IdkError? = null,
+) : VerifyJwsCommand {
     override val commandId: String = VerifyJwsCommand.COMMAND_ID
     override val inputTypeToken: TypeToken<VerifyJwsArgs> = typeToken<VerifyJwsArgs>()
     override val outputTypeToken: TypeToken<JwsValidationResult> = typeToken<JwsValidationResult>()
@@ -551,11 +592,14 @@ private class RecordingVerifyJwsCommand : VerifyJwsCommand {
 
     override suspend fun execute(args: VerifyJwsArgs): IdkResult<JwsValidationResult, IdkError> {
         lastArgs = args
+        failure?.let { return Err(it) }
         val jws = args.jws ?: return IdkResult.err(IdkError.fromString("missing jws"))
         return Ok(
             JwsValidationResult(
                 jws = JwsJsonGeneralWithIdentifiers(payload = "", signatures = emptyList()),
-                isValid = true,
+                isValid = valid,
+                trustEstablished = trusted,
+                cryptoVerified = crypto,
                 parsedPayload = Json.parseToJsonElement((jws as JwsCompact).value.split(".")[1].decodeFromBase64Url().decodeToString()).jsonObject,
             ),
         )

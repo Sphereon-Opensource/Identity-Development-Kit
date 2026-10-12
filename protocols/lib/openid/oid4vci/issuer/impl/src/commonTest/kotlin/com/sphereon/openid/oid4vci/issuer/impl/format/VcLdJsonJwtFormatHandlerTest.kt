@@ -167,7 +167,7 @@ class VcLdJsonJwtFormatHandlerTest {
         statusEnricher: CredentialStatusEnricher? = null,
     ): VcLdJsonJwtFormatHandler =
         VcLdJsonJwtFormatHandler(
-            jwtService = FakeJwtService(capturedPayload),
+            signatureService = (FakeJwtService(capturedPayload)).asSignatureServiceFixture(),
             kms = kms,
             issuerKeyIdResolver = issuerKeyIdResolver,
             contextValidator = JsonLdContextValidator(bundleLoader),
@@ -475,7 +475,7 @@ class VcLdJsonJwtFormatHandlerTest {
             val jwtService = RecordingJwtService()
             val handler =
                 VcLdJsonJwtFormatHandler(
-                    jwtService = jwtService,
+                    signatureService = (jwtService).asSignatureServiceFixture(),
                     kms = TestKmsMock(),
                     issuerKeyIdResolver = StubIssuerKeyIdResolver,
                     contextValidator = JsonLdContextValidator(bundleLoader),
@@ -500,7 +500,7 @@ class VcLdJsonJwtFormatHandlerTest {
             val jwtService = RecordingJwtService()
             val handler =
                 VcLdJsonJwtFormatHandler(
-                    jwtService = jwtService,
+                    signatureService = (jwtService).asSignatureServiceFixture(),
                     kms = TestKmsMock(),
                     issuerKeyIdResolver = AcceptingIssuerKeyIdResolver,
                     contextValidator = JsonLdContextValidator(bundleLoader),
@@ -545,7 +545,7 @@ class VcLdJsonJwtFormatHandlerTest {
             val jwtService = RecordingJwtService()
             val handler =
                 VcLdJsonJwtFormatHandler(
-                    jwtService = jwtService,
+                    signatureService = (jwtService).asSignatureServiceFixture(),
                     kms = kms,
                     issuerKeyIdResolver = StubIssuerKeyIdResolver,
                     contextValidator = JsonLdContextValidator(bundleLoader),
@@ -579,7 +579,7 @@ class VcLdJsonJwtFormatHandlerTest {
             val jwtService = RecordingJwtService()
             val handler =
                 VcLdJsonJwtFormatHandler(
-                    jwtService = jwtService,
+                    signatureService = (jwtService).asSignatureServiceFixture(),
                     kms = kms,
                     issuerKeyIdResolver = StubIssuerKeyIdResolver,
                     contextValidator = JsonLdContextValidator(bundleLoader),
@@ -654,7 +654,7 @@ class VcLdJsonJwtFormatHandlerTest {
                 val signer = RecordingJwtService()
                 val handler =
                     VcLdJsonJwtFormatHandler(
-                        jwtService = signer,
+                        signatureService = (signer).asSignatureServiceFixture(),
                         kms = TestKmsMock(),
                         issuerKeyIdResolver = StubIssuerKeyIdResolver,
                         contextValidator = JsonLdContextValidator(bundleLoader),
@@ -678,7 +678,7 @@ class VcLdJsonJwtFormatHandlerTest {
                 val signer = RecordingJwtService()
                 val result =
                     VcLdJsonJwtFormatHandler(
-                        jwtService = signer,
+                        signatureService = (signer).asSignatureServiceFixture(),
                         kms = TestKmsMock(),
                         issuerKeyIdResolver = AcceptingIssuerKeyIdResolver,
                         contextValidator = JsonLdContextValidator(bundleLoader),
@@ -731,7 +731,7 @@ class VcLdJsonJwtFormatHandlerTest {
                 }
             val handler =
                 VcLdJsonJwtFormatHandler(
-                    jwtService = FakeJwtService(),
+                    signatureService = (FakeJwtService()).asSignatureServiceFixture(),
                     kms = TestKmsMock(),
                     issuerKeyIdResolver = StubIssuerKeyIdResolver,
                     contextValidator = JsonLdContextValidator(poisonedLoader),
@@ -755,7 +755,7 @@ class VcLdJsonJwtFormatHandlerTest {
             // as a soft pass.
             val handler =
                 VcLdJsonJwtFormatHandler(
-                    jwtService = FakeJwtService(),
+                    signatureService = (FakeJwtService()).asSignatureServiceFixture(),
                     kms = TestKmsMock(),
                     issuerKeyIdResolver = StubIssuerKeyIdResolver,
                     contextValidator = JsonLdContextValidator(bundleLoader),
@@ -776,7 +776,7 @@ class VcLdJsonJwtFormatHandlerTest {
             val signer = RecordingJwtService()
             val handler =
                 VcLdJsonJwtFormatHandler(
-                    jwtService = signer,
+                    signatureService = (signer).asSignatureServiceFixture(),
                     kms = TestKmsMock(),
                     issuerKeyIdResolver = StubIssuerKeyIdResolver,
                     contextValidator = JsonLdContextValidator(bundleLoader),
@@ -800,7 +800,7 @@ class VcLdJsonJwtFormatHandlerTest {
             val signer = RecordingJwtService()
             val handler =
                 VcLdJsonJwtFormatHandler(
-                    jwtService = signer,
+                    signatureService = (signer).asSignatureServiceFixture(),
                     kms = TestKmsMock(),
                     issuerKeyIdResolver = StubIssuerKeyIdResolver,
                     contextValidator = JsonLdContextValidator(bundleLoader),
@@ -822,7 +822,7 @@ class VcLdJsonJwtFormatHandlerTest {
             val signer = RecordingJwtService()
             val handler =
                 VcLdJsonJwtFormatHandler(
-                    jwtService = signer,
+                    signatureService = (signer).asSignatureServiceFixture(),
                     kms = TestKmsMock(),
                     issuerKeyIdResolver = StubIssuerKeyIdResolver,
                     contextValidator = JsonLdContextValidator(bundleLoader),
@@ -906,7 +906,7 @@ class VcLdJsonJwtFormatHandlerTest {
         runTest {
             val signer = RecordingJwtService()
             val handler = VcLdJsonJwtFormatHandler(
-                jwtService = signer,
+                signatureService = (signer).asSignatureServiceFixture(),
                 kms = TestKmsMock(),
                 issuerKeyIdResolver = StubIssuerKeyIdResolver,
                 contextValidator = JsonLdContextValidator(bundleLoader),

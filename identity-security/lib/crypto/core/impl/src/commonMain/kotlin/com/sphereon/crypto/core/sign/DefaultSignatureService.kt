@@ -26,6 +26,8 @@ import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.crypto.core.KeyInfoType
 import com.sphereon.crypto.core.kms.KeyManagerService
+import com.sphereon.crypto.core.kms.command.CreateRawSignatureArgs
+import com.sphereon.crypto.core.kms.command.CreateRawSignatureCommand
 import com.sphereon.crypto.core.sign.model.CompleteSignatureRequest
 import com.sphereon.crypto.core.sign.model.DigestRequest
 import com.sphereon.crypto.core.sign.model.DigestResponse
@@ -40,6 +42,13 @@ import com.sphereon.crypto.core.sign.model.SignatureParameters
 import com.sphereon.crypto.jose.jws.assembleCompact
 import com.sphereon.crypto.jose.jws.command.CreateJwsJsonArgs
 import com.sphereon.crypto.jose.jws.command.PrepareJwsCommand
+import com.sphereon.crypto.jose.jws.command.managedSigningSelector
+import com.sphereon.crypto.jose.jws.command.jwsSigningAlgorithmCompatibilityFailure
+import com.sphereon.crypto.jose.jws.command.verifyManagedJwsSigningResult
+import com.sphereon.crypto.resolution.managed.ManagedIdentifierKeyResult
+import com.sphereon.crypto.resolution.managed.ManagedOptsKeyInfo
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonPrimitive
 import com.sphereon.di.session.SessionScope
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
@@ -50,7 +59,7 @@ import kotlin.time.Clock
 /**
  * Default IDK implementation of [SignatureService].
  *
- * Supports RAW/JWS/COSE signing by delegating to [KeyManagerService].
+ * Uses the routed signing command for JWS and [KeyManagerService] for local RAW/COSE operations.
  * When EDK is on the classpath, EDK's implementation replaces this binding
  * and adds support for CAdES/PAdES/JAdES/XAdES.
  */
@@ -61,6 +70,7 @@ class DefaultSignatureService(
     private val execution: SessionExecution,
     private val keyManagerService: KeyManagerService,
     private val prepareJwsCommand: PrepareJwsCommand,
+    private val createRawSignatureCommand: CreateRawSignatureCommand,
 ) : CoreSignatureService {
     @dev.zacsweers.metro.ContributesTo(scope = SessionScope::class)
     interface Graph {
@@ -126,14 +136,54 @@ class DefaultSignatureService(
             )
 
         val prepareResult = prepareJwsCommand.execute(prepareArgs)
-        val prepared = prepareResult.getOrElse { error -> return Err(error) }
+        val prepared = prepareResult.getOrElse { error ->
+            log.warn("JWS_SIGNING_REFUSED stage=prepare code=${error.code}")
+            return Err(error)
+        }
+        val resolvedKey = (prepared.identifier as ManagedIdentifierKeyResult).keyInfo
+        val headerAlgorithm = prepared.jws.protectedHeader?.get("alg")?.jsonPrimitive?.contentOrNull
+        val managedSelection = try {
+            // Preparation yields public material. Keep private signing in the KMS selected by
+            // that resolution, without borrowing custody for caller-supplied inline material.
+            managedSigningSelector(ManagedOptsKeyInfo(identifier = keyInfo), resolvedKey).also { selector ->
+                if (selector != null) {
+                    resolvedKey.jwsSigningAlgorithmCompatibilityFailure(headerAlgorithm)?.let { error(it) }
+                }
+            }
+        } catch (expected: Exception) {
+            log.warn("JWS_SIGNING_REFUSED stage=managed-selection cause=${expected::class.simpleName}")
+            return Err(IdkError.fromString("Invalid managed signing selection", exception = expected))
+        }
 
-        val signatureBytes =
+        val signatureResult =
             try {
-                keyManagerService.createRawSignature(keyInfo, prepared.signingInput, requireX5Chain = false)
+                // The local key manager intentionally bypasses transport routing. JWS must use
+                // the existing authenticated command boundary to reach the tenant's KMS owner.
+                createRawSignatureCommand.execute(CreateRawSignatureArgs(
+                    keyInfo = managedSelection ?: resolvedKey,
+                    input = prepared.signingInput,
+                    requireX5Chain = false,
+                ))
             } catch (expected: Exception) {
+                log.error("JWS_SIGNING_FAILED stage=kms-sign cause=${expected::class.simpleName}")
                 return Err(IdkError.UNKNOWN_ERROR(message = "JWS signing failed: ${expected.message}", exception = expected))
             }
+        val signatureBytes = signatureResult.getOrElse { error ->
+            log.warn("JWS_SIGNING_REFUSED stage=kms-sign code=${error.code}")
+            return Err(error)
+        }.signature
+        if (managedSelection != null) {
+            val matches = try {
+                verifyManagedJwsSigningResult(resolvedKey, headerAlgorithm, prepared.signingInput, signatureBytes)
+            } catch (expected: Exception) {
+                log.error("JWS_SIGNING_FAILED stage=signature-consistency cause=${expected::class.simpleName}")
+                return Err(IdkError.fromString("Managed signature verification failed", exception = expected))
+            }
+            if (!matches) {
+                log.warn("JWS_SIGNING_REFUSED stage=signature-consistency reason=prepared-key-mismatch")
+                return Err(IdkError.fromString("Managed signature does not match the prepared public key"))
+            }
+        }
 
         val compactResult = prepared.assembleCompact(signatureBytes)
 

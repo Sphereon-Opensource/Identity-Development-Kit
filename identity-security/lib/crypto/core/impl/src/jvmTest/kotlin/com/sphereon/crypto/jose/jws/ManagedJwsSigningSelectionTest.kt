@@ -2,6 +2,8 @@
 package com.sphereon.crypto.jose.jws
 
 import com.sphereon.core.api.IdkResult
+import com.sphereon.core.api.Err
+import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.session.asCoreApiServiceGraph
 import com.sphereon.crypto.core.KeyInfo
@@ -13,6 +15,9 @@ import com.sphereon.crypto.core.generic.KeyOperations
 import com.sphereon.crypto.core.jose.Jwk
 import com.sphereon.crypto.core.generic.SignatureAlgorithm
 import com.sphereon.crypto.core.kms.KeyManagerService
+import com.sphereon.crypto.core.sign.DefaultSignatureService
+import com.sphereon.crypto.core.sign.model.SignInput
+import com.sphereon.crypto.core.sign.model.JwsSignatureParameters
 import com.sphereon.crypto.core.kms.asKeyManagerServiceGraph
 import com.sphereon.crypto.core.kms.command.CreateRawSignatureArgs
 import com.sphereon.crypto.core.kms.command.CreateRawSignatureCommand
@@ -29,6 +34,7 @@ import dev.whyoleg.cryptography.CryptographyProvider
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
+import io.mockk.verify
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -36,6 +42,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
 import kotlin.test.assertNotNull
+import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 class ManagedJwsSigningSelectionTest {
@@ -209,6 +216,103 @@ class ManagedJwsSigningSelectionTest {
         val result = command.execute(request)
         assertTrue(result.isErr, "A signature from another managed key must not be returned")
         assertTrue(result.error.message.defaultMessage.orEmpty().contains("does not match the prepared public key"))
+    }
+
+    @Test
+    fun sharedSignatureServiceRetainsResolvedProviderWithoutExportingKey() = runTest {
+        initialize()
+        val request = args().copy(issuer = ManagedOptsAlias(identifier = alias))
+        val prepared = jwt.prepareJws(request)
+        assertTrue(prepared.isOk)
+        val prepare = mockk<PrepareJwsCommand>()
+        val localKms = mockk<KeyManagerService>()
+        val remoteSign = mockk<CreateRawSignatureCommand>()
+        coEvery { prepare.execute(any()) } returns prepared
+        coEvery { remoteSign.execute(any()) } coAnswers {
+            val input = firstArg<CreateRawSignatureArgs>()
+            val selection = assertNotNull(input.keyInfo)
+            assertNull(selection.key)
+            assertEquals(alias, selection.alias)
+            assertEquals(providerId, selection.providerId)
+            IdkResult.ok(CreateRawSignatureResult(kms.createRawSignature(privateKey, input.input, false)))
+        }
+        val service = DefaultSignatureService(mockk<SessionExecution>(relaxed = true), localKms, prepare, remoteSign)
+        val result = service.sign(SignInput(byteArrayOf()), KeyInfo<Nothing>(alias = alias),
+            JwsSignatureParameters(issuer = request.issuer!!, payload = request.payload))
+        assertTrue(result.isOk, "Shared JWS signing failed: ${result.errorOrNull()}")
+        assertEquals(3, result.value.signedData.decodeToString().split('.').size)
+        coVerify(exactly = 1) { remoteSign.execute(any()) }
+        coVerify(exactly = 0) { localKms.createRawSignature(any(), any(), any()) }
+    }
+
+    @Test
+    fun sharedSignatureServiceRefusesConflictingAliasBeforeSigning() = runTest {
+        initialize()
+        val request = args()
+        val prepared = jwt.prepareJws(request)
+        assertTrue(prepared.isOk)
+        val prepare = mockk<PrepareJwsCommand>()
+        val localKms = mockk<KeyManagerService>()
+        val remoteSign = mockk<CreateRawSignatureCommand>()
+        coEvery { prepare.execute(any()) } returns prepared
+        val execution = mockk<SessionExecution>(relaxed = true)
+        val service = DefaultSignatureService(execution, localKms, prepare, remoteSign)
+        val result = service.sign(SignInput(byteArrayOf()), KeyInfo<Nothing>(alias = "foreign-key"),
+            JwsSignatureParameters(issuer = request.issuer!!, payload = request.payload))
+        assertTrue(result.isErr)
+        verify { execution.log.warn(match { it.startsWith("JWS_SIGNING_REFUSED stage=managed-selection") }) }
+        coVerify(exactly = 0) { remoteSign.execute(any()) }
+        coVerify(exactly = 0) { localKms.createRawSignature(any(), any(), any()) }
+    }
+
+    @Test
+    fun sharedSignatureServiceRefusesSignatureFromAnotherKey() = runTest {
+        initialize()
+        val request = args()
+        val prepared = jwt.prepareJws(request)
+        assertTrue(prepared.isOk)
+        val other = kms.generateKeyAsync(alias = "other-shared-signing-key", alg = SignatureAlgorithm.ECDSA_SHA256)
+            .joseToManagedKeyInfo(KeyVisibility.PRIVATE)
+        val prepare = mockk<PrepareJwsCommand>()
+        val localKms = mockk<KeyManagerService>()
+        val remoteSign = mockk<CreateRawSignatureCommand>()
+        coEvery { prepare.execute(any()) } returns prepared
+        coEvery { remoteSign.execute(any()) } coAnswers {
+            IdkResult.ok(CreateRawSignatureResult(kms.createRawSignature(other, firstArg<CreateRawSignatureArgs>().input, false)))
+        }
+        val execution = mockk<SessionExecution>(relaxed = true)
+        val service = DefaultSignatureService(execution, localKms, prepare, remoteSign)
+        val result = service.sign(SignInput(byteArrayOf()), KeyInfo<Nothing>(alias = alias),
+            JwsSignatureParameters(issuer = request.issuer!!, payload = request.payload))
+        assertTrue(result.isErr, "Shared service must reject a signature from another key")
+        verify { execution.log.warn("JWS_SIGNING_REFUSED stage=signature-consistency reason=prepared-key-mismatch") }
+    }
+
+    @Test
+    fun sharedSignatureServicePreservesRoutedDenialAndLogsItsStage() = runTest {
+        initialize()
+        val request = args()
+        val prepared = jwt.prepareJws(request)
+        assertTrue(prepared.isOk)
+        val prepare = mockk<PrepareJwsCommand>()
+        val localKms = mockk<KeyManagerService>()
+        val remoteSign = mockk<CreateRawSignatureCommand>()
+        val denial = IdkError.fromString("sensitive-provider-detail")
+        coEvery { prepare.execute(any()) } returns prepared
+        coEvery { remoteSign.execute(any()) } returns Err(denial)
+        val execution = mockk<SessionExecution>(relaxed = true)
+        val signingLog = execution.log
+        val service = DefaultSignatureService(execution, localKms, prepare, remoteSign)
+
+        val result = service.sign(SignInput(byteArrayOf()), KeyInfo<Nothing>(alias = alias),
+            JwsSignatureParameters(issuer = request.issuer!!, payload = request.payload))
+
+        assertTrue(result.isErr)
+        assertSame(denial, result.error)
+        verify { signingLog.warn("JWS_SIGNING_REFUSED stage=kms-sign code=${denial.code}") }
+        verify(exactly = 0) { signingLog.warn(match { it.contains("sensitive-provider-detail") }) }
+        coVerify(exactly = 1) { remoteSign.execute(any()) }
+        coVerify(exactly = 0) { localKms.createRawSignature(any(), any(), any()) }
     }
 
     private fun IdkResult<*, *>.errorOrNull(): Any? = if (isErr) error else null

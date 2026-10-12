@@ -26,4 +26,11 @@ data class CredentialIssuerAudience(
 
 interface CredentialIssuerAudienceResolver {
     suspend fun boundCredentialIssuers(): List<CredentialIssuerAudience>
+
+    /**
+     * Access-token audience for a verified pre-authorized credential offer. Standalone issuers
+     * use their issuer identifier; an assembly may map an issuer it owns to its resource-server
+     * audience without changing the issuer identifier used for discovery and proof validation.
+     */
+    suspend fun preAuthorizedCodeAccessTokenAudience(issuerIdentifier: String?): String? = issuerIdentifier
 }

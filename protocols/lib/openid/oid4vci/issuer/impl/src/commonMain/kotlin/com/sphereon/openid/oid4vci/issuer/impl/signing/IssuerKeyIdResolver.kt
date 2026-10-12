@@ -30,10 +30,13 @@ import com.sphereon.did.manager.DidProviderRegistry
 import com.sphereon.did.models.VerificationPurpose
 import com.sphereon.did.resolver.DidResolutionResult
 import com.sphereon.did.resolver.DidResolverRegistry
+import com.sphereon.openid.oid4vci.issuer.spi.IssuerPublicJwkSource
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
+import dev.zacsweers.metro.Provider
 import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 
 /**
@@ -113,6 +116,7 @@ class DefaultIssuerKeyIdResolver(
     private val didProviderRegistry: DidProviderRegistry,
     private val didResolverRegistry: DidResolverRegistry,
     private val configService: PrincipalConfigService,
+    private val publicJwkSource: Provider<IssuerPublicJwkSource>? = null,
 ) : IssuerKeyIdResolver {
     override suspend fun resolveDidVerificationMethodId(
         keyAlias: String,
@@ -242,6 +246,13 @@ class DefaultIssuerKeyIdResolver(
     private suspend fun loadPublicJwk(keyName: String): IdkResult<Jwk, IdkError> {
         if (keyName.isBlank()) {
             return Err(IdkError.fromString(code = "signing_key_unavailable", message = SIGNING_KEY_UNAVAILABLE))
+        }
+        val managedPublicJwkSource = publicJwkSource
+        if (managedPublicJwkSource != null) {
+            val publicJwk = runCatching { managedPublicJwkSource.invoke().resolvePublicJwk(keyName) }.getOrNull()
+            val jwk = publicJwk?.let { runCatching { Json.decodeFromJsonElement(Jwk.serializer(), it) }.getOrNull() }
+                ?: return Err(IdkError.fromString(code = "signing_key_unavailable", message = SIGNING_KEY_UNAVAILABLE))
+            return Ok(jwk)
         }
         val keyResult = kms.getKeyResult(KeyInfo<Nothing>(alias = keyName))
         if (keyResult.isErr) {

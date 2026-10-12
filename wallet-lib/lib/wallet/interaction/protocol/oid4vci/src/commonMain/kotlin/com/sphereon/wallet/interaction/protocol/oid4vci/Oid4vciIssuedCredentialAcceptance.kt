@@ -133,34 +133,43 @@ class Oid4vciIssuedCredentialAcceptance(
         if (credentialFormat.isJwtVc()) {
             val suppliedAuthentication = issuerAuthentication ?: return verificationFailure(
                 credentialConfigurationId,
-                "issuer authentication keys are unavailable",
+                IssuedCredentialVerificationReason.ISSUER_KEYS_MISSING, "issuer authentication keys are unavailable",
             )
             val authentication = suppliedAuthentication.admitForIssuer(suppliedAuthentication.issuer)
-                ?: return verificationFailure(credentialConfigurationId, "issuer authentication admission failed")
+                ?: return verificationFailure(credentialConfigurationId, IssuedCredentialVerificationReason.ISSUER_AUTHENTICATION_REFUSED, "issuer authentication admission failed")
             if (expectedIssuer != null && authentication.issuer != expectedIssuer) {
                 return verificationFailure(
                     credentialConfigurationId,
-                    "resolved issuer authentication is not bound to the credential issuer",
+                    IssuedCredentialVerificationReason.ISSUER_AUTHENTICATION_MISMATCH, "resolved issuer authentication is not bound to the credential issuer",
                 )
             }
             val verifier = verifyJwsCommand ?: return verificationFailure(
                 credentialConfigurationId,
-                "JWS verification command is unavailable",
+                IssuedCredentialVerificationReason.JWS_COMMAND_MISSING, "JWS verification command is unavailable",
             )
             for (instance in instances) {
                 val raw = instance.requireRaw()
                 val classification = acceptedVcdmCredential(credentialFormat, raw)
-                    ?: return verificationFailure(credentialConfigurationId, "credential does not match its VCDM profile")
+                    ?: return verificationFailure(credentialConfigurationId, IssuedCredentialVerificationReason.CREDENTIAL_PROFILE_MISMATCH, "credential does not match its VCDM profile")
                 val verifyResult = verifier.execute(
                     VerifyJwsArgs(
                         jws = JwsCompact(raw),
                         trustedJwks = authentication.trustedJwks,
                     ),
                 )
-                if (verifyResult.isErr || !verifyResult.value.isValid ||
-                    !verifyResult.value.trustEstablished || verifyResult.value.cryptoVerified != true
-                ) {
-                    return verificationFailure(credentialConfigurationId, "issuer JWS verification failed")
+                if (verifyResult.isErr) {
+                    return verificationFailure(credentialConfigurationId, IssuedCredentialVerificationReason.JWS_COMMAND_FAILED,
+                        "issuer JWS verification failed", verifyResult.error)
+                }
+                val verified = verifyResult.value
+                val refusal = when {
+                    !verified.isValid -> IssuedCredentialVerificationReason.JWS_INVALID
+                    !verified.trustEstablished -> IssuedCredentialVerificationReason.JWS_UNTRUSTED
+                    verified.cryptoVerified != true -> IssuedCredentialVerificationReason.JWS_CRYPTO_UNVERIFIED
+                    else -> null
+                }
+                if (refusal != null) {
+                    return verificationFailure(credentialConfigurationId, refusal, "issuer JWS verification failed")
                 }
                 val verifiedPayload = verifyResult.value.parsedPayload
                 val verifiedDocument = if (classification.document.version.value == "1.1") {
@@ -173,7 +182,7 @@ class Oid4vciIssuedCredentialAcceptance(
                 if (credentialIssuer == null || credentialIssuer != authentication.issuer ||
                     (jwtIssuer != null && jwtIssuer != authentication.issuer)
                 ) {
-                    return verificationFailure(credentialConfigurationId, "credential issuer does not match resolved issuer authentication")
+                    return verificationFailure(credentialConfigurationId, IssuedCredentialVerificationReason.CREDENTIAL_ISSUER_MISMATCH, "credential issuer does not match resolved issuer authentication")
                 }
             }
             return Ok(Unit)
@@ -194,11 +203,11 @@ class Oid4vciIssuedCredentialAcceptance(
                 )
             if (verifyResult.isErr) {
                 return Err(
-                    IdkError.fromString(
-                        code = "ISSUED_CREDENTIAL_VERIFICATION_FAILED",
-                        message =
-                            "Refusing to store issued credential '$credentialConfigurationId': " +
-                                "issuer-signature verification failed: ${verifyResult.error.message.defaultMessage}",
+                    IssuedCredentialVerificationError(
+                        reason = IssuedCredentialVerificationReason.SD_JWT_VERIFICATION_FAILED,
+                        credentialConfigurationId = credentialConfigurationId,
+                        description = "issuer-signature verification failed: ${verifyResult.error.message.defaultMessage}",
+                        providerError = verifyResult.error,
                     ),
                 )
             }
@@ -212,19 +221,19 @@ class Oid4vciIssuedCredentialAcceptance(
         expectedIssuer: String?,
     ): IdkResult<Unit, IdkError> {
         val verifier = vcdmDataIntegrityVerifier
-            ?: return verificationFailure(credentialConfigurationId, "Data Integrity verifier is unavailable")
+            ?: return verificationFailure(credentialConfigurationId, IssuedCredentialVerificationReason.DATA_INTEGRITY_VERIFIER_MISSING, "Data Integrity verifier is unavailable")
         for (instance in instances) {
             val document = parseBareVcdm(instance.requireRaw())
-                ?: return verificationFailure(credentialConfigurationId, "ldp_vc credential is not a JSON object")
+                ?: return verificationFailure(credentialConfigurationId, IssuedCredentialVerificationReason.LDP_DOCUMENT_MALFORMED, "ldp_vc credential is not a JSON object")
             val classification = VcdmClassifier.classifyDocument(document).getOrNull()
-                ?: return verificationFailure(credentialConfigurationId, "ldp_vc credential is not a supported VCDM JSON document")
+                ?: return verificationFailure(credentialConfigurationId, IssuedCredentialVerificationReason.LDP_PROFILE_UNSUPPORTED, "ldp_vc credential is not a supported VCDM JSON document")
             if (classification.kind != VcdmDocumentKind.CREDENTIAL) {
-                return verificationFailure(credentialConfigurationId, "ldp_vc credential is not a VerifiableCredential")
+                return verificationFailure(credentialConfigurationId, IssuedCredentialVerificationReason.LDP_NOT_CREDENTIAL, "ldp_vc credential is not a VerifiableCredential")
             }
             val issuer = document["issuer"]?.issuerIdentifier()
-                ?: return verificationFailure(credentialConfigurationId, "ldp_vc credential issuer is missing")
+                ?: return verificationFailure(credentialConfigurationId, IssuedCredentialVerificationReason.LDP_ISSUER_MISSING, "ldp_vc credential issuer is missing")
             if (expectedIssuer != null && issuer != expectedIssuer) {
-                return verificationFailure(credentialConfigurationId, "ldp_vc credential issuer does not match the resolved issuer")
+                return verificationFailure(credentialConfigurationId, IssuedCredentialVerificationReason.LDP_ISSUER_MISMATCH, "ldp_vc credential issuer does not match the resolved issuer")
             }
             val verified = verifier.verify(
                 VcdmDataIntegrityVerificationArgs(
@@ -235,7 +244,7 @@ class Oid4vciIssuedCredentialAcceptance(
             )
             val unsecuredDocument = JsonObject(document - "proof")
             if (verified.isErr || verified.value.proofCount < 1 || verified.value.verifiedDocument != unsecuredDocument) {
-                return verificationFailure(credentialConfigurationId, "ldp_vc Data Integrity verification failed")
+                return verificationFailure(credentialConfigurationId, IssuedCredentialVerificationReason.DATA_INTEGRITY_VERIFICATION_FAILED, "ldp_vc Data Integrity verification failed", if (verified.isErr) verified.error else null)
             }
         }
         return Ok(Unit)
@@ -243,14 +252,11 @@ class Oid4vciIssuedCredentialAcceptance(
 
     private fun verificationFailure(
         credentialConfigurationId: String,
-        reason: String,
+        reason: IssuedCredentialVerificationReason,
+        description: String,
+        providerError: IdkError? = null,
     ): IdkResult<Unit, IdkError> =
-        Err(
-            IdkError.fromString(
-                code = "ISSUED_CREDENTIAL_VERIFICATION_FAILED",
-                message = "Refusing to store issued credential '$credentialConfigurationId': $reason",
-            ),
-        )
+        Err(IssuedCredentialVerificationError(reason, credentialConfigurationId, description, providerError))
 
     /**
      * RECONCILE (actual side): derives ACTUAL type refs from each issued payload (vct / docType /

@@ -385,6 +385,8 @@ class HandleTokenRequestCommandImplTest {
                         verifyPreAuthorizedCodeGrant = commands.verifyPreAuthorizedCodeGrant,
                         createAccessToken = commands.createAccessToken,
                         createTokenResponse = commands.createTokenResponse,
+                        credentialIssuerAudienceResolver =
+                            com.sphereon.oauth2.server.authorization.impl.provider.NoCredentialIssuerAudienceResolver(),
                     )
                 },
             com.sphereon.oauth2.server.authorization.command.token.GrantHandlerKeys.DEVICE_CODE to

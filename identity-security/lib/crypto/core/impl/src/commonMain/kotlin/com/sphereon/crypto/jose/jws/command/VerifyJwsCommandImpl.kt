@@ -51,6 +51,7 @@ import com.sphereon.di.session.SessionContext
 import com.sphereon.di.session.SessionScope
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
+import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -87,13 +88,19 @@ class VerifyJwsCommandImpl(
         val appliedArgs = applyDuring(args)
 
         // Validate required fields
-        val jws = appliedArgs.jws ?: return IdkResult.err(IdkError.fromString("JWS is required"))
+        val jws = appliedArgs.jws ?: run {
+            log.warn("JWS_VERIFICATION_FAILED stage=input reason=jws_missing")
+            return IdkResult.err(IdkError.fromString("JWS is required"))
+        }
 
         // Convert to general format
         val general =
             try {
                 JwsUtils.toGeneral(jws)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (expected: Exception) {
+                log.warn("JWS_VERIFICATION_FAILED stage=serialization reason=jws_format_invalid causeType=${expected::class.simpleName}")
                 return IdkResult.err(IdkError.fromString("Invalid JWS format: ${expected.message}", exception = expected))
             }
 
@@ -108,6 +115,7 @@ class VerifyJwsCommandImpl(
         var anyCryptoFailed = false
 
         for ((index, signature) in general.signatures.withIndex()) {
+            var stage = "protected-header"
             try {
                 // Decode protected header
                 val protectedHeader = JwsUtils.decodeBase64UrlToJson(signature.protected)
@@ -117,6 +125,7 @@ class VerifyJwsCommandImpl(
 
                 // SECURITY: Reject "none" algorithm (RFC 9901 §8.1, RFC 8725 §2.1)
                 if (algValue?.lowercase() == "none") {
+                    log.warn("JWS_VERIFICATION_FAILED stage=protected-header reason=algorithm_none signatureIndex=$index")
                     errorMessages.add("Signature $index: Algorithm 'none' is not allowed for security reasons")
                     // No crypto attempt — pre-crypto rejection counts as trust-not-established.
                     anyResolutionFailed = true
@@ -135,6 +144,7 @@ class VerifyJwsCommandImpl(
                 // lookup against `trustedJwks` happens unchanged.
                 if (trustedJwks != null) {
                     if (algValue == null) {
+                        log.warn("JWS_VERIFICATION_FAILED stage=protected-header reason=algorithm_missing signatureIndex=$index")
                         errorMessages.add("Signature $index: Missing 'alg' in JWS header")
                         anyResolutionFailed = true
                         signaturesWithIdentifiers.add(
@@ -149,8 +159,10 @@ class VerifyJwsCommandImpl(
                         continue
                     }
                     val headerKid = protectedHeader["kid"]?.jsonPrimitive?.content
+                    stage = "trusted-key-selection"
                     val selected = selectJwk(trustedJwks, headerKid, algValue)
                     if (selected == null) {
+                        log.warn("JWS_VERIFICATION_FAILED stage=trusted-key-selection reason=trusted_key_missing signatureIndex=$index")
                         errorMessages.add(
                             "Signature $index: No matching trusted JWK for kid=$headerKid alg=$algValue",
                         )
@@ -172,7 +184,8 @@ class VerifyJwsCommandImpl(
                     val signingInput = JwsUtils.createSigningInput(signature.protected, general.payload)
                     val signatureBytes = signature.signature.decodeFrom(Encoding.BASE64URL)
 
-                    log.debug("Verifying signature against trusted JWKS key kid=${keyInfo.kid} alg=$algValue")
+                    log.debug("Verifying signature against trusted JWKS")
+                    stage = "cryptographic-verification"
                     anyCryptoAttempted = true
                     val isValid =
                         try {
@@ -182,12 +195,16 @@ class VerifyJwsCommandImpl(
                                 input = signingInput,
                                 signature = signatureBytes,
                             )
+                        } catch (cancelled: CancellationException) {
+                            throw cancelled
                         } catch (expected: Exception) {
+                            log.warn("JWS_VERIFICATION_FAILED stage=cryptographic-verification reason=provider_exception signatureIndex=$index causeType=${expected::class.simpleName}")
                             errorMessages.add("Signature $index: Verification failed - ${expected.message}")
                             false
                         }
 
                     if (!isValid) {
+                        log.warn("JWS_VERIFICATION_FAILED stage=cryptographic-verification reason=signature_invalid signatureIndex=$index")
                         errorMessages.add("Signature $index: Invalid signature")
                         anyCryptoFailed = true
                     }
@@ -205,6 +222,7 @@ class VerifyJwsCommandImpl(
                 }
 
                 // Resolve identifier from header or use provided identifier
+                stage = "identifier-resolution"
                 val identifierResult =
                     if (appliedArgs.identifier != null) {
                         // Use provided identifier
@@ -215,12 +233,14 @@ class VerifyJwsCommandImpl(
                     }
 
                 if (identifierResult.isErr) {
+                    log.warn("JWS_VERIFICATION_FAILED stage=identifier-resolution reason=identifier_resolution_failed signatureIndex=$index providerCode=${identifierResult.error.code}")
                     errorMessages.add("Signature $index: Failed to resolve identifier - ${identifierResult.error.message.defaultMessage}")
                     // Trust establishment failure: no key resolved for this signature.
                     anyResolutionFailed = true
                     continue
                 }
 
+                stage = "key-admission"
                 val identifierOptsOrResult = identifierResult.value
 
                 // X.509 key extraction is not trust establishment. A verifier-admitted x5c
@@ -236,6 +256,7 @@ class VerifyJwsCommandImpl(
                             verification.message != "X509 verification has been disabled" &&
                             verification.publicKey != null
                     if (!validationSucceeded) {
+                        log.warn("JWS_VERIFICATION_FAILED stage=key-admission reason=x509_trust_refused signatureIndex=$index")
                         errorMessages.add("Signature $index: X.509 chain validation was not successfully established")
                         anyResolutionFailed = true
                         continue
@@ -245,6 +266,7 @@ class VerifyJwsCommandImpl(
                 if (identifierOptsOrResult is ExternalIdentifierResult.Did &&
                     identifierOptsOrResult.didResolutionResult.didDocumentMetadata?.get("deactivated").toString().equals("true", ignoreCase = true)
                 ) {
+                    log.warn("JWS_VERIFICATION_FAILED stage=key-admission reason=did_deactivated signatureIndex=$index")
                     errorMessages.add("Signature $index: DID is deactivated")
                     anyResolutionFailed = true
                     continue
@@ -262,6 +284,7 @@ class VerifyJwsCommandImpl(
                         }
 
                         else -> {
+                            log.warn("JWS_VERIFICATION_FAILED stage=key-admission reason=identifier_type_unsupported signatureIndex=$index")
                             errorMessages.add("Signature $index: Unsupported identifier result type")
                             anyResolutionFailed = true
                             continue
@@ -272,6 +295,7 @@ class VerifyJwsCommandImpl(
                 // algorithm.  Enforce the resolved key's family, curve, use/key_ops and any
                 // explicit algorithm constraint before both provider-backed and local crypto.
                 keyInfo.jwsAlgorithmCompatibilityFailure(algValue)?.let { failure ->
+                    log.warn("JWS_VERIFICATION_FAILED stage=key-admission reason=algorithm_key_incompatible signatureIndex=$index")
                     errorMessages.add("Signature $index: $failure")
                     anyCryptoFailed = true
                     signaturesWithIdentifiers.add(
@@ -296,6 +320,7 @@ class VerifyJwsCommandImpl(
                 // issuer metadata). It must not depend on a configured tenant KMS provider,
                 // because platform-issued tokens are verified before a tenant provider exists.
                 log.debug("Verifying signature with keyInfo.signatureAlgorithm = ${keyInfo.signatureAlgorithm}")
+                stage = "cryptographic-verification"
                 anyCryptoAttempted = true
                 val isValid =
                     try {
@@ -313,12 +338,16 @@ class VerifyJwsCommandImpl(
                                 signature = signatureBytes,
                             )
                         }
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
                     } catch (expected: Exception) {
+                        log.warn("JWS_VERIFICATION_FAILED stage=cryptographic-verification reason=provider_exception signatureIndex=$index causeType=${expected::class.simpleName}")
                         errorMessages.add("Signature $index: Verification failed - ${expected.message}")
                         false
                     }
 
                 if (!isValid) {
+                    log.warn("JWS_VERIFICATION_FAILED stage=cryptographic-verification reason=signature_invalid signatureIndex=$index")
                     errorMessages.add("Signature $index: Invalid signature")
                     anyCryptoFailed = true
                 }
@@ -332,7 +361,10 @@ class VerifyJwsCommandImpl(
                         identifier = identifierOptsOrResult,
                     ),
                 )
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (expected: Exception) {
+                log.warn("JWS_VERIFICATION_FAILED stage=$stage reason=unexpected_exception signatureIndex=$index causeType=${expected::class.simpleName}")
                 errorMessages.add("Signature $index: Unexpected error - ${expected.message}")
             }
         }
@@ -340,11 +372,16 @@ class VerifyJwsCommandImpl(
         val parsedPayload =
             try {
                 JwsUtils.decodeBase64UrlToJson(general.payload)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (expected: Exception) {
-                log.debug("JWS payload base64url decode failed: ${expected.message}")
+                log.warn("JWS_VERIFICATION_FAILED stage=payload-decode reason=payload_decode_failed causeType=${expected::class.simpleName}")
                 JsonObject(emptyMap())
             }
 
+        if (general.signatures.isEmpty()) {
+            log.warn("JWS_VERIFICATION_FAILED stage=signature-set reason=signatures_missing")
+        }
         val isValid = errorMessages.isEmpty()
         // Trust establishment is true iff *every* signature in the JWS got a verification
         // key. cryptoVerified is null when no signature ever made it past identifier

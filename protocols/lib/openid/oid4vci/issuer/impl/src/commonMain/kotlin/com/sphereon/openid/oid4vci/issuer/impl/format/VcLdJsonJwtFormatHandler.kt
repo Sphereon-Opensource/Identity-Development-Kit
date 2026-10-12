@@ -20,8 +20,10 @@ import com.sphereon.core.api.Err
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
 import com.sphereon.core.api.error.IdkError
-import com.sphereon.crypto.jose.jws.JwtService
-import com.sphereon.crypto.jose.jws.command.CreateJwsArgs
+import com.sphereon.crypto.core.KeyInfo
+import com.sphereon.crypto.core.sign.SignatureService
+import com.sphereon.crypto.core.sign.model.SignInput
+import com.sphereon.crypto.core.sign.model.JwsSignatureParameters
 import com.sphereon.crypto.jose.jws.command.CreateJwsOpts
 import com.sphereon.crypto.core.kms.KeyManagerService
 import com.sphereon.crypto.resolution.managed.ManagedOptsAlias
@@ -95,7 +97,7 @@ import kotlin.uuid.Uuid
 @ContributesIntoSet(SessionScope::class, binding = binding<CredentialFormatHandler>())
 @OptIn(ExperimentalUuidApi::class)
 class VcLdJsonJwtFormatHandler(
-    private val jwtService: JwtService,
+    private val signatureService: SignatureService,
     private val kms: KeyManagerService,
     private val issuerKeyIdResolver: IssuerKeyIdResolver,
     private val contextValidator: JsonLdContextValidator,
@@ -327,9 +329,11 @@ class VcLdJsonJwtFormatHandler(
                 keyIdentifierHeader?.forEach { (name, value) -> put(name, value) }
             }
         val signed =
-            jwtService
-                .createJwsCompact(
-                    CreateJwsArgs(
+            signatureService
+                .sign(
+                    signInput = SignInput(jwtPayload.toString().encodeToByteArray(), mimeType = "application/json"),
+                    keyInfo = KeyInfo<Nothing>(alias = context.requireSigningKeyName().getOrElse { return Err(it) }),
+                    parameters = JwsSignatureParameters(
                         issuer = issuerKey,
                         payload = jwtPayload,
                         opts = CreateJwsOpts(
@@ -340,7 +344,7 @@ class VcLdJsonJwtFormatHandler(
                 ).getOrElse { return Err(it) }
         return Ok(
             CredentialEnvelope(
-                credential = JsonPrimitive(signed.jwt),
+                credential = JsonPrimitive(signed.signedData.decodeToString()),
                 format = context.credentialConfiguration.format,
             ),
         )

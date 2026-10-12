@@ -112,10 +112,12 @@ import com.sphereon.wallet.WalletHolderVerificationMethodResolver
 import com.sphereon.wallet.credential.WalletHolderIdentifierKind
 import com.sphereon.wallet.credential.WalletHolderVerificationMethod
 import com.sphereon.wallet.credential.store.BlobWalletCredentialStore
+import com.sphereon.wallet.credential.WalletCredentialStore
 import com.sphereon.wallet.credential.store.WalletCredentialBodyProtector
 import com.sphereon.wallet.credential.store.WalletCredentialProtectedDocumentRole
 import com.sphereon.wallet.impl.CredentialSubjectExtractorImpl
 import com.sphereon.wallet.interaction.WalletInteractionContext
+import com.sphereon.wallet.interaction.WalletInteractionDiagnostics
 import com.sphereon.wallet.interaction.ProtocolExecutionOwner
 import com.sphereon.wallet.interaction.WalletInteractionFlowKind
 import com.sphereon.wallet.interaction.WalletInteractionPrivateSessionData
@@ -126,6 +128,7 @@ import com.sphereon.wallet.interaction.WalletInteractionStatus
 import com.sphereon.wallet.interaction.WalletProtocol
 import com.sphereon.wallet.interaction.WalletIssuerAuthenticationProvenance
 import com.sphereon.wallet.interaction.WalletIssuerAuthenticationResult
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -217,7 +220,7 @@ internal fun buildTestMdocCredential(doctype: String): String {
  */
 private fun testAcceptance(
     verify: VerifySdJwtVcCommand = FakeVerifySdJwtVcCommand(accept = true),
-    verifyJws: VerifyJwsCommand = ReceiverVerifyJwsCommand,
+    verifyJws: VerifyJwsCommand? = ReceiverVerifyJwsCommand,
     vcdmDataIntegrityVerifier: VcdmDataIntegrityVerifier? = null,
 ): Oid4vciIssuedCredentialAcceptance =
     Oid4vciIssuedCredentialAcceptance(
@@ -300,12 +303,21 @@ class WalletStoreOid4vciCredentialResponseReceiverTest {
                         ),
                 ),
             )
+            val failureDetails = mutableListOf<Map<String, String>>()
+            val receiverDiagnostics = object : WalletInteractionDiagnostics {
+                override fun warn(event: String, sessionId: WalletInteractionSessionId?, details: Map<String, String>) {
+                    assertEquals("oid4vci.credential_receive.failed", event)
+                    assertEquals("oid4vci-receiver-vcdm20-route-test", sessionId?.value)
+                    failureDetails += details
+                }
+            }
             val context =
                 WalletInteractionContext(
                     sessionId = sessionId,
                     walletUnitId = WALLET_UNIT_ID,
                     executionOwner = ProtocolExecutionOwner.WALLET_BACKEND,
                     privateSessionStore = privateStore,
+                    diagnostics = receiverDiagnostics,
                 )
             val state =
                 WalletInteractionState(
@@ -326,6 +338,72 @@ class WalletStoreOid4vciCredentialResponseReceiverTest {
                 buildTestCompactJwt(
                     """{"@context":["https://www.w3.org/ns/credentials/v2"],"type":["VerifiableCredential","EmployeeCredential"],"issuer":"https://issuer.example","validFrom":"2026-01-01T00:00:00Z","credentialSubject":{"id":"did:example:v2-holder","degree":"BSc"}}""",
                 )
+
+            val response = CredentialResponse(credentials = listOf(CredentialResponseItem(credential = JsonPrimitive(rawCredential))))
+            suspend fun receiveWith(resolver: WalletHolderVerificationMethodResolver?, store: WalletCredentialStore = credentialStore, acceptance: Oid4vciIssuedCredentialAcceptance = testAcceptance()) =
+                WalletStoreOid4vciCredentialResponseReceiver(store, FakeWalletIssuanceSessionStore(), acceptance, resolver)
+                    .receiveCredentialResponse(context, state, resolvedVcdm20Offer(), response)
+
+            assertFailsWith<IllegalStateException> { receiveWith(null) }
+            assertEquals("holder-verification-method", failureDetails.last()["stage"])
+            assertEquals("holder_resolver_missing", failureDetails.last()["reason"])
+            assertFailsWith<IllegalStateException> { receiveWith(WalletHolderVerificationMethodResolver { _, _ -> null }) }
+            assertEquals("holder_association_missing", failureDetails.last()["reason"])
+            val resolverFailure = IllegalStateException("private-token-and-key-material")
+            val thrown = assertFailsWith<IllegalStateException> {
+                receiveWith(WalletHolderVerificationMethodResolver { _, _ -> throw resolverFailure })
+            }
+            assertTrue(thrown === resolverFailure, "logging must preserve the original failure")
+            assertEquals("holder-verification-method", failureDetails.last()["stage"])
+            assertEquals("IllegalStateException", failureDetails.last()["causeType"])
+            val cancellation = CancellationException("private-cancellation-details")
+            val warningCount = failureDetails.size
+            assertTrue(assertFailsWith<CancellationException> {
+                receiveWith(WalletHolderVerificationMethodResolver { _, _ -> throw cancellation })
+            } === cancellation)
+            assertEquals(warningCount, failureDetails.size, "cancellation is not a receive failure")
+            assertTrue(credentialStore.listMetadata(WALLET_UNIT_ID).getOrThrow().isEmpty())
+
+            val methodResolver = WalletHolderVerificationMethodResolver { _, _ ->
+                WalletHolderVerificationMethod(
+                    value = "https://wallet.example/jwks#holder-vcdm20",
+                    controller = "https://wallet.example/holders/vcdm20",
+                    kind = WalletHolderIdentifierKind.JWKS_KID,
+                    signingAlgorithm = SignatureAlgorithm.ECDSA_SHA256,
+                )
+            }
+            assertFailsWith<IllegalStateException> {
+                receiveWith(methodResolver, acceptance = testAcceptance(verifyJws = null))
+            }
+            assertEquals("credential-signature-verification", failureDetails.last()["stage"])
+            assertEquals("jws_command_missing", failureDetails.last()["reason"])
+            val providerFailure = IdkError.fromString(
+                code = "TEST_JWS_PROVIDER_REFUSED", message = "private-parser-payload",
+                exception = IllegalArgumentException("private-parser-key"),
+            )
+            val rejectingVerifier = object : VerifyJwsCommand by ReceiverVerifyJwsCommand {
+                override suspend fun execute(args: VerifyJwsArgs): IdkResult<JwsValidationResult, IdkError> = Err(providerFailure)
+            }
+            assertFailsWith<IllegalStateException> {
+                receiveWith(methodResolver, acceptance = testAcceptance(verifyJws = rejectingVerifier))
+            }
+            assertEquals("credential-signature-verification", failureDetails.last()["stage"])
+            assertEquals("jws_command_failed", failureDetails.last()["reason"])
+            assertEquals("ISSUED_CREDENTIAL_VERIFICATION_FAILED", failureDetails.last()["providerErrorCode"])
+            assertEquals("TEST_JWS_PROVIDER_REFUSED", failureDetails.last()["providerCause1Code"])
+            assertEquals("IllegalArgumentException", failureDetails.last()["providerCause1Type"])
+            val failingStore = object : WalletCredentialStore by credentialStore {
+                override suspend fun putCredential(walletUnitId: String, record: CredentialRecord): IdkResult<CredentialRecord, IdkError> =
+                    Err(IdkError.fromString(code = "TEST_STORE_REFUSED", message = "private-storage-payload"))
+            }
+            assertFailsWith<IllegalStateException> { receiveWith(methodResolver, failingStore) }
+            assertEquals("credential-store", failureDetails.last()["stage"])
+            assertEquals("TEST_STORE_REFUSED", failureDetails.last()["providerErrorCode"])
+            val logged = failureDetails.toString()
+            listOf(rawCredential, "private-token-and-key-material", "private-storage-payload", "private-parser-payload", "private-parser-key", "wallet-holder-key-vcdm20").forEach {
+                assertTrue(it !in logged, "receive diagnostics must not contain credentials, aliases, or exception messages")
+            }
+            assertTrue(credentialStore.listMetadata(WALLET_UNIT_ID).getOrThrow().isEmpty())
 
             val previews =
                 receiver.receiveCredentialResponse(

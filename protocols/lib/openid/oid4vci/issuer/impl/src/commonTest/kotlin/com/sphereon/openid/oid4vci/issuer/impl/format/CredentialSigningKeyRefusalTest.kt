@@ -95,7 +95,7 @@ class CredentialSigningKeyRefusalTest {
 
     private fun handler(jwtService: JwtService) =
         JwtVcJsonFormatHandler(
-            jwtService = jwtService,
+            signatureService = (jwtService).asSignatureServiceFixture(),
             kms = TestKmsMock(),
             issuerKeyIdResolver = RefusingIssuerKeyIdResolver,
         )

@@ -129,6 +129,41 @@ class IssuerKeyNameSeamTest {
         }
 
     @Test
+    fun credentialUsesItsOwnServerResolvedKeyWhenItDiffersFromMetadata() =
+        runTest {
+            val resolver =
+                object : IssuerKeyNameResolver by FixedIssuerKeyNameResolver() {
+                    override suspend fun resolveCredentialSigningKeyName(
+                        tenantId: String,
+                        issuerInstanceId: String,
+                        credentialConfigurationId: String,
+                    ): String? =
+                        if (credentialConfigurationId == CREDENTIAL_CONFIG_ID) "credential-signing-$issuerInstanceId" else null
+                }
+
+            val provider = seamProvider(resolver)
+            assertEquals(SERVER_SIGNING_KEY, provider.metadataSigningKeyName())
+            assertEquals("credential-signing-$INSTANCE_ID", provider.credentialSigningConfigs()[CREDENTIAL_CONFIG_ID]?.signingKeyAlias)
+        }
+
+    @Test
+    fun credentialRefusesWhenItsOwnBindingIsAbsentDespiteMetadataKey() =
+        runTest {
+            val resolver =
+                object : IssuerKeyNameResolver by FixedIssuerKeyNameResolver() {
+                    override suspend fun resolveCredentialSigningKeyName(
+                        tenantId: String,
+                        issuerInstanceId: String,
+                        credentialConfigurationId: String,
+                    ): String? = null
+                }
+
+            val provider = seamProvider(resolver)
+            assertEquals(SERVER_SIGNING_KEY, provider.metadataSigningKeyName())
+            assertNull(provider.credentialSigningConfigs()[CREDENTIAL_CONFIG_ID]?.signingKeyAlias)
+        }
+
+    @Test
     fun publishedJwksNamesOnlyServerResolvedKeys() =
         runTest {
             val names = seamProvider(FixedIssuerKeyNameResolver()).signingKeyNames()

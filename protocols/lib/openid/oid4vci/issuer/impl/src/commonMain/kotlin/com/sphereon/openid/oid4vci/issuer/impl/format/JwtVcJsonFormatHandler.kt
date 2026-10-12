@@ -21,8 +21,10 @@ import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.crypto.core.kms.KeyManagerService
-import com.sphereon.crypto.jose.jws.JwtService
-import com.sphereon.crypto.jose.jws.command.CreateJwsArgs
+import com.sphereon.crypto.core.KeyInfo
+import com.sphereon.crypto.core.sign.SignatureService
+import com.sphereon.crypto.core.sign.model.SignInput
+import com.sphereon.crypto.core.sign.model.JwsSignatureParameters
 import com.sphereon.crypto.jose.jws.command.CreateJwsOpts
 import com.sphereon.crypto.resolution.managed.ManagedOptsAlias
 import com.sphereon.di.session.SessionScope
@@ -59,14 +61,14 @@ import kotlin.uuid.Uuid
 /**
  * JWT VC JSON format handler (jwt_vc_json).
  *
- * Issues W3C Verifiable Credentials as JWTs using [JwtService].
+ * Issues W3C Verifiable Credentials as JWTs using [SignatureService].
  */
 @Inject
 @SingleIn(SessionScope::class)
 @ContributesIntoSet(SessionScope::class, binding = binding<CredentialFormatHandler>())
 @OptIn(ExperimentalUuidApi::class)
 class JwtVcJsonFormatHandler(
-    private val jwtService: JwtService,
+    private val signatureService: SignatureService,
     private val kms: KeyManagerService,
     private val issuerKeyIdResolver: IssuerKeyIdResolver,
     private val statusEnricherProvider: Provider<CredentialStatusEnricher>? = null,
@@ -235,9 +237,11 @@ class JwtVcJsonFormatHandler(
             }
 
         val result =
-            jwtService
-                .createJwsCompact(
-                    CreateJwsArgs(
+            signatureService
+                .sign(
+                    signInput = SignInput(jwtPayload.toString().encodeToByteArray(), mimeType = "application/json"),
+                    keyInfo = KeyInfo<Nothing>(alias = keyAlias),
+                    parameters = JwsSignatureParameters(
                         issuer = issuerKey,
                         payload = jwtPayload,
                         opts =
@@ -257,7 +261,7 @@ class JwtVcJsonFormatHandler(
 
         return Ok(
             CredentialEnvelope(
-                credential = JsonPrimitive(result.jwt),
+                credential = JsonPrimitive(result.signedData.decodeToString()),
                 format = context.credentialConfiguration.format,
             ),
         )

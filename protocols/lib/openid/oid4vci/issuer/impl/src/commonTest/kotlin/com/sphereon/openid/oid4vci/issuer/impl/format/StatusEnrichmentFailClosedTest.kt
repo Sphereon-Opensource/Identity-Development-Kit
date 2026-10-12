@@ -99,7 +99,7 @@ class StatusEnrichmentFailClosedTest {
 
     private fun handler(enricher: CredentialStatusEnricher? = null) =
         JwtVcJsonFormatHandler(
-            jwtService = recordingJwtService,
+            signatureService = (recordingJwtService).asSignatureServiceFixture(),
             kms = TestKmsMock(),
             issuerKeyIdResolver = StubIssuerKeyIdResolver,
             statusEnricherProvider = enricher?.let { Provider { it } },

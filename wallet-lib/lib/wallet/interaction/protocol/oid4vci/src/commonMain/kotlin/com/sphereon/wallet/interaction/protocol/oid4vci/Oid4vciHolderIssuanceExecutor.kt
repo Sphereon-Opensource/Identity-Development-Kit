@@ -2551,6 +2551,8 @@ class Oid4vciHolderIssuanceExecutor(
         val previews =
             try {
                 credentialReceiver.receiveCredentialResponse(context, state, resolvedOffer, credentialResponse)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (expected: Exception) {
                 return failed(
                     code = WalletInteractionFailureCodes.OID4VCI_CREDENTIAL_RECEIVER_FAILED,
@@ -2559,7 +2561,7 @@ class Oid4vciHolderIssuanceExecutor(
                     arguments =
                         mapOf(
                             "causeType" to (expected::class.simpleName ?: "Exception"),
-                            "cause" to expected.message.orEmpty(),
+                            "stage" to "credential-receive",
                         ),
                 )
             }

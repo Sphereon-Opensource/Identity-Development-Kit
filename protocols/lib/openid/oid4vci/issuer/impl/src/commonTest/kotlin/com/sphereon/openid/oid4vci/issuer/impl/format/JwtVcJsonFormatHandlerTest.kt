@@ -96,7 +96,7 @@ class JwtVcJsonFormatHandlerTest {
 
     private val handler =
         JwtVcJsonFormatHandler(
-            jwtService = FakeJwtService(),
+            signatureService = (FakeJwtService()).asSignatureServiceFixture(),
             kms = TestKmsMock(),
             issuerKeyIdResolver = StubIssuerKeyIdResolver,
         )
@@ -214,7 +214,7 @@ class JwtVcJsonFormatHandlerTest {
             val jwtService = RecordingJwtService()
             val vcdm11Handler =
                 JwtVcJsonFormatHandler(
-                    jwtService = jwtService,
+                    signatureService = (jwtService).asSignatureServiceFixture(),
                     kms = TestKmsMock(),
                     issuerKeyIdResolver = StubIssuerKeyIdResolver,
                 )
@@ -245,7 +245,7 @@ class JwtVcJsonFormatHandlerTest {
             val jwtService = RecordingJwtService()
             val vcdm11Handler =
                 JwtVcJsonFormatHandler(
-                    jwtService = jwtService,
+                    signatureService = (jwtService).asSignatureServiceFixture(),
                     kms = TestKmsMock(),
                     issuerKeyIdResolver = StubIssuerKeyIdResolver,
                 )
@@ -275,7 +275,7 @@ class JwtVcJsonFormatHandlerTest {
             val jwtService = RecordingJwtService()
             val vcdm11Handler =
                 JwtVcJsonFormatHandler(
-                    jwtService = jwtService,
+                    signatureService = (jwtService).asSignatureServiceFixture(),
                     kms = TestKmsMock(),
                     issuerKeyIdResolver = StubIssuerKeyIdResolver,
                 )
@@ -311,7 +311,7 @@ class JwtVcJsonFormatHandlerTest {
             val jwtService = RecordingJwtService()
             val didWebHandler =
                 JwtVcJsonFormatHandler(
-                    jwtService = jwtService,
+                    signatureService = (jwtService).asSignatureServiceFixture(),
                     kms = TestKmsMock(),
                     issuerKeyIdResolver = resolver,
                 )
@@ -337,7 +337,7 @@ class JwtVcJsonFormatHandlerTest {
     fun permitsAnonymousCredentialSubjectObject() =
         runTest {
             val jwtService = RecordingJwtService()
-            val handler = JwtVcJsonFormatHandler(jwtService, TestKmsMock(), StubIssuerKeyIdResolver)
+            val handler = JwtVcJsonFormatHandler((jwtService).asSignatureServiceFixture(), TestKmsMock(), StubIssuerKeyIdResolver)
             val result = handler.issueCredential(
                 makeRequest("jwt_vc_json"),
                 makeContext(makeConfig("jwt_vc_json"), attributes = mapOf("name" to JsonPrimitive("Holder"))),
@@ -353,7 +353,7 @@ class JwtVcJsonFormatHandlerTest {
     fun emitsSubOnlyFromTheSingleCredentialSubjectId() =
         runTest {
             val jwtService = RecordingJwtService()
-            val result = JwtVcJsonFormatHandler(jwtService, TestKmsMock(), StubIssuerKeyIdResolver)
+            val result = JwtVcJsonFormatHandler((jwtService).asSignatureServiceFixture(), TestKmsMock(), StubIssuerKeyIdResolver)
                 .issueCredential(
                     makeRequest("jwt_vc_json"),
                     makeContext(makeConfig("jwt_vc_json"), attributes = emptyMap()).copy(
@@ -378,7 +378,7 @@ class JwtVcJsonFormatHandlerTest {
     fun rejectsMultipleCredentialSubjectsBecauseV11JwtCannotEncodeThem() =
         runTest {
             val jwtService = RecordingJwtService()
-            val result = JwtVcJsonFormatHandler(jwtService, TestKmsMock(), StubIssuerKeyIdResolver)
+            val result = JwtVcJsonFormatHandler((jwtService).asSignatureServiceFixture(), TestKmsMock(), StubIssuerKeyIdResolver)
                 .issueCredential(
                     makeRequest("jwt_vc_json"),
                     makeContext(makeConfig("jwt_vc_json"), attributes = emptyMap()).copy(
@@ -400,7 +400,7 @@ class JwtVcJsonFormatHandlerTest {
             val subjectId = "https://example.com/subjects/v11"
             val handler =
                 JwtVcJsonFormatHandler(
-                    jwtService = jwtService,
+                    signatureService = (jwtService).asSignatureServiceFixture(),
                     kms = TestKmsMock(),
                     issuerKeyIdResolver = StubIssuerKeyIdResolver,
                 )
@@ -436,7 +436,7 @@ class JwtVcJsonFormatHandlerTest {
         runTest {
             val jwtService = RecordingJwtService()
             val result =
-                JwtVcJsonFormatHandler(jwtService, TestKmsMock(), StubIssuerKeyIdResolver).issueCredential(
+                JwtVcJsonFormatHandler((jwtService).asSignatureServiceFixture(), TestKmsMock(), StubIssuerKeyIdResolver).issueCredential(
                     makeRequest("jwt_vc_json"),
                     makeContext(makeConfig("jwt_vc_json"), attributes = mapOf("name" to JsonPrimitive("attribute"))).copy(
                         credentialSubjects = listOf(buildJsonObject { put("name", "explicit") }),
@@ -452,7 +452,7 @@ class JwtVcJsonFormatHandlerTest {
         runTest {
             val jwtService = RecordingJwtService()
             val result =
-                JwtVcJsonFormatHandler(jwtService, TestKmsMock(), StubIssuerKeyIdResolver).issueCredential(
+                JwtVcJsonFormatHandler((jwtService).asSignatureServiceFixture(), TestKmsMock(), StubIssuerKeyIdResolver).issueCredential(
                     makeRequest("jwt_vc_json"),
                     makeContext(makeConfig("jwt_vc_json")).copy(credentialId = "not a URI"),
                 )
