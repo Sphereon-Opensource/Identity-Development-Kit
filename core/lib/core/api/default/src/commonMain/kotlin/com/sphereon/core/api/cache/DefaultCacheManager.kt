@@ -203,7 +203,7 @@ class DefaultCacheManager : CacheManager {
                 "invalidation.failures=${failures.toListLogToken()}"
         )
         if (failures.isNotEmpty()) {
-            error("Tenant cache invalidation failed for ${failures.joinToString(separator = ",")}")
+            error("Tenant cache invalidation failed for namespace(s): ${failures.joinToString(separator = ",")}")
         }
     }
 
