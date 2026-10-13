@@ -1,7 +1,7 @@
 openapi: 3.0.4
 info:
   title: Platform Bootstrap API Components
-  version: 0.1.0
+  version: 0.1.1
   description: >
     Shared schemas for the platform-bootstrap API. These schemas model
     runtime wiring only. They intentionally exclude service settings bodies,
@@ -398,7 +398,7 @@ components:
 
     AdminConsoleCapabilities:
       type: object
-      required: [enabledServices, multiInstance, instanceCaps]
+      required: [enabledServices, multiInstance, instanceCaps, openidFederation]
       properties:
         enabledServices:
           $ref: '#/components/schemas/AdminConsoleServiceBooleans'
@@ -406,6 +406,30 @@ components:
           $ref: '#/components/schemas/AdminConsoleServiceBooleans'
         instanceCaps:
           $ref: '#/components/schemas/AdminConsoleServiceCounts'
+        openidFederation:
+          $ref: '#/components/schemas/AdminConsoleOpenIdFederationCapabilities'
+
+    AdminConsoleOpenIdFederationCapabilities:
+      type: object
+      required: [enabled, operator, trustMarkIssuance, operatedIssuance, featureKeys]
+      properties:
+        enabled:
+          type: boolean
+          description: Whether the participant feature enables federation administration.
+        operator:
+          type: boolean
+        trustMarkIssuance:
+          type: boolean
+        operatedIssuance:
+          type: boolean
+        featureKeys:
+          type: array
+          description: >
+            Granted federation keys in catalog order: openid-federation.participant.v1,
+            openid-federation.operator.v1, openid-federation.trust-mark-issuance.v1,
+            openid-federation.operated-issuance.v1.
+          items:
+            type: string
 
     AdminConsoleServiceBooleans:
       type: object

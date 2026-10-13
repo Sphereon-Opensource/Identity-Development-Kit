@@ -1,7 +1,7 @@
 openapi: 3.0.4
 info:
   title: License Portal API
-  version: 1.0.0
+  version: 1.0.1
   description: |
     Operator API for managing license partners and customers, deployment records,
     imported customer license requests, license issuance, revocation, and protected
@@ -706,7 +706,7 @@ components:
           type: array
           items:
             type: string
-          default: [EDK, VDX]
+          default: [EDK, VDX, OPENID-FEDERATION]
         permittedDomains:
           type: array
           items:
