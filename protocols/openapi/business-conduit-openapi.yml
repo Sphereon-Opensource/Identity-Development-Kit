@@ -4,9 +4,16 @@ info:
   version: 0.1.0
   x-products: [edk, vdx]
   description: |
-    Authenticated assigned-business-wallet operations. Party, relationship, delegation, policy,
-    protocol execution, target-wallet key authority, protected capture, and egress evidence remain
-    server-side. HTTP responses expose only the UI-safe projections defined by this contract.
+    Authenticated operations on a business wallet through an assigned conduit device. An
+    assignment gives one operator one business wallet; the wallet's unit is shared by all its
+    operators. A captured request runs as a holder interaction on that unit, in the
+    wallet-interaction engine, and responses carry that interaction in the same projection the
+    wallet-interaction API uses. Party, relationship, delegation, policy and protected-capture
+    references stay server-side.
+
+    The credentials and interaction activity of the assignment's business wallet are read with the
+    same projections the wallet credential and wallet-interaction APIs return to the business
+    wallet's holders. Raw credential bodies are never returned.
 servers:
   - url: https://api.example.com/api/business-conduit/v1
   - url: http://localhost:8080/api/business-conduit/v1
@@ -157,20 +164,25 @@ paths:
         '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
         '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
         '409': { $ref: './common-components.yml#/components/responses/Conflict' }
-  /interactions/{interactionRef}/account:
+  /interactions/{interactionRef}/actions:
     parameters:
       - $ref: './business-conduit-components.yml#/components/parameters/InteractionRef'
     post:
       tags: [BusinessConduit]
-      summary: Select an eligible business account
-      operationId: selectBusinessConduitAccount
-      x-command-id: enterprise-wallet.business-conduit.select-account
+      summary: Act on the business wallet's holder interaction
+      description: |
+        Applies one holder action, decided on the holder interaction revision named in the body.
+        An action that releases credentials to a verifier or accepts credentials from an issuer
+        waits for the assignment's approval policy and is dispatched by the execution operation;
+        every other action is applied directly.
+      operationId: submitBusinessConduitHolderAction
+      x-command-id: enterprise-wallet.business-conduit.submit-holder-action
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: './business-conduit-components.yml#/components/schemas/SelectBusinessConduitAccountHttpBody'
+              $ref: './business-conduit-components.yml#/components/schemas/SubmitBusinessConduitHolderActionHttpBody'
       responses:
         '200':
           description: Updated interaction projection.
@@ -181,6 +193,97 @@ paths:
         '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
         '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
         '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+  /interactions/{interactionRef}/inputs:
+    parameters:
+      - $ref: './business-conduit-components.yml#/components/parameters/InteractionRef'
+    post:
+      tags: [BusinessConduit]
+      summary: Register sensitive input for the holder interaction
+      operationId: registerBusinessConduitSensitiveInput
+      x-command-id: enterprise-wallet.business-conduit.register-sensitive-input
+      description: |
+        Registers a transaction code, an issuer sign-in callback or a security grant the operator
+        supplies for the live holder interaction, decided on expectedHolderRevision. The response
+        carries only an opaque one-time reference; pass it in the action that uses it, which goes
+        through the holder action endpoint and its approval rules. The value is never returned
+        and never logged.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './business-conduit-components.yml#/components/schemas/RegisterBusinessConduitSensitiveInputHttpBody'
+      responses:
+        '201':
+          description: Sensitive input registered.
+          content:
+            application/json:
+              schema:
+                $ref: './wallet-interaction-components.yml#/components/schemas/RegisterWalletInteractionSensitiveInputResult'
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+  /interactions/{interactionRef}/handoffs/authorization:
+    parameters:
+      - $ref: './business-conduit-components.yml#/components/parameters/InteractionRef'
+    post:
+      tags: [BusinessConduit]
+      summary: Release the issuer sign-in URL of the holder interaction
+      operationId: consumeBusinessConduitAuthorizationHandoff
+      x-command-id: enterprise-wallet.business-conduit.consume-authorization-handoff
+      description: |
+        Returns the issuer authorization URL behind the authorizationHandoffRef of the live holder
+        interaction, once. Only the reference the holder interaction currently carries is released.
+        After the issuer sign-in, register the callback as sensitive input and send auth_callback.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './business-conduit-components.yml#/components/schemas/ConsumeBusinessConduitHandoffHttpBody'
+      responses:
+        '200':
+          description: The URL to open. Consumed. Do not log the body.
+          content:
+            application/json:
+              schema:
+                $ref: './wallet-interaction-components.yml#/components/schemas/ConsumeWalletInteractionHandoffResult'
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '404': { $ref: './common-components.yml#/components/responses/NotFound' }
+        '409': { $ref: './common-components.yml#/components/responses/Conflict' }
+  /interactions/{interactionRef}/handoffs/completion:
+    parameters:
+      - $ref: './business-conduit-components.yml#/components/parameters/InteractionRef'
+    post:
+      tags: [BusinessConduit]
+      summary: Release the completion URL of the holder interaction
+      operationId: consumeBusinessConduitCompletionHandoff
+      x-command-id: enterprise-wallet.business-conduit.consume-completion-handoff
+      description: |
+        Returns the post-completion URL behind the completionHandoffRef of the holder interaction,
+        once, also after the interaction completed. Only the reference the holder interaction carries
+        is released.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './business-conduit-components.yml#/components/schemas/ConsumeBusinessConduitHandoffHttpBody'
+      responses:
+        '200':
+          description: The URL to open. Consumed. Do not log the body.
+          content:
+            application/json:
+              schema:
+                $ref: './wallet-interaction-components.yml#/components/schemas/ConsumeWalletInteractionHandoffResult'
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '404': { $ref: './common-components.yml#/components/responses/NotFound' }
         '409': { $ref: './common-components.yml#/components/responses/Conflict' }
   /interactions/{interactionRef}/approval:
     parameters:
@@ -212,7 +315,7 @@ paths:
       - $ref: './business-conduit-components.yml#/components/parameters/InteractionRef'
     post:
       tags: [BusinessConduit]
-      summary: Execute an approved interaction in the target business wallet
+      summary: Dispatch the approved holder action to the business wallet's holder interaction
       operationId: executeBusinessConduitInteraction
       x-command-id: enterprise-wallet.business-conduit.execute-interaction
       requestBody:
@@ -223,7 +326,7 @@ paths:
               $ref: './business-conduit-components.yml#/components/schemas/ExecuteBusinessConduitInteractionHttpBody'
       responses:
         '200':
-          description: Completed interaction projection with verified backend egress status.
+          description: Interaction projection after the approved holder action.
           content:
             application/json:
               schema:
@@ -247,6 +350,90 @@ paths:
             application/json:
               schema:
                 $ref: './business-conduit-components.yml#/components/schemas/BusinessConduitInteractionHttpView'
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '404': { $ref: './common-components.yml#/components/responses/NotFound' }
+  /assignments/{assignmentRef}/credentials:
+    parameters:
+      - $ref: './business-conduit-components.yml#/components/parameters/AssignmentRef'
+    get:
+      tags: [BusinessConduit]
+      summary: List the credentials of the business wallet
+      operationId: listBusinessConduitCredentials
+      x-command-id: enterprise-wallet.business-conduit.list-credentials
+      description: |
+        Lists the credential metadata of the assignment's business wallet, as the wallet credential
+        API lists it for the business wallet's holders. The assignment must be active, the policy and
+        the operator's authority must still cover the business wallet unit, and the business wallet
+        must admit the operator as one of its holders.
+      responses:
+        '200':
+          description: Credential metadata of the business wallet.
+          content:
+            application/json:
+              schema:
+                $ref: './wallet-credential-components.yml#/components/schemas/ListWalletCredentialsResult'
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '404': { $ref: './common-components.yml#/components/responses/NotFound' }
+  /assignments/{assignmentRef}/credentials/{credentialRecordId}:
+    parameters:
+      - $ref: './business-conduit-components.yml#/components/parameters/AssignmentRef'
+      - $ref: './wallet-credential-components.yml#/components/parameters/CredentialRecordId'
+    get:
+      tags: [BusinessConduit]
+      summary: Get one credential of the business wallet
+      operationId: getBusinessConduitCredential
+      x-command-id: enterprise-wallet.business-conduit.get-credential
+      description: Returns the sanitized display projection of one credential of the business wallet.
+      responses:
+        '200':
+          description: Display projection of the credential.
+          content:
+            application/json:
+              schema:
+                $ref: './wallet-credential-components.yml#/components/schemas/WalletCredentialDetailContent'
+        '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
+        '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
+        '404': { $ref: './common-components.yml#/components/responses/NotFound' }
+  /assignments/{assignmentRef}/activity:
+    parameters:
+      - $ref: './business-conduit-components.yml#/components/parameters/AssignmentRef'
+    get:
+      tags: [BusinessConduit]
+      summary: List the interaction activity of the business wallet
+      operationId: listBusinessConduitActivity
+      x-command-id: enterprise-wallet.business-conduit.list-activity
+      description: |
+        Lists the interaction activity of the business wallet in ascending sequence order.
+        Interactions of a flow the operator may not run are left out; nextSequence still advances
+        past them, so use it as afterSequence for the next page.
+      parameters:
+        - name: afterSequence
+          in: query
+          required: false
+          description: Return only entries with a sequence greater than this value.
+          schema:
+            type: integer
+            format: int64
+            minimum: 0
+        - name: limit
+          in: query
+          required: false
+          description: Maximum number of entries to read from the business wallet before leaving out other flows.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 100
+      responses:
+        '200':
+          description: Interaction activity page.
+          content:
+            application/json:
+              schema:
+                $ref: './wallet-interaction-components.yml#/components/schemas/ListWalletInteractionActivityResult'
+        '400': { $ref: './common-components.yml#/components/responses/ValidationError' }
         '401': { $ref: './common-components.yml#/components/responses/Unauthorized' }
         '403': { $ref: './common-components.yml#/components/responses/Forbidden' }
         '404': { $ref: './common-components.yml#/components/responses/NotFound' }

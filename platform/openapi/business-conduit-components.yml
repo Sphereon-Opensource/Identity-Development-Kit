@@ -20,9 +20,6 @@ components:
     BusinessConduitAssignmentState:
       type: string
       enum: [OFFERED, ACCEPTED, ACTIVE, SUSPENDED, REVOKED, EXPIRED]
-    BusinessConduitApprovalMode:
-      type: string
-      enum: [SINGLE_USER, MULTI_APPROVER, UNATTENDED]
     BusinessConduitApprovalStatus:
       type: string
       enum: [PENDING, APPROVED, REJECTED, STALE]
@@ -32,18 +29,13 @@ components:
     BusinessConduitInitiationSource:
       type: string
       enum: [BUSINESS_WEB_UI, AUTHENTICATED_API, MOBILE_QR, MOBILE_DEEPLINK, PUSH_ASSIGNMENT]
-    BusinessConduitAccountRoutingMode:
-      type: string
-      enum: [PRESELECTED, BACKEND_DERIVED]
-    BusinessConduitProtocol:
-      type: string
-      enum: [OID4VCI, OID4VP]
     ProtocolExecutionOwner:
       type: string
-      enum: [WALLET_APP, WALLET_BACKEND]
+      description: A conduit interaction always runs its holder interaction on the platform.
+      enum: [WALLET_BACKEND]
     BusinessConduitInteractionState:
       type: string
-      enum: [CAPTURED, ACCOUNT_SELECTION_REQUIRED, APPROVAL_PENDING, APPROVED, EXECUTING, COMPLETED, FAILED, REVOKED]
+      enum: [CAPTURED, IN_PROGRESS, APPROVAL_PENDING, APPROVED, EXECUTING, COMPLETED, FAILED, REVOKED]
     CreateBusinessConduitAssignmentHttpBody:
       type: object
       additionalProperties: false
@@ -79,10 +71,15 @@ components:
         expectedVersion: { type: integer, format: int64, minimum: 1 }
         reasonCode: { type: string, minLength: 1, pattern: '^[a-z0-9][a-z0-9._-]{0,127}$' }
         idempotencyKey: { type: string, minLength: 1, writeOnly: true }
-    BusinessConduitCaptureSourceMetadata:
+    BusinessConduitCaptureSourceClaim:
       type: object
+      description: >-
+        The ingress an initiation claims. A mobile capture (`MOBILE_QR`, `MOBILE_DEEPLINK`,
+        `PUSH_ASSIGNMENT`) names no binding: it runs under the operator's own registered conduit app,
+        which the service resolves. `BUSINESS_WEB_UI` and `AUTHENTICATED_API` name their configured
+        source binding. Only `PUSH_ASSIGNMENT` names the assignment it was pushed for.
       additionalProperties: false
-      required: [source, sourceBindingRef]
+      required: [source]
       properties:
         source:
           $ref: '#/components/schemas/BusinessConduitInitiationSource'
@@ -90,19 +87,15 @@ components:
           type: string
           minLength: 1
           writeOnly: true
-          description: Authenticated host binding, not an authority supplied by the caller.
-        appRegistrationRef: { type: string, minLength: 1, nullable: true, writeOnly: true }
-        pushAssignmentRef: { type: string, minLength: 1, nullable: true, writeOnly: true }
+          description: Authenticated host binding of web UI and API ingress. Absent for mobile captures.
+        pushAssignmentRef: { type: string, minLength: 1, writeOnly: true }
     InitiateBusinessConduitInteractionHttpBody:
       type: object
       additionalProperties: false
-      required: [source, routingMode, opaqueCaptureBase64Url, payloadDigest, idempotencyKey]
+      required: [source, opaqueCaptureBase64Url, payloadDigest, idempotencyKey]
       properties:
         source:
-          $ref: '#/components/schemas/BusinessConduitCaptureSourceMetadata'
-        routingMode:
-          $ref: '#/components/schemas/BusinessConduitAccountRoutingMode'
-        preselectedBusinessAccountRef: { type: string, minLength: 1, nullable: true }
+          $ref: '#/components/schemas/BusinessConduitCaptureSourceClaim'
         opaqueCaptureBase64Url:
           type: string
           minLength: 1
@@ -115,15 +108,44 @@ components:
           pattern: '^sha256:[0-9a-f]{64}$'
           writeOnly: true
         idempotencyKey: { type: string, minLength: 1, writeOnly: true }
-    SelectBusinessConduitAccountHttpBody:
+    SubmitBusinessConduitHolderActionHttpBody:
       type: object
       additionalProperties: false
-      required: [businessAccountRef, controllerLeaseRef, expectedVersion, idempotencyKey]
+      required: [controllerLeaseRef, expectedVersion, expectedHolderRevision, action, idempotencyKey]
       properties:
-        businessAccountRef: { type: string, minLength: 1 }
         controllerLeaseRef: { type: string, minLength: 1, writeOnly: true }
         expectedVersion: { type: integer, format: int64, minimum: 1 }
+        expectedHolderRevision:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Revision of the holder interaction the action was decided on.
+        action:
+          $ref: './wallet-interaction-components.yml#/components/schemas/WalletInteractionAction'
         idempotencyKey: { type: string, minLength: 1, writeOnly: true }
+    RegisterBusinessConduitSensitiveInputHttpBody:
+      type: object
+      additionalProperties: false
+      required: [controllerLeaseRef, expectedHolderRevision, purpose, value]
+      properties:
+        controllerLeaseRef: { type: string, minLength: 1 }
+        expectedHolderRevision: { type: integer, format: int64, minimum: 0 }
+        purpose:
+          description: Only OID4VCI_TRANSACTION_CODE, OID4VCI_AUTHORIZATION_CALLBACK and INTERACTION_SECURITY_GRANT are accepted.
+          allOf:
+            - $ref: './wallet-interaction-components.yml#/components/schemas/WalletInteractionSensitiveInputPurpose'
+        value:
+          type: string
+          minLength: 1
+          description: The sensitive value. Never returned and never logged.
+    ConsumeBusinessConduitHandoffHttpBody:
+      type: object
+      additionalProperties: false
+      required: [controllerLeaseRef, ref]
+      properties:
+        controllerLeaseRef: { type: string, minLength: 1 }
+        ref:
+          $ref: './wallet-interaction-components.yml#/components/schemas/WalletInteractionSensitiveInputRef'
     SubmitBusinessConduitApprovalHttpBody:
       type: object
       additionalProperties: false
@@ -146,14 +168,17 @@ components:
         idempotencyKey: { type: string, minLength: 1, writeOnly: true }
     BusinessConduitAssignmentHttpView:
       type: object
+      description: >-
+        An assignment gives one operator one business wallet. `businessWalletUnitId` is the business
+        wallet's unit, which all its operators share. `businessWalletName` is the business wallet's
+        own name: discovery resolves it for the operator and leaves out wallets that refuse the
+        operator; other assignment views omit it.
       additionalProperties: false
-      required: [assignmentRef, displayAccountRefs, actionScopes, state, version, requiresAcceptance, expiresAtEpochSeconds]
+      required: [assignmentRef, businessWalletUnitId, actionScopes, state, version, requiresAcceptance, expiresAtEpochSeconds]
       properties:
         assignmentRef: { type: string, minLength: 1 }
-        displayAccountRefs:
-          type: array
-          uniqueItems: true
-          items: { type: string, minLength: 1 }
+        businessWalletUnitId: { type: string, minLength: 1 }
+        businessWalletName: { type: string, minLength: 1 }
         actionScopes:
           type: array
           uniqueItems: true
@@ -183,25 +208,37 @@ components:
     BusinessConduitApprovalHttpView:
       type: object
       additionalProperties: false
-      required: [mode, status, requiredApprovals, receivedApprovals, bindingDigest, expiresAtEpochSeconds]
+      required: [status, bindingDigest, expiresAtEpochSeconds, challenge]
       properties:
-        mode:
-          $ref: '#/components/schemas/BusinessConduitApprovalMode'
         status:
           $ref: '#/components/schemas/BusinessConduitApprovalStatus'
-        requiredApprovals: { type: integer, minimum: 0 }
-        receivedApprovals: { type: integer, minimum: 0 }
         bindingDigest: { type: string, pattern: '^sha256:[0-9a-f]{64}$' }
         expiresAtEpochSeconds: { type: integer, format: int64, minimum: 1 }
+        challenge:
+          $ref: '#/components/schemas/BusinessConduitApprovalChallenge'
+    BusinessConduitApprovalChallenge:
+      type: object
+      additionalProperties: false
+      description: |
+        What the approver's passkey activation decision must answer. The approver requests the
+        decision on the conduit device's wallet unit for exactly these values and sends its
+        reference as activationDecisionRef; the conduit spends it once through that wallet unit.
+      required: [walletUnitId, operationType, operationBinding, operationHash, nonce, audience]
+      properties:
+        walletUnitId: { type: string, minLength: 1 }
+        operationType: { type: string, minLength: 1 }
+        operationBinding: { type: string, minLength: 1 }
+        operationHash: { type: string, pattern: '^sha256:[0-9a-f]{64}$' }
+        nonce: { type: string, minLength: 1 }
+        audience: { type: string, minLength: 1 }
     BusinessConduitInteractionHttpView:
       type: object
       additionalProperties: false
       required:
         - interactionRef
         - assignmentRef
+        - businessWalletUnitId
         - initiationSource
-        - routingMode
-        - eligibleBusinessAccountRefs
         - executionOwner
         - controllerLease
         - state
@@ -209,30 +246,26 @@ components:
         - createdAtEpochSeconds
         - updatedAtEpochSeconds
         - expiresAtEpochSeconds
-        - backendEgressVerified
       properties:
         interactionRef: { type: string, minLength: 1 }
         assignmentRef: { type: string, minLength: 1 }
+        businessWalletUnitId:
+          type: string
+          minLength: 1
+          description: The business wallet unit the holder interaction runs on.
         initiationSource:
           $ref: '#/components/schemas/BusinessConduitInitiationSource'
-        routingMode:
-          $ref: '#/components/schemas/BusinessConduitAccountRoutingMode'
-        eligibleBusinessAccountRefs:
-          type: array
-          uniqueItems: true
-          items: { type: string, minLength: 1 }
-        selectedBusinessAccountRef: { type: string, minLength: 1, nullable: true }
-        protocol:
-          type: string
-          nullable: true
-          allOf: [{ $ref: '#/components/schemas/BusinessConduitProtocol' }]
-        actionScope: { type: string, minLength: 1, nullable: true }
         executionOwner:
           $ref: '#/components/schemas/ProtocolExecutionOwner'
         approval:
           type: object
           nullable: true
           allOf: [{ $ref: '#/components/schemas/BusinessConduitApprovalHttpView' }]
+        pendingHolderAction:
+          type: object
+          nullable: true
+          description: The holder action the approval is asked for.
+          allOf: [{ $ref: './wallet-interaction-components.yml#/components/schemas/WalletInteractionAction' }]
         controllerLease:
           $ref: '#/components/schemas/BusinessConduitControllerLeaseHttpView'
         state:
@@ -241,5 +274,9 @@ components:
         createdAtEpochSeconds: { type: integer, format: int64, minimum: 1 }
         updatedAtEpochSeconds: { type: integer, format: int64, minimum: 1 }
         expiresAtEpochSeconds: { type: integer, format: int64, minimum: 1 }
-        backendEgressVerified: { type: boolean }
+        holder:
+          type: object
+          nullable: true
+          description: The business wallet's holder interaction, absent until it has started.
+          allOf: [{ $ref: './wallet-interaction-components.yml#/components/schemas/WalletInteractionState' }]
         failureReasonCode: { type: string, nullable: true }

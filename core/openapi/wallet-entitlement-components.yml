@@ -116,6 +116,12 @@ components:
     ProtocolExecutionOwner:
       type: string
       enum: [WALLET_APP, WALLET_BACKEND]
+    ManagedProtocolExecutionOwner:
+      type: string
+      description: |
+        Protocol execution owner a managed wallet policy can grant. A managed wallet runs its holder
+        on the platform on every channel, so the backend is the only owner a managed policy accepts.
+      enum: [WALLET_BACKEND]
     WalletInteractionCaptureSource:
       type: string
       enum: [MOBILE_QR, MOBILE_DEEPLINK, WEB_UI, API]
@@ -141,9 +147,10 @@ components:
         allowedProtocolExecutionOwners:
           type: array
           uniqueItems: true
-          items: { $ref: '#/components/schemas/ProtocolExecutionOwner' }
+          description: Execution owners the rule allows. Managed wallet policies are backend-only.
+          items: { $ref: '#/components/schemas/ManagedProtocolExecutionOwner' }
         defaultProtocolExecutionOwner:
-          $ref: '#/components/schemas/ProtocolExecutionOwner'
+          $ref: '#/components/schemas/ManagedProtocolExecutionOwner'
         userMayChooseExecutionOwnerBeforeCapture: { type: boolean }
         allowedCaptureSources:
           type: array
@@ -158,8 +165,6 @@ components:
         maxAppRegistrationsPerAccount: { type: integer, minimum: 1 }
         maxPersonalWalletsPerPerson: { type: integer, minimum: 1 }
         maxPersonalWalletsPerAccount: { type: integer, minimum: 1 }
-        maxAccountsPerConduitUnit: { type: integer, minimum: 1 }
-        maxConduitUnitsPerBusinessAccount: { type: integer, minimum: 1 }
         minimumAssurance: { type: string }
     WalletFeaturePolicyRule:
       type: object
@@ -275,10 +280,8 @@ components:
       enum: [CREDENTIAL_STATUS_REFRESH, BACKUP_HEALTH_CHECK, METADATA_SYNCHRONIZATION, NOTIFICATION_DELIVERY, STALE_ASSIGNMENT_CLEANUP]
     ManagedWalletBusinessConduitPolicy:
       type: object
-      required: [maxAccountsPerConduitUnit, maxConduitUnitsPerBusinessAccount, approvalPolicyRefs, unattendedActionClasses]
+      required: [approvalPolicyRefs, unattendedActionClasses]
       properties:
-        maxAccountsPerConduitUnit: { type: integer, minimum: 1 }
-        maxConduitUnitsPerBusinessAccount: { type: integer, minimum: 1 }
         approvalPolicyRefs:
           type: array
           uniqueItems: true

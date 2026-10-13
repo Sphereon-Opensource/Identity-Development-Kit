@@ -162,6 +162,51 @@ components:
           default: []
         metadata:
           $ref: '#/components/schemas/StringMap'
+        processBinding:
+          $ref: '#/components/schemas/WalletInteractionProcessBinding'
+
+    WalletInteractionProcessBinding:
+      type: object
+      description: >
+        Version-pinned local process references claimed by the caller. The claim has no effect
+        until the host launch authority admits it.
+      required: [tenantId, modelId, caseType, caseId, executionId, policyBindingRef, policyRevision, action, role]
+      properties:
+        tenantId:
+          type: string
+          minLength: 1
+        modelId:
+          type: string
+          minLength: 1
+        caseType:
+          type: string
+          minLength: 1
+        caseId:
+          type: string
+          minLength: 1
+        executionId:
+          type: string
+          minLength: 1
+        policyBindingRef:
+          type: string
+          minLength: 1
+        policyRevision:
+          type: integer
+          format: int64
+          minimum: 1
+        action:
+          type: string
+          minLength: 1
+        role:
+          type: string
+          minLength: 1
+        policyModelId:
+          type: string
+          description: Semantic model of the governed policy binding. Defaults to modelId.
+        policyVersion:
+          type: string
+          default: ''
+          description: Exact package version of the governed policy binding.
 
     StartWalletInteractionBody:
       type: object
@@ -598,6 +643,12 @@ components:
         displayName:
           type: string
           minLength: 1
+          description: The issuer's first display name, or the last path segment when it gave none.
+        localizedDisplayNames:
+          $ref: '#/components/schemas/StringMap'
+          description: >
+            Every display name the issuer gave, keyed by BCP 47 locale. The renderer picks the entry
+            for the holder's language.
 
     WalletCredentialBranding:
       type: object
@@ -676,6 +727,14 @@ components:
           description: Dotted lowercase localization key.
         arguments:
           $ref: '#/components/schemas/StringMap'
+        rejected:
+          type: boolean
+          default: false
+          description: The issuer rejected the last code submitted for this offer; the holder may try again.
+        possiblyExpired:
+          type: boolean
+          default: false
+          description: The issuer rejected two or more codes in a row; the offer may have expired.
 
     WalletClaimDescriptor:
       type: object
@@ -708,6 +767,7 @@ components:
           type: string
           nullable: true
         format:
+          type: string
           nullable: true
           allOf:
             - $ref: './wallet-credential-components.yml#/components/schemas/CredentialFormat'
@@ -799,6 +859,7 @@ components:
         id:
           type: string
         format:
+          type: string
           nullable: true
           allOf:
             - $ref: './wallet-credential-components.yml#/components/schemas/CredentialFormat'
@@ -982,6 +1043,28 @@ components:
           $ref: '#/components/schemas/StringMap'
         requiredAssurance:
           $ref: '#/components/schemas/WalletSecurityAssurance'
+        operations:
+          type: array
+          description: >-
+            Every holder-key signature this approval authorizes, in signing order. One approval
+            covers all signatures of the interaction on the wallet unit; the operationHash argument
+            is then the SHA-256 over this list. Absent for an approval of a single operation.
+          items:
+            $ref: '#/components/schemas/WalletApprovalOperation'
+
+    WalletApprovalOperation:
+      type: object
+      description: One holder-key signature an approval authorizes.
+      required: [keyRef, operationHash]
+      properties:
+        keyRef:
+          type: string
+          minLength: 1
+          description: The holder key that signs.
+        operationHash:
+          type: string
+          minLength: 1
+          description: Hash of the exact signing input, as `sha256:<hex>`.
 
     WalletInteractionSensitiveInputRef:
       type: object
@@ -1248,18 +1331,18 @@ components:
     WalletTrustDomainPosture:
       type: string
       description: >
-        Explicit trust-domain posture from the real issuerTrustMode, never inferred from an empty
-        defaults list. FAIL_CLOSED is nothing trusted. TRUST_ALL is explicit UNRESTRICTED.
-        CUSTOM is TRUST_DOMAINS with assigned domains.
-      enum: [FAIL_CLOSED, TRUST_ALL, CUSTOM]
+        Explicit trust-domain posture from persisted trust policy, never inferred from an empty
+        defaults list. FAIL_CLOSED is nothing trusted. CUSTOM is TRUST_DOMAINS with assigned
+        domains. There is no unrestricted posture.
+      enum: [FAIL_CLOSED, CUSTOM]
 
     WalletTrustDomainAdmissionOutcome:
       type: string
       description: >
-        Result of asking whether this deployment admits the chain's anchor. ADMITTED_TRUST_ALL
-        must not be rendered as a named authority admitting the anchor. NOT_ADMITTED is local
+        Result of asking whether this deployment admits the chain's anchor. Admission is either
+        tied to a named domain, denied by local policy, or fail-closed. NOT_ADMITTED is local
         policy, not a broken chain.
-      enum: [ADMITTED_NAMED_DOMAIN, ADMITTED_TRUST_ALL, NOT_ADMITTED, FAIL_CLOSED]
+      enum: [ADMITTED_NAMED_DOMAIN, NOT_ADMITTED, FAIL_CLOSED]
 
     WalletTrustDomainAdmission:
       type: object
@@ -1267,7 +1350,7 @@ components:
       description: >
         Whether the chain's anchor is admitted by the assigned trust domains. Distinct from
         WalletTrustChain.links. admittingDomain is present only for ADMITTED_NAMED_DOMAIN and
-        must be absent for ADMITTED_TRUST_ALL.
+        must be absent for every other outcome.
       required: [posture, outcome]
       properties:
         posture:
@@ -1338,6 +1421,41 @@ components:
           $ref: '#/components/schemas/WalletTrustDomainAdmission'
         attestationAuthorisation:
           $ref: '#/components/schemas/WalletAttestationAuthorisation'
+        issuerAuthentication:
+          $ref: '#/components/schemas/WalletIssuerAuthenticationResult'
+
+    WalletIssuerAuthenticationResult:
+      type: object
+      description: >
+        Issuer-authentication material resolved for the counterparty, used as the cryptographic
+        input when an issued JWT VC is accepted. Separate from the trust decision above. Keys
+        embedded in jwk or x5c credential headers are never copied into this object.
+      required: [issuer, trustedJwks, provenance]
+      properties:
+        issuer:
+          type: string
+          minLength: 1
+        trustedJwks:
+          type: object
+          additionalProperties: true
+          description: JWK Set with a non-empty keys array of JWK objects.
+        provenance:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/WalletIssuerAuthenticationProvenance'
+
+    WalletIssuerAuthenticationProvenance:
+      type: object
+      description: Where the issuer key set in WalletIssuerAuthenticationResult came from.
+      required: [source, reference]
+      properties:
+        source:
+          type: string
+          minLength: 1
+        reference:
+          type: string
+          minLength: 1
 
     WalletInteractionActionType:
       type: string
@@ -1414,12 +1532,14 @@ components:
           default: 0
           description: Monotonic state revision used for event replay and frame reconciliation.
         flowKind:
+          type: string
           nullable: true
           allOf:
             - $ref: '#/components/schemas/WalletInteractionFlowKind'
         activity:
           $ref: '#/components/schemas/WalletInteractionActivitySummary'
         protocol:
+          type: string
           nullable: true
           allOf:
             - $ref: '#/components/schemas/WalletProtocol'
@@ -1439,6 +1559,8 @@ components:
           $ref: '#/components/schemas/WalletCounterpartyEncounterResult'
         trust:
           $ref: '#/components/schemas/WalletCounterpartyTrustSummary'
+        issuerAuthentication:
+          $ref: '#/components/schemas/WalletIssuerAuthenticationResult'
         credentialOffer:
           $ref: '#/components/schemas/WalletCredentialOfferSummary'
         selectedCredentialConfigurationIds:
@@ -1664,6 +1786,7 @@ components:
         walletUnitId:
           type: string
         flowKind:
+          type: string
           nullable: true
           allOf:
             - $ref: '#/components/schemas/WalletInteractionFlowKind'
@@ -1699,7 +1822,7 @@ components:
         recordedAt: { type: string, format: date-time }
         evidenceCount: { type: integer, format: int32, minimum: 0 }
         availability: { type: string, enum: [available, unavailable] }
-        adl: { type: object, additionalProperties: true }
+        adl: { type: object, nullable: true, additionalProperties: true }
 
     ListWalletInteractionActivityResult:
       type: object
@@ -1916,10 +2039,12 @@ components:
           nullable: true
           description: Absolute expiry instant backing the single durable expiry timer.
         redirectTarget:
+          type: object
           allOf:
             - $ref: '#/components/schemas/HandoffRedirectTarget'
           nullable: true
         outcome:
+          type: object
           allOf:
             - $ref: '#/components/schemas/HandoffOutcomeDetail'
           nullable: true
@@ -1965,6 +2090,7 @@ components:
           nullable: true
           description: Session lifetime backing the single durable expiry timer. Defaults to the deployment policy when absent.
         redirectTarget:
+          type: object
           allOf:
             - $ref: '#/components/schemas/HandoffRedirectTarget'
           nullable: true
