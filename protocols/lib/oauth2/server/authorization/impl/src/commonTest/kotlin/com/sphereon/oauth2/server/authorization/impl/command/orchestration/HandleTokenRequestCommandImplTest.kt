@@ -341,6 +341,7 @@ class HandleTokenRequestCommandImplTest {
                 lazy {
                     com.sphereon.oauth2.server.authorization.impl.command.token.grant.AuthorizationCodeGrantHandlerImpl(
                         authorizationCodeStorage = authorizationCodeStorage,
+                        log = ctx.execution.log,
                         scopeClaimsMapper = null,
                         verifyAuthorizationCodeGrant = commands.verifyAuthorizationCodeGrant,
                         createAccessToken = commands.createAccessToken,

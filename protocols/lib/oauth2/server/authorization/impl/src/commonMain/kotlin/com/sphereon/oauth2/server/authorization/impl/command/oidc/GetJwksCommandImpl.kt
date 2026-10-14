@@ -16,6 +16,7 @@
 
 package com.sphereon.oauth2.server.authorization.impl.command.oidc
 
+import com.sphereon.oauth2.server.authorization.impl.command.token.logTokenRefusal
 import com.sphereon.core.api.Err
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
@@ -90,6 +91,7 @@ class GetJwksCommandImpl(
             // request reaches here; there is NO "default" tenant fallback. A blank/anonymous tenant is
             // a bug (a request bypassed Layer-1 resolution) — fail closed rather than publish another
             // tenant's keys or an empty set under a synthetic "default".
+            logTokenRefusal(execution.log, "JWKS publication refused stage=tenant-resolution")
             return Err(
                 IdkError.INVALID_STATE(
                     message =
@@ -103,7 +105,8 @@ class GetJwksCommandImpl(
         // registration. An empty set is the documented response shape when no key is registered yet.
         val publishableResult = signingKeyStore.listPublishable(tenantId)
         if (!publishableResult.isOk) {
-            return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Failed to list publishable signing keys: ${publishableResult.error}"))
+            logTokenRefusal(execution.log, "JWKS publication failed stage=publishable-key-storage error_type=${publishableResult.error::class.simpleName}")
+            return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Failed to list publishable signing keys"))
         }
         val publishable = publishableResult.value
         if (publishable.isEmpty()) {
@@ -122,7 +125,11 @@ class GetJwksCommandImpl(
                     signingKeyPublicJwkResolver.resolve(key)
                 } else {
                     key.resolveAsPublicJwk()
-                } ?: continue
+                }
+            if (jwk == null) {
+                logTokenRefusal(execution.log, "JWKS publication refused stage=public-key-resolution")
+                continue
+            }
             publishedJwks.add(jwk)
         }
         return Ok(JwksResult(keys = publishedJwks))

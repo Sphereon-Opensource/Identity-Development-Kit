@@ -23,6 +23,7 @@ import com.sphereon.core.api.decodeFromBase64Url
 import com.sphereon.core.api.encodeToBase64
 import com.sphereon.core.api.encodeToBase64Url
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.core.api.log.Log
 import com.sphereon.core.api.json.jcs.Jcs
 import com.sphereon.crypto.core.KeyInfo
 import com.sphereon.crypto.core.KeyVisibility
@@ -47,6 +48,7 @@ import com.sphereon.data.store.party.model.IdentifierType
 import com.sphereon.data.store.party.model.ProtectedIdentifierValue
 import com.sphereon.identity.matching.protection.IdentifierProtectionPolicy
 import com.sphereon.identity.matching.protection.IdentifierProtector
+import com.sphereon.identity.matching.protection.IdentifierValueEncryption
 import com.sphereon.identity.matching.protection.normalizeIdentifier
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -86,6 +88,7 @@ class KmsBackedIdentifierProtector(
     private val decryptCommand: DecryptCommand,
     private val providerId: String? = null,
     private val keyVersion: String = "v1",
+    private val valueEncryption: IdentifierValueEncryption? = null,
 ) : IdentifierProtector {
     private val keyReferenceCacheMutex = Mutex()
     private val keyReferenceCache = mutableMapOf<TenantKeyCacheKey, ManagedKeyReference>()
@@ -506,16 +509,21 @@ class KmsBackedIdentifierProtector(
         val keyInfo = ensureEncryptionKey(tenantId, knownLookup).getOrElse { return Err(it) }
         val aad = encryptionAad(tenantId, identityId, type)
 
-        val result =
-            encryptCommand.execute(
-                EncryptArgs(
+        val args = EncryptArgs(
                     keyInfo = keyInfo,
                     plaintext = normalized.encodeToByteArray(),
                     algorithm = ContentEncryptionAlgorithm.A256GCM,
                     additionalAuthenticatedData = aad,
-                ),
+                )
+        val result = valueEncryption?.encrypt(tenantId, args) ?: encryptCommand.execute(args)
+        val encryptResult = result.getOrNull() ?: run {
+            val error = result.errorOrNull() ?: unknown("encryption failed")
+            val code = error.code.takeIf { it.matches(Regex("[A-Za-z0-9_.:-]{1,160}")) } ?: "unavailable"
+            Log.app().withTag("IdentifierProtection").warn(
+                "Identifier protection refused stage=kms-encrypt code=$code",
             )
-        val encryptResult = result.getOrNull() ?: return Err(result.errorOrNull() ?: unknown("encryption failed"))
+            return Err(error)
+        }
 
         val combined = encryptResult.iv + encryptResult.authTag + encryptResult.ciphertext
         return Ok(combined.encodeToBase64Url())
@@ -551,18 +559,21 @@ class KmsBackedIdentifierProtector(
             ).getOrElse { return Err(it) }
         val aad = encryptionAad(tenantId, identityId, type)
 
-        val result =
-            decryptCommand.execute(
-                DecryptArgs(
+        val args = DecryptArgs(
                     keyInfo = keyInfo,
                     ciphertext = ciphertext,
                     algorithm = ContentEncryptionAlgorithm.A256GCM,
                     iv = iv,
                     authTag = authTag,
                     additionalAuthenticatedData = aad,
-                ),
-            )
-        val decryptResult = result.getOrNull() ?: return Err(result.errorOrNull() ?: unknown("decryption failed"))
+                )
+        val result = valueEncryption?.decrypt(tenantId, args) ?: decryptCommand.execute(args)
+        val decryptResult = result.getOrNull() ?: run {
+            val error = result.errorOrNull() ?: unknown("decryption failed")
+            val code = error.code.takeIf { it.matches(Regex("[A-Za-z0-9_.:-]{1,160}")) } ?: "unavailable"
+            Log.app().withTag("IdentifierProtection").warn("Identifier protection refused stage=kms-decrypt code=$code")
+            return Err(error)
+        }
         return Ok(decryptResult.plaintext.decodeToString())
     }
 

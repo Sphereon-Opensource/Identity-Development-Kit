@@ -113,7 +113,10 @@ class HandleTokenRequestCommandImpl(
         timings: TokenPathStageTimings,
     ): IdkResult<TokenResponse, IdkError> {
         val applied = applyDuring(args)
-        val tokenRequest = authenticator.parse(applied, timings).getOrElse { error -> return Err(error) }
+        val tokenRequest = authenticator.parse(applied, timings).getOrElse { error ->
+            logTokenRefusal(log, "Token request refused command=$commandId stage=request-parse code=${safeErrorCode(error)}")
+            return Err(error)
+        }
         val grantType = tokenRequest.grantType.value
 
         // RFC 8693 exchanges run as one journey that authenticates the client itself. Route the
@@ -131,7 +134,10 @@ class HandleTokenRequestCommandImpl(
         val authenticated =
             authenticator
                 .authenticate(applied, tokenRequest, execution.tenantId, timings)
-                .getOrElse { error -> return Err(error) }
+                .getOrElse { error ->
+                    logTokenRefusal(log, "Token request refused command=$commandId stage=request-authentication code=${safeErrorCode(error)}")
+                    return Err(error)
+                }
 
         val handler =
             grantHandlers[grantType]?.value
@@ -150,7 +156,14 @@ class HandleTokenRequestCommandImpl(
                 params = tokenRequest.grantParameters,
                 context = authenticated.context,
                 clientAuthorization = authenticated.clientAuthorization,
-            )
+            ).also { result ->
+                if (result.isErr) {
+                    logTokenRefusal(log, "Token request refused command=$commandId stage=grant-dispatch code=${safeErrorCode(result.error)}")
+                }
+            }
         }
     }
+
+    private fun safeErrorCode(error: IdkError): String =
+        error.code.takeIf { it.matches(Regex("[A-Za-z0-9_.:-]{1,160}")) } ?: "unavailable"
 }

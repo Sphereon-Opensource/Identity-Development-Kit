@@ -114,11 +114,16 @@ class JwksUrlExternalIdentifierResolutionServiceImpl private constructor(
         val opts = asSupportedOpts(args).value
         val url = opts.identifier.trim()
         if (url.isBlank()) {
+            log.warn("JWKS_RESOLUTION_REFUSED stage=input reason=empty_url")
             return IdkError.ILLEGAL_ARGUMENT_ERROR(message = "JWKS URL is blank").asErrorResult()
         }
 
         val requestedKid = opts.lookup.kid
-        val jwkSet = resolveJwkSetCached(url, requestedKid).getOrElse { return it.asErrorResult() }
+        val jwkSet = resolveJwkSetCached(url, requestedKid).getOrElse {
+            val code = it.code.takeIf { value -> value.matches(Regex("[A-Za-z0-9_.:-]{1,160}")) } ?: "unavailable"
+            log.warn("JWKS_RESOLUTION_REFUSED stage=document-resolution code=$code")
+            return it.asErrorResult()
+        }
 
         @Suppress("UNCHECKED_CAST")
         val resolvedKeys =
@@ -127,7 +132,7 @@ class JwksUrlExternalIdentifierResolutionServiceImpl private constructor(
                     try {
                         ResolvedKeyInfo.fromKey(it) as ResolvedKeyInfoType<JwkType>
                     } catch (expected: Exception) {
-                        log.debug("Skipping unsupported key in JWKS: ${expected.message}")
+                        log.debug("JWKS key skipped stage=key-admission exception_type=${expected::class.simpleName}")
                         null
                     }
                 }.toTypedArray()
