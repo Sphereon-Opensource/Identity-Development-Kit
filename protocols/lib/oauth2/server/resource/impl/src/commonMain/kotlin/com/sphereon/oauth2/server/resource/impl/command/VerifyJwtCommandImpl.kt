@@ -217,6 +217,7 @@ class VerifyJwtCommandImpl(
         // RFC 9068 §4 requires the access-token media type. Reject absent and non-string typ
         // values safely; jsonPrimitive would throw for malformed object/array headers.
         if (standardArtifactContext == null && !hasSupportedAccessTokenTyp(protectedHeader)) {
+            log.warn("JWT resource verification refused command=$commandId stage=access-token-type")
             return Err(
                 ResourceServerError.InvalidToken.Malformed(
                     reason = "JWT typ must be 'at+jwt' or 'application/at+jwt'",
