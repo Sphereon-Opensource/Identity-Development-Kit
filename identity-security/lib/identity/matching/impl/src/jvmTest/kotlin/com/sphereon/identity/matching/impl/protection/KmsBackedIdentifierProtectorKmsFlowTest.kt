@@ -88,6 +88,7 @@ import com.sphereon.crypto.core.toKeyReference
 import com.sphereon.crypto.core.x509.Certificate
 import com.sphereon.data.store.party.model.IdentifierProtectionMode
 import com.sphereon.data.store.party.model.IdentifierType
+import com.sphereon.identity.matching.protection.IdentifierProtectionKeyAccess
 import com.sphereon.identity.matching.protection.IdentifierProtectionPolicy
 import com.sphereon.identity.matching.protection.NormalizationProfile
 import kotlinx.coroutines.async
@@ -132,6 +133,7 @@ class KmsBackedIdentifierProtectorKmsFlowTest {
         macCommand: MapBackedGenerateMacCommand = MapBackedGenerateMacCommand(kms),
         listKeysCommand: ListKeysCommand = MapBackedListKeysCommand(kms),
         generateKeyCommand: GenerateKeyCommand = MapBackedGenerateKeyCommand(kms),
+        keyAccess: IdentifierProtectionKeyAccess? = null,
     ): KmsBackedIdentifierProtector =
         KmsBackedIdentifierProtector(
             generateKeyCommand = generateKeyCommand,
@@ -140,7 +142,43 @@ class KmsBackedIdentifierProtectorKmsFlowTest {
             encryptCommand = MapBackedEncryptCommand(kms),
             decryptCommand = MapBackedDecryptCommand(kms),
             providerId = providerId,
+            keyAccess = keyAccess,
         )
+
+    @Test
+    fun blindIndexUsesBoundKeyAccessWithoutCallingRequestSessionCommands() = runTest {
+        val kms = InMemoryAesGcmKms()
+        val original = newProtector(kms).protect(tenant, "identity-1", emailType, "Owner@Example.com", emailPolicy)
+            .getOrNull() ?: error("initial protection failed")
+        val lookups = mutableListOf<String>()
+        val macs = mutableListOf<String>()
+        val keyAccess = object : IdentifierProtectionKeyAccess {
+            override suspend fun listKeys(tenantId: String, args: ListKeysArgs): IdkResult<ListKeysResult, IdkError> {
+                assertEquals(tenant, tenantId)
+                assertEquals("software", args.providerId)
+                assertEquals("idfr:bi:$tenant", args.alias)
+                lookups += tenantId
+                return MapBackedListKeysCommand(kms).execute(args)
+            }
+            override suspend fun generateMac(tenantId: String, args: GenerateMacArgs): IdkResult<GenerateMacResult, IdkError> {
+                assertEquals(tenant, tenantId)
+                assertEquals("software", args.providerId)
+                assertEquals("idfr:bi:$tenant", args.keyId)
+                macs += tenantId
+                return MapBackedGenerateMacCommand(kms).execute(args)
+            }
+        }
+        val directLookup = object : ListKeysCommand by MapBackedListKeysCommand(kms) {
+            override suspend fun execute(args: ListKeysArgs): IdkResult<ListKeysResult, IdkError> =
+                error("request-session key lookup must not run")
+        }
+        val protector = newProtector(kms, listKeysCommand = directLookup, keyAccess = keyAccess)
+        val result = protector.blindIndex(tenant, emailType, "owner@example.com", emailPolicy)
+        assertTrue(result.isOk)
+        assertEquals(original.valueHmac, result.value)
+        assertEquals(listOf(tenant), lookups)
+        assertEquals(listOf(tenant), macs)
+    }
 
     @Test
     fun providerSelectionSeparatesApplicationAndCustomerTenants() {

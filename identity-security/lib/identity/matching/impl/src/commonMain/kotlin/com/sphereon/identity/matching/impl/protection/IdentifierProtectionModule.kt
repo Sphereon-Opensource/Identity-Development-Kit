@@ -28,6 +28,7 @@ import com.sphereon.core.api.service.SessionScopedCommandRegistry
 import com.sphereon.di.session.SessionScope
 import com.sphereon.identity.matching.protection.DefaultIdentifierProtectionPolicyService
 import com.sphereon.identity.matching.protection.IdentifierProtectionPolicyService
+import com.sphereon.identity.matching.protection.IdentifierProtectionKeyAccess
 import com.sphereon.identity.matching.protection.IdentifierProtector
 import com.sphereon.identity.matching.protection.IdentifierValueEncryption
 import dev.zacsweers.metro.ContributesTo
@@ -67,6 +68,7 @@ interface IdentifierProtectionModule {
         commandRegistry: SessionScopedCommandRegistry,
         execution: SessionExecution,
         valueEncryption: IdentifierValueEncryption,
+        keyAccess: IdentifierProtectionKeyAccess,
     ): IdentifierProtector {
         // Resolve each command from the session registry at construction time so config-based
         // LOCAL/SERVER selection is honored. This matters in wallet-unit: its WSCD still needs
@@ -87,6 +89,7 @@ interface IdentifierProtectionModule {
             decryptCommand = requireIdentifierProtectionCommand(commandRegistry, DecryptCommand.COMMAND_ID),
             providerId = identifierProtectionProviderId(execution.tenantId, applicationTenantId),
             valueEncryption = valueEncryption,
+            keyAccess = keyAccess,
         )
     }
 }

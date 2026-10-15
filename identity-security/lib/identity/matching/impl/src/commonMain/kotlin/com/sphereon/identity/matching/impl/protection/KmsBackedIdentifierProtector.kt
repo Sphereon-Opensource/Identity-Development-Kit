@@ -47,6 +47,7 @@ import com.sphereon.data.store.party.model.IdentifierProtectionMode
 import com.sphereon.data.store.party.model.IdentifierType
 import com.sphereon.data.store.party.model.ProtectedIdentifierValue
 import com.sphereon.identity.matching.protection.IdentifierProtectionPolicy
+import com.sphereon.identity.matching.protection.IdentifierProtectionKeyAccess
 import com.sphereon.identity.matching.protection.IdentifierProtector
 import com.sphereon.identity.matching.protection.IdentifierValueEncryption
 import com.sphereon.identity.matching.protection.normalizeIdentifier
@@ -89,6 +90,7 @@ class KmsBackedIdentifierProtector(
     private val providerId: String? = null,
     private val keyVersion: String = "v1",
     private val valueEncryption: IdentifierValueEncryption? = null,
+    private val keyAccess: IdentifierProtectionKeyAccess? = null,
 ) : IdentifierProtector {
     private val keyReferenceCacheMutex = Mutex()
     private val keyReferenceCache = mutableMapOf<TenantKeyCacheKey, ManagedKeyReference>()
@@ -366,7 +368,11 @@ class KmsBackedIdentifierProtector(
         label: String,
         tenantId: String,
     ): IdkResult<TenantKeyLookup, IdkError> {
-        val lookup = listKeysCommand.execute(ListKeysArgs(providerId = providerId, alias = alias))
+        val args = ListKeysArgs(providerId = providerId, alias = alias)
+        val lookup = keyAccess?.listKeys(tenantId, args) ?: listKeysCommand.execute(args)
+        if (lookup.isErr) {
+            Log.app().withTag("IdentifierProtection").warn("IDENTIFIER_PROTECTION_REFUSED stage=key-lookup code=${lookup.error.code}")
+        }
         val references =
             lookup.getOrNull()?.keys
                 ?: return Err(
@@ -451,23 +457,25 @@ class KmsBackedIdentifierProtector(
         // configured providers. Carry the provider discovered by the successful key lookup into
         // the local MAC call so an upgraded multi-provider registry cannot select a new default.
         val resolvedProviderId = requireNotNull(resolvedKeyInfo.providerId)
-        return generateBlindIndexMac(keyAlias, message, resolvedProviderId)
+        return generateBlindIndexMac(tenantId, keyAlias, message, resolvedProviderId)
     }
 
     private suspend fun generateBlindIndexMac(
+        tenantId: String,
         keyAlias: String,
         message: ByteArray,
         providerId: String?,
     ): IdkResult<String, IdkError> {
-        val result =
-            generateMacCommand.execute(
-                GenerateMacArgs(
-                    keyId = keyAlias,
-                    message = message,
-                    digestAlgorithm = DigestAlg.SHA256,
-                    providerId = providerId,
-                ),
-            )
+        val args = GenerateMacArgs(
+            keyId = keyAlias,
+            message = message,
+            digestAlgorithm = DigestAlg.SHA256,
+            providerId = providerId,
+        )
+        val result = keyAccess?.generateMac(tenantId, args) ?: generateMacCommand.execute(args)
+        if (result.isErr) {
+            Log.app().withTag("IdentifierProtection").warn("IDENTIFIER_PROTECTION_REFUSED stage=blind-index-mac code=${result.error.code}")
+        }
         val macResult = result.getOrNull() ?: return Err(result.errorOrNull() ?: unknown("MAC generation failed"))
         return Ok(macResult.macMultibase)
     }
