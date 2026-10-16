@@ -53,10 +53,14 @@ data class VerifyRequestObjectArgs(
  * overlaid on top of [VerifyRequestObjectArgs.queryParameters], JWT-only claims (iss, aud,
  * exp, iat, jti, nbf) stripped. Pass this directly to [com.sphereon.oauth2.server.authorization.command.ParseAuthorizationRequestCommand].
  */
+/** Non-wire process evidence. Implementations supplied by callers are never trusted. */
+interface AuthorizationRequestEvidence
+
 data class VerifiedRequestObject(
     val mergedParameters: Map<String, String>,
     val clientId: String,
     val signingAlg: String,
+    val authorizationEvidence: AuthorizationRequestEvidence? = null,
 )
 
 /**

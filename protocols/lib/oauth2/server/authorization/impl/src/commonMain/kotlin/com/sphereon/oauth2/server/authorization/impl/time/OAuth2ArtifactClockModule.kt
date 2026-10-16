@@ -15,7 +15,7 @@ import kotlin.time.Instant
 import kotlin.time.TimeSource
 
 /** Qualifier for clocks used to expire short-lived, server-issued opaque artifacts. */
-internal const val OAUTH2_ARTIFACT_CLOCK = "oauth2-artifact-clock"
+internal const val OAUTH2_ARTIFACT_CLOCK = com.sphereon.oauth2.server.authorization.time.OAUTH2_ARTIFACT_CLOCK
 
 /**
  * A wall-clock-compatible clock whose elapsed time cannot move backwards while the process runs.

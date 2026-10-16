@@ -341,6 +341,9 @@ actual class AwsKmsCryptoProvider actual constructor(
         )
     }
 
+    override fun rawSignatureEncoding(algorithm: SignatureAlgorithm): com.sphereon.crypto.core.kms.command.SignatureEncoding? =
+        if (algorithm.jose?.value?.startsWith("ES") == true) com.sphereon.crypto.core.kms.command.SignatureEncoding.DER else com.sphereon.crypto.core.kms.command.SignatureEncoding.RAW
+
     override suspend fun createRawSignature(
         keyInfo: KeyInfoType<*>,
         input: ByteArray,

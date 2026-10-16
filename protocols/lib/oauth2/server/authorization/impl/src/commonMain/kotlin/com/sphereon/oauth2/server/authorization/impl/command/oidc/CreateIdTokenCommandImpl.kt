@@ -179,6 +179,12 @@ class CreateIdTokenCommandImpl(
             return Err(AuthorizationServerError.ServerError(details = expected.message ?: "Unsupported ID-token signing algorithm"))
         }
 
+        if (requestedAlg != null && requestedAlg != idTokenSigningAlg) {
+            return Err(AuthorizationServerError.ServerError(
+                details = "Selected ID-token signing algorithm '$idTokenSigningAlg' does not match the client's requested '$requestedAlg'",
+            ))
+        }
+
         // OIDC Back-Channel Logout 1.0 §4.1: emit `sid` so RPs can correlate logout_token.sid
         // back to a local session. We prefer the cookie-derived OIDC login session id (the
         // value the end-session orchestrator looks up when the RP later passes id_token_hint),

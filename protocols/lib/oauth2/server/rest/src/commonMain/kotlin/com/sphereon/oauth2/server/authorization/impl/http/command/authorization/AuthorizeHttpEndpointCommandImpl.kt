@@ -121,6 +121,10 @@ class AuthorizeHttpEndpointCommandImpl(
                 request.queryParameters.filterValues { it != null } as Map<String, String>
             }
 
+        if (parameters.containsKey("request") && parameters.containsKey("request_uri")) {
+            return Ok(oauth2ErrorResponse(400, "invalid_request", "request and request_uri MUST NOT both be present", json))
+        }
+
         val baseUrl = baseUrlResolver.resolveBaseUrl(request, configProvider)
         val handleArgs =
             HandleAuthorizeRequestArgs(

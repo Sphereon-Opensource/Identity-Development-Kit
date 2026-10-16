@@ -41,6 +41,7 @@ import com.sphereon.oauth2.server.authorization.impl.command.TokenPathStage
 import com.sphereon.oauth2.server.authorization.impl.command.TokenPathStageTimings
 import com.sphereon.oauth2.server.authorization.impl.command.token.grant.errOf
 import com.sphereon.oauth2.server.authorization.impl.command.token.grant.invalidDpopProof
+import kotlinx.coroutines.CancellationException
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.Instant
 
@@ -239,11 +240,22 @@ internal class TokenEndpointRequestAuthenticator(
         }
 
         val jti = verified.payload.jti
-        if (dpopProofJtiCache.value.hasBeenUsed(jti)) {
-            return invalidDpopProof("DPoP proof jti '$jti' has already been used")
-        }
         val iat = Instant.fromEpochSeconds(verified.payload.iat)
-        dpopProofJtiCache.value.markAsUsed(jti, iat + DPOP_JTI_REPLAY_WINDOW)
+        // Scope a proof identifier to its verified public key. UTF-8 byte-length framing
+        // makes the address unambiguous even when either value contains delimiters.
+        val thumbprint = verified.jwkThumbprint
+        val replayAddress = "${thumbprint.encodeToByteArray().size}:$thumbprint${jti.encodeToByteArray().size}:$jti"
+        val reserved =
+            try {
+                dpopProofJtiCache.value.recordIfNew(replayAddress, iat + DPOP_JTI_REPLAY_WINDOW)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                return invalidDpopProof("DPoP replay protection is unavailable")
+            }
+        if (!reserved) {
+            return invalidDpopProof("DPoP proof could not be reserved against replay")
+        }
         return Ok(verified.jwkThumbprint)
     }
 

@@ -113,6 +113,13 @@ class StandardAuthorizeRequestCommandImpl(
     ): IdkResult<AuthorizationRequestOutcome, IdkError> {
         val applied = applyDuring(args)
         val rawQueryParameters = applied.queryParameters
+        if (rawQueryParameters.containsKey("request") && rawQueryParameters.containsKey("request_uri")) {
+            return Ok(AuthorizationRequestOutcome.PreRedirectError(
+                error = "invalid_request",
+                errorDescription = "request and request_uri MUST NOT both be present",
+            ))
+        }
+        var verifiedEvidence: com.sphereon.oauth2.server.authorization.command.jar.AuthorizationRequestEvidence? = null
 
         // RFC 9101 (JAR) — when the AS has JAR enabled and the front-channel carries a `request`
         // (inline JWT) or a non-PAR `request_uri`, verify the JWT, replace the parsed parameters
@@ -154,7 +161,7 @@ class StandardAuthorizeRequestCommandImpl(
                         verifyRequestObjectCommand.execute(
                             VerifyRequestObjectArgs(
                                 requestJwt = raw,
-                                requestUri = if (raw == null) rawUri else null,
+                                requestUri = rawUri,
                                 clientIdHint = rawQueryParameters["client_id"],
                                 issuer = issuer,
                                 queryParameters = rawQueryParameters,
@@ -168,6 +175,7 @@ class StandardAuthorizeRequestCommandImpl(
                             ),
                         )
                     }
+                    verifiedEvidence = jarResult.value.authorizationEvidence
                     jarResult.value.mergedParameters
                         .toMutableMap()
                         .apply {
@@ -189,7 +197,8 @@ class StandardAuthorizeRequestCommandImpl(
                 ),
             )
         }
-        val parsed = parseResult.value
+        // The private evidence checker compares the full parsed request to its immutable signed snapshot.
+        val parsed = parseResult.value.copy(authorizationEvidence = verifiedEvidence)
 
         // RFC 9126 §4: when the request carries a PAR URN in `request_uri`, swap the parsed
         // request for the previously verified one stored at /par. The retrieve command consumes

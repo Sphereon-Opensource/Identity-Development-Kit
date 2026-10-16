@@ -81,7 +81,7 @@ class HandleAuthorizeCallbackCommandImpl(
         val applied = applyDuring(args)
         val sessionId = applied.sessionId
 
-        val findResult = pendingAuthorizationSessionStore.findById(sessionId)
+        val findResult = pendingAuthorizationSessionStore.consume(sessionId)
         if (findResult.isErr) {
             return Err(findResult.error)
         }
@@ -93,9 +93,7 @@ class HandleAuthorizeCallbackCommandImpl(
                         message = "No pending authorization session for session_id: $sessionId",
                     ),
                 )
-        // Single-use semantics: remove before processing so a duplicate callback fails with the
-        // 400 above rather than racing two issuances.
-        pendingAuthorizationSessionStore.remove(sessionId)
+        // The storage transaction has claimed this callback once across every replica.
 
         // Resolve the authenticated user. The federation flow records the user against the
         // pending session id inside the [UserAuthenticationProvider], so the provider lookup
