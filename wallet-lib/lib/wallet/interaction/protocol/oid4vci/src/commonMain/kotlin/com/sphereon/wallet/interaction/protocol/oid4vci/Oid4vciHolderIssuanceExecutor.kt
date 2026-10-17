@@ -45,8 +45,11 @@ import com.sphereon.wallet.credential.IdentifierRef
 import com.sphereon.wallet.credential.IssuanceSession
 import com.sphereon.wallet.credential.IssuanceSessionStatus
 import com.sphereon.wallet.credential.KeyRef
+import com.sphereon.wallet.credential.WalletHolderIdentifierKind
+import com.sphereon.wallet.credential.WalletHolderVerificationMethod
 import com.sphereon.wallet.credential.RetryPolicy
 import com.sphereon.wallet.credential.WalletCredentialStore
+import com.sphereon.wallet.WalletHolderVerificationMethodResolver
 import com.sphereon.wallet.credential.WalletIssuanceSessionStore
 import com.sphereon.wallet.interaction.WalletCredentialPreview
 import com.sphereon.wallet.interaction.WalletInteractionAction
@@ -468,6 +471,11 @@ data class Oid4vciCredentialRequestProofRequest(
     val signingAlgorithm: String = "ES256",
     val clientId: String? = null,
     val keyAttestationJwt: String? = null,
+    /**
+     * The holder's did:jwk `#0` verification method of [signingKeyId] when the credential is to be
+     * bound to a DID (OID4VCI 1.0 section 12.2.4 `did:jwk`, Appendix F.1 `kid`); null for a JWK proof.
+     */
+    val holderDidVerificationMethod: String? = null,
 )
 
 /**
@@ -524,9 +532,11 @@ class HolderServiceOid4vciCredentialRequestProofProvider(
                         signingKeyIds = listOf(request.signingKeyId),
                         signingAlgorithm = request.signingAlgorithm,
                         clientId = request.clientId,
-                        keyInclusionMode = JwsIdentifierMode.JWK.name,
+                        keyInclusionMode =
+                            if (request.holderDidVerificationMethod != null) JwsIdentifierMode.DID.name else JwsIdentifierMode.JWK.name,
                         keyAttestationJwt = request.keyAttestationJwt,
                         iatEpochSeconds = iatEpochSeconds,
+                        holderDidVerificationMethod = request.holderDidVerificationMethod,
                     ),
                 ).getOrElse { return Err(it) }
             proofs += prepared.proofs
@@ -597,6 +607,11 @@ class Oid4vciHolderIssuanceExecutor(
      * for which of the two implementations a given composition root must wire.
      */
     private val credentialRequestProofProvider: Oid4vciCredentialRequestProofProvider,
+    /**
+     * Resolves the did:jwk verification method registered for a holder key, used when the
+     * credential configuration binds credentials to `did:jwk`. Without it only JWK binding is offered.
+     */
+    private val holderVerificationMethodResolver: WalletHolderVerificationMethodResolver? = null,
 ) : Oid4vciIssuanceExecutor {
     override suspend fun requestCredential(
         context: WalletInteractionContext,
@@ -1769,6 +1784,9 @@ class Oid4vciHolderIssuanceExecutor(
                             ).addCause(error),
                     )
                 }
+            val holderDidVerificationMethod =
+                holderBindingDidVerificationMethod(context, resolvedOffer, credentialConfigurationId, holderKeyAlias)
+                    .getOrElse { return Err(it) }
             proofRequests +=
                 Oid4vciCredentialRequestProofRequest(
                     walletUnitId = context.walletUnitId,
@@ -1783,6 +1801,7 @@ class Oid4vciHolderIssuanceExecutor(
                     signingAlgorithm = options.signingAlgorithm,
                     clientId = clientId,
                     keyAttestationJwt = keyAttestationJwt,
+                    holderDidVerificationMethod = holderDidVerificationMethod,
                 )
         }
         val prepared =
@@ -1803,6 +1822,28 @@ class Oid4vciHolderIssuanceExecutor(
                 holderKeyAliases = holderKeyAliases,
             ),
         )
+    }
+
+    /**
+     * Chooses the key representation the issuer binds the credential to, from the configuration's
+     * `cryptographic_binding_methods_supported` (OID4VCI 1.0 section 12.2.4): `did:jwk` when offered
+     * and the holder key has a registered did:jwk verification method, otherwise `jwk` when offered
+     * or when no binding method is advertised (binding not required). Anything else fails closed.
+     */
+    private suspend fun holderBindingDidVerificationMethod(
+        context: WalletInteractionContext,
+        resolvedOffer: ResolvedCredentialOffer,
+        credentialConfigurationId: String?,
+        holderKeyAlias: String,
+    ): IdkResult<String?, IdkError> {
+        val methods =
+            credentialConfigurationId
+                ?.let { resolvedOffer.issuerMetadata.credentialConfigurationsSupported[it] }
+                ?.cryptographicBindingMethodsSupported
+                .orEmpty()
+        return selectHolderDidVerificationMethod(methods) {
+            holderVerificationMethodResolver?.resolve(context.walletUnitId, KeyRef(alias = holderKeyAlias))
+        }
     }
 
     private fun credentialRequestProofFailure(error: IdkError): Oid4vciIssuanceExecutionResult =
@@ -2808,3 +2849,31 @@ private fun signatureAlgorithm(joseAlgorithm: String): SignatureAlgorithm =
 
 /** A DPoP proof accompanies every request made with the access token these options produce. */
 internal fun Oid4vciHolderIssuanceOptions.isDpopBound(): Boolean = dpopEnabled || haipTokenProofs != null
+
+/**
+ * The holder DID verification method for a credential request proof, or null for a JWK proof:
+ * `did:jwk` when [methods] offers it and the key has a did:jwk verification method, otherwise JWK
+ * when [methods] offers `jwk` or is empty (binding not required). Anything else fails closed.
+ */
+internal suspend fun selectHolderDidVerificationMethod(
+    methods: List<String>,
+    holderVerificationMethod: suspend () -> WalletHolderVerificationMethod?,
+): IdkResult<String?, IdkError> {
+    if (DID_JWK_BINDING_METHOD in methods) {
+        val method = holderVerificationMethod()
+        if (method?.kind == WalletHolderIdentifierKind.DID_VERIFICATION_METHOD && method.value.startsWith("$DID_JWK_BINDING_METHOD:")) {
+            return Ok(method.value)
+        }
+    }
+    if (methods.isEmpty() || JWK_BINDING_METHOD in methods) return Ok(null)
+    return Err(
+        IdkError.fromString(
+            code = "oid4vci.holder_binding_method_unsupported",
+            message = "The wallet supports only jwk and did:jwk credential binding; the issuer offers $methods",
+        ),
+    )
+}
+
+/** OID4VCI 1.0 section 12.2.4 cryptographic binding method values the wallet can satisfy. */
+private const val JWK_BINDING_METHOD = "jwk"
+private const val DID_JWK_BINDING_METHOD = "did:jwk"

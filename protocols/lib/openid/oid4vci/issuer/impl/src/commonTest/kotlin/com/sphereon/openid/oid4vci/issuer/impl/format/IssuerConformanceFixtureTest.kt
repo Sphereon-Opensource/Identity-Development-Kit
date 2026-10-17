@@ -436,8 +436,9 @@ class IssuerConformanceFixtureTest {
             assertEquals("UniversityDegreeCredential", (typeArray[1] as JsonPrimitive).content)
         }
 
+    // VCDM 1.1 jwt_vc_json defines no cnf; a bare JWK proof cannot be bound (OID4VCI Appendix A.1.1).
     @Test
-    fun jwtVcJsonIncludesHolderBinding() =
+    fun jwtVcJsonRefusesABareJwkHolderProof() =
         runTest {
             val fakeJwtService = FakeJwtService()
             val handler = JwtVcJsonFormatHandler(signatureService = (fakeJwtService).asSignatureServiceFixture(), kms = TestKmsMock(), issuerKeyIdResolver = StubIssuerKeyIdResolver)
@@ -461,13 +462,9 @@ class IssuerConformanceFixtureTest {
 
             val result = handler.issueCredential(request, context)
 
-            assertTrue(result.isOk, "JWT VC JSON with holder binding should succeed")
-
-            // Verify cnf claim in the JWT payload
-            val payload = fakeJwtService.lastPayload!!
-            assertTrue(payload.containsKey("cnf"), "JWT payload should include 'cnf' claim for holder binding")
-            val cnf = payload["cnf"] as kotlinx.serialization.json.JsonObject
-            assertTrue(cnf.containsKey("jwk"), "cnf claim should contain 'jwk'")
+            assertTrue(result.isErr, "jwt_vc_json must refuse a JWK holder proof it cannot bind")
+            assertEquals("invalid_proof", result.error.code)
+            assertTrue(fakeJwtService.lastPayload == null, "nothing may be signed")
         }
 
     @Test

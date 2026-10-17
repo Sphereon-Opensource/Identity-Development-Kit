@@ -215,6 +215,8 @@ class KvAuthorizationSessionStore(
         val issuer: CredentialIssuerRef? = null,
         val trust: CredentialTrustValidation? = null,
         val verificationEvidence: com.sphereon.openid.oid4vp.verifier.VerifiedCredentialEvidence? = null,
+        /** The digital credential type reported as Universal OID4VP VerifiedClaimsValue.type; absent in older entries. */
+        val credentialType: String? = null,
     ) {
         fun toPublic(): MatchedCredential =
             MatchedCredential(
@@ -233,6 +235,7 @@ class KvAuthorizationSessionStore(
                 issuer = issuer,
                 trust = trust,
                 verificationEvidence = verificationEvidence,
+                credentialType = credentialType,
             )
 
         companion object {
@@ -245,6 +248,7 @@ class KvAuthorizationSessionStore(
                     issuer = matched.issuer,
                     trust = matched.trust,
                     verificationEvidence = matched.verificationEvidence,
+                    credentialType = matched.credentialType,
                     disclosedClaims =
                         matched.disclosedClaims.mapValues { (_, value) ->
                             when (value) {

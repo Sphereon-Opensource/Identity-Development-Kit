@@ -83,7 +83,9 @@ internal fun buildVerifiedData(session: AuthorizationSession): VerifiedData? {
 
             VerifiedClaimsValue(
                 id = matched.credentialQueryId,
-                type = matched.credentialFormat.value,
+                // Universal OID4VP VerifiedClaimsValue.type: "The digital credential type. Can be a vct
+                // value, or for instance a json-ld type". The format is only a fallback when untyped.
+                type = matched.credentialType ?: matched.credentialFormat.value,
                 claims = claimsMap,
                 presentation = matched.presentation,
                 verificationEvidence = matched.verificationEvidence?.let { evidence ->

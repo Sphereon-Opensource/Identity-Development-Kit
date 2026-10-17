@@ -354,6 +354,11 @@ data class MatchedCredential(
     val issuer: CredentialIssuerRef? = null,
     val trust: CredentialTrustValidation? = null,
     val verificationEvidence: VerifiedCredentialEvidence? = null,
+    /**
+     * The digital credential type of the verified credential: the SD-JWT VC `vct`, the mdoc docType,
+     * or the most specific W3C VCDM `type`. Null when the format carries no type.
+     */
+    val credentialType: String? = null,
 )
 
 /**

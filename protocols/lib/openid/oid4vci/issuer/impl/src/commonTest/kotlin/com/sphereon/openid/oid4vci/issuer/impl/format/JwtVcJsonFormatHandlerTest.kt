@@ -331,6 +331,10 @@ class JwtVcJsonFormatHandlerTest {
                 jwtService.lastArgs?.opts?.protectedHeader?.get("kid")?.jsonPrimitive?.content,
             )
             assertEquals("JWT", jwtService.lastArgs?.opts?.protectedHeader?.get("typ")?.jsonPrimitive?.content)
+            // OID4VCI 1.0 §14.4: a DID-signed credential names its DID, not the Credential Issuer URL.
+            val payload = assertNotNull(jwtService.lastArgs?.payload as? JsonObject)
+            assertEquals("did:web:issuer.example.com", payload["iss"]?.jsonPrimitive?.content)
+            assertEquals("did:web:issuer.example.com", payload["vc"]?.jsonObject?.get("issuer")?.jsonPrimitive?.content)
         }
 
     @Test
@@ -429,6 +433,78 @@ class JwtVcJsonFormatHandlerTest {
             assertEquals(subjectId, payload["sub"]?.jsonPrimitive?.content)
             assertNotEquals(payload["iss"]?.jsonPrimitive?.content, subjectId)
             assertNotEquals(payload["iss"]?.jsonPrimitive?.content, "urn:proof-holder:v11")
+        }
+
+    // Cryptographic Holder Binding for VCDM 1.1 JWTs: `sub` = credentialSubject.id is the only
+    // binding (VCDM 1.1 section 6.3.1 defines no cnf); OID4VCI Appendix A.1.1 binds jwt_vc_json to DIDs.
+    private suspend fun issueWithProof(
+        holderKeyId: String?,
+        credentialSubject: JsonObject = buildJsonObject { put("name", "Holder") },
+    ): Pair<IdkResult<*, IdkError>, RecordingJwtService> {
+        val jwtService = RecordingJwtService()
+        val result = JwtVcJsonFormatHandler((jwtService).asSignatureServiceFixture(), TestKmsMock(), StubIssuerKeyIdResolver)
+            .issueCredential(
+                makeRequest("jwt_vc_json"),
+                makeContext(makeConfig("jwt_vc_json"), attributes = emptyMap()).copy(
+                    holderKeyId = holderKeyId,
+                    holderBindingKey = buildJsonObject {
+                put("kty", "EC")
+                put("crv", "P-256")
+                put("x", "f83OJ3D2xF1Bg8vub9tLe1gHMzV76e8Tus9uPHvRVEU")
+                put("y", "x_FEzRu9m36HLN_tue659LNpXW6pCyStikYjKIWI5a0")
+            },
+                    credentialSubjects = listOf(credentialSubject),
+                ),
+            )
+        return result to jwtService
+    }
+
+    @Test
+    fun didProofBindsTheHolderDidAsSubjectAndEmitsNoCnf() =
+        runTest {
+            val (result, jwtService) = issueWithProof("did:example:alice#key-1")
+
+            assertTrue(result.isOk, "a DID-bound proof must issue")
+            val payload = assertNotNull(jwtService.lastArgs?.payload as? JsonObject)
+            assertEquals("did:example:alice", payload["sub"]?.jsonPrimitive?.content)
+            assertEquals("did:example:alice", payload["vc"]!!.jsonObject["credentialSubject"]!!.jsonObject["id"]?.jsonPrimitive?.content)
+            assertEquals("Holder", payload["vc"]!!.jsonObject["credentialSubject"]!!.jsonObject["name"]?.jsonPrimitive?.content)
+            assertNull(payload["cnf"], "VCDM 1.1 JWTs define no cnf")
+        }
+
+    @Test
+    fun didProofAcceptsASuppliedSubjectIdThatIsTheHolderDid() =
+        runTest {
+            val (result, jwtService) = issueWithProof(
+                "did:example:alice#key-1",
+                buildJsonObject { put("id", "did:example:alice"); put("name", "Holder") },
+            )
+
+            assertTrue(result.isOk)
+            assertEquals("did:example:alice", (jwtService.lastArgs?.payload as? JsonObject)?.get("sub")?.jsonPrimitive?.content)
+        }
+
+    @Test
+    fun didProofRefusesASuppliedSubjectIdForAnotherSubject() =
+        runTest {
+            val (result, jwtService) = issueWithProof(
+                "did:example:alice#key-1",
+                buildJsonObject { put("id", "did:example:bob"); put("name", "Holder") },
+            )
+
+            assertTrue(result.isErr)
+            assertEquals("invalid_vcdm_credential", result.error.code)
+            assertNull(jwtService.lastArgs, "nothing may be signed for an unbindable subject")
+        }
+
+    @Test
+    fun bareJwkProofIsRefusedBecauseVcdm11CannotBindIt() =
+        runTest {
+            val (result, jwtService) = issueWithProof(holderKeyId = null)
+
+            assertTrue(result.isErr)
+            assertEquals("invalid_proof", result.error.code)
+            assertNull(jwtService.lastArgs)
         }
 
     @Test

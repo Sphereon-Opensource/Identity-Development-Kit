@@ -511,6 +511,24 @@ class Oid4vciIssuedCredentialAcceptance(
     private fun CredentialFormat.isJwtVc(): Boolean =
         this == CredentialFormat.JWT_VC_JSON || this == CredentialFormat.JWT_VC_JSON_LD
 
+    /**
+     * The single issuer identifier claimed by newly issued VCDM JWT instances, before verification.
+     * It only selects where issuer keys are resolved (OID4VCI 1.0 §14.4: a DID-signed credential
+     * names its DID, not the Credential Issuer URL); [verify] still binds the verified claim to the
+     * resolved authentication. Null for other formats, malformed payloads, or differing issuers.
+     */
+    fun claimedJwtVcIssuer(
+        credentialFormat: CredentialFormat,
+        instances: List<CredentialInstance>,
+    ): String? {
+        if (!credentialFormat.isJwtVc() || instances.isEmpty()) return null
+        return instances.map { instance ->
+            acceptedVcdmCredential(credentialFormat, instance.requireRaw())
+                ?.document?.json?.get("issuer")?.issuerIdentifier()
+                ?: return null
+        }.distinct().singleOrNull()
+    }
+
     private fun acceptedVcdmCredential(
         format: CredentialFormat,
         raw: String,

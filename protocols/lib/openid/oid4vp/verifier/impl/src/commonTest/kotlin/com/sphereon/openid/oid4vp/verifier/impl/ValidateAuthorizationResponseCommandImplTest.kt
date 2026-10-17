@@ -30,6 +30,7 @@ import com.sphereon.crypto.jose.jws.JwsJsonGeneralWithIdentifiers
 import com.sphereon.crypto.jose.jws.JwsValidationResult
 import com.sphereon.crypto.jose.jws.command.VerifyJwsArgs
 import com.sphereon.crypto.jose.jws.command.VerifyJwsCommand
+import com.sphereon.crypto.resolution.IdentifierOptsOrResult
 import com.sphereon.crypto.resolution.extern.ExternalIdentifierDidOpts
 import com.sphereon.crypto.resolution.extern.ExternalIdentifierX5cOpts
 import com.sphereon.oauth2.common.model.AuthorizationRequest
@@ -1586,6 +1587,70 @@ class ValidateAuthorizationResponseCommandImplTest {
             assertTrue(result.value.errors.any { it.contains("X.509", ignoreCase = true) })
         }
 
+    // VC-JOSE-COSE section 4.2: the issuer kid is the absolute URL of the verification method that
+    // signed. An admitted bare-DID issuer source must verify with that exact method, never with the
+    // DID document's default key (a document can list e.g. a request-object key first).
+    private suspend fun validateDidIssuerCredential(state: String, kid: String) =
+        FixedVerifyJwsCommand(valid = true).let { verifier ->
+            val presentation = validUnsignedVcLdJwt(headerJson = """{"alg":"ES256","kid":"$kid"}""")
+            verifier to validateWithPersistedSession(
+                args = ValidateAuthorizationResponseArgs(
+                    parsedResponse = ParsedAuthorizationResponse(
+                        vpToken = vpTokenOf("credential", presentation),
+                        state = state,
+                        rawVpToken = """{"credential":["$presentation"]}""",
+                    ),
+                    originalRequest = AuthorizationRequest(
+                        clientId = "https://verifier.example.com",
+                        redirectUri = "https://verifier.example.com/callback",
+                        state = state,
+                    ),
+                    dcqlQuery = DcqlQuery(
+                        credentials = listOf(
+                            DcqlCredentialQuery(
+                                id = "credential",
+                                format = "jwt_vc_json-ld",
+                                meta = JsonObject(emptyMap()),
+                                require_cryptographic_holder_binding = false,
+                            ),
+                        ),
+                    ),
+                    expectedNonce = "unused-bare-vc-nonce",
+                    trustedAuthentications = listOf(
+                        TrustedAuthenticationResolution(
+                            controller = "did:example:issuer",
+                            identifier = ExternalIdentifierDidOpts("did:example:issuer"),
+                            purpose = com.sphereon.openid.oid4vp.verifier.TrustedAuthenticationPurpose.CREDENTIAL_ISSUER,
+                        ),
+                    ),
+                ),
+                instanceId = "verifier-instance-$state",
+                verifyJwsCommand = verifier,
+            )
+        }
+
+    @Test
+    fun `an admitted issuer DID verifies the credential with the exact verification method named by kid`() =
+        runTest {
+            listOf("did:example:issuer#key-1", "did:example:issuer#assertion-2").forEach { kid ->
+                val (verifier, result) = validateDidIssuerCredential("did-issuer-kid-${kid.substringAfter('#')}", kid)
+
+                assertIs<Ok<*>>(result)
+                assertTrue(result.value.valid, "kid=$kid: ${result.value.errors}")
+                assertEquals(listOf<IdentifierOptsOrResult?>(ExternalIdentifierDidOpts(kid)), verifier.identifiers)
+            }
+        }
+
+    @Test
+    fun `an issuer kid outside the admitted issuer DID is refused before any signature verification`() =
+        runTest {
+            val (verifier, result) = validateDidIssuerCredential("did-issuer-foreign-kid", "did:example:other#key-1")
+
+            assertIs<Ok<*>>(result)
+            assertFalse(result.value.valid)
+            assertEquals(0, verifier.calls)
+        }
+
     @Test
     fun `VCDM JOSE credential requires x5c to equal the configured X509 chain`() =
         runTest {
@@ -1944,6 +2009,200 @@ class ValidateAuthorizationResponseCommandImplTest {
             }
         }
 
+    // OID4VP 1.0 (Cryptographic Holder Binding): the credential references the key whose control the
+    // holder proves in the presentation. For a DID holder that is the credential's credentialSubject.id.
+    private suspend fun validateDidHolderVp(
+        state: String,
+        children: String,
+        holder: String = "did:example:alice",
+        queryFormat: String = "jwt_vc_json-ld",
+        requireHolderBinding: Boolean = true,
+    ) = validateWithPersistedSession(
+        args = vcdm2PresentationArgs(state, validUnsignedVcdm2VpJwt(children, holder = holder), queryFormat, requireHolderBinding),
+        instanceId = "verifier-instance-$state",
+        verifyHolderBindingCommand = RecordingHolderBindingCommand(),
+        verifyJwsCommand = FixedVerifyJwsCommand(valid = true),
+        vcdmDataIntegrityVerifier = RecordingDataIntegrityVerifier(mutableListOf()),
+    )
+
+    @Test
+    fun `DID holder VP is accepted when every child credential names the holder as subject`() =
+        runTest {
+            val children = "[${vcdm2Envelope(VCDM2_ENVELOPED_VC_TYPE, validVcdm2ChildCredential("alice"))},${dataIntegrityCredential("alice")}]"
+
+            val result = validateDidHolderVp("did-holder-bound-children", children)
+
+            assertIs<Ok<*>>(result)
+            assertTrue(result.value.valid, "children bound to the DID holder must verify: ${result.value.errors}")
+        }
+
+    @Test
+    fun `DID holder VP rejects an enveloped child credential issued to another subject`() =
+        runTest {
+            val children = "[${vcdm2Envelope(VCDM2_ENVELOPED_VC_TYPE, validVcdm2ChildCredential("bob"))}]"
+
+            val result = validateDidHolderVp("did-holder-unbound-enveloped-child", children)
+
+            assertIs<Ok<*>>(result)
+            assertFalse(result.value.valid)
+            assertTrue(result.value.matchedCredentials.isEmpty())
+            assertTrue(result.value.errors.any { it.contains("not bound to the presentation holder") }, "${result.value.errors}")
+        }
+
+    @Test
+    fun `DID holder VP rejects a direct Data Integrity child issued to another subject even beside a bound child`() =
+        runTest {
+            val children = "[${vcdm2Envelope(VCDM2_ENVELOPED_VC_TYPE, validVcdm2ChildCredential("alice"))},${dataIntegrityCredential("bob")}]"
+
+            val result = validateDidHolderVp("did-holder-one-unbound-di-child", children, queryFormat = "ldp_vc")
+
+            assertIs<Ok<*>>(result)
+            assertFalse(result.value.valid)
+            assertTrue(result.value.errors.any { it.contains("not bound to the presentation holder") }, "${result.value.errors}")
+        }
+
+    // VC-JOSE-COSE section 4.1.3: a VCDM 2.0 credential secured with JOSE may confirm the holder key
+    // with cnf (RFC 7800), in the JWT claims or the protected header.
+    @Test
+    fun `VCDM 2 DID holder VP accepts a child confirmed by cnf kid and rejects one confirming another DID`() =
+        runTest {
+            listOf(false, true).forEach { inHeader ->
+                val bound = validateDidHolderVp(
+                    "did-holder-cnf-bound-$inHeader",
+                    "[${vcdm2Envelope(VCDM2_ENVELOPED_VC_TYPE, vcdm2ChildCredentialConfirmedBy("did:example:alice#key-1", inHeader))}]",
+                )
+                assertIs<Ok<*>>(bound)
+                assertTrue(bound.value.valid, "cnf.kid of the VP holder (header=$inHeader) must bind: ${bound.value.errors}")
+
+                val unbound = validateDidHolderVp(
+                    "did-holder-cnf-unbound-$inHeader",
+                    "[${vcdm2Envelope(VCDM2_ENVELOPED_VC_TYPE, vcdm2ChildCredentialConfirmedBy("did:example:bob#key-1", inHeader))}]",
+                )
+                assertIs<Ok<*>>(unbound)
+                assertFalse(unbound.value.valid)
+                assertTrue(unbound.value.errors.any { it.contains("not bound to the presentation holder") }, "${unbound.value.errors}")
+            }
+        }
+
+    @Test
+    fun `VCDM 2 DID holder VP rejects a child with neither a subject id nor a confirmation`() =
+        runTest {
+            val result = validateDidHolderVp(
+                "did-holder-no-subject-no-cnf",
+                "[${vcdm2Envelope(VCDM2_ENVELOPED_VC_TYPE, vcdm2ChildCredentialConfirmedBy(null))}]",
+            )
+            assertIs<Ok<*>>(result)
+            assertFalse(result.value.valid)
+            assertTrue(result.value.errors.any { it.contains("not bound to the presentation holder") }, "${result.value.errors}")
+        }
+
+    @Test
+    fun `subject binding is not required when the query disables cryptographic holder binding`() =
+        runTest {
+            val children = "[${vcdm2Envelope(VCDM2_ENVELOPED_VC_TYPE, validVcdm2ChildCredential("bob"))}]"
+
+            val result = validateDidHolderVp("did-holder-binding-disabled", children, requireHolderBinding = false)
+
+            assertIs<Ok<*>>(result)
+            assertTrue(result.value.errors.none { it.contains("not bound to the presentation holder") }, "${result.value.errors}")
+        }
+
+    @Test
+    fun `VCDM 1 point 1 DID holder VP binds its embedded credential through the JWT sub claim`() =
+        runTest {
+            fun args(state: String, presentation: String) =
+                ValidateAuthorizationResponseArgs(
+                    parsedResponse = ParsedAuthorizationResponse(
+                        vpToken = vpTokenOf("presentation", presentation),
+                        state = state,
+                        rawVpToken = """{"presentation":["$presentation"]}""",
+                    ),
+                    originalRequest = AuthorizationRequest(
+                        clientId = "https://verifier.example.com",
+                        redirectUri = "https://verifier.example.com/callback",
+                        state = state,
+                    ),
+                    dcqlQuery = DcqlQuery(
+                        credentials = listOf(
+                            DcqlCredentialQuery(id = "presentation", format = "jwt_vc_json", meta = vcdm11CredentialMeta()),
+                        ),
+                    ),
+                    expectedNonce = "nonce-v1",
+                )
+            suspend fun validate(state: String, subjectId: String, confirmationKid: String? = null) = validateWithPersistedSession(
+                args = args(state, validVcdm11VpJwtWithEmbeddedVc(validVcdm11VcJwt(subjectId = subjectId, confirmationKid = confirmationKid))),
+                instanceId = "verifier-instance-$state",
+                verifyHolderBindingCommand = RecordingHolderBindingCommand(),
+                verifyJwsCommand = FixedVerifyJwsCommand(valid = true),
+            )
+
+            val bound = validate("v11-did-holder-bound", subjectId = "holder")
+            assertIs<Ok<*>>(bound)
+            assertTrue(bound.value.valid, "a VCDM 1.1 credential issued to the VP holder must verify: ${bound.value.errors}")
+
+            val unbound = validate("v11-did-holder-unbound", subjectId = "someone-else")
+            assertIs<Ok<*>>(unbound)
+            assertFalse(unbound.value.valid)
+            assertTrue(unbound.value.errors.any { it.contains("not bound to the presentation holder") }, "${unbound.value.errors}")
+
+            // VCDM 1.1 section 6.3.1 defines no cnf: a confirmation naming the holder does not bind it.
+            val confirmedOnly = validate("v11-did-holder-cnf-only", subjectId = "someone-else", confirmationKid = "did:example:holder#key-1")
+            assertIs<Ok<*>>(confirmedOnly)
+            assertFalse(confirmedOnly.value.valid)
+            assertTrue(confirmedOnly.value.errors.any { it.contains("not bound to the presentation holder") }, "${confirmedOnly.value.errors}")
+        }
+
+    // The VP envelope carries no credential claims: the match reports the verified child credential's
+    // most specific type (Universal OID4VP "json-ld type") and its subject claims without the subject id.
+    @Test
+    fun `a DID holder VP match reports its child credential type and subject claims`() =
+        runTest {
+            val children = "[${vcdm2Envelope(VCDM2_ENVELOPED_VC_TYPE, validVcdm2ChildCredential("alice"))}]"
+
+            val result = validateDidHolderVp("did-holder-match-type-and-claims", children)
+
+            assertIs<Ok<*>>(result)
+            val match = result.value.matchedCredentials.single()
+            assertEquals("ExampleCredential", match.credentialType)
+            assertEquals("alice", match.disclosedClaims["name"])
+            assertFalse(match.disclosedClaims.containsKey("id"), "the subject id is a binding artefact, not a claim")
+        }
+
+    @Test
+    fun `a VCDM 1 point 1 VP match reports its embedded credential type and subject claims`() =
+        runTest {
+            val state = "v11-match-type-and-claims"
+            val presentation = validVcdm11VpJwtWithEmbeddedVc(validVcdm11VcJwt(subjectId = "holder", credentialType = "UniversityDegreeCredential"))
+            val result = validateWithPersistedSession(
+                args = ValidateAuthorizationResponseArgs(
+                    parsedResponse = ParsedAuthorizationResponse(
+                        vpToken = vpTokenOf("presentation", presentation),
+                        state = state,
+                        rawVpToken = """{"presentation":["$presentation"]}""",
+                    ),
+                    originalRequest = AuthorizationRequest(
+                        clientId = "https://verifier.example.com",
+                        redirectUri = "https://verifier.example.com/callback",
+                        state = state,
+                    ),
+                    dcqlQuery = DcqlQuery(
+                        credentials = listOf(DcqlCredentialQuery(id = "presentation", format = "jwt_vc_json", meta = vcdm11CredentialMeta())),
+                    ),
+                    expectedNonce = "nonce-v1",
+                ),
+                instanceId = "verifier-instance-$state",
+                verifyHolderBindingCommand = RecordingHolderBindingCommand(),
+                verifyJwsCommand = FixedVerifyJwsCommand(valid = true),
+            )
+
+            assertIs<Ok<*>>(result)
+            assertTrue(result.value.valid, "${result.value.errors}")
+            val match = result.value.matchedCredentials.single()
+            assertEquals("UniversityDegreeCredential", match.credentialType)
+            assertEquals("Alice", match.disclosedClaims["name"])
+            assertFalse(match.disclosedClaims.containsKey("id"))
+        }
+
     @Test
     fun `VCDM 2 J4 verifies every enveloped VC child`() =
         runTest {
@@ -2021,8 +2280,9 @@ class ValidateAuthorizationResponseCommandImplTest {
     @Test
     fun `VCDM 1_1 J4 verifies every compact VC child`() =
         runTest {
-            val first = validVcdm11VcJwt("first")
-            val second = validVcdm11VcJwt("second")
+            // Both children are issued to the VP holder (VCDM 1.1 holder binding is sub = credentialSubject.id).
+            val first = validVcdm11VcJwt(subjectId = "holder", credentialId = "urn:example:first")
+            val second = validVcdm11VcJwt(subjectId = "holder", credentialId = "urn:example:second")
             val presentation = validVcdm11VpJwtWithEmbeddedVc(first, second)
             val state = "v1-j4-multiple-vc"
             val queryId = "presentation"
@@ -2062,7 +2322,7 @@ class ValidateAuthorizationResponseCommandImplTest {
                 putJsonArray("type") { add(JsonPrimitive("VerifiableCredential")) }
                 put("issuer", "did:example:issuer")
                 put("issuanceDate", "2026-08-25T12:00:00Z")
-                putJsonObject("credentialSubject") { put("id", "did:example:v1-json-holder") }
+                putJsonObject("credentialSubject") { put("id", "did:example:holder") }
                 putJsonObject("proof") {
                     put("type", "DataIntegrityProof")
                     put("cryptosuite", "eddsa-jcs-2022")
@@ -2314,8 +2574,8 @@ class ValidateAuthorizationResponseCommandImplTest {
         runTest {
             val state = "ldp-vp-nested-children"
             val events = mutableListOf<String>()
-            val first = dataIntegrityCredential("first")
-            val second = dataIntegrityCredential("second")
+            val first = dataIntegrityCredential("first", subjectId = "did:example:holder")
+            val second = dataIntegrityCredential("second", subjectId = "did:example:holder")
             val verificationMethodResolutionPolicy = VerificationMethodResolutionPolicy.of(
                 listOf(
                     TrustedVerificationMethod(
@@ -2462,7 +2722,7 @@ class ValidateAuthorizationResponseCommandImplTest {
     fun `ldp VP dispatches an enveloped JWT credential to JOSE verification`() =
         runTest {
             val state = "ldp-vp-enveloped-jwt-child"
-            val childJwt = validVcdm2ChildCredential("enveloped")
+            val childJwt = validVcdm2ChildCredential("enveloped", subjectId = "did:example:holder")
             val envelope =
                 buildJsonObject {
                     put("@context", "https://www.w3.org/ns/credentials/v2")
@@ -2775,7 +3035,7 @@ class ValidateAuthorizationResponseCommandImplTest {
         return "${headerJson.encodeToByteArray().encodeToBase64Url()}.${payload.encodeToByteArray().encodeToBase64Url()}.fakesig"
     }
 
-    private fun validVcdm2ChildCredential(label: String): String {
+    private fun validVcdm2ChildCredential(label: String, subjectId: String = "did:example:$label"): String {
         val payload =
             """
             {
@@ -2784,10 +3044,30 @@ class ValidateAuthorizationResponseCommandImplTest {
                 "issuer": "did:example:issuer",
                 "iss": "did:example:issuer",
                 "validFrom": "2026-01-01T00:00:00Z",
-                "credentialSubject": {"id": "did:example:$label", "name": "$label"}
+                "credentialSubject": {"id": "$subjectId", "name": "$label"}
             }
             """.trimIndent()
         val header = """{"alg":"ES256","typ":"vc+jwt","kid":"did:example:issuer#key-1"}"""
+        return "${header.encodeToByteArray().encodeToBase64Url()}.${payload.encodeToByteArray().encodeToBase64Url()}.fakesig"
+    }
+
+    /** A VCDM 2.0 JWT child without a subject id, optionally confirming a holder key via `cnf.kid`. */
+    private fun vcdm2ChildCredentialConfirmedBy(confirmationKid: String?, inHeader: Boolean = false): String {
+        val cnf = confirmationKid?.let { "\"cnf\":{\"kid\":\"$it\"}" }
+        val claimCnf = if (cnf != null && !inHeader) ",$cnf" else ""
+        val headerCnf = if (cnf != null && inHeader) ",$cnf" else ""
+        val payload =
+            """
+            {
+                "@context": ["https://www.w3.org/ns/credentials/v2"],
+                "type": ["VerifiableCredential", "ExampleCredential"],
+                "issuer": "did:example:issuer",
+                "iss": "did:example:issuer",
+                "validFrom": "2026-01-01T00:00:00Z",
+                "credentialSubject": {"name": "confirmed"}$claimCnf
+            }
+            """.trimIndent()
+        val header = """{"alg":"ES256","typ":"vc+jwt","kid":"did:example:issuer#key-1"$headerCnf}"""
         return "${header.encodeToByteArray().encodeToBase64Url()}.${payload.encodeToByteArray().encodeToBase64Url()}.fakesig"
     }
 
@@ -2802,6 +3082,7 @@ class ValidateAuthorizationResponseCommandImplTest {
         state: String,
         presentation: String,
         queryFormat: String = "jwt_vc_json-ld",
+        requireHolderBinding: Boolean = true,
     ): ValidateAuthorizationResponseArgs =
         ValidateAuthorizationResponseArgs(
             parsedResponse = ParsedAuthorizationResponse(
@@ -2820,6 +3101,7 @@ class ValidateAuthorizationResponseCommandImplTest {
                         id = "presentation",
                         format = queryFormat,
                         meta = vcdm11CredentialMeta(),
+                        require_cryptographic_holder_binding = requireHolderBinding,
                     ),
                 ),
             ),
@@ -2830,6 +3112,7 @@ class ValidateAuthorizationResponseCommandImplTest {
         verifiableCredential: String? = VCDM2_ENVELOPED_VC_ENTRIES,
         nonce: String = "nonce-vp",
         algorithm: String = "ES256",
+        holder: String = "https://holder.example",
     ): String {
         val childProperty = verifiableCredential?.let { "\"verifiableCredential\":$it," } ?: ""
         val payload =
@@ -2837,8 +3120,8 @@ class ValidateAuthorizationResponseCommandImplTest {
             {
                 "@context": ["https://www.w3.org/ns/credentials/v2"],
                 "type": ["VerifiablePresentation"],
-                "holder": "https://holder.example",
-                "iss": "https://holder.example",
+                "holder": "$holder",
+                "iss": "$holder",
                 $childProperty
                 "nonce": "$nonce",
                 "aud": "https://verifier.example.com"
@@ -2897,7 +3180,11 @@ class ValidateAuthorizationResponseCommandImplTest {
         credentialId: String? = null,
         jwtId: String? = credentialId,
         jwtSubjectId: String = "did:example:$subjectId",
+        confirmationKid: String? = null,
+        credentialType: String? = null,
     ): String {
+        val typeEntries = listOfNotNull("VerifiableCredential", credentialType).joinToString(",") { "\"$it\"" }
+        val confirmationClaim = confirmationKid?.let { "\"cnf\": {\"kid\": \"$it\"}," } ?: ""
         val expirationClaim = expirationDate?.let { "\"expirationDate\":\"$it\"," } ?: ""
         val expiresAtClaim = expiresAt?.let { "\"exp\":$it," } ?: ""
         val credentialIdClaim = credentialId?.let { "\"id\": \"$it\", " } ?: ""
@@ -2907,12 +3194,13 @@ class ValidateAuthorizationResponseCommandImplTest {
             {
                 "iss": "did:example:issuer",
                 "sub": "$jwtSubjectId",
+                $confirmationClaim
                 "nbf": $notBefore,
                 $jwtIdClaim
                 $expiresAtClaim
                 "vc": {
                     "@context": ["https://www.w3.org/2018/credentials/v1"],
-                    "type": ["VerifiableCredential"],
+                    "type": [$typeEntries],
                     $credentialIdClaim
                     "issuanceDate": "$issuanceDate",
                     $expirationClaim
@@ -2939,11 +3227,11 @@ class ValidateAuthorizationResponseCommandImplTest {
             }
         }
 
-    private fun dataIntegrityCredential(name: String): JsonObject = buildJsonObject {
+    private fun dataIntegrityCredential(name: String, subjectId: String = "did:example:$name"): JsonObject = buildJsonObject {
         putJsonArray("@context") { add(JsonPrimitive("https://www.w3.org/ns/credentials/v2")) }
         putJsonArray("type") { add(JsonPrimitive("VerifiableCredential")) }
         put("issuer", "https://issuer.example/$name")
-        putJsonObject("credentialSubject") { put("id", "did:example:$name"); put("name", name) }
+        putJsonObject("credentialSubject") { put("id", subjectId); put("name", name) }
         putJsonObject("proof") { put("type", "DataIntegrityProof"); put("cryptosuite", "eddsa-jcs-2022"); put("proofPurpose", "assertionMethod"); put("verificationMethod", "did:example:issuer#key"); put("proofValue", "zproof"); put("created", "2026-08-25T12:00:00Z") }
     }
 
@@ -3300,6 +3588,7 @@ private class FixedVerifyJwsCommand(
 ) : VerifyJwsCommand {
     var calls: Int = 0
         private set
+    val identifiers = mutableListOf<IdentifierOptsOrResult?>()
 
     override val commandId: String = VerifyJwsCommand.COMMAND_ID
     override val inputTypeToken: TypeToken<VerifyJwsArgs> = typeToken<VerifyJwsArgs>()
@@ -3310,6 +3599,7 @@ private class FixedVerifyJwsCommand(
 
     override suspend fun execute(args: VerifyJwsArgs): IdkResult<JwsValidationResult, IdkError> {
         calls++
+        identifiers += args.identifier
         if (args.jws == null) return Err(IdkError.fromString("JWS is required"))
         val resultValid = valid && calls != rejectOnCall
         return Ok(

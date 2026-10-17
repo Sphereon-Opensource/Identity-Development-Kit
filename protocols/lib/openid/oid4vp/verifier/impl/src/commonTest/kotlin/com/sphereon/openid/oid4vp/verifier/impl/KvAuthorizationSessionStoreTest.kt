@@ -112,6 +112,25 @@ class KvAuthorizationSessionStoreTest {
         assertEquals(evidence, store.get(correlation).value?.validationResult?.matchedCredentials?.single()?.verificationEvidence)
     }
 
+    // The status endpoint reports VerifiedClaimsValue.type from the persisted session, so the credential
+    // type must survive the session store; an untyped match stays untyped.
+    @Test
+    fun `the matched credential type survives persistence and stays absent when unknown`() = runTest {
+        val store = createStore()
+        for ((correlation, type) in listOf("credential-type-roundtrip" to "UniversityDegreeCredential", "credential-type-absent" to null)) {
+            assertEquals(true, store.put(correlation, session(null, correlation), 600).isOk)
+            val matched = com.sphereon.openid.oid4vp.verifier.MatchedCredential(
+                credentialQueryId = "vcdm11",
+                credentialFormat = com.sphereon.openid.oid4vc.common.CredentialFormat.JWT_VC_JSON,
+                presentation = "verified-presentation",
+                credentialType = type,
+            )
+            assertEquals(true, store.storeValidationResult(correlation,
+                com.sphereon.openid.oid4vp.verifier.ValidationResult(true, listOf(matched))).isOk)
+            assertEquals(type, store.get(correlation).value?.validationResult?.matchedCredentials?.single()?.credentialType)
+        }
+    }
+
     /**
      * A credential-status rejection is only useful to a relying party if it is still there after the
      * session has been written to the key-value store and read back. The public

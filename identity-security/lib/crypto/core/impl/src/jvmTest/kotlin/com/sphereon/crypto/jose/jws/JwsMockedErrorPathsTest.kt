@@ -2252,7 +2252,8 @@ class JwsMockedErrorPathsTest {
             coEvery { mockIdentifierService.resolve(any<com.sphereon.crypto.resolution.extern.ExternalIdentifierX5cOpts>()) } returns
                 IdkResult.ok(externalResult)
 
-            coEvery { mockSignatureService.isValidRawSignature(any(), any(), any()) } returns true
+            coEvery { mockSignatureService.isValidRawSignature(any(), any(), any()) } throws
+                IllegalStateException("X.509 verification must not require a configured KMS provider")
 
             val command =
                 com.sphereon.crypto.jose.jws.command.VerifyJwsCommandImpl(

@@ -149,5 +149,12 @@ class VerifiedDataBuilderTest {
         assertEquals(false, exposed.trust?.trusted)
         assertEquals(null, exposed.trust?.details)
         assertEquals(emptyList(), exposed.trust?.diagnostics)
+
+        // Universal OID4VP VerifiedClaimsValue.type is the digital credential type (a vct or json-ld
+        // type); the format is only the fallback for a credential whose type is unknown.
+        assertEquals("urn:example:passport", buildVerifiedData(session.copy(validationResult = ValidationResult(true, listOf(
+            original.copy(credentialType = "urn:example:passport"),
+        ))))?.credentialClaims?.single()?.type)
+        assertEquals(CredentialFormat.SD_JWT_VC.value, verifiedData.credentialClaims?.single()?.type)
     }
 }

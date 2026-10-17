@@ -535,6 +535,10 @@ class VcLdJsonJwtFormatHandlerTest {
             assertEquals("vc", header["cty"]?.jsonPrimitive?.content)
             assertEquals("did:jwk:issuer#0", header["kid"]?.jsonPrimitive?.content)
             assertEquals(setOf("typ", "cty", "kid"), header.keys)
+            // OID4VCI 1.0 §14.4: a DID-signed credential names its DID, not the Credential Issuer URL.
+            val payload = assertNotNull(jwtService.lastArgs?.payload as? JsonObject)
+            assertEquals("did:jwk:issuer", payload["iss"]?.jsonPrimitive?.content)
+            assertEquals("did:jwk:issuer", payload["issuer"]?.jsonPrimitive?.content)
         }
 
     @Test

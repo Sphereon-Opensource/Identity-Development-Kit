@@ -574,10 +574,14 @@ class Oid4vpWalletInteractionProtocolAdapter(
         val operationId = "${sessionState.sessionId.value}-share"
         val operationBinding = securityContext.operationBinding ?: "operation:$operationId"
         storePrivate(mapOf(SECURITY_OPERATION_BINDING_PRIVATE_KEY to operationBinding))
+        var preparedWalletAccountId: String? = null
         val operations =
             when (val preparation = presentationExecutor.preparePresentation(this, sessionState)) {
                 Oid4vpPresentationPreparation.Ready -> emptyList()
-                is Oid4vpPresentationPreparation.ApprovalRequired -> preparation.operations
+                is Oid4vpPresentationPreparation.ApprovalRequired -> {
+                    preparedWalletAccountId = preparation.walletAccountId
+                    preparation.operations
+                }
                 is Oid4vpPresentationPreparation.Failed ->
                     return sessionState.next(
                         status = WalletInteractionStatus.Failed,
@@ -596,7 +600,8 @@ class Oid4vpWalletInteractionProtocolAdapter(
                         operation = WalletSecurityOperation.PRESENT_CREDENTIALS,
                         audience = sessionState.counterparty?.identifier,
                         walletUnitId = sessionState.walletUnitId,
-                        walletAccountId = securityContext.walletAccountId,
+                        // A backend-owned interaction names the account through its prepared holder keys.
+                        walletAccountId = securityContext.walletAccountId ?: preparedWalletAccountId,
                         operationBinding = operationBinding,
                         operations = operations,
                     ),
