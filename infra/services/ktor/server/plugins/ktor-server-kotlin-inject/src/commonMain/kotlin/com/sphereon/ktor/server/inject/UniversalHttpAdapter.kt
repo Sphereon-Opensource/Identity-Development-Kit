@@ -90,6 +90,19 @@ val ValidatedJwtClaimsAttribute: AttributeKey<com.sphereon.core.defaults.context
 val AuthoritativePrincipalTypeAttribute: AttributeKey<com.sphereon.di.context.PrincipalType> =
     AttributeKey("sphereon.auth.authoritativePrincipalType")
 
+/**
+ * Per-call attribute holding the receiver audience the host ingress verified the bearer was issued
+ * for, the service's own configured audience.
+ *
+ * Set it next to [ValidatedJwtClaimsAttribute] only after the validated token's audience contains
+ * that service audience. The request session then exposes its secure details as a
+ * [com.sphereon.di.context.PreauthorizedServiceBearer] for exactly this one audience, the contract
+ * a binary transport ingress gives command code. Absent means the bearer was not verified for this
+ * service.
+ */
+val ValidatedServiceAudienceAttribute: AttributeKey<String> =
+    AttributeKey("sphereon.auth.validatedServiceAudience")
+
 /** Marks Ktor routes whose method/path must be selected from the AppScope HTTP catalog. */
 val UniversalHttpAdapterRouteAttribute: AttributeKey<Boolean> =
     AttributeKey("sphereon.http.universalAdapterRoute")

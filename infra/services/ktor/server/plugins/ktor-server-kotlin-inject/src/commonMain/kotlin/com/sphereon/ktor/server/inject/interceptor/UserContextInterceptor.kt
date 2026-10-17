@@ -27,11 +27,14 @@ import com.sphereon.di.context.IdentityMetadata
 import com.sphereon.di.context.IdentityResolutionInput
 import com.sphereon.di.context.IdentityResolutionResult
 import com.sphereon.di.context.PrincipalInputString
+import com.sphereon.di.context.PreauthorizedServiceBearer
 import com.sphereon.di.context.PrincipalType
 import com.sphereon.di.context.ResolutionSource
+import com.sphereon.di.context.SecuredTenantContextDetails
 import com.sphereon.ktor.server.inject.AuthoritativePrincipalTypeAttribute
 import com.sphereon.ktor.server.inject.BaseTenantIdAttribute
 import com.sphereon.ktor.server.inject.ValidatedJwtClaimsAttribute
+import com.sphereon.ktor.server.inject.ValidatedServiceAudienceAttribute
 import com.sphereon.ktor.server.inject.context.RequestScopedContext
 import com.sphereon.ktor.server.inject.requestContext
 import com.sphereon.ktor.server.inject.resolver.PrincipalResolver
@@ -171,7 +174,13 @@ class UserContextInterceptor(
             // `execution.sessionContext.context.secureDetails?.jwt`. Per-session by
             // design: the user context above is cached per tenant+principal and must
             // not carry one request's token.
-            val secureDetails = validatedJwt?.toSecuredDetails()
+            // A bearer the host ingress verified for this service's own audience is a
+            // pre-authorized service bearer for exactly that audience.
+            val serviceAudience = call.attributes.getOrNull(ValidatedServiceAudienceAttribute)?.takeIf { it.isNotBlank() }
+            val secureDetails =
+                validatedJwt?.toSecuredDetails()?.let { details ->
+                    serviceAudience?.let { ValidatedServiceAudienceSecuredDetails(details, it) } ?: details
+                }
 
             // Create or get session (using generated session ID). The principal
             // classification resolved by the identity pipeline rides along so the
@@ -231,3 +240,16 @@ internal fun IdentityResolutionResult.withAnonymousPrincipalSentinel(): Identity
     } else {
         this
     }
+
+/**
+ * Secure details of a bearer the host ingress verified was issued for this service's own audience.
+ * It authorizes exactly that audience, never any other value in the token's `aud` claim.
+ */
+internal class ValidatedServiceAudienceSecuredDetails(
+    private val delegate: SecuredTenantContextDetails,
+    private val audience: String,
+) : SecuredTenantContextDetails by delegate, PreauthorizedServiceBearer {
+    override fun authorizesServiceAudience(audience: String): Boolean = audience.isNotBlank() && audience == this.audience
+
+    override fun toString(): String = "ValidatedServiceAudienceSecuredDetails([REDACTED])"
+}

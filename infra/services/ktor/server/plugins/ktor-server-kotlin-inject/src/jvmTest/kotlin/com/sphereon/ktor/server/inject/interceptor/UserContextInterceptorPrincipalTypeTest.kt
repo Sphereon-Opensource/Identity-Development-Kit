@@ -41,6 +41,11 @@ import com.sphereon.di.session.SessionContextManager
 import com.sphereon.di.session.SessionInstance
 import com.sphereon.ktor.server.inject.AuthoritativePrincipalTypeAttribute
 import com.sphereon.ktor.server.inject.ValidatedJwtClaimsAttribute
+import com.sphereon.ktor.server.inject.ValidatedServiceAudienceAttribute
+import com.sphereon.di.context.PreauthorizedServiceBearer
+import com.sphereon.di.context.SecuredTenantContextDetails
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 import com.sphereon.ktor.server.inject.resolver.FixedTenantResolver
 import com.sphereon.ktor.server.inject.resolver.PrincipalResolver
 import io.ktor.http.Headers
@@ -107,6 +112,32 @@ class UserContextInterceptorPrincipalTypeTest {
         }
 
     /**
+     * When the host ingress validated that the bearer was issued for this service's own audience,
+     * the session carries that as a pre-authorized service bearer for exactly that audience, the
+     * same contract the binary transport ingress gives command code.
+     */
+    @Test
+    fun validatedServiceAudienceAuthorizesExactlyThatAudience() =
+        runTest {
+            val captured = interceptWorkloadToken(authoritativePrincipalType = null, validatedServiceAudience = "enterprise-tenant-as")
+
+            val details = captured.sessionArgs[3] as SecuredTenantContextDetails
+            assertEquals("validated-workload-token", details.jwt)
+            val bearer = details as PreauthorizedServiceBearer
+            assertTrue(bearer.authorizesServiceAudience("enterprise-tenant-as"))
+            assertFalse(bearer.authorizesServiceAudience("enterprise-platform"))
+            assertFalse(bearer.authorizesServiceAudience(""))
+        }
+
+    @Test
+    fun bearerWithoutValidatedServiceAudienceIsNotPreauthorized() =
+        runTest {
+            val captured = interceptWorkloadToken(authoritativePrincipalType = null)
+
+            assertFalse(captured.sessionArgs[3] is PreauthorizedServiceBearer)
+        }
+
+    /**
      * An external tenant service client token is classified WORKLOAD by the pipeline, but the host
      * transport treats it as a tenant principal. The context the interceptor opens must carry the
      * host's classification, or the command transport opening the same `tenant:principal` context
@@ -144,7 +175,10 @@ class UserContextInterceptorPrincipalTypeTest {
         val sessionArgs: Array<out Any?>,
     )
 
-    private suspend fun interceptWorkloadToken(authoritativePrincipalType: PrincipalType?): CapturedInterception {
+    private suspend fun interceptWorkloadToken(
+        authoritativePrincipalType: PrincipalType?,
+        validatedServiceAudience: String? = null,
+    ): CapturedInterception {
         val workloadResolution =
             IdentityResolutionResult(
                 tenantId = "platform",
@@ -242,6 +276,7 @@ class UserContextInterceptorPrincipalTypeTest {
             ).markValidated(),
         )
         authoritativePrincipalType?.let { attributes.put(AuthoritativePrincipalTypeAttribute, it) }
+        validatedServiceAudience?.let { attributes.put(ValidatedServiceAudienceAttribute, it) }
         val request =
             proxy<ApplicationRequest> { method, _ ->
                 when (method.name) {
