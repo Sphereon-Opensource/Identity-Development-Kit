@@ -74,7 +74,8 @@ data class VerifiedRequestObject(
  *  3. Verifies the signature against the client's registered keys (`jwks` inline or `jwks_uri`
  *     fetched via `HttpClientFactory`). When the client pinned `request_object_signing_alg`,
  *     header `alg` MUST match exactly.
- *  4. Validates `typ=oauth-authz-req+jwt` (RFC 9101 §10.8).
+ *  4. Validates `typ=oauth-authz-req+jwt` (RFC 9101 §10.8). OpenID Federation RPs may omit `typ`
+ *     (OpenID Federation 1.1 §12.1.1.1); a `typ` that is present must still match.
  *  5. Validates `aud` against the AS issuer, and `exp` / `iat` (5-minute skew window).
  *  6. Returns the merged parameter map per RFC 9101 §6.1.
  *

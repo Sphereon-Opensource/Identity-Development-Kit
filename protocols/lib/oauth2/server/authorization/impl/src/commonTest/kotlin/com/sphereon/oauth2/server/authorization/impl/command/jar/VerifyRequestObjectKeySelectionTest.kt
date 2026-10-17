@@ -147,6 +147,7 @@ class VerifyRequestObjectKeySelectionTest {
         includeIssuerClaim: Boolean = true,
         includeClientIdClaim: Boolean = true,
         algorithm: SignatureAlgorithm = SignatureAlgorithm.ECDSA_SHA256,
+        typ: String? = VerifyRequestObjectCommand.JAR_JWT_TYP,
     ): SignedJar {
         val managedKeyPair = ctx.keyManagerService.generateKeyAsync(alg = algorithm)
         val keyInfo: ManagedKeyInfoType<*> = managedKeyPair.joseToManagedKeyInfo(KeyVisibility.PRIVATE)
@@ -175,7 +176,7 @@ class VerifyRequestObjectKeySelectionTest {
             CreateJwsOpts(
                 // Exact omission fixture: sign this payload without automatic issuer/client-id enrichment.
                 noIssPayloadUpdate = true,
-                protectedHeader = buildJsonObject { put("typ", JsonPrimitive(VerifyRequestObjectCommand.JAR_JWT_TYP)) },
+                protectedHeader = buildJsonObject { typ?.let { put("typ", JsonPrimitive(it)) } },
                 // includeKid=false: suppress all identifier hints in the header (alg still set),
                 // so the produced JWS carries no `kid`.
                 noIdentifierInHeader = !includeKid,
@@ -382,6 +383,50 @@ class VerifyRequestObjectKeySelectionTest {
             assertTrue(result.isErr, "A client with neither jwks nor jwks_uri must fail closed")
             assertEquals(INVALID_REQUEST_OBJECT_CODE, errorCode(result))
         }
+
+    private fun federationClient(jar: SignedJar): ClientRegistration =
+        client(jwks = listOf(jar.publicJwk)).copy(
+            singleUseRequestObjects = true,
+            authorizationRequestProofPolicy = com.sphereon.oauth2.server.authorization.model.AuthorizationRequestProofPolicy.FEDERATED_RP_ASYMMETRIC,
+        )
+
+    private fun headerTyp(jwt: String): String? =
+        (Json.parseToJsonElement(jwt.substringBefore('.').decodeFromBase64Url().decodeToString()).jsonObject["typ"] as? JsonPrimitive)?.content
+
+    // OpenID Federation 1.1 §12.1.1.1 does not require `typ` on the Request Object, and RFC 9101
+    // §10.8 notes that requiring it breaks OpenID Connect deployments. Federation RPs may omit it.
+    @Test
+    fun untypedFederationRequestObjectWithoutSubIsAccepted() = runTest {
+        val jar = mintJar(extraClaims = mapOf("jti" to JsonPrimitive("untyped-federation")), typ = null)
+        assertEquals(null, headerTyp(jar.jwt), "fixture must carry no typ")
+        val result = createCommand(federationClient(jar)).execute(argsFor(jar.jwt))
+        assertTrue(result.isOk, "An untyped federation Request Object must verify: ${if (result.isErr) result.error else ""}")
+        assertNotNull(result.value.authorizationEvidence)
+    }
+
+    @Test
+    fun untypedFederationRequestObjectWithSubIsRejected() = runTest {
+        val jar = mintJar(extraClaims = mapOf("jti" to JsonPrimitive("untyped-federation-sub"), "sub" to JsonPrimitive(CLIENT_ID)), typ = null)
+        assertEquals(INVALID_REQUEST_OBJECT_CODE, errorCode(createCommand(federationClient(jar)).execute(argsFor(jar.jwt))))
+    }
+
+    @Test
+    fun federationRequestObjectWithAnotherTypIsRejected() = runTest {
+        for (typ in listOf("JWT", "jwt", "dpop+jwt", "")) {
+            val jar = mintJar(extraClaims = mapOf("jti" to JsonPrimitive("wrong-typ-$typ")), typ = typ)
+            assertEquals(typ, headerTyp(jar.jwt))
+            assertEquals(INVALID_REQUEST_OBJECT_CODE, errorCode(createCommand(federationClient(jar)).execute(argsFor(jar.jwt))), "typ '$typ'")
+        }
+    }
+
+    @Test
+    fun untypedRequestObjectIsRejectedOutsideFederation() = runTest {
+        val plain = mintJar(typ = null)
+        assertEquals(INVALID_REQUEST_OBJECT_CODE, errorCode(createCommand(client(jwks = listOf(plain.publicJwk))).execute(argsFor(plain.jwt))))
+        val singleUse = mintJar(extraClaims = mapOf("jti" to JsonPrimitive("untyped-single-use")), typ = null)
+        val strict = client(jwks = listOf(singleUse.publicJwk)).copy(singleUseRequestObjects = true)
+        assertEquals(INVALID_REQUEST_OBJECT_CODE, errorCode(createCommand(strict).execute(argsFor(singleUse.jwt))))
+    }
 
     @Test
     fun federationSignedParametersNeverInheritUnsignedQueryFallback() = runTest {

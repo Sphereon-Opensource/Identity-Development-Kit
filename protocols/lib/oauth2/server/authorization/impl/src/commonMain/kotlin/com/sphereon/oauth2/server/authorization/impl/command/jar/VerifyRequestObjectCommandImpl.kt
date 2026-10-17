@@ -185,13 +185,14 @@ class VerifyRequestObjectCommandImpl(
             )
         }
 
+        // A present typ must be the JAR media type. An absent typ is decided once the client is known:
+        // only OpenID Federation RPs may omit it (see below).
         val typ = header["typ"]?.jsonPrimitive?.content
-        if (typ != VerifyRequestObjectCommand.JAR_JWT_TYP) {
-            return Err(
-                AuthorizationServerError.InvalidRequestObject(
-                    details = "JAR header 'typ' must be '${VerifyRequestObjectCommand.JAR_JWT_TYP}', got '$typ' (RFC 9101 §10.8)",
-                ),
-            )
+        val typError = AuthorizationServerError.InvalidRequestObject(
+            details = "JAR header 'typ' must be '${VerifyRequestObjectCommand.JAR_JWT_TYP}', got '$typ' (RFC 9101 §10.8)",
+        )
+        if (typ != null && typ != VerifyRequestObjectCommand.JAR_JWT_TYP) {
+            return Err(typError)
         }
 
         // RFC 9101 §6.1 + OIDC Core §6.1: the JAR's `iss` (and inner `client_id`) MUST match the
@@ -242,6 +243,12 @@ class VerifyRequestObjectCommandImpl(
                 )
 
         val federationProofRequired = client.authorizationRequestProofPolicy == com.sphereon.oauth2.server.authorization.model.AuthorizationRequestProofPolicy.FEDERATED_RP_ASYMMETRIC
+        // OpenID Federation 1.1 §12.1.1.1 defines the Request Object without typ, and RFC 9101 §10.8 notes
+        // that requiring it breaks OpenID Connect deployments. A federation RP may omit it; its Request Object
+        // still has to pass every Connect check below (no sub, signed iss and client_id, aud, jti, exp).
+        if (typ == null && !federationProofRequired) {
+            return Err(typError)
+        }
         val federationScope = if (federationProofRequired) {
             try { com.sphereon.oauth2.server.authorization.impl.command.authorization.captureFederationAuthorizationScope(execution, serversConfigProvider, actualAsSelection) }
             catch (expected: IllegalArgumentException) { return Err(AuthorizationServerError.InvalidRequestObject(details = "Federation AS scope is unavailable")) }
