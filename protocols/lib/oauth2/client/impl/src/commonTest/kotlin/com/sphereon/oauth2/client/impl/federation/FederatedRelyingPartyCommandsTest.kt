@@ -17,6 +17,7 @@
 package com.sphereon.oauth2.client.impl.federation
 
 import com.sphereon.core.api.decodeFromBase64Url
+import com.sphereon.core.api.encodeToBase64Url
 import com.sphereon.core.api.random.SecureRandom
 import com.sphereon.crypto.core.KeyVisibility
 import com.sphereon.crypto.core.generic.ManagedKeyPair
@@ -258,7 +259,7 @@ class FederatedRelyingPartyCommandsTest {
                     provider = provider(newKeys()),
                     relyingParty = rp(rpKeys),
                     transport = FederatedAuthenticationRequestTransport.REQUEST_OBJECT,
-                    trustChain = listOf("e30.e30.sig", "e30.e30.sig2"),
+                    trustChain = rpTrustChain(),
                 ),
             )
         assertTrue(result.isOk, "start failed: ${if (result.isErr) result.error.message.defaultMessage else ""}")
@@ -269,8 +270,47 @@ class FederatedRelyingPartyCommandsTest {
         assertEquals("openid", url.parameters["scope"])
         val request = assertNotNull(url.parameters["request"])
         assertTrue(verifies(request, rpKeys))
-        assertEquals(JsonArray(listOf(JsonPrimitive("e30.e30.sig"), JsonPrimitive("e30.e30.sig2"))), part(request, 0)["trust_chain"])
+        assertEquals(JsonArray(rpTrustChain().map(::JsonPrimitive)), part(request, 0)["trust_chain"])
         assertFalse(result.value.transaction.pushed)
+    }
+
+    /** The RP's Trust Chain as the caller supplies it: RP Entity Configuration first, Trust Anchor last (§4). */
+    private fun statement(iss: String, sub: String): String {
+        fun b64(value: String) = value.encodeToByteArray().encodeToBase64Url()
+        return b64("""{"typ":"entity-statement+jwt","alg":"ES256","kid":"k"}""") + "." + b64("""{"iss":"$iss","sub":"$sub"}""") + ".c2ln"
+    }
+
+    private fun rpTrustChain(trustAnchor: String = anchor, subject: String = rpId) =
+        listOf(statement(subject, subject), statement(trustAnchor, subject), statement(trustAnchor, trustAnchor))
+
+    // OpenID Federation for OpenID Connect 1.1 §12.1.1.1: the RP MUST select a Trust Anchor it has in common with the
+    // OP. The trust_chain it sends must be its own chain to the Trust Anchor the OP was resolved under.
+    @Test
+    fun startRefusesATrustChainThatEndsAtAnotherTrustAnchor() = runTest {
+        val result = start(factory(mutableListOf()) { error("no HTTP expected") }).execute(
+            StartFederatedAuthenticationArgs(
+                provider = provider(newKeys()),
+                relyingParty = rp(newKeys()),
+                transport = FederatedAuthenticationRequestTransport.REQUEST_OBJECT,
+                trustChain = rpTrustChain(trustAnchor = "https://other-anchor.example.org"),
+            ),
+        )
+        assertTrue(result.isErr, "a Trust Chain to a Trust Anchor the OP does not share must be refused")
+        assertEquals("invalid_request", result.error.code)
+    }
+
+    @Test
+    fun startRefusesATrustChainOfAnotherEntity() = runTest {
+        val result = start(factory(mutableListOf()) { error("no HTTP expected") }).execute(
+            StartFederatedAuthenticationArgs(
+                provider = provider(newKeys()),
+                relyingParty = rp(newKeys()),
+                transport = FederatedAuthenticationRequestTransport.REQUEST_OBJECT,
+                trustChain = rpTrustChain(subject = "https://someone-else.example.org"),
+            ),
+        )
+        assertTrue(result.isErr, "the trust_chain must start with the RP's own Entity Configuration")
+        assertEquals("invalid_request", result.error.code)
     }
 
     @Test

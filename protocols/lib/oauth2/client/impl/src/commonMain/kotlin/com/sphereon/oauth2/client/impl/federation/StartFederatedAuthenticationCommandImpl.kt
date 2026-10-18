@@ -16,6 +16,7 @@
 
 package com.sphereon.oauth2.client.impl.federation
 
+import com.sphereon.core.api.decodeFromBase64Url
 import com.sphereon.core.api.Err
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
@@ -101,6 +102,9 @@ class StartFederatedAuthenticationCommandImpl(
         }
         if (applied.scope.split(' ').none { it == "openid" }) return federationFailure("invalid_scope", "The scope must contain openid")
         providerProblem(provider, rp, now)?.let { return federationFailure("invalid_provider_metadata", it) }
+        applied.trustChain?.let { chain ->
+            rpTrustChainProblem(chain, rp.entityIdentifier, provider.trustAnchor)?.let { return federationFailure("invalid_request", it) }
+        }
 
         val metadata = provider.metadata
         val parEndpoint = metadata.pushedAuthorizationRequestEndpoint
@@ -223,3 +227,27 @@ class StartFederatedAuthenticationCommandImpl(
     }
 }
 
+/**
+ * Why [chain] cannot be sent as the RP's `trust_chain`: it must start with the RP's own Entity Configuration and end
+ * at the Trust Anchor the OP was resolved under, the one the RP and the OP have in common (OpenID Federation for
+ * OpenID Connect 1.1 §12.1.1.1). The OP verifies every statement itself; this only keeps the RP from sending a chain
+ * to a Trust Anchor it did not select.
+ */
+internal fun rpTrustChainProblem(chain: List<String>, rpEntityIdentifier: String, trustAnchor: String): String? {
+    if (chain.isEmpty()) return "The trust_chain must not be empty"
+    fun claims(jwt: String): kotlinx.serialization.json.JsonObject? = runCatching {
+        val parts = jwt.split('.')
+        require(parts.size == 3)
+        kotlinx.serialization.json.Json.parseToJsonElement(parts[1].decodeFromBase64Url().decodeToString())
+            as kotlinx.serialization.json.JsonObject
+    }.getOrNull()
+    fun kotlinx.serialization.json.JsonObject.claim(name: String): String? =
+        (this[name] as? kotlinx.serialization.json.JsonPrimitive)?.takeIf { it.isString }?.content
+    val first = claims(chain.first()) ?: return "The trust_chain statements must be JWTs"
+    val last = claims(chain.last()) ?: return "The trust_chain statements must be JWTs"
+    if (first.claim("iss") != rpEntityIdentifier || first.claim("sub") != rpEntityIdentifier) {
+        return "The trust_chain must start with the RP's own Entity Configuration"
+    }
+    if (last.claim("iss") != trustAnchor) return "The trust_chain must end at the Trust Anchor '$trustAnchor' the OP was resolved under"
+    return null
+}
