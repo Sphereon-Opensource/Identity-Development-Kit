@@ -34,9 +34,9 @@ import com.sphereon.di.session.SessionScope
 import com.sphereon.oauth2.server.authorization.command.GetJwksArgs
 import com.sphereon.oauth2.server.authorization.command.GetJwksCommand
 import com.sphereon.oauth2.server.authorization.command.JwksResult
+import com.sphereon.oauth2.server.authorization.signing.AsPublishableSigningKeySource
 import com.sphereon.oauth2.server.authorization.signing.AsSigningKeyPublicJwkResolver
 import com.sphereon.oauth2.server.authorization.storage.OAuth2SigningKey
-import com.sphereon.oauth2.server.authorization.storage.SigningKeyStore
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import kotlin.experimental.ExperimentalObjCName
@@ -51,6 +51,10 @@ import dev.zacsweers.metro.ExposeImplBinding
  * most recent rotation. RPs cache the JWKS and look up by `kid`, so as long as the tenant's
  * key history is in the store, every issued token's verification key is reachable.
  *
+ * The keys come from [AsPublishableSigningKeySource]. The default source publishes the
+ * tenant-wide set from the signing-key store; a deployment hosting several authorization
+ * servers in one tenant binds a source scoped to the selected server.
+ *
  * Replaces the earlier single-`serverIdentifier`-by-alias model. Multi-key publication is
  * required for safe rotation: an RP that fetched the previous JWKS still has the LEGACY key
  * for verifying tokens issued before the rotation completed.
@@ -62,7 +66,7 @@ import dev.zacsweers.metro.ExposeImplBinding
 @ExposeImplBinding
 class GetJwksCommandImpl(
     execution: SessionExecution,
-    private val signingKeyStore: SigningKeyStore,
+    private val publishableSigningKeySource: AsPublishableSigningKeySource,
     private val multiManagedIdentifierService: MultiManagedIdentifierService,
     private val signingKeyPublicJwkResolver: AsSigningKeyPublicJwkResolver? = null,
 ) : TypedServiceCommandAdapter<GetJwksArgs, JwksResult, IdkError>(
@@ -100,13 +104,14 @@ class GetJwksCommandImpl(
                 ),
             )
         }
-        // Publish whatever signing keys are PROVISIONED for this tenant in the durable SigningKeyStore.
-        // No self-seeding here: a durable AS signing key is provisioned explicitly at tenant
-        // registration. An empty set is the documented response shape when no key is registered yet.
-        val publishableResult = signingKeyStore.listPublishable(tenantId)
-        if (!publishableResult.isOk) {
-            logTokenRefusal(execution.log, "JWKS publication failed stage=publishable-key-storage error_type=${publishableResult.error::class.simpleName}")
-            return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Failed to list publishable signing keys"))
+        // Publish whatever signing keys the source reports as PROVISIONED and publishable for this
+        // tenant (and, for a scoped source, for the selected authorization server). No self-seeding
+        // here: a durable AS signing key is provisioned explicitly at tenant registration. An empty
+        // set is the documented response shape when no key is registered yet.
+        val publishableResult = publishableSigningKeySource.listPublishable(tenantId)
+        if (publishableResult.isErr) {
+            // The source owns the refusal reason; its typed error is returned unchanged.
+            return Err(publishableResult.error)
         }
         val publishable = publishableResult.value
         if (publishable.isEmpty()) {
