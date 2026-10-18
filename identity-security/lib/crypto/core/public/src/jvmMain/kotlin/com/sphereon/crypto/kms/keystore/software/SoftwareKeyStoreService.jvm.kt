@@ -72,6 +72,7 @@ import dev.zacsweers.metro.Inject
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -144,7 +145,7 @@ actual class SoftwareKeyStoreService actual constructor(
     private suspend fun cachedResolvedKey(alias: String): ResolvedKeyInfoType<*>? = sharedState().resolved(alias) as? ResolvedKeyInfoType<*>
 
     // Background scope for async I/O operations
-    private val backgroundScope = CoroutineScope(Dispatchers.IO)
+    private val backgroundScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     // Atomic counter to track pending changes and ensure no updates are lost
     private val pendingChanges = AtomicLong(0)
