@@ -23,12 +23,16 @@ import com.sphereon.crypto.core.kms.command.GenerateMacCommand
 import com.sphereon.crypto.core.kms.command.ListKeysCommand
 import com.sphereon.core.api.conf.DEFAULT_APPLICATION_TENANT_ID
 import com.sphereon.core.api.conf.KEY_APPLICATION_TENANT_ID
+import com.sphereon.core.api.Err
+import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.context.SessionExecution
+import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.SessionScopedCommandRegistry
 import com.sphereon.di.session.SessionScope
 import com.sphereon.identity.matching.protection.DefaultIdentifierProtectionPolicyService
 import com.sphereon.identity.matching.protection.IdentifierProtectionPolicyService
 import com.sphereon.identity.matching.protection.IdentifierProtectionKeyAccess
+import com.sphereon.identity.matching.protection.IdentifierProtectionKeyProvisioner
 import com.sphereon.identity.matching.protection.IdentifierProtector
 import com.sphereon.identity.matching.protection.IdentifierValueEncryption
 import dev.zacsweers.metro.ContributesTo
@@ -92,6 +96,21 @@ interface IdentifierProtectionModule {
             keyAccess = keyAccess,
         )
     }
+
+    /**
+     * The explicit creation point for identifier keys, backed by the same session protector so
+     * provisioning and later resolution share one provider selection. A graph that binds an
+     * [IdentifierProtector] without key lifecycle gets a provisioner that refuses.
+     */
+    @Provides
+    @SingleIn(SessionScope::class)
+    fun provideIdentifierProtectionKeyProvisioner(protector: IdentifierProtector): IdentifierProtectionKeyProvisioner =
+        protector as? IdentifierProtectionKeyProvisioner ?: RefusingIdentifierProtectionKeyProvisioner
+}
+
+private object RefusingIdentifierProtectionKeyProvisioner : IdentifierProtectionKeyProvisioner {
+    override suspend fun provisionKeys(tenantId: String): IdkResult<Unit, IdkError> =
+        Err(IdkError.INVALID_STATE(message = "The bound identifier protector does not provision identifier keys"))
 }
 
 private inline fun <reified T : Any> requireIdentifierProtectionCommand(
