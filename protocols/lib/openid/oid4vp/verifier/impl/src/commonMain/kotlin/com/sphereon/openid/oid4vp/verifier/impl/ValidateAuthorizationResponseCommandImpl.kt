@@ -1046,6 +1046,19 @@ class ValidateAuthorizationResponseCommandImpl(
         // blanket-cast to jsonPrimitive.
         val vpToken = parsedResponse.vpToken
 
+        // Issuers that verifier policy admits but cannot enumerate in advance (for example members of
+        // an admitted OpenID Federation) get their admitted material before any credential is verified.
+        val effectiveArgs =
+            processedArgs.credentialIssuerAuthenticationLookup?.let { lookup ->
+                val resolved =
+                    PresentedCredentialIssuers.resolve(
+                        vpToken.presentationElements.values.flatten(),
+                        processedArgs.trustedAuthentications,
+                        lookup,
+                    )
+                if (resolved.isEmpty()) processedArgs else processedArgs.copy(trustedAuthentications = processedArgs.trustedAuthentications + resolved)
+            } ?: processedArgs
+
         for ((queryId, presentationElements) in vpToken.presentationElements) {
             submittedQueryIds.add(queryId)
             // Validate the credential query ID exists in the DCQL query
@@ -1072,7 +1085,7 @@ class ValidateAuthorizationResponseCommandImpl(
                     presentationIndex = presentationIndex,
                     presentationElement = presentationElement,
                     matchingQuery = matchingQuery,
-                    processedArgs = processedArgs,
+                    processedArgs = effectiveArgs,
                     bindingRequest = bindingRequest,
                     bindingNonce = bindingNonce ?: processedArgs.expectedNonce,
                     effectiveVerifierId = effectiveVerifierId,

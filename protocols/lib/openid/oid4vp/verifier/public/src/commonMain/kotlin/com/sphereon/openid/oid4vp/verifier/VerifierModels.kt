@@ -290,6 +290,13 @@ data class ValidateAuthorizationResponseArgs(
      * one from `jwk`, `jku`, `x5c`, or `kid` values in the presented JWT.
      */
     val trustedAuthentications: List<TrustedAuthenticationResolution> = emptyList(),
+    /**
+     * Verifier-owned on-demand credential-issuer authentication, consulted for a credential issuer that no
+     * entry of [trustedAuthentications] names. Its result is admitted material, never presented key material.
+     */
+    @kotlinx.serialization.Transient
+    @JsExportIgnoreCompat
+    val credentialIssuerAuthenticationLookup: CredentialIssuerAuthenticationLookup? = null,
     /** Verifier-owned exact-reference Data Integrity trust policy for non-DID methods. */
     @kotlinx.serialization.Transient
     val verificationMethodResolutionPolicy: VerificationMethodResolutionPolicy = VerificationMethodResolutionPolicy.empty(),
@@ -645,6 +652,10 @@ data class HandleDirectPostResponseArgs(
      * trust-domain policy. They must never be synthesized from key material in the submitted token.
      */
     val trustedAuthentications: List<TrustedAuthenticationResolution> = emptyList(),
+    /** Verifier-owned on-demand credential-issuer authentication, forwarded to response validation. */
+    @kotlinx.serialization.Transient
+    @JsExportIgnoreCompat
+    val credentialIssuerAuthenticationLookup: CredentialIssuerAuthenticationLookup? = null,
     /** Exact-reference trust policy for non-DID Data Integrity verification methods. */
     @kotlinx.serialization.Transient
     val verificationMethodResolutionPolicy: VerificationMethodResolutionPolicy = VerificationMethodResolutionPolicy.empty(),

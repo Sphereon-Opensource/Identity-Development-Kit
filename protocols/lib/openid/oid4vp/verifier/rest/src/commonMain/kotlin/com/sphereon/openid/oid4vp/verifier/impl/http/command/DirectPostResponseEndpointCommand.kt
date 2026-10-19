@@ -316,6 +316,7 @@ class DirectPostResponseEndpointCommandImpl(
             return Err(IdkError.fromString("credential issuer authentication resolver returned holder material", code = "TRUST_AUTHENTICATION_PURPOSE_MISMATCH"))
         }
         val trustedAuthentications = holderAuthentications + issuerAuthentications
+        val issuerAuthenticationLookup = authenticationResolver?.credentialIssuerAuthenticationLookup(trustRequest)
 
         // Build args for the direct_post handler
         val directPostArgs =
@@ -330,6 +331,7 @@ class DirectPostResponseEndpointCommandImpl(
                 dcqlQueryId = session.dcqlQueryId,
                 templateId = session.templateId,
                 trustedAuthentications = trustedAuthentications,
+                credentialIssuerAuthenticationLookup = issuerAuthenticationLookup,
                 iso18013MdocGeneratedNonce = iso18013MdocGeneratedNonce,
             )
 

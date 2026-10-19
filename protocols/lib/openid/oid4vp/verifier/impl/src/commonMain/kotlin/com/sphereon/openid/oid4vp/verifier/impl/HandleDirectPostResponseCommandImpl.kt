@@ -293,6 +293,7 @@ class HandleDirectPostResponseCommandImpl(
                 dcqlQueryId = processedArgs.dcqlQueryId,
                 templateId = processedArgs.templateId,
                 trustedAuthentications = processedArgs.trustedAuthentications,
+                credentialIssuerAuthenticationLookup = processedArgs.credentialIssuerAuthenticationLookup,
                 verificationMethodResolutionPolicy = processedArgs.verificationMethodResolutionPolicy,
                 mdocDocumentResponseDecryptionKey = processedArgs.mdocDocumentResponseDecryptionKey,
                 mdocDocumentResponseEncryptionParameters = processedArgs.mdocDocumentResponseEncryptionParameters,

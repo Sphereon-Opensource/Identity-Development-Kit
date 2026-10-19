@@ -7,6 +7,8 @@
 
 package com.sphereon.openid.oid4vp.verifier
 
+import com.sphereon.core.api.IdkResult
+import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.crypto.core.jose.Jwk
 import com.sphereon.crypto.resolution.IdentifierOptsOrResult
@@ -73,4 +75,20 @@ data class TrustedAuthenticationResolution(
 enum class TrustedAuthenticationPurpose {
     HOLDER,
     CREDENTIAL_ISSUER,
+}
+
+/**
+ * On-demand credential-issuer authentication for one issuer named by a presented credential.
+ *
+ * Some trust frameworks admit issuers that cannot be listed in advance; an OpenID Federation Trust
+ * Anchor, for example, admits every entity whose Trust Chain resolves to it. The verifier calls this
+ * lookup with the issuer identifier of a credential it is about to verify when no pre-resolved
+ * [TrustedAuthenticationResolution] names that issuer. The issuer value only selects what to resolve:
+ * implementations decide admission from persisted verifier policy and return already-admitted
+ * material for exactly that controller with [TrustedAuthenticationPurpose.CREDENTIAL_ISSUER], or
+ * `null` when the issuer is not admitted. The credential signature is still verified against the
+ * returned material, so naming an issuer grants nothing by itself.
+ */
+fun interface CredentialIssuerAuthenticationLookup {
+    suspend fun resolve(issuer: String): IdkResult<TrustedAuthenticationResolution?, IdkError>
 }

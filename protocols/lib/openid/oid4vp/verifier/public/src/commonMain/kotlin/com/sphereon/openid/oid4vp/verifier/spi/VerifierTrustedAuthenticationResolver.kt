@@ -21,6 +21,7 @@ import com.sphereon.core.api.Ok
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.oauth2.common.model.AuthorizationRequest
 import com.sphereon.openid.oid4vp.dcql.DcqlQuery
+import com.sphereon.openid.oid4vp.verifier.CredentialIssuerAuthenticationLookup
 import com.sphereon.openid.oid4vp.verifier.TrustedAuthenticationResolution
 
 /**
@@ -60,4 +61,13 @@ interface VerifierTrustedAuthenticationResolver {
     suspend fun resolveTrustedCredentialIssuerAuthentications(
         request: VerifierTrustedAuthenticationRequest,
     ): IdkResult<List<TrustedAuthenticationResolution>, IdkError> = Ok(emptyList())
+
+    /**
+     * Issuer-specific credential-issuer authentication for issuers that the session's pinned policy
+     * admits but cannot enumerate in advance. Null (the default) means only the pre-resolved
+     * [resolveTrustedCredentialIssuerAuthentications] material applies.
+     */
+    suspend fun credentialIssuerAuthenticationLookup(
+        request: VerifierTrustedAuthenticationRequest,
+    ): CredentialIssuerAuthenticationLookup? = null
 }
