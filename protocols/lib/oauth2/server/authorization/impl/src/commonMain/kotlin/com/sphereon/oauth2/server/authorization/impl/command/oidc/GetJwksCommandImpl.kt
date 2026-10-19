@@ -67,7 +67,7 @@ import dev.zacsweers.metro.ExposeImplBinding
 class GetJwksCommandImpl(
     execution: SessionExecution,
     private val publishableSigningKeySource: AsPublishableSigningKeySource,
-    private val multiManagedIdentifierService: MultiManagedIdentifierService,
+    private val multiManagedIdentifierService: Lazy<MultiManagedIdentifierService>,
     private val signingKeyPublicJwkResolver: AsSigningKeyPublicJwkResolver? = null,
 ) : TypedServiceCommandAdapter<GetJwksArgs, JwksResult, IdkError>(
         commandId = GetJwksCommand.COMMAND_ID,
@@ -157,7 +157,7 @@ class GetJwksCommandImpl(
         // keys are provisioned into the tenant-specific provider, so alias-only lookup would
         // resolve against the wrong provider and publish an empty JWKS.
         val identifier: ManagedIdentifierOpts = ManagedOptsKeyInfo(identifier = keyInfo)
-        val resolveResult = multiManagedIdentifierService.resolve(identifier)
+        val resolveResult = multiManagedIdentifierService.value.resolve(identifier)
         if (!resolveResult.isOk) return null
         val jwkResult = tryManagedIdentifierToJwk(resolveResult.value).getOrNull() ?: return null
         val publicJwk = jwkResult.identifier.toPublicKey() as? Jwk ?: return null

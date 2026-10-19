@@ -272,7 +272,7 @@ class HandleTokenRequestCommandImplTest {
             val command = HandleTokenRequestCommandImpl(
                 execution = ctx.execution,
                 parseTokenRequestCommand = parse,
-                verifyClientAuthenticationCommand = verify,
+                verifyClientAuthenticationCommand = lazyOf(verify),
                 serversConfigProvider = configProvider,
                 verifyDpopProofCommand = rejectingDpopVerify,
                 dpopProofJtiCache = newDpopJtiCache(),
@@ -530,7 +530,7 @@ class HandleTokenRequestCommandImplTest {
                 HandleTokenRequestCommandImpl(
                     execution = ctx.execution,
                     parseTokenRequestCommand = parse,
-                    verifyClientAuthenticationCommand = verifyClient,
+                    verifyClientAuthenticationCommand = lazyOf(verifyClient),
                     serversConfigProvider = configProvider,
                     verifyDpopProofCommand =
                         lazy {
@@ -566,6 +566,64 @@ class HandleTokenRequestCommandImplTest {
             assertEquals(0, dpopVerifierConstructions)
             assertEquals(0, dpopReplayCacheConstructions)
             assertEquals(0, dpopNonceManagerConstructions)
+        }
+
+    @Test
+    fun publicClientCodeExchangeDoesNotConstructClientAuthentication() =
+        runTest {
+            var clientAuthenticationResolutions = 0
+            val parse =
+                stubParseTokenRequest {
+                    Ok(
+                        TokenRequestData(
+                            grantType = GrantType.AUTHORIZATION_CODE,
+                            clientId = "wallet",
+                            clientAuthentication = ClientAuthenticationConfig.None("wallet"),
+                            grantParameters = GrantParameters.AuthorizationCode(code = "code", redirectUri = "https://wallet.example/cb"),
+                            httpUrl = "https://as.example.com/token",
+                        ),
+                    )
+                }
+            val selected =
+                object : com.sphereon.oauth2.server.authorization.command.token.GrantHandler {
+                    override val grantType =
+                        com.sphereon.oauth2.server.authorization.command.token.GrantHandlerKeys.AUTHORIZATION_CODE
+
+                    override fun supports(params: GrantParameters): Boolean = params is GrantParameters.AuthorizationCode
+
+                    override suspend fun handle(
+                        params: GrantParameters,
+                        context: com.sphereon.oauth2.server.authorization.command.token.GrantContext,
+                    ): IdkResult<TokenResponse, IdkError> = Ok(TokenResponse(accessToken = "code-token", tokenType = "Bearer"))
+                }
+            val command =
+                HandleTokenRequestCommandImpl(
+                    execution = ctx.execution,
+                    parseTokenRequestCommand = parse,
+                    verifyClientAuthenticationCommand =
+                        lazy {
+                            clientAuthenticationResolutions++
+                            error("A none-auth code exchange defers client authentication to the grant verifier")
+                        },
+                    serversConfigProvider = configProvider,
+                    verifyDpopProofCommand = rejectingDpopVerify,
+                    dpopProofJtiCache = newDpopJtiCache(),
+                    dpopNonceManager = newDpopNonceManager(),
+                    grantHandlers = mapOf(selected.grantType to lazyOf(selected)),
+                )
+
+            val result =
+                command.execute(
+                    HandleTokenRequestArgs(
+                        requestBody = mapOf("grant_type" to listOf("authorization_code")),
+                        requestHeaders = emptyMap(),
+                        httpUrl = "https://as.example.com/token",
+                    ),
+                )
+
+            assertTrue(result.isOk)
+            assertEquals("code-token", result.value.accessToken)
+            assertEquals(0, clientAuthenticationResolutions)
         }
 
     @Test
@@ -619,7 +677,7 @@ class HandleTokenRequestCommandImplTest {
                 HandleTokenRequestCommandImpl(
                     execution = ctx.execution,
                     parseTokenRequestCommand = service.commands.parseTokenRequest,
-                    verifyClientAuthenticationCommand = service.commands.verifyClientAuthentication,
+                    verifyClientAuthenticationCommand = lazyOf(service.commands.verifyClientAuthentication),
                     serversConfigProvider = configProvider,
                     verifyDpopProofCommand = rejectingDpopVerify,
                     dpopProofJtiCache = newDpopJtiCache(),
@@ -844,7 +902,7 @@ class HandleTokenRequestCommandImplTest {
         return HandleTokenRequestCommandImpl(
             execution = ctx.execution,
             parseTokenRequestCommand = service.commands.parseTokenRequest,
-            verifyClientAuthenticationCommand = service.commands.verifyClientAuthentication,
+            verifyClientAuthenticationCommand = lazyOf(service.commands.verifyClientAuthentication),
             serversConfigProvider = configProvider,
             verifyDpopProofCommand = rejectingDpopVerify,
             dpopProofJtiCache = newDpopJtiCache(),
@@ -932,7 +990,7 @@ class HandleTokenRequestCommandImplTest {
                 HandleTokenRequestCommandImpl(
                     execution = ctx.execution,
                     parseTokenRequestCommand = service.commands.parseTokenRequest,
-                    verifyClientAuthenticationCommand = service.commands.verifyClientAuthentication,
+                    verifyClientAuthenticationCommand = lazyOf(service.commands.verifyClientAuthentication),
                     serversConfigProvider = preAuthorizedConfigProvider,
                     verifyDpopProofCommand = rejectingDpopVerify,
                     dpopProofJtiCache = newDpopJtiCache(),
@@ -1010,7 +1068,7 @@ class HandleTokenRequestCommandImplTest {
                 HandleTokenRequestCommandImpl(
                     execution = ctx.execution,
                     parseTokenRequestCommand = service.commands.parseTokenRequest,
-                    verifyClientAuthenticationCommand = service.commands.verifyClientAuthentication,
+                    verifyClientAuthenticationCommand = lazyOf(service.commands.verifyClientAuthentication),
                     serversConfigProvider = configProvider,
                     verifyDpopProofCommand = rejectingDpopVerify,
                     dpopProofJtiCache = newDpopJtiCache(),
@@ -1088,7 +1146,7 @@ class HandleTokenRequestCommandImplTest {
                 HandleTokenRequestCommandImpl(
                     execution = ctx.execution,
                     parseTokenRequestCommand = service.commands.parseTokenRequest,
-                    verifyClientAuthenticationCommand = service.commands.verifyClientAuthentication,
+                    verifyClientAuthenticationCommand = lazyOf(service.commands.verifyClientAuthentication),
                     serversConfigProvider = configProvider,
                     verifyDpopProofCommand = rejectingDpopVerify,
                     dpopProofJtiCache = newDpopJtiCache(),
@@ -1125,7 +1183,7 @@ class HandleTokenRequestCommandImplTest {
                 HandleTokenRequestCommandImpl(
                     execution = ctx.execution,
                     parseTokenRequestCommand = service.commands.parseTokenRequest,
-                    verifyClientAuthenticationCommand = service.commands.verifyClientAuthentication,
+                    verifyClientAuthenticationCommand = lazyOf(service.commands.verifyClientAuthentication),
                     serversConfigProvider = configProvider,
                     verifyDpopProofCommand = rejectingDpopVerify,
                     dpopProofJtiCache = newDpopJtiCache(),
@@ -1354,7 +1412,7 @@ class HandleTokenRequestCommandImplTest {
                 HandleTokenRequestCommandImpl(
                     execution = ctx.execution,
                     parseTokenRequestCommand = service.commands.parseTokenRequest,
-                    verifyClientAuthenticationCommand = service.commands.verifyClientAuthentication,
+                    verifyClientAuthenticationCommand = lazyOf(service.commands.verifyClientAuthentication),
                     serversConfigProvider = rotatingConfigProvider,
                     verifyDpopProofCommand = rejectingDpopVerify,
                     dpopProofJtiCache = newDpopJtiCache(),
@@ -1458,7 +1516,7 @@ class HandleTokenRequestCommandImplTest {
                 HandleTokenRequestCommandImpl(
                     execution = ctx.execution,
                     parseTokenRequestCommand = service.commands.parseTokenRequest,
-                    verifyClientAuthenticationCommand = service.commands.verifyClientAuthentication,
+                    verifyClientAuthenticationCommand = lazyOf(service.commands.verifyClientAuthentication),
                     serversConfigProvider = nonRotatingConfigProvider,
                     verifyDpopProofCommand = rejectingDpopVerify,
                     dpopProofJtiCache = newDpopJtiCache(),
@@ -1607,7 +1665,7 @@ class HandleTokenRequestCommandImplTest {
                 HandleTokenRequestCommandImpl(
                     execution = ctx.execution,
                     parseTokenRequestCommand = service.commands.parseTokenRequest,
-                    verifyClientAuthenticationCommand = service.commands.verifyClientAuthentication,
+                    verifyClientAuthenticationCommand = lazyOf(service.commands.verifyClientAuthentication),
                     serversConfigProvider = oidcConfigProvider,
                     verifyDpopProofCommand = rejectingDpopVerify,
                     dpopProofJtiCache = newDpopJtiCache(),
@@ -1747,7 +1805,7 @@ class HandleTokenRequestCommandImplTest {
                 HandleTokenRequestCommandImpl(
                     execution = ctx.execution,
                     parseTokenRequestCommand = service.commands.parseTokenRequest,
-                    verifyClientAuthenticationCommand = service.commands.verifyClientAuthentication,
+                    verifyClientAuthenticationCommand = lazyOf(service.commands.verifyClientAuthentication),
                     serversConfigProvider = oidcConfigProvider,
                     verifyDpopProofCommand = rejectingDpopVerify,
                     dpopProofJtiCache = newDpopJtiCache(),
@@ -1869,7 +1927,7 @@ class HandleTokenRequestCommandImplTest {
                 HandleTokenRequestCommandImpl(
                     execution = ctx.execution,
                     parseTokenRequestCommand = service.commands.parseTokenRequest,
-                    verifyClientAuthenticationCommand = service.commands.verifyClientAuthentication,
+                    verifyClientAuthenticationCommand = lazyOf(service.commands.verifyClientAuthentication),
                     serversConfigProvider = configProvider,
                     verifyDpopProofCommand = acceptingDpopVerify(jkt = attackerJkt),
                     dpopProofJtiCache = newDpopJtiCache(),
@@ -1977,7 +2035,7 @@ class HandleTokenRequestCommandImplTest {
                 HandleTokenRequestCommandImpl(
                     execution = ctx.execution,
                     parseTokenRequestCommand = service.commands.parseTokenRequest,
-                    verifyClientAuthenticationCommand = service.commands.verifyClientAuthentication,
+                    verifyClientAuthenticationCommand = lazyOf(service.commands.verifyClientAuthentication),
                     serversConfigProvider = configProvider,
                     verifyDpopProofCommand = acceptingDpopVerify(jkt = rotatedJkt),
                     dpopProofJtiCache = newDpopJtiCache(),
@@ -2056,7 +2114,7 @@ class HandleTokenRequestCommandImplTest {
                 HandleTokenRequestCommandImpl(
                     execution = ctx.execution,
                     parseTokenRequestCommand = service.commands.parseTokenRequest,
-                    verifyClientAuthenticationCommand = service.commands.verifyClientAuthentication,
+                    verifyClientAuthenticationCommand = lazyOf(service.commands.verifyClientAuthentication),
                     serversConfigProvider = configProvider,
                     verifyDpopProofCommand = acceptingDpopVerify(jkt = proofJkt),
                     dpopProofJtiCache = newDpopJtiCache(),
@@ -2160,7 +2218,7 @@ class HandleTokenRequestCommandImplTest {
                 HandleTokenRequestCommandImpl(
                     execution = ctx.execution,
                     parseTokenRequestCommand = service.commands.parseTokenRequest,
-                    verifyClientAuthenticationCommand = service.commands.verifyClientAuthentication,
+                    verifyClientAuthenticationCommand = lazyOf(service.commands.verifyClientAuthentication),
                     serversConfigProvider = nonceConfigProvider,
                     verifyDpopProofCommand = acceptingDpopVerify(jkt = "jkt-test"),
                     dpopProofJtiCache = newDpopJtiCache(),
@@ -2262,7 +2320,7 @@ class HandleTokenRequestCommandImplTest {
                 HandleTokenRequestCommandImpl(
                     execution = ctx.execution,
                     parseTokenRequestCommand = service.commands.parseTokenRequest,
-                    verifyClientAuthenticationCommand = service.commands.verifyClientAuthentication,
+                    verifyClientAuthenticationCommand = lazyOf(service.commands.verifyClientAuthentication),
                     serversConfigProvider = nonceConfigProvider,
                     verifyDpopProofCommand = staleNonceVerify,
                     dpopProofJtiCache = newDpopJtiCache(),
@@ -2370,7 +2428,7 @@ class HandleTokenRequestCommandImplTest {
                 HandleTokenRequestCommandImpl(
                     execution = ctx.execution,
                     parseTokenRequestCommand = service.commands.parseTokenRequest,
-                    verifyClientAuthenticationCommand = service.commands.verifyClientAuthentication,
+                    verifyClientAuthenticationCommand = lazyOf(service.commands.verifyClientAuthentication),
                     serversConfigProvider = nonceConfigProvider,
                     verifyDpopProofCommand = activeNonceVerify,
                     dpopProofJtiCache = newDpopJtiCache(),
@@ -2455,7 +2513,7 @@ class HandleTokenRequestCommandImplTest {
                 HandleTokenRequestCommandImpl(
                     execution = ctx.execution,
                     parseTokenRequestCommand = service.commands.parseTokenRequest,
-                    verifyClientAuthenticationCommand = service.commands.verifyClientAuthentication,
+                    verifyClientAuthenticationCommand = lazyOf(service.commands.verifyClientAuthentication),
                     serversConfigProvider = configProvider,
                     verifyDpopProofCommand = rejectingDpopVerify,
                     dpopProofJtiCache = newDpopJtiCache(),

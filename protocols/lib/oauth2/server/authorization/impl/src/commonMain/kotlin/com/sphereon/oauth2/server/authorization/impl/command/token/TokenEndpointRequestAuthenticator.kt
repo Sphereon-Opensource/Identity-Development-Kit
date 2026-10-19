@@ -58,7 +58,7 @@ internal class AuthenticatedTokenRequest(
  */
 internal class TokenEndpointRequestAuthenticator(
     private val parseTokenRequestCommand: ParseTokenRequestCommand,
-    private val verifyClientAuthenticationCommand: VerifyClientAuthenticationCommand,
+    private val verifyClientAuthenticationCommand: Lazy<VerifyClientAuthenticationCommand>,
     private val serversConfigProvider: OAuth2ServersConfigProvider,
     private val verifyDpopProofCommand: Lazy<VerifyDpopProofCommand>,
     private val dpopProofJtiCache: Lazy<DpopProofJtiCache>,
@@ -117,14 +117,6 @@ internal class TokenEndpointRequestAuthenticator(
                 tokenRequest.clientAuthentication
             }
 
-        // Keep selected-command construction separate from execution. The command lives in the
-        // request SessionScope, so otherwise its DI cost is folded into client authentication and
-        // cannot be distinguished from registry/configuration I/O inside the command itself.
-        val selectedVerifyClientAuthentication =
-            timings.record(TokenPathStage.CLIENT_AUTHENTICATION_COMMAND_RESOLUTION) {
-                verifyClientAuthenticationCommand
-            }
-
         // For none-auth code and refresh requests, the grant verifier has the persisted code or
         // refresh-token row needed to distinguish an admitted wallet from an unknown client.
         val deferNoneClientAuthenticationToGrantVerifier =
@@ -140,6 +132,14 @@ internal class TokenEndpointRequestAuthenticator(
                     method = ClientAuthenticationMethod.NONE,
                 )
             } else {
+                // Keep selected-command construction separate from execution. The command lives in
+                // the request SessionScope and is only resolved here, so a request that defers or
+                // skips client authentication never builds it, and its DI cost is not folded into
+                // the registry and configuration I/O measured inside the command itself.
+                val selectedVerifyClientAuthentication =
+                    timings.record(TokenPathStage.CLIENT_AUTHENTICATION_COMMAND_RESOLUTION) {
+                        verifyClientAuthenticationCommand.value
+                    }
                 timings
                     .record(TokenPathStage.CLIENT_AUTHENTICATION) {
                         selectedVerifyClientAuthentication.execute(

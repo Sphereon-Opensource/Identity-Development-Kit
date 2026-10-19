@@ -64,7 +64,7 @@ import dev.zacsweers.metro.ExposeImplBinding
 class HandleTokenRequestCommandImpl(
     execution: SessionExecution,
     private val parseTokenRequestCommand: ParseTokenRequestCommand,
-    private val verifyClientAuthenticationCommand: VerifyClientAuthenticationCommand,
+    private val verifyClientAuthenticationCommand: Lazy<VerifyClientAuthenticationCommand>,
     private val serversConfigProvider: OAuth2ServersConfigProvider,
     private val verifyDpopProofCommand: Lazy<VerifyDpopProofCommand>,
     private val dpopProofJtiCache: Lazy<DpopProofJtiCache>,

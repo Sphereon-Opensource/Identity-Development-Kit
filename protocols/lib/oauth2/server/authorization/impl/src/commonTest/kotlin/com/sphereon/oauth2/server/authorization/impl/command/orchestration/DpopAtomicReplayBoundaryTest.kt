@@ -98,7 +98,7 @@ class DpopAtomicReplayBoundaryTest {
             }
         }
         val command = HandleTokenRequestCommandImpl(
-            execution = ctx.execution, parseTokenRequestCommand = parse, verifyClientAuthenticationCommand = client,
+            execution = ctx.execution, parseTokenRequestCommand = parse, verifyClientAuthenticationCommand = lazyOf(client),
             serversConfigProvider = TestOAuth2ServersConfigProvider(OAuth2ServersConfig(servers = mapOf("default" to OAuth2ServerInstanceConfig(issuer = "https://as.example")))),
             verifyDpopProofCommand = lazyOf(proof), dpopProofJtiCache = lazyOf(cache),
             dpopNonceManager = lazy<DpopNonceManager> { error("Nonce policy is disabled in this boundary vector") },

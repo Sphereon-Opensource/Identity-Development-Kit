@@ -161,7 +161,7 @@ class GetJwksPublishableSigningKeySourceTest {
         GetJwksCommandImpl(
             execution = execution,
             publishableSigningKeySource = source,
-            multiManagedIdentifierService = ctx.identifierService,
+            multiManagedIdentifierService = lazyOf(ctx.identifierService),
         )
 
     private fun fixedSource(

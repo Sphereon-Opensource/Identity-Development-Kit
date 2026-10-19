@@ -141,7 +141,7 @@ class GetJwksCommandImplTest {
                     execution = TenantOverrideSessionExecution(ctx.execution, tenant),
                     publishableSigningKeySource =
                         DefaultAsPublishableSigningKeySource(TenantOverrideSessionExecution(ctx.execution, tenant), store),
-                    multiManagedIdentifierService = ctx.identifierService,
+                    multiManagedIdentifierService = lazyOf(ctx.identifierService),
                     signingKeyPublicJwkResolver = routedResolver,
                 )
 
@@ -277,5 +277,5 @@ internal fun OAuth2ServerTestContext.defaultSourceJwksCommand(
     GetJwksCommandImpl(
         execution = execution,
         publishableSigningKeySource = DefaultAsPublishableSigningKeySource(execution, store),
-        multiManagedIdentifierService = identifierService,
+        multiManagedIdentifierService = lazyOf(identifierService),
     )
