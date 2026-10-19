@@ -276,7 +276,8 @@ class SessionContextManagerImpl(
                     "contextId=${userContextInstance.contextId.sanitizeLogToken()} remainingSessions=0 " +
                     "parentChildrenBefore=${parentChildrenBefore ?: "unknown"} reason=destroy-all",
             )
-            runCatching { instance.scope.destroy() }
+            // Same monitor as session creation: destroying removes the scope from the context's child set.
+            runCatching { synchronized(this) { instance.scope.destroy() } }
                 .onSuccess {
                     val parentChildrenAfter = parentScope?.let { parent -> runCatching { parent.children().size }.getOrNull() }
                     log.debug(
@@ -586,7 +587,8 @@ class SessionContextManagerImpl(
         // Slow path. Building a session graph and materializing its scoped instances can resolve
         // configuration, which may block on I/O or on a lock. None of that runs under this manager's
         // monitor: holding it there would stall every session creation in this context behind one
-        // slow build. The monitor only guards the registry: insert if absent, else keep the winner.
+        // slow build. The monitor guards the registry and the context scope's child set, which is not
+        // thread-safe: only the build that wins registration attaches its session scope, under it.
         return try {
             val built =
                 ConfigBootstrapGuard.withContextRegistration {
@@ -601,31 +603,31 @@ class SessionContextManagerImpl(
                         timing = timing,
                     )
                 }
+            var attachedScope: Scope? = null
             val registered =
                 synchronized(this) {
                     val lockedInstances =
                         timing.measure(SessionScopeResolutionPhase.CONTEXT_SCOPE_RESOLUTION) { instances.value }
-                    val lockedExisting = lockedInstances[sessionId]
-                    val winner = lockedExisting ?: built.instance
-                    if (lockedExisting == null) {
-                        instances.value = lockedInstances + (sessionId to built.instance)
-                    }
+                    val winner =
+                        lockedInstances[sessionId] ?: built.instance.also { instance ->
+                            // Only the winner attaches a scope, so a losing build never enters the
+                            // context scope's child set and has nothing to release.
+                            val scope = timing.measure(SessionScopeResolutionPhase.SCOPE_CREATION) { built.attachScope() }
+                            timing.measure(SessionScopeResolutionPhase.SESSION_INSTANCE_INITIALIZATION) {
+                                (instance as? SessionInstanceImpl)?.initialize(built.sessionGraph, scope)
+                            }
+                            attachedScope = scope
+                            instances.value = lockedInstances + (sessionId to instance)
+                        }
                     if (makeActive) {
                         setActiveInstance(winner)
                     }
                     winner
                 }
-            if (registered !== built.instance) {
-                // Another caller registered this session while this one was building. Keep theirs and
-                // release the scope this build created, so the context does not retain a second one.
-                runCatching { built.scope.destroy() }
-                    .onFailure { error ->
-                        log.warn(
-                            "VDX_SESSION_SCOPE_DUPLICATE_DESTROY_FAILED sessionId=${sessionId.sanitizeLogToken()} " +
-                                "contextId=${userContextInstance.contextId.sanitizeLogToken()} " +
-                                "error=${error.message?.sanitizeLogToken() ?: error::class.simpleName}",
-                        )
-                    }
+            val scope = attachedScope
+            if (registered !== built.instance || scope == null) {
+                // Another caller registered this session while this one was building. Keep theirs; this
+                // build attached no scope.
                 logSessionReused(
                     sessionId = sessionId,
                     source = source.value,
@@ -644,7 +646,7 @@ class SessionContextManagerImpl(
                 materializeAndRegisterScopedInstances(
                     timing = timing,
                     materialize = { built.sessionGraph.sessionScopedInstances },
-                    register = { scopedInstances -> built.scope.register(scopedInstances) },
+                    register = { scopedInstances -> scope.register(scopedInstances) },
                 )
             }
             logSessionCreated(
@@ -664,7 +666,10 @@ class SessionContextManagerImpl(
         }
     }
 
-    /** Creates the session context, graph, scope and instance. Runs without the manager's monitor. */
+    /**
+     * Creates the session context, graph and instance. Runs without the manager's monitor. The session
+     * scope is attached later, under the monitor, by the build that wins registration.
+     */
     private fun buildSession(
         sessionId: String,
         sessionContext: SessionContext?,
@@ -722,31 +727,25 @@ class SessionContextManagerImpl(
                     principalType,
                 )
             }
-        val scope =
-            timing.measure(SessionScopeResolutionPhase.SCOPE_CREATION) {
-                contextScope.buildChild("session:$sessionId") {
-                    addMetroDependencyGraph(sessionGraph)
-                    addService("sessionContext", actualSessionContext)
-                    addCoroutineScopeScoped(sessionGraph.sessionScopeCoroutineScopeScoped)
-                }
-            }
-
-        // Initialize the instance.
-        val instance =
-            timing.measure(SessionScopeResolutionPhase.SESSION_INSTANCE_INITIALIZATION) {
-                sessionGraph.instance.also { resolvedInstance ->
-                    (resolvedInstance as? SessionInstanceImpl)?.initialize(sessionGraph, scope)
-                }
-            }
-        return BuiltSession(contextScope, sessionGraph, scope, instance)
+        val instance = timing.measure(SessionScopeResolutionPhase.SESSION_INSTANCE_INITIALIZATION) { sessionGraph.instance }
+        return BuiltSession(sessionId, contextScope, sessionGraph, actualSessionContext, instance)
     }
 
     private class BuiltSession(
+        val sessionId: String,
         val contextScope: Scope,
         val sessionGraph: SessionGraph,
-        val scope: Scope,
+        val sessionContext: SessionContext,
         val instance: SessionInstance,
-    )
+    ) {
+        /** Adds the session scope to the context scope's child set. Call only under the manager's monitor. */
+        fun attachScope(): Scope =
+            contextScope.buildChild("session:$sessionId") {
+                addMetroDependencyGraph(sessionGraph)
+                addService("sessionContext", sessionContext)
+                addCoroutineScopeScoped(sessionGraph.sessionScopeCoroutineScopeScoped)
+            }
+    }
 
     /**
      * Sets the active instance atomically and updates the flow.

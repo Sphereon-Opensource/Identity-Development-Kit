@@ -106,6 +106,40 @@ class SessionContextManagerConcurrencyTest {
         }
     }
 
+    @Test
+    fun concurrentSessionChurnLeavesAContextScopeThatDestroys() {
+        val appGraph = createCoreApiTestAppGraph(this, "session-manager-churn-test", "test-profile", "0.0.1-TEST")
+        val pool = Executors.newFixedThreadPool(CHURN_THREADS)
+        val start = CyclicBarrier(CHURN_THREADS)
+        try {
+            val userContextInstance = userContext(appGraph)
+            val manager = manager(appGraph, userContextInstance) {}
+            val workers =
+                (0 until CHURN_THREADS).map { worker ->
+                    pool.submit(
+                        Callable {
+                            start.await(5, TimeUnit.SECONDS)
+                            repeat(CHURN_ROUNDS) { round ->
+                                val sessionId = "churn-$worker-$round"
+                                manager.createOrGetFromId(sessionId, principalType = PrincipalType.USER)
+                                manager.destroyById(sessionId)
+                            }
+                        },
+                    )
+                }
+            workers.forEach { it.get(120, TimeUnit.SECONDS) }
+            assertTrue(manager.listIds().none { it.startsWith("churn-") })
+        } finally {
+            pool.shutdownNow()
+        }
+        // A context scope whose child set was mutated concurrently can keep a destroyed session scope,
+        // and destroying the app then spins forever. Destroy on a daemon thread so a regression fails
+        // this test instead of hanging the test JVM.
+        val destroyer = Thread({ appGraph.destroy() }, "session-churn-destroy").apply { isDaemon = true; start() }
+        destroyer.join(30_000)
+        assertTrue(!destroyer.isAlive, "destroying the app after concurrent session churn did not finish")
+    }
+
     private fun userContext(appGraph: AppGraph): UserContextInstance =
         appGraph.userContextManager.createOrGetFromInputs(
             DefaultTenantInputString("test-tenant"),
@@ -144,5 +178,7 @@ class SessionContextManagerConcurrencyTest {
         const val SLOW_SESSION_ID = "slow-session"
         const val OTHER_SESSION_ID = "other-session"
         const val RACED_SESSION_ID = "raced-session"
+        const val CHURN_THREADS = 16
+        const val CHURN_ROUNDS = 3000
     }
 }
