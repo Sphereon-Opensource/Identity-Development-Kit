@@ -36,6 +36,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
+import kotlinx.coroutines.isActive
 
 class SessionContextManagerConcurrencyTest {
     @Test
@@ -107,6 +108,34 @@ class SessionContextManagerConcurrencyTest {
     }
 
     @Test
+    fun aLosingConcurrentBuildCancelsTheCoroutineScopeOfItsGraph() {
+        val appGraph = createCoreApiTestAppGraph(this, "session-manager-loser-test", "test-profile", "0.0.1-TEST")
+        val pool = Executors.newFixedThreadPool(2)
+        val bothBuilding = CyclicBarrier(2)
+        val builtGraphs = java.util.concurrent.CopyOnWriteArrayList<SessionGraph>()
+        try {
+            val userContextInstance = userContext(appGraph)
+            val manager =
+                manager(appGraph, userContextInstance, onBuilt = { graph -> builtGraphs += graph }) { sessionId ->
+                    if (sessionId == RACED_SESSION_ID) bothBuilding.await(5, TimeUnit.SECONDS)
+                }
+
+            val first = pool.submit(Callable { manager.createOrGetFromId(RACED_SESSION_ID, principalType = PrincipalType.USER) })
+            val second = pool.submit(Callable { manager.createOrGetFromId(RACED_SESSION_ID, principalType = PrincipalType.USER) })
+            val winner = first.get(10, TimeUnit.SECONDS)
+            assertSame(winner, second.get(10, TimeUnit.SECONDS))
+
+            assertEquals(2, builtGraphs.size)
+            val loser = builtGraphs.single { it !== winner.graph }
+            assertTrue(!loser.sessionScopeCoroutineScopeScoped.isActive, "the losing build's session coroutine scope must be cancelled")
+            assertTrue(winner.graph.sessionScopeCoroutineScopeScoped.isActive, "the registered session keeps its coroutine scope")
+        } finally {
+            pool.shutdownNow()
+            appGraph.destroy()
+        }
+    }
+
+    @Test
     fun concurrentSessionChurnLeavesAContextScopeThatDestroys() {
         val appGraph = createCoreApiTestAppGraph(this, "session-manager-churn-test", "test-profile", "0.0.1-TEST")
         val pool = Executors.newFixedThreadPool(CHURN_THREADS)
@@ -150,6 +179,7 @@ class SessionContextManagerConcurrencyTest {
     private fun manager(
         appGraph: AppGraph,
         userContextInstance: UserContextInstance,
+        onBuilt: (SessionGraph) -> Unit = {},
         beforeBuild: (String) -> Unit,
     ): SessionContextManagerImpl {
         val delegate = userContextInstance.graph as SessionGraph.Factory
@@ -162,7 +192,7 @@ class SessionContextManagerConcurrencyTest {
                     principalType: PrincipalType?,
                 ): SessionGraph {
                     beforeBuild(sessionId)
-                    return delegate.createSessionGraph(sessionId, correlationId, secureDetails, principalType)
+                    return delegate.createSessionGraph(sessionId, correlationId, secureDetails, principalType).also(onBuilt)
                 }
             }
         return SessionContextManagerImpl(

@@ -626,8 +626,17 @@ class SessionContextManagerImpl(
                 }
             val scope = attachedScope
             if (registered !== built.instance || scope == null) {
-                // Another caller registered this session while this one was building. Keep theirs; this
-                // build attached no scope.
+                // Another caller registered this session while this one was building. Keep theirs. This
+                // build attached no scope, so nothing exits it: cancel its graph's session coroutine scope
+                // here, outside the monitor, so nothing it launched keeps running.
+                runCatching { built.sessionGraph.sessionScopeCoroutineScopeScoped.onExitScope() }
+                    .onFailure { error ->
+                        log.warn(
+                            "VDX_SESSION_SCOPE_DUPLICATE_RELEASE_FAILED sessionId=${sessionId.sanitizeLogToken()} " +
+                                "contextId=${userContextInstance.contextId.sanitizeLogToken()} " +
+                                "error=${error.message?.sanitizeLogToken() ?: error::class.simpleName}",
+                        )
+                    }
                 logSessionReused(
                     sessionId = sessionId,
                     source = source.value,
