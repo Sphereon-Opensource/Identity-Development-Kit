@@ -22,6 +22,18 @@ import com.sphereon.core.api.Ok
 import com.sphereon.core.api.binary.typeToken
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.StringResult
+import com.sphereon.core.api.context.IdkScope
+import com.sphereon.core.api.error.IdkErrorType
+import com.sphereon.core.api.log.AsyncLogService
+import com.sphereon.core.api.log.Log
+import com.sphereon.core.api.log.LogLevel
+import com.sphereon.core.api.log.LogManager
+import com.sphereon.core.api.log.LogMessage
+import com.sphereon.core.api.log.LogService
+import com.sphereon.core.api.log.LoggerConfig
+import com.sphereon.di.context.NoOpSessionContext
+import com.sphereon.di.session.SessionContext
+import com.sphereon.oauth2.server.authorization.error.AuthorizationServerError
 import com.sphereon.core.defaults.random.defaultSecureRandom
 import com.sphereon.crypto.core.jose.JwaAlgorithm
 import com.sphereon.crypto.core.jose.JwaKeyType
@@ -629,6 +641,219 @@ class HandleTokenRequestCommandImplTest {
             assertEquals("Bearer", result.value.tokenType)
             assertEquals("read", result.value.scope)
         }
+
+    @Test
+    fun clientCredentialsRefusalsLogOneDiagnosticWarnEach() =
+        runTest {
+            val unknownClient =
+                refusalLines {
+                    clientCredentialsCommand(
+                        verifyClientAuth = {
+                            Err(IdkError.fromDTO(AuthorizationServerError.InvalidClient(details = "Unknown client")))
+                        },
+                    ).execute(clientCredentialsArgs())
+                }
+            val wrongSecret =
+                refusalLines {
+                    clientCredentialsCommand(
+                        verifyClientAuth = {
+                            Err(IdkError.fromDTO(AuthorizationServerError.InvalidClient(details = "Invalid client credentials")))
+                        },
+                    ).execute(clientCredentialsArgs())
+                }
+            val unregisteredAudience =
+                refusalLines {
+                    clientCredentialsCommand(
+                        verifyGrant = {
+                            Err(
+                                IdkError.fromDTO(
+                                    AuthorizationServerError.InvalidTarget(
+                                        audience = "unregistered-audience",
+                                        reason = "Requested audience is not registered for this client",
+                                    ),
+                                ),
+                            )
+                        },
+                    ).execute(clientCredentialsArgs())
+                }
+
+            val cases =
+                listOf(
+                    "unknown client" to unknownClient,
+                    "wrong secret" to wrongSecret,
+                    "unregistered audience" to unregisteredAudience,
+                )
+            for ((name, lines) in cases) {
+                assertEquals(1, lines.size, "$name must log exactly one refusal: $lines")
+                val line = lines.single()
+                assertTrue("client_id=issuer-service" in line, "$name: $line")
+                assertTrue("tenant=${ctx.execution.tenantId}" in line, "$name: $line")
+                assertTrue("grant_type=client_credentials" in line, "$name: $line")
+                assertFalse(REFUSAL_TEST_SECRET in line, "$name must not log the client secret: $line")
+                assertFalse("Basic" in line, "$name must not log the authorization header: $line")
+            }
+            assertTrue("stage=request-authentication" in unknownClient.single(), unknownClient.single())
+            assertTrue("code=invalid_client" in unknownClient.single(), unknownClient.single())
+            assertTrue("reason=Invalid client: Unknown client" in unknownClient.single(), unknownClient.single())
+            assertTrue("stage=request-authentication" in wrongSecret.single(), wrongSecret.single())
+            assertTrue("reason=Invalid client: Invalid client credentials" in wrongSecret.single(), wrongSecret.single())
+            assertTrue("stage=grant-dispatch" in unregisteredAudience.single(), unregisteredAudience.single())
+            assertTrue("code=invalid_target" in unregisteredAudience.single(), unregisteredAudience.single())
+            assertTrue(
+                "reason=Invalid target: Requested audience is not registered for this client" in unregisteredAudience.single(),
+                unregisteredAudience.single(),
+            )
+        }
+
+    @Test
+    fun unsupportedGrantAndHandlerMismatchRefusalsAreLogged() =
+        runTest {
+            val unsupported =
+                refusalLines {
+                    clientCredentialsCommand(grantHandlers = { emptyMap() }).execute(clientCredentialsArgs())
+                }
+            val mismatched =
+                refusalLines {
+                    clientCredentialsCommand(
+                        grantHandlers = {
+                            val wrongHandler =
+                                object : com.sphereon.oauth2.server.authorization.command.token.GrantHandler {
+                                    override val grantType =
+                                        com.sphereon.oauth2.server.authorization.command.token.GrantHandlerKeys.AUTHORIZATION_CODE
+
+                                    override fun supports(params: GrantParameters): Boolean = false
+
+                                    override suspend fun handle(
+                                        params: GrantParameters,
+                                        context: com.sphereon.oauth2.server.authorization.command.token.GrantContext,
+                                    ): IdkResult<TokenResponse, IdkError> = error("a mismatched handler must not run")
+                                }
+                            mapOf(
+                                com.sphereon.oauth2.server.authorization.command.token.GrantHandlerKeys.CLIENT_CREDENTIALS to
+                                    lazyOf(wrongHandler),
+                            )
+                        },
+                    ).execute(clientCredentialsArgs())
+                }
+
+            val unsupportedLine = unsupported.single()
+            assertTrue("stage=grant-selection" in unsupportedLine, unsupportedLine)
+            assertTrue("code=unsupported_grant_type" in unsupportedLine, unsupportedLine)
+            assertTrue("client_id=issuer-service" in unsupportedLine, unsupportedLine)
+            val mismatchLine = mismatched.single()
+            assertTrue("stage=grant-binding" in mismatchLine, mismatchLine)
+            assertTrue("code=server_error" in mismatchLine, mismatchLine)
+            assertTrue(
+                "reason=Server error: Grant handler binding mismatch for 'client_credentials'" in mismatchLine,
+                mismatchLine,
+            )
+        }
+
+    @Test
+    fun refusalReasonIsStrippedOfControlCharactersAndBounded() =
+        runTest {
+            val lines =
+                refusalLines {
+                    clientCredentialsCommand(
+                        verifyClientAuth = {
+                            Err(
+                                IdkError.fromDTO(
+                                    AuthorizationServerError.InvalidClient(details = "line\r\nforged=1 " + "x".repeat(400)),
+                                ),
+                            )
+                        },
+                    ).execute(clientCredentialsArgs())
+                }
+
+            val line = lines.single()
+            assertFalse(line.any { it.isISOControl() }, line)
+            assertTrue(line.length < 600, "refusal line must stay bounded, got ${line.length} characters")
+        }
+
+    private suspend fun refusalLines(block: suspend () -> Unit): List<String> {
+        val previous = Log.app()
+        val recorder = RecordingTokenRefusalLog()
+        Log.register(IdkScope.APP, recorder)
+        try {
+            block()
+        } finally {
+            Log.register(IdkScope.APP, previous)
+        }
+        return recorder.warnings.filter { it.startsWith("Token request refused") }
+    }
+
+    private fun clientCredentialsArgs() =
+        HandleTokenRequestArgs(
+            requestBody =
+                mapOf(
+                    "grant_type" to listOf("client_credentials"),
+                    "audience" to listOf("unregistered-audience"),
+                ),
+            requestHeaders = mapOf("Authorization" to "Basic aXNzdWVyLXNlcnZpY2U6czNjcmV0"),
+            httpUrl = "https://as.example.com/token",
+        )
+
+    private fun clientCredentialsCommand(
+        verifyClientAuth: suspend (VerifyClientAuthenticationArgs) -> IdkResult<VerifiedClientAuthentication, IdkError> = {
+            Ok(
+                VerifiedClientAuthentication(
+                    clientId = "issuer-service",
+                    method = ClientAuthenticationMethod.CLIENT_SECRET_BASIC,
+                    clientAuthorization =
+                        VerifiedClientAuthorization(
+                            clientId = "issuer-service",
+                            grantTypes = listOf(GrantType.CLIENT_CREDENTIALS),
+                        ),
+                ),
+            )
+        },
+        verifyGrant: suspend (VerifyClientCredentialsGrantArgs) -> IdkResult<VerifiedClientCredentialsGrant, IdkError> = {
+            Ok(VerifiedClientCredentialsGrant(subject = "issuer-service", clientId = "issuer-service", scope = null))
+        },
+        grantHandlers: (
+            com.sphereon.oauth2.server.authorization.service.AuthorizationServerService.Commands,
+        ) -> Map<String, Lazy<com.sphereon.oauth2.server.authorization.command.token.GrantHandler>>? = { null },
+    ): HandleTokenRequestCommandImpl {
+        val service =
+            serviceForClientCredentialsFlow(
+                parseStub =
+                    stubParseTokenRequest {
+                        Ok(
+                            TokenRequestData(
+                                grantType = GrantType.CLIENT_CREDENTIALS,
+                                clientId = "issuer-service",
+                                clientAuthentication =
+                                    ClientAuthenticationConfig.Basic(
+                                        credentials =
+                                            com.sphereon.oauth2.common.model
+                                                .ClientCredentials(clientId = "issuer-service", clientSecret = REFUSAL_TEST_SECRET),
+                                    ),
+                                grantParameters = GrantParameters.ClientCredentials(audiences = listOf("unregistered-audience")),
+                                httpUrl = "https://as.example.com/token",
+                            ),
+                        )
+                    },
+                verifyClientAuthStub = stubVerifyClientAuthentication(verifyClientAuth),
+                verifyGrantStub = stubVerifyClientCredentialsGrant(verifyGrant),
+                createAccessTokenStub = stubCreateAccessToken { Ok(StringResult(value = "AT-not-for-logs")) },
+                createTokenResponseStub =
+                    stubCreateTokenResponse { args ->
+                        Ok(TokenResponse(accessToken = args.accessToken, tokenType = args.tokenType))
+                    },
+            )
+        return HandleTokenRequestCommandImpl(
+            execution = ctx.execution,
+            parseTokenRequestCommand = service.commands.parseTokenRequest,
+            verifyClientAuthenticationCommand = service.commands.verifyClientAuthentication,
+            serversConfigProvider = configProvider,
+            verifyDpopProofCommand = rejectingDpopVerify,
+            dpopProofJtiCache = newDpopJtiCache(),
+            dpopNonceManager = newDpopNonceManager(),
+            grantHandlers =
+                grantHandlers(service.commands)
+                    ?: grantHandlersFor(commands = service.commands, tokenStorage = newTokenStorage()),
+        )
+    }
 
     @Test
     fun anonymousPreAuthorizedCodeDoesNotResolveClientRegistry() =
@@ -2301,4 +2526,40 @@ class HandleTokenRequestCommandImplTest {
             _events.add(Captured(type, tenantId, clientId, subject, metadata, errorCode, errorMessage))
         }
     }
+}
+
+private const val REFUSAL_TEST_SECRET = "refusal-test-secret-value"
+
+/** Captures app-scope WARN lines so a test can count the refusal diagnostics of one request. */
+private class RecordingTokenRefusalLog : LogManager {
+    val warnings = mutableListOf<String>()
+
+    override suspend fun setGlobalConfig(config: LoggerConfig): LogManager = this
+
+    override suspend fun getGlobalConfig(): LoggerConfig = LoggerConfig.Default
+
+    override fun withTag(
+        tag: String,
+        config: LoggerConfig?,
+    ): LogService = throw NotImplementedError("Token refusal logging uses the async logger")
+
+    override fun withTagAsync(
+        tag: String,
+        config: LoggerConfig?,
+    ): AsyncLogService =
+        object : AsyncLogService {
+            override val sessionContext: SessionContext = NoOpSessionContext
+            override val scope: IdkScope = IdkScope.APP
+            override val id: String = "token-refusal-test-log"
+            override val isEnabled: Boolean = true
+
+            override suspend fun execute(args: LogMessage): IdkResult<Unit, IdkErrorType> {
+                if (args.level == LogLevel.WARN) warnings += args.message
+                return Ok(Unit)
+            }
+
+            override suspend fun setConfig(config: LoggerConfig): AsyncLogService = this
+
+            override fun toSync(): LogService = throw NotImplementedError("Not used by this test")
+        }
 }
