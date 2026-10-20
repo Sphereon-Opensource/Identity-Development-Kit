@@ -38,7 +38,6 @@ import com.sphereon.oauth2.server.authorization.routing.AuthenticationRoutePlann
 import com.sphereon.oauth2.server.authorization.service.AuthorizationServerService
 import dev.zacsweers.metro.ContributesTo
 import kotlinx.coroutines.test.runTest
-import kotlin.test.Ignore
 import kotlin.test.Test
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
@@ -60,7 +59,6 @@ interface AuthorizeAndLoginConstructionTestGraph {
  * of the other endpoints behind the shared [AuthorizationServerService], stay deferred until a
  * request needs them.
  */
-@Ignore // Deferred until the authorize and login path builds its dependencies lazily (VDX-314); fails on purpose until then.
 class AuthorizeAndLoginConstructionTest {
     private val ctx = OAuth2ServerTestContext("authorize-login-construction-test", this)
     private val graph = ctx.session.graph as AuthorizeAndLoginConstructionTestGraph

@@ -51,14 +51,13 @@ import kotlin.time.Clock
  * `session_id` query parameter and renders [AuthorizationResponseData] over the chosen
  * response mode (query / fragment / form_post).
  */
-@Inject
 @SingleIn(SessionScope::class)
 @ContributesBinding(SessionScope::class, binding = binding<HandleAuthorizeCallbackCommand>())
-class HandleAuthorizeCallbackCommandImpl(
+class HandleAuthorizeCallbackCommandImpl @Inject constructor(
     execution: SessionExecution,
     private val authorizationServerService: AuthorizationServerService,
     private val pendingAuthorizationSessionStore: PendingAuthorizationSessionStore,
-    private val userAuthProvider: UserAuthenticationProvider,
+    userAuthProviderFactory: () -> UserAuthenticationProvider,
     private val loginSessionIdProvider: OidcLoginSessionIdProvider,
     private val loginSessionStore: OidcLoginSessionStore,
 ) : TypedServiceCommandAdapter<HandleAuthorizeCallbackArgs, AuthorizationResponseData, IdkError>(
@@ -68,6 +67,25 @@ class HandleAuthorizeCallbackCommandImpl(
         outputTypeToken = typeToken<AuthorizationResponseData>(),
     ),
     HandleAuthorizeCallbackCommand {
+    private val userAuthProvider: UserAuthenticationProvider by lazy(userAuthProviderFactory)
+
+    /** Source-compatible constructor for callers that already own these dependencies. */
+    constructor(
+        execution: SessionExecution,
+        authorizationServerService: AuthorizationServerService,
+        pendingAuthorizationSessionStore: PendingAuthorizationSessionStore,
+        userAuthProvider: UserAuthenticationProvider,
+        loginSessionIdProvider: OidcLoginSessionIdProvider,
+        loginSessionStore: OidcLoginSessionStore,
+    ) : this(
+        execution = execution,
+        authorizationServerService = authorizationServerService,
+        pendingAuthorizationSessionStore = pendingAuthorizationSessionStore,
+        userAuthProviderFactory = { userAuthProvider },
+        loginSessionIdProvider = loginSessionIdProvider,
+        loginSessionStore = loginSessionStore,
+    )
+
     override val commandId: String get() = HandleAuthorizeCallbackCommand.COMMAND_ID
 
     private val commands get() = authorizationServerService.commands

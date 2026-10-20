@@ -26,7 +26,6 @@ import com.sphereon.oauth2.server.authorization.storage.MutableOidcLoginSessionI
 import dev.zacsweers.metro.Provider
 import java.lang.reflect.Modifier
 import java.lang.reflect.Proxy
-import kotlin.test.Ignore
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
@@ -37,7 +36,6 @@ import kotlin.test.assertEquals
  * uses: the authorization error response is only built for a post-redirect error, and the
  * required-actions redirect only for a refused callback.
  */
-@Ignore // Deferred until the authorize and login path builds its dependencies lazily (VDX-314); fails on purpose until then.
 class AuthorizeRouteHandlerConstructionTest {
     private val constructed = linkedMapOf<String, Int>()
 

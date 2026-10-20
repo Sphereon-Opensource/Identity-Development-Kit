@@ -77,20 +77,19 @@ import kotlin.time.Duration.Companion.seconds
  *
  * Selected by `supports()` when `login_hint` is absent or does not start with `oid4vp:`.
  */
-@Inject
 @SingleIn(SessionScope::class)
 @ContributesIntoSet(SessionScope::class, binding = binding<HandleAuthorizeRequestCommand>())
-class StandardAuthorizeRequestCommandImpl(
+class StandardAuthorizeRequestCommandImpl @Inject constructor(
     execution: SessionExecution,
     private val authorizationServerService: AuthorizationServerService,
     private val clientRegistry: ClientRegistry,
     private val serversConfigProvider: OAuth2ServersConfigProvider,
-    private val userAuthProvider: UserAuthenticationProvider,
+    userAuthProviderFactory: () -> UserAuthenticationProvider,
     private val pendingAuthorizationSessionStore: PendingAuthorizationSessionStore,
     private val loginSessionStore: OidcLoginSessionStore,
     private val loginSessionIdProvider: OidcLoginSessionIdProvider,
-    private val authenticationRoutePlanner: AuthenticationRoutePlanner,
-    private val verifyRequestObjectCommand: VerifyRequestObjectCommand,
+    authenticationRoutePlannerFactory: () -> AuthenticationRoutePlanner,
+    verifyRequestObjectCommandFactory: () -> VerifyRequestObjectCommand,
     private val clock: Clock,
     private val credentialIssuerAudienceResolver: CredentialIssuerAudienceResolver,
     private val unregisteredClientAdmissionRule: UnregisteredClientAdmissionRule,
@@ -101,6 +100,41 @@ class StandardAuthorizeRequestCommandImpl(
         outputTypeToken = typeToken<AuthorizationRequestOutcome>(),
     ),
     HandleAuthorizeRequestCommand {
+    private val userAuthProvider: UserAuthenticationProvider by lazy(userAuthProviderFactory)
+    private val authenticationRoutePlanner: AuthenticationRoutePlanner by lazy(authenticationRoutePlannerFactory)
+    private val verifyRequestObjectCommand: VerifyRequestObjectCommand by lazy(verifyRequestObjectCommandFactory)
+
+    /** Source-compatible constructor for callers that already own these dependencies. */
+    constructor(
+        execution: SessionExecution,
+        authorizationServerService: AuthorizationServerService,
+        clientRegistry: ClientRegistry,
+        serversConfigProvider: OAuth2ServersConfigProvider,
+        userAuthProvider: UserAuthenticationProvider,
+        pendingAuthorizationSessionStore: PendingAuthorizationSessionStore,
+        loginSessionStore: OidcLoginSessionStore,
+        loginSessionIdProvider: OidcLoginSessionIdProvider,
+        authenticationRoutePlanner: AuthenticationRoutePlanner,
+        verifyRequestObjectCommand: VerifyRequestObjectCommand,
+        clock: Clock,
+        credentialIssuerAudienceResolver: CredentialIssuerAudienceResolver,
+        unregisteredClientAdmissionRule: UnregisteredClientAdmissionRule,
+    ) : this(
+        execution = execution,
+        authorizationServerService = authorizationServerService,
+        clientRegistry = clientRegistry,
+        serversConfigProvider = serversConfigProvider,
+        userAuthProviderFactory = { userAuthProvider },
+        pendingAuthorizationSessionStore = pendingAuthorizationSessionStore,
+        loginSessionStore = loginSessionStore,
+        loginSessionIdProvider = loginSessionIdProvider,
+        authenticationRoutePlannerFactory = { authenticationRoutePlanner },
+        verifyRequestObjectCommandFactory = { verifyRequestObjectCommand },
+        clock = clock,
+        credentialIssuerAudienceResolver = credentialIssuerAudienceResolver,
+        unregisteredClientAdmissionRule = unregisteredClientAdmissionRule,
+    )
+
     override val commandId: String get() = COMMAND_ID
 
     private val commands get() = authorizationServerService.commands
