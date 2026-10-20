@@ -466,7 +466,9 @@ data class VerifiedClaimsValue(
      */
     val id: String,
     /**
-     * The digital credential type. Can be a vct value, or for instance a json-ld type.
+     * The digital credential type: a vct value, an mdoc doctype or a json-ld type. It is never the
+     * credential format, which is carried by [format]. A credential that has no type of its own gets
+     * its format value here as a fallback, so do not read [type] to learn the format.
      */
     val type: String,
     /**
@@ -482,25 +484,27 @@ data class VerifiedClaimsValue(
     val presentation: String? = null,
     /** Verifier-owned evidence; never populated from disclosed credential claims. */
     val verificationEvidence: com.sphereon.openid.oid4vp.verifier.VerifiedCredentialEvidence? = null,
+    /**
+     * The credential format the verifier detected for the matched credential, such as `dc+sd-jwt`,
+     * independent of [type]. `null` when the verifier did not report it. It is never inferred from
+     * [type] or from the format a query requested.
+     */
+    val format: CredentialFormat? = null,
 ) {
     /**
      * Convert to [VerifiedCredential] for unified handling.
      *
-     * The [type] field contains the credential type (e.g. a VCT like `"SphereonWalletIdentityCredential"`),
-     * **not** the credential format (e.g. `"dc+sd-jwt"`). This distinction matters because downstream
-     * consumers (claims mapping, Keycloak) need the actual format to process the credential correctly.
-     * We only populate [VerifiedCredential.format] when [type] happens to be a recognized format value;
-     * otherwise the format is left empty and must be resolved later (e.g. from a DCQL query).
+     * [VerifiedCredential.type] is the credential [type] and [VerifiedCredential.format] is the
+     * detected [format], so a real vct is kept as the type and never parsed as a format. When the
+     * verifier reported no format, the format is the empty string, which means unavailable.
      */
-    fun toVerifiedCredential(): VerifiedCredential {
-        val resolvedFormat = CredentialFormat.fromValueLenient(type)?.value ?: ""
-        return VerifiedCredential(
+    fun toVerifiedCredential(): VerifiedCredential =
+        VerifiedCredential(
             id = id,
-            format = resolvedFormat,
+            format = format?.value ?: "",
             type = type,
             claims = claims ?: emptyMap(),
         )
-    }
 }
 
 /**

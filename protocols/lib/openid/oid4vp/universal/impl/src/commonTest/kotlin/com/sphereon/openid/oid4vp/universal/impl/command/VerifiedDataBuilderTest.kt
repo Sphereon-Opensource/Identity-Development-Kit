@@ -22,6 +22,7 @@ import com.sphereon.openid.oid4vp.dcql.DcqlCredentialSetQuery
 import com.sphereon.openid.oid4vp.dcql.DcqlQuery
 import com.sphereon.openid.oid4vp.dcql.sdJwtVcMeta
 import com.sphereon.openid.oid4vc.common.CredentialFormat
+import com.sphereon.openid.oid4vp.universal.VerifiedClaimsValue
 import com.sphereon.openid.oid4vp.verifier.CredentialIssuerRef
 import com.sphereon.openid.oid4vp.verifier.CredentialTrustValidation
 import com.sphereon.openid.oid4vp.verifier.CredentialTrustValidationMode
@@ -30,9 +31,15 @@ import com.sphereon.openid.oid4vp.verifier.ParsedAuthorizationResponse
 import com.sphereon.openid.oid4vp.verifier.ValidationResult
 import com.sphereon.openid.oid4vp.verifier.model.AuthorizationSession
 import com.sphereon.openid.oid4vp.verifier.model.AuthorizationSessionStatus
+import kotlinx.serialization.SerializationException
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 
 class VerifiedDataBuilderTest {
     @Test
@@ -156,5 +163,96 @@ class VerifiedDataBuilderTest {
             original.copy(credentialType = "urn:example:passport"),
         ))))?.credentialClaims?.single()?.type)
         assertEquals(CredentialFormat.SD_JWT_VC.value, verifiedData.credentialClaims?.single()?.type)
+        assertEquals(CredentialFormat.SD_JWT_VC, verifiedData.credentialClaims?.single()?.format)
+    }
+
+    @Test
+    fun shouldCarryTheCredentialTypeAndTheDetectedFormatIndependently() {
+        val vct = "eu.we-build:authorisedsignatories:1"
+        val typed = claimsFor(matched(CredentialFormat.SD_JWT_VC, credentialType = vct))
+        assertEquals(vct, typed.type)
+        assertEquals(CredentialFormat.SD_JWT_VC, typed.format)
+
+        val mdoc = claimsFor(matched(CredentialFormat.MSO_MDOC, credentialType = "org.iso.18013.5.1.mDL"))
+        assertEquals("org.iso.18013.5.1.mDL", mdoc.type)
+        assertEquals(CredentialFormat.MSO_MDOC, mdoc.format)
+
+        // A type that spells another format does not change the detected format.
+        val lookalike = claimsFor(matched(CredentialFormat.SD_JWT_VC, credentialType = CredentialFormat.MSO_MDOC.value))
+        assertEquals(CredentialFormat.MSO_MDOC.value, lookalike.type)
+        assertEquals(CredentialFormat.SD_JWT_VC, lookalike.format)
+
+        // An untyped credential keeps the existing type fallback, and the format stays explicit.
+        val untyped = claimsFor(matched(CredentialFormat.JWT_VC_JSON, credentialType = null))
+        assertEquals(CredentialFormat.JWT_VC_JSON.value, untyped.type)
+        assertEquals(CredentialFormat.JWT_VC_JSON, untyped.format)
+    }
+
+    @Test
+    fun shouldKeepTheRealTypeAndUseTheExplicitFormatWhenConvertingToAVerifiedCredential() {
+        val vct = "eu.we-build:authorisedsignatories:1"
+        val converted = VerifiedClaimsValue(id = "q", type = vct, format = CredentialFormat.SD_JWT_VC).toVerifiedCredential()
+        assertEquals(vct, converted.type)
+        assertEquals("dc+sd-jwt", converted.format)
+
+        val lookalike = VerifiedClaimsValue(id = "q", type = "mso_mdoc", format = CredentialFormat.SD_JWT_VC).toVerifiedCredential()
+        assertEquals("mso_mdoc", lookalike.type)
+        assertEquals("dc+sd-jwt", lookalike.format)
+
+        // Without a detected format the conversion reports it unavailable and never infers it from the type.
+        val unavailable = VerifiedClaimsValue(id = "q", type = "dc+sd-jwt").toVerifiedCredential()
+        assertEquals("dc+sd-jwt", unavailable.type)
+        assertEquals("", unavailable.format)
+    }
+
+    @Test
+    fun shouldSerializeTheFormatWithItsCanonicalValueAndRejectUnknownValues() {
+        val json = Json
+        val encoded = json.encodeToJsonElement(
+            VerifiedClaimsValue.serializer(),
+            VerifiedClaimsValue(id = "q", type = "urn:example:vct", format = CredentialFormat.SD_JWT_VC),
+        ).jsonObject
+        assertEquals("urn:example:vct", encoded.getValue("type").jsonPrimitive.content)
+        assertEquals("dc+sd-jwt", encoded.getValue("format").jsonPrimitive.content)
+
+        val decoded = json.decodeFromString(
+            VerifiedClaimsValue.serializer(),
+            """{"id":"q","type":"urn:example:vct","format":"mso_mdoc"}""",
+        )
+        assertEquals(CredentialFormat.MSO_MDOC, decoded.format)
+
+        assertNull(json.decodeFromString(VerifiedClaimsValue.serializer(), """{"id":"q","type":"urn:example:vct"}""").format)
+        assertNull(json.decodeFromString(VerifiedClaimsValue.serializer(), """{"id":"q","type":"urn:example:vct","format":null}""").format)
+        assertFailsWith<SerializationException> {
+            json.decodeFromString(VerifiedClaimsValue.serializer(), """{"id":"q","type":"urn:example:vct","format":"not-a-format"}""")
+        }
+    }
+
+    private fun matched(format: CredentialFormat, credentialType: String?) =
+        MatchedCredential(
+            credentialQueryId = "passport",
+            credentialFormat = format,
+            presentation = "eyJhbGciOiJFUzI1NiJ9.payload.signature",
+            credentialType = credentialType,
+            disclosedClaims = mapOf("given_name" to "Ada"),
+        )
+
+    // The requested query always asks for dc+sd-jwt, so a matched format that differs proves the output does not echo the request.
+    private fun claimsFor(matched: MatchedCredential): VerifiedClaimsValue {
+        val session =
+            AuthorizationSession(
+                instanceId = "verifier-instance-verified-data-builder",
+                sessionId = "session-format",
+                correlationId = "corr-format",
+                queryId = "format-query",
+                dcqlQuery = DcqlQuery(credentials = listOf(DcqlCredentialQuery(id = "passport", format = "dc+sd-jwt", meta = sdJwtVcMeta("urn:test:passport")))),
+                authorizationRequest = AuthorizationRequest(clientId = "https://verifier.example.com", redirectUri = "https://verifier.example.com/callback"),
+                status = AuthorizationSessionStatus.AUTHORIZATION_RESPONSE_VERIFIED,
+                validationResult = ValidationResult(valid = true, matchedCredentials = listOf(matched)),
+                createdAt = 1L,
+                updatedAt = 2L,
+                expiresAt = 3L,
+            )
+        return assertNotNull(buildVerifiedData(session)).credentialClaims!!.single()
     }
 }
