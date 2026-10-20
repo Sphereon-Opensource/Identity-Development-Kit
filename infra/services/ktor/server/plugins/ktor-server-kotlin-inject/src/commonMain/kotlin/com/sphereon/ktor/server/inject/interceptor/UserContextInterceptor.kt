@@ -35,6 +35,8 @@ import com.sphereon.ktor.server.inject.AuthoritativePrincipalTypeAttribute
 import com.sphereon.ktor.server.inject.BaseTenantIdAttribute
 import com.sphereon.ktor.server.inject.ValidatedJwtClaimsAttribute
 import com.sphereon.ktor.server.inject.ValidatedServiceAudienceAttribute
+import com.sphereon.ktor.server.inject.ValidatedRequestSecureDetailsFactory
+import com.sphereon.core.defaults.context.ValidatedJwtClaimsInput
 import com.sphereon.ktor.server.inject.context.RequestScopedContext
 import com.sphereon.ktor.server.inject.requestContext
 import com.sphereon.ktor.server.inject.resolver.PrincipalResolver
@@ -72,6 +74,7 @@ class UserContextInterceptor(
     private val appGraph: AppGraph,
     private val tenantResolver: TenantResolver,
     private val principalResolver: PrincipalResolver,
+    private val validatedSecureDetailsFactory: ValidatedRequestSecureDetailsFactory? = null,
 ) {
     companion object {
         /**
@@ -177,10 +180,10 @@ class UserContextInterceptor(
             // A bearer the host ingress verified for this service's own audience is a
             // pre-authorized service bearer for exactly that audience.
             val serviceAudience = call.attributes.getOrNull(ValidatedServiceAudienceAttribute)?.takeIf { it.isNotBlank() }
-            val secureDetails =
-                validatedJwt?.toSecuredDetails()?.let { details ->
-                    serviceAudience?.let { ValidatedServiceAudienceSecuredDetails(details, it) } ?: details
-                }
+            val secureDetails = projectValidatedRequestSecureDetails(
+                call, validatedJwt, effectiveIdentityResolution.copy(tenantId = resolvedTenantId),
+                serviceAudience, validatedSecureDetailsFactory,
+            )
 
             // Create or get session (using generated session ID). The principal
             // classification resolved by the identity pipeline rides along so the
@@ -209,6 +212,28 @@ class UserContextInterceptor(
             throw expected
         }
     }
+}
+
+/** A custom projection must retain the validated credential and its original validity window. */
+internal fun projectValidatedRequestSecureDetails(
+    call: ApplicationCall,
+    validatedJwt: ValidatedJwtClaimsInput?,
+    identity: IdentityResolutionResult,
+    serviceAudience: String?,
+    factory: ValidatedRequestSecureDetailsFactory?,
+): SecuredTenantContextDetails? {
+    val base = validatedJwt?.toSecuredDetails() ?: return null
+    if (factory == null) {
+        return serviceAudience?.let { ValidatedServiceAudienceSecuredDetails(base, it) } ?: base
+    }
+    val projected = factory.create(call, validatedJwt, identity)
+    require(projected.jwt == base.jwt && projected.iss == base.iss &&
+        projected.validFrom == base.validFrom && projected.validUntil == base.validUntil) {
+        "Host secure-details projection changed the validated credential"
+    }
+    // Do not wrap this result in a base-interface decorator: that would erase stronger host
+    // provenance interfaces. The host owns its exact service-audience policy on this path.
+    return projected
 }
 
 /** A token-derived principal whose classification is already decided, so it is never defaulted to USER. */

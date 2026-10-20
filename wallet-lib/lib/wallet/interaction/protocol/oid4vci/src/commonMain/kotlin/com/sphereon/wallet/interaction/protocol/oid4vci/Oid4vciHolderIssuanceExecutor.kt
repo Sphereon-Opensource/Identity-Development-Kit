@@ -70,6 +70,9 @@ import com.sphereon.wallet.wsca.WscaClientAttestationAuthRequest
 import com.sphereon.wallet.wsca.WscaDpopProofRequest
 import com.sphereon.wallet.wsca.WscaSigningRequest
 import com.sphereon.core.api.encodeToBase64Url
+import com.sphereon.core.api.encodeToHex
+import com.sphereon.crypto.core.generic.DigestAlg
+import com.sphereon.crypto.core.generic.hash
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
@@ -306,9 +309,9 @@ class SecureComponentOid4vciTokenEndpointProofsProvider(
             secureComponentCryptoSurface
                 .ensureKey(
                     walletUnitId = haip?.walletUnitId ?: request.context.walletUnitId,
-                    usage = if (haip == null) SecureComponentUsage.OAUTH_CLIENT_AUTHENTICATION else SecureComponentUsage.WALLET_ATTESTATION,
+                    usage = SecureComponentUsage.OAUTH_CLIENT_AUTHENTICATION,
                     algorithm = signatureAlgorithm(haip?.clientInstanceKeyAlgorithm ?: "ES256"),
-                    keyAlias = haip?.clientInstanceKeyAlias,
+                    keyAlias = haip?.let { clientInstanceKeyAlias(it, request.resolvedOffer) },
                 ).getOrElse { return Err(it) }
         val dpop =
             secureComponentCryptoSurface
@@ -340,9 +343,9 @@ class SecureComponentOid4vciTokenEndpointProofsProvider(
             secureComponentCryptoSurface
                 .ensureKey(
                     walletUnitId = haip.walletUnitId,
-                    usage = SecureComponentUsage.WALLET_ATTESTATION,
+                    usage = SecureComponentUsage.OAUTH_CLIENT_AUTHENTICATION,
                     algorithm = signatureAlgorithm(haip.clientInstanceKeyAlgorithm),
-                    keyAlias = haip.clientInstanceKeyAlias,
+                    keyAlias = clientInstanceKeyAlias(haip, request.resolvedOffer),
                 ).getOrElse { return Err(it) }
         val dpop =
             dpopProof(
@@ -382,6 +385,12 @@ class SecureComponentOid4vciTokenEndpointProofsProvider(
             ),
         )
     }
+
+    private fun clientInstanceKeyAlias(haip: Oid4vciHaipTokenProofOptions, offer: ResolvedCredentialOffer): String =
+        haip.clientInstanceKeyAlias ?: "oid4vci-client-" + hash(
+            "oid4vci-client-v1\u0000${haip.walletUnitId}\u0000${offer.issuerMetadata.credentialIssuer}".encodeToByteArray(),
+            DigestAlg.SHA256,
+        ).encodeToHex()
 
     private suspend fun finalProfileProofs(request: Oid4vciTokenEndpointProofRequest): IdkResult<Oid4vciTokenEndpointProofs, IdkError> {
         val clientAuthenticationMethod = request.options.clientAuthenticationMethod
@@ -1836,12 +1845,11 @@ class Oid4vciHolderIssuanceExecutor(
         credentialConfigurationId: String?,
         holderKeyAlias: String,
     ): IdkResult<String?, IdkError> {
-        val methods =
+        val configuration =
             credentialConfigurationId
                 ?.let { resolvedOffer.issuerMetadata.credentialConfigurationsSupported[it] }
-                ?.cryptographicBindingMethodsSupported
-                .orEmpty()
-        return selectHolderDidVerificationMethod(methods) {
+        val methods = configuration?.cryptographicBindingMethodsSupported.orEmpty()
+        return selectHolderDidVerificationMethod(methods, credentialFormat = configuration?.format) {
             holderVerificationMethodResolver?.resolve(context.walletUnitId, KeyRef(alias = holderKeyAlias))
         }
     }
@@ -2857,6 +2865,7 @@ internal fun Oid4vciHolderIssuanceOptions.isDpopBound(): Boolean = dpopEnabled |
  */
 internal suspend fun selectHolderDidVerificationMethod(
     methods: List<String>,
+    credentialFormat: String? = null,
     holderVerificationMethod: suspend () -> WalletHolderVerificationMethod?,
 ): IdkResult<String?, IdkError> {
     if (DID_JWK_BINDING_METHOD in methods) {
@@ -2866,10 +2875,13 @@ internal suspend fun selectHolderDidVerificationMethod(
         }
     }
     if (methods.isEmpty() || JWK_BINDING_METHOD in methods) return Ok(null)
+    // COSE_Key is the mdoc's DeviceKeyInfo representation. Its JWT proof still conveys the
+    // same public key in the protected jwk header (OID4VCI 1.0 Appendix A.2 and F.1).
+    if (credentialFormat == "mso_mdoc" && COSE_KEY_BINDING_METHOD in methods) return Ok(null)
     return Err(
         IdkError.fromString(
             code = "oid4vci.holder_binding_method_unsupported",
-            message = "The wallet supports only jwk and did:jwk credential binding; the issuer offers $methods",
+            message = "The wallet cannot satisfy the issuer's credential binding methods $methods for format $credentialFormat",
         ),
     )
 }
@@ -2877,3 +2889,4 @@ internal suspend fun selectHolderDidVerificationMethod(
 /** OID4VCI 1.0 section 12.2.4 cryptographic binding method values the wallet can satisfy. */
 private const val JWK_BINDING_METHOD = "jwk"
 private const val DID_JWK_BINDING_METHOD = "did:jwk"
+private const val COSE_KEY_BINDING_METHOD = "cose_key"

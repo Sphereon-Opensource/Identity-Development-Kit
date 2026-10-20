@@ -42,6 +42,8 @@ import com.sphereon.di.session.SessionInstance
 import com.sphereon.ktor.server.inject.AuthoritativePrincipalTypeAttribute
 import com.sphereon.ktor.server.inject.ValidatedJwtClaimsAttribute
 import com.sphereon.ktor.server.inject.ValidatedServiceAudienceAttribute
+import com.sphereon.ktor.server.inject.ValidatedRequestSecureDetailsFactory
+import com.sphereon.core.defaults.context.toSecuredDetails
 import com.sphereon.di.context.PreauthorizedServiceBearer
 import com.sphereon.di.context.SecuredTenantContextDetails
 import kotlin.test.assertFalse
@@ -59,6 +61,7 @@ import java.lang.reflect.Proxy
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertSame
+import kotlin.test.assertFailsWith
 
 /**
  * The identity pipeline is the single authority for principal classification.
@@ -68,6 +71,58 @@ import kotlin.test.assertSame
  * defaulting overloads that would silently downgrade to USER.
  */
 class UserContextInterceptorPrincipalTypeTest {
+    private interface HostValidationEvidence
+
+    private class HostDetails(
+        delegate: SecuredTenantContextDetails,
+        private val serviceAudience: String?,
+    ) : SecuredTenantContextDetails by delegate, HostValidationEvidence, PreauthorizedServiceBearer {
+        override fun authorizesServiceAudience(audience: String): Boolean =
+            audience.isNotBlank() && audience == serviceAudience
+    }
+
+    @Test
+    fun customValidatedProjectionSurvivesUserAndWorkloadSessionCreation() = runTest {
+        for (type in listOf(PrincipalType.USER, PrincipalType.WORKLOAD)) {
+            var projected: SecuredTenantContextDetails? = null
+            val captured = interceptWorkloadToken(
+                authoritativePrincipalType = type,
+                validatedServiceAudience = if (type == PrincipalType.WORKLOAD) "receiver" else null,
+                secureDetailsFactory = ValidatedRequestSecureDetailsFactory { _, validated, identity ->
+                    assertEquals(type, identity.principalType)
+                    assertEquals("platform", identity.tenantId)
+                    HostDetails(requireNotNull(validated.toSecuredDetails()), "receiver".takeIf { type == PrincipalType.WORKLOAD })
+                        .also { projected = it }
+                },
+            )
+            val details = captured.sessionArgs[3] as SecuredTenantContextDetails
+            assertSame(projected, details)
+            assertTrue(details is HostValidationEvidence)
+            val bearer = details as PreauthorizedServiceBearer
+            assertEquals(type == PrincipalType.WORKLOAD, bearer.authorizesServiceAudience("receiver"))
+            assertFalse(bearer.authorizesServiceAudience("other"))
+        }
+    }
+
+    @Test
+    fun customProjectionCannotReplaceBearerIssuerOrLifetime() = runTest {
+        val replacements: List<(SecuredTenantContextDetails) -> SecuredTenantContextDetails> = listOf(
+            { base -> BasicSecuredDetails(jwt = "another", iss = base.iss, validFrom = base.validFrom, validUntil = base.validUntil) },
+            { base -> BasicSecuredDetails(jwt = base.jwt, iss = "https://other.example", validFrom = base.validFrom, validUntil = base.validUntil) },
+            { base -> BasicSecuredDetails(jwt = base.jwt, iss = base.iss, validFrom = base.validFrom - 1, validUntil = base.validUntil) },
+            { base -> BasicSecuredDetails(jwt = base.jwt, iss = base.iss, validFrom = base.validFrom, validUntil = base.validUntil + 1) },
+        )
+        for (replacement in replacements) {
+            assertFailsWith<IllegalArgumentException> {
+                interceptWorkloadToken(
+                    authoritativePrincipalType = PrincipalType.USER,
+                    secureDetailsFactory = ValidatedRequestSecureDetailsFactory { _, validated, _ ->
+                        replacement(requireNotNull(validated.toSecuredDetails()))
+                    },
+                )
+            }
+        }
+    }
     @Test
     fun anonymousTokenIdentityUsesFrameworkPrincipalSentinel() {
         val resolution =
@@ -178,6 +233,7 @@ class UserContextInterceptorPrincipalTypeTest {
     private suspend fun interceptWorkloadToken(
         authoritativePrincipalType: PrincipalType?,
         validatedServiceAudience: String? = null,
+        secureDetailsFactory: ValidatedRequestSecureDetailsFactory? = null,
     ): CapturedInterception {
         val workloadResolution =
             IdentityResolutionResult(
@@ -271,6 +327,9 @@ class UserContextInterceptorPrincipalTypeTest {
                     mapOf(
                         "sub" to JsonPrimitive("service-crypto"),
                         "azp" to JsonPrimitive("service-crypto"),
+                        "iss" to JsonPrimitive("https://issuer.example"),
+                        "iat" to JsonPrimitive(1_700_000_000),
+                        "exp" to JsonPrimitive(1_700_003_600),
                     ),
                 rawToken = "validated-workload-token",
             ).markValidated(),
@@ -296,6 +355,7 @@ class UserContextInterceptorPrincipalTypeTest {
         val interceptor =
             UserContextInterceptor(
                 appGraph = appGraph,
+                validatedSecureDetailsFactory = secureDetailsFactory,
                 tenantResolver = FixedTenantResolver("platform"),
                 principalResolver =
                     object : PrincipalResolver {

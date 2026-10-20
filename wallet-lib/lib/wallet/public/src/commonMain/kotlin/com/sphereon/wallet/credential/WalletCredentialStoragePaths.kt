@@ -46,6 +46,9 @@ fun walletCredentialMetadataPrefix(walletUnitId: String): String = walletUnitPre
 
 fun walletIssuancePrefix(walletUnitId: String): String = walletUnitPrefix(walletUnitId) + "/issuance/"
 
+/** Secrets are siblings of session records, never children of a session blob's file path. */
+fun walletIssuanceSecretsPrefix(walletUnitId: String): String = walletUnitPrefix(walletUnitId) + "/issuance-secrets/"
+
 fun walletIssuanceSessionPath(
     walletUnitId: String,
     issuanceSessionId: String,
@@ -54,7 +57,7 @@ fun walletIssuanceSessionPath(
 fun walletDeferredAccessTokenPath(
     walletUnitId: String,
     issuanceSessionId: String,
-): String = walletIssuanceSessionPath(walletUnitId, issuanceSessionId) + "/access-token"
+): String = walletIssuanceSecretsPrefix(walletUnitId) + walletPathSegment(issuanceSessionId, "issuanceSessionId") + "/access-token"
 
 private fun walletCredentialPrefix(
     walletUnitId: String,

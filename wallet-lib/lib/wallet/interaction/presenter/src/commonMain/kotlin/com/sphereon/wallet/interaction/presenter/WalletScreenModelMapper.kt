@@ -240,6 +240,9 @@ private fun projection(state: WalletInteractionState): WalletInteractionScreenPr
                             stage = WalletAttendedAuthorizationStagePresentation.READY,
                             reasonKey = challenge.reasonKey,
                             reasonArguments = challenge.arguments,
+                            operations = challenge.operations.map {
+                                WalletAuthorizationOperationPresentation(it.keyRef, it.operationHash)
+                            },
                         ),
                     )
                 }

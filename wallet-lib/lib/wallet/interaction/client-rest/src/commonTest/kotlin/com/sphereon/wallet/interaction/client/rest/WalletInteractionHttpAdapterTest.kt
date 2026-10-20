@@ -55,6 +55,7 @@ import com.sphereon.wallet.interaction.WalletInteractionSession
 import com.sphereon.wallet.interaction.WalletInteractionSessionEnvelope
 import com.sphereon.wallet.interaction.WalletInteractionSessionId
 import com.sphereon.wallet.interaction.WalletInteractionState
+import com.sphereon.wallet.interaction.WalletInteractionPrivateSessionData
 import com.sphereon.wallet.interaction.WalletInteractionStateEnvelope
 import com.sphereon.wallet.interaction.WalletInteractionSensitiveInputPurpose
 import com.sphereon.wallet.interaction.WalletInteractionStateEvent
@@ -65,6 +66,7 @@ import com.sphereon.wallet.interaction.eventsPath
 import com.sphereon.wallet.interaction.framePath
 import com.sphereon.wallet.interaction.impl.CancelWalletInteractionCommandImpl
 import com.sphereon.wallet.interaction.impl.ConsumeWalletInteractionAuthorizationHandoffCommandImpl
+import com.sphereon.wallet.interaction.impl.ConsumeWalletInteractionCompletionHandoffCommandImpl
 import com.sphereon.wallet.interaction.impl.DefaultWalletInteractionEngine
 import com.sphereon.wallet.interaction.impl.FixedWalletInteractionSessionIdGenerator
 import com.sphereon.wallet.interaction.impl.GetWalletInteractionEventsCommandImpl
@@ -117,6 +119,11 @@ class WalletInteractionHttpAdapterTest {
                 it.pathPattern == "${WalletInteractionApiConstants.BASE_PATH}${WalletInteractionApiConstants.Paths.ACTIVITY}"
             },
         )
+        val completionEndpoint = description.endpoints.single {
+            it.handlerCommandId == WalletInteractionApiConstants.EndpointCommands.CONSUME_COMPLETION_HANDOFF
+        }
+        assertEquals(WalletInteractionApiConstants.Commands.CONSUME_COMPLETION_HANDOFF, completionEndpoint.commandId)
+        assertEquals(WalletInteractionApiConstants.EndpointCommands.CONSUME_COMPLETION_HANDOFF, completionEndpoint.handlerCommandId)
         val frameEndpoint =
             description.endpoints.single { it.handlerCommandId == WalletInteractionApiConstants.EndpointCommands.FRAME }
         assertEquals(WalletInteractionApiConstants.Commands.FRAME, frameEndpoint.commandId)
@@ -499,6 +506,67 @@ class WalletInteractionHttpAdapterTest {
                     requireBody(response.body),
                 )
             assertEquals(authorizationUrl, result.value)
+
+            val spent = endpoint.execute(request)
+            assertTrue(spent is Err, "a spent handoff must not return the URL again")
+        }
+
+    @Test
+    fun consumeCompletionHandoffReturnsTheUrlOnce() =
+        runTest {
+            val privateStore = InMemoryWalletInteractionPrivateSessionStore()
+            val authority = StoreBackedWalletInteractionSensitiveInputAuthority(privateStore)
+            val engine = testEngine(authority = authority, privateStore = privateStore)
+            val session =
+                engine.start(
+                    WalletInteractionInput("wallet", WalletEntryPoint.rawQr("openid-credential-offer://?credential_offer=x")),
+                )
+            val authorizationUrl = "https://verifier.example/callback#response_code=secret%2Bvalue"
+            val ref =
+                authority.register(
+                    session.sessionId,
+                    WalletInteractionSensitiveInputPurpose.PROTOCOL_COMPLETION_HANDOFF,
+                    authorizationUrl,
+                )
+
+            val endpoint =
+                ConsumeWalletInteractionCompletionHandoffHttpEndpointCommandImpl(
+                    TestSessionExecution,
+                    ConsumeWalletInteractionCompletionHandoffCommandImpl(TestSessionExecution, engine, authority, privateStore),
+                )
+            val request =
+                GenericHttpRequest.withTextBody(
+                    method = "POST",
+                    path =
+                        WalletInteractionApiConstants.Paths.COMPLETION_HANDOFF
+                            .replace("{walletUnitId}", "wallet")
+                            .replace("{sessionId}", session.sessionId.value),
+                    pathParameters =
+                        mapOf(
+                            "walletUnitId" to "wallet",
+                            "sessionId" to session.sessionId.value,
+                        ),
+                    body =
+                        defaultWalletInteractionJson.encodeToString(
+                            ConsumeWalletInteractionHandoffRequest.serializer(),
+                            ConsumeWalletInteractionHandoffRequest(ref),
+                        ),
+                )
+            val foreignWallet = endpoint.execute(request.copy(pathParameters = request.pathParameters + ("walletUnitId" to "other-wallet")))
+            assertTrue(foreignWallet is Err, "another wallet cannot spend the completion reference")
+            assertEquals(authorizationUrl, authority.peek(session.sessionId, WalletInteractionSensitiveInputPurpose.PROTOCOL_COMPLETION_HANDOFF, ref))
+            privateStore.put(session.sessionId, WalletInteractionPrivateSessionData("protocol-test", mapOf("private" to "retained-until-completion")))
+            val first = endpoint.execute(request)
+            assertTrue(first is Ok)
+            val response = (first as Ok).value
+            assertEquals(200, response.statusCode, response.body)
+            val result =
+                defaultWalletInteractionJson.decodeFromString(
+                    ConsumeWalletInteractionHandoffResult.serializer(),
+                    requireBody(response.body),
+                )
+            assertEquals(authorizationUrl, result.value)
+            assertNull(privateStore.get(session.sessionId, "protocol-test"), "completion removes protocol private-session material")
 
             val spent = endpoint.execute(request)
             assertTrue(spent is Err, "a spent handoff must not return the URL again")

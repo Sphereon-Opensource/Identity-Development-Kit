@@ -444,7 +444,7 @@ class SubmitAuthorizationResponseCommandImpl(
         // OpenID4VP 1.0 §8.3/§8.4's final `.jwt` modes require an unsigned,
         // encrypted response. The same embedded JWK selected while preparing
         // mdoc DeviceAuthentication must also be the key used for this JWE.
-        // Reject explicit legacy JARM profiles or key-selection drift before
+        // Reject signed OAuth JARM profiles or key-selection drift before
         // creating/signing any response token.
         val finalOid4vpJwtMode =
             digitalCredentialsApi ||
@@ -553,7 +553,7 @@ class SubmitAuthorizationResponseCommandImpl(
         // Build response parameters for JARM payload
         val responseParameters =
             kotlinx.serialization.json.buildJsonObject {
-                put("vp_token", JsonPrimitive(vpTokenJson))
+                put("vp_token", if (finalOid4vpJwtMode) vpTokenElement else JsonPrimitive(vpTokenJson))
                 response.additionalParameters["presentation_submission"]?.let { submission ->
                     put("presentation_submission", submission)
                 }
@@ -570,6 +570,7 @@ class SubmitAuthorizationResponseCommandImpl(
                 encryptionRecipient = encryptionRecipient,
                 jarmConfig = jarmConfig,
                 protectedHeaderOverrides = jarmOptions.protectedHeaderOverrides,
+                appendStandardJwtClaims = !finalOid4vpJwtMode,
             )
 
         val jarmResult =

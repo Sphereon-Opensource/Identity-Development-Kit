@@ -287,6 +287,10 @@ enum class WalletInteractionStatus {
     Failed,
 }
 
+/** Nonsecret transport of the opaque completion value; the value remains private. */
+@Serializable
+enum class WalletInteractionCompletionTransport { BROWSER_REDIRECT, DIGITAL_CREDENTIALS_API }
+
 @Serializable
 data class WalletInteractionState(
     val sessionId: WalletInteractionSessionId,
@@ -317,6 +321,7 @@ data class WalletInteractionState(
     val authorizationHandoffRef: WalletInteractionSensitiveInputRef? = null,
     /** Optional post-completion user-agent handoff, kept opaque outside the private session store. */
     val completionHandoffRef: WalletInteractionSensitiveInputRef? = null,
+    val completionHandoffTransport: WalletInteractionCompletionTransport? = null,
     val txCode: WalletTxCodeSpec? = null,
     val deferred: WalletDeferredRetrievalSummary? = null,
     val message: WalletDisplayMessage? = null,

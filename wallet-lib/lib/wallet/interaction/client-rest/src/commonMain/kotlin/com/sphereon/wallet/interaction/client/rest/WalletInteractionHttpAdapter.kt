@@ -33,6 +33,7 @@ import com.sphereon.core.api.http.describe.OpenApiHints
 import com.sphereon.di.session.SessionScope
 import com.sphereon.wallet.interaction.CancelWalletInteractionArgs
 import com.sphereon.wallet.interaction.ConsumeWalletInteractionAuthorizationHandoffCommand
+import com.sphereon.wallet.interaction.ConsumeWalletInteractionCompletionHandoffCommand
 import com.sphereon.wallet.interaction.ConsumeWalletInteractionHandoffArgs
 import com.sphereon.wallet.interaction.ConsumeWalletInteractionHandoffRequest
 import com.sphereon.wallet.interaction.ConsumeWalletInteractionHandoffResult
@@ -216,6 +217,22 @@ interface ConsumeWalletInteractionAuthorizationHandoffHttpEndpointCommand : Http
     }
 }
 
+interface ConsumeWalletInteractionCompletionHandoffHttpEndpointCommand : HttpEndpointCommand {
+    companion object {
+        const val COMMAND_ID: String = WalletInteractionApiConstants.EndpointCommands.CONSUME_COMPLETION_HANDOFF
+        val ENDPOINT: HttpEndpointDescriptor =
+            walletInteractionEndpoint(
+                method = HttpMethod.POST,
+                pathPattern = WalletInteractionApiConstants.Paths.COMPLETION_HANDOFF,
+                consumes = JSON_MEDIA,
+                produces = JSON_MEDIA,
+                operationId = "consumeWalletInteractionCompletionHandoff",
+                commandId = WalletInteractionApiConstants.Commands.CONSUME_COMPLETION_HANDOFF,
+                handlerCommandId = COMMAND_ID,
+            )
+    }
+}
+
 interface RegisterWalletInteractionSensitiveInputHttpEndpointCommand : HttpEndpointCommand {
     companion object {
         const val COMMAND_ID: String = WalletInteractionApiConstants.EndpointCommands.REGISTER_SENSITIVE_INPUT
@@ -315,6 +332,7 @@ object WalletInteractionHttpEndpoints {
             HandleWalletInteractionFrameHttpEndpointCommand.ENDPOINT,
             RegisterWalletInteractionSensitiveInputHttpEndpointCommand.ENDPOINT,
             ConsumeWalletInteractionAuthorizationHandoffHttpEndpointCommand.ENDPOINT,
+            ConsumeWalletInteractionCompletionHandoffHttpEndpointCommand.ENDPOINT,
             ListWalletInteractionActivityHttpEndpointCommand.ENDPOINT,
         )
 }
@@ -720,6 +738,38 @@ class ConsumeWalletInteractionAuthorizationHandoffHttpEndpointCommandImpl(
         endpoint = ConsumeWalletInteractionAuthorizationHandoffHttpEndpointCommand.ENDPOINT,
     ),
     ConsumeWalletInteractionAuthorizationHandoffHttpEndpointCommand {
+    override suspend fun doExecute(
+        args: GenericHttpRequest,
+        applyDuring: (GenericHttpRequest) -> GenericHttpRequest,
+    ): IdkResult<GenericHttpResponse, IdkError> =
+        runWalletInteractionEndpoint {
+            val request = applyDuring(args)
+            val body = request.requireJsonBody<ConsumeWalletInteractionHandoffRequest>(json).orAbort()
+            command
+                .execute(
+                    ConsumeWalletInteractionHandoffArgs(
+                        walletUnitId = request.walletUnitId().orAbort(),
+                        sessionId = request.sessionId().orAbort(),
+                        ref = body.ref,
+                    ),
+                ).orAbort()
+                .json(ConsumeWalletInteractionHandoffResult.serializer())
+        }
+}
+
+@Inject
+@SingleIn(SessionScope::class)
+@ContributesIntoMap(SessionScope::class, binding = binding<HttpEndpointCommand>())
+@StringKey(ConsumeWalletInteractionCompletionHandoffHttpEndpointCommand.COMMAND_ID)
+class ConsumeWalletInteractionCompletionHandoffHttpEndpointCommandImpl(
+    execution: SessionExecution,
+    private val command: ConsumeWalletInteractionCompletionHandoffCommand,
+) : WalletInteractionHttpEndpointCommandAdapter(
+        id = ConsumeWalletInteractionCompletionHandoffHttpEndpointCommand.COMMAND_ID,
+        execution = execution,
+        endpoint = ConsumeWalletInteractionCompletionHandoffHttpEndpointCommand.ENDPOINT,
+    ),
+    ConsumeWalletInteractionCompletionHandoffHttpEndpointCommand {
     override suspend fun doExecute(
         args: GenericHttpRequest,
         applyDuring: (GenericHttpRequest) -> GenericHttpRequest,

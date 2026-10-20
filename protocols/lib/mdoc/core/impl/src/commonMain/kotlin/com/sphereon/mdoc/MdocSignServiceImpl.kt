@@ -230,7 +230,7 @@ class MdocSignServiceImpl(
             throw IllegalArgumentException("Document request docType ${request.itemsRequest.docType} does not match document docType ${document.docType}")
         }
         val mso = decodeMso(document)
-        val keyInfo = getDeviceSigningKeyInfo(keyInfo = deviceKeyInfo, mso = mso)
+        val keyInfo = resolveDeviceSigningKeyInfo(keyInfo = deviceKeyInfo, mso = mso)
         log.info("Using keyInfo: $keyInfo")
 
         // DeviceRequest.macKeys is propagated by the request/response processor as an explicit
@@ -295,6 +295,12 @@ class MdocSignServiceImpl(
                 keyInfo = keyInfo,
                 requireX5Chain = requireDeviceX5Chain,
             )
+        val verified = coseCryptoService.verify1(
+            input = signResult.coseSign1,
+            keyInfo = getSuppliedOrMSODerivedCborKeyInfo(mso = mso),
+            requireX5Chain = false,
+        )
+        require(!verified.error) { "mdoc DeviceAuthentication signature did not verify with the MSO device key" }
         log.debug("Signresult: $signResult")
         val deviceSignature = signResult.coseSign1.detachedPayloadCopy()
         log.info("Device signature: $deviceSignature")
@@ -427,7 +433,7 @@ class MdocSignServiceImpl(
         }
     }
 
-    private fun createPreparedDeviceAuthenticationSigning(
+    private suspend fun createPreparedDeviceAuthenticationSigning(
         request: DocRequest,
         document: Document,
         deviceAuthentication: DeviceAuthentication,
@@ -438,7 +444,7 @@ class MdocSignServiceImpl(
         require(request.itemsRequest.docType == document.docType) { "Request document type mismatch" }
         require(deviceAuthentication.docType == document.docType) { "DeviceAuthentication document type mismatch" }
         val mso = decodeMso(document)
-        val selectedKeyInfo = getDeviceSigningKeyInfo(keyInfo = deviceKeyInfo, mso = mso)
+        val selectedKeyInfo = resolveDeviceSigningKeyInfo(keyInfo = deviceKeyInfo, mso = mso)
         val resolvedPublicKey = getSuppliedOrMSODerivedCborKeyInfo(keyInfo = deviceKeyInfo, mso = mso)
         require(publicKeyMaterialMatches(resolvedPublicKey.key, mso.deviceKeyInfo.deviceKey)) { "Device public key does not match MSO" }
         val publicKey = resolvedPublicKey.key.toPublicKey() as? CoseKey
@@ -679,6 +685,52 @@ class MdocSignServiceImpl(
                 }.toMutableMap(),
         )
 
+    private suspend fun resolveDeviceSigningKeyInfo(
+        keyInfo: KeyInfoType<*>?,
+        mso: MobileSecurityObject,
+    ): KeyInfoType<CoseKeyType> {
+        val managed = keyInfo != null && keyInfo.key?.d == null && (keyInfo.alias != null || keyInfo.key == null)
+        if (!managed || mso.deviceKeyInfo.deviceKey.kid != null) {
+            return getDeviceSigningKeyInfo(keyInfo, mso)
+        }
+        // COSE_Key.kid is optional (RFC 9052 section 7). Bind the actual custody key,
+        // rather than requiring the issuer to copy provider-specific key metadata.
+        require(!keyInfo!!.alias.isNullOrBlank()) { "Managed mdoc device signing requires a non-blank key alias" }
+        keyInfo.key?.let { supplied ->
+            require(publicKeyMaterialMatches(CoseJoseKeyMappingService.toCoseKey(supplied), mso.deviceKeyInfo.deviceKey)) {
+                "Supplied mdoc device key does not match Mobile Security Object device key"
+            }
+        }
+        val actual = coseCryptoService.resolvePublicKey(
+            KeyInfo<CoseKey>(
+                alias = keyInfo.alias,
+                providerId = keyInfo.providerId,
+                keyVisibility = KeyVisibility.PUBLIC,
+                noCache = keyInfo.noCache,
+                opts = keyInfo.opts,
+            ),
+        )
+        require(publicKeyMaterialMatches(actual.key, mso.deviceKeyInfo.deviceKey)) {
+            "Managed mdoc device key does not match Mobile Security Object device key"
+        }
+        return getDeviceSigningKeyInfo(
+            KeyInfo(
+                key = actual.key,
+                kid = actual.kid,
+                alias = keyInfo.alias,
+                providerId = actual.providerId ?: keyInfo.providerId,
+                keyVisibility = KeyVisibility.PRIVATE,
+                signatureAlgorithm = keyInfo.signatureAlgorithm ?: actual.signatureAlgorithm,
+                opts = keyInfo.opts,
+                x5c = keyInfo.x5c ?: actual.x5c,
+                noCache = keyInfo.noCache,
+                keyEncoding = keyInfo.keyEncoding,
+                keyType = actual.keyType ?: keyInfo.keyType,
+            ),
+            mso,
+        )
+    }
+
     companion object Utils {
         @JsStatic
         fun getSuppliedOrMSODerivedCborKeyInfo(
@@ -762,12 +814,12 @@ class MdocSignServiceImpl(
             require(!resolved.alias.isNullOrBlank()) {
                 "Managed mdoc device signing requires a non-blank key alias"
             }
-            require(msoKid != null) {
-                "Managed mdoc device signing requires a kid in the Mobile Security Object device key"
+            require(msoKid != null || keyInfo?.key != null) {
+                "Managed mdoc device signing without an MSO kid requires resolved public key material"
             }
 
             return KeyInfo(
-                kid = msoKid,
+                kid = msoKid ?: suppliedKid,
                 key = null,
                 opts = resolved.opts,
                 keyVisibility = KeyVisibility.PRIVATE,

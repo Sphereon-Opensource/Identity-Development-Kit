@@ -78,6 +78,8 @@ import org.junit.jupiter.api.TestInstance
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
+import kotlin.test.assertFalse
+import kotlinx.serialization.json.JsonObject
 
 /**
  * Tests for SubmitAuthorizationResponseCommandImpl.
@@ -246,7 +248,7 @@ class SubmitAuthorizationResponseCommandImplTest {
     /**
      * Create a mock CreateJarmResponseCommand for testing
      */
-    private fun createMockJarmCommand(onExecute: () -> Unit = {}): CreateJarmResponseCommand =
+    private fun createMockJarmCommand(onExecute: () -> Unit = {}, onArguments: (CreateJarmResponseArgs) -> Unit = {}): CreateJarmResponseCommand =
         object : CreateJarmResponseCommand {
             override val commandId: String = CreateJarmResponseCommand.COMMAND_ID
             override val isEnabled: Boolean = true
@@ -255,6 +257,7 @@ class SubmitAuthorizationResponseCommandImplTest {
 
             override suspend fun execute(args: CreateJarmResponseArgs): IdkResult<CreateJarmResponseResult, IdkError> {
                 onExecute()
+                onArguments(args)
                 return Ok(
                     CreateJarmResponseResult(
                         jarmJwt = "mock.jarm.jwt",
@@ -790,7 +793,13 @@ class SubmitAuthorizationResponseCommandImplTest {
                     execution = TestExecutionContext.createExecution(),
                     httpClientFactory = createMockHttpClientFactory(onRequest = { httpRequests++ }),
                     externalIdentifierService = createMockExternalIdentifierService(),
-                    createJarmCommand = createMockJarmCommand(onExecute = { jarmExecutions++ }),
+                    createJarmCommand = createMockJarmCommand(
+                        onExecute = { jarmExecutions++ },
+                        onArguments = { args ->
+                            assertFalse(args.appendStandardJwtClaims)
+                            assertIs<JsonObject>(args.responseParameters["vp_token"])
+                        },
+                    ),
                 )
             val binding =
                 PreparedOid4vpJweRecipientBinding(

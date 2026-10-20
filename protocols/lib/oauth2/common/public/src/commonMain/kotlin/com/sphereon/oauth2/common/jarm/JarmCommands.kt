@@ -63,6 +63,8 @@ data class CreateJarmResponseArgs(
     /** Additional protected JWE headers required by a profile-specific JARM profile. */
     @kotlinx.serialization.Transient
     val protectedHeaderOverrides: JweHeader? = null,
+    /** False for unsigned encrypted response-parameter envelopes; signing modes require JWT claims. */
+    val appendStandardJwtClaims: Boolean = true,
 )
 
 /**

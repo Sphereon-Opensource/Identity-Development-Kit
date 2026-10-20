@@ -6,6 +6,7 @@
 
 package com.sphereon.wallet.interaction.protocol.oid4vp
 
+import com.sphereon.wallet.interaction.WalletInteractionCompletionTransport
 import com.sphereon.oauth2.common.model.AuthorizationRequest
 import com.sphereon.openid.oid4vp.common.ResponseMode
 import com.sphereon.openid.oid4vp.common.responseUri
@@ -740,6 +741,7 @@ class Oid4vpWalletInteractionProtocolAdapter(
                     status = WalletInteractionStatus.Completed,
                     revision = sessionState.revision + 1,
                     completionHandoffRef = handoffRef,
+                    completionHandoffTransport = WalletInteractionCompletionTransport.BROWSER_REDIRECT,
                     message = WalletDisplayMessage(titleKey = "wallet.interaction.oid4vp.shared"),
                     error = null,
                     terminal = true,
@@ -779,6 +781,7 @@ class Oid4vpWalletInteractionProtocolAdapter(
                         status = WalletInteractionStatus.Completed,
                         revision = sessionState.revision + 1,
                         completionHandoffRef = handoffRef,
+                    completionHandoffTransport = WalletInteractionCompletionTransport.DIGITAL_CREDENTIALS_API,
                         message = WalletDisplayMessage(titleKey = "wallet.interaction.oid4vp.shared"),
                         error = null,
                         terminal = true,

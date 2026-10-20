@@ -217,6 +217,12 @@ enum class WalletAttendedAuthorizationMethodPresentation { PASSKEY, BIOMETRIC, P
 enum class WalletAttendedAuthorizationStagePresentation { READY, IN_PROGRESS, AUTHORIZED, CANCELLED, FAILED }
 
 @Serializable
+data class WalletAuthorizationOperationPresentation(
+    val keyRef: String,
+    val operationHash: String,
+)
+
+@Serializable
 data class WalletAttendedAuthorizationPresentation(
     val operationRef: String,
     val challengeRef: String,
@@ -225,6 +231,7 @@ data class WalletAttendedAuthorizationPresentation(
     val stage: WalletAttendedAuthorizationStagePresentation,
     val reasonKey: String,
     val reasonArguments: Map<String, String>,
+    val operations: List<WalletAuthorizationOperationPresentation> = emptyList(),
 ) {
     init {
         require(operationRef.isNotBlank()) { "wallet_authorization_operation_ref_blank" }
@@ -255,6 +262,7 @@ data class WalletSecureCeremonyRequest(
     val operationRef: String,
     val challengeRef: String,
     val challengeArguments: Map<String, String>,
+    val operations: List<WalletAuthorizationOperationPresentation> = emptyList(),
 )
 
 @Serializable

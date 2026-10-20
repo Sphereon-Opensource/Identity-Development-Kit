@@ -65,4 +65,29 @@ class Oid4vciHolderBindingMethodSelectionTest {
         assertTrue(refused.isErr)
         assertEquals("oid4vci.holder_binding_method_unsupported", refused.error.code)
     }
+
+    @Test
+    fun mdocCoseBindingUsesTheSameEmbeddedJwkProofWithoutDidLookup() = runTest {
+        val selected = selectHolderDidVerificationMethod(listOf("cose_key"), credentialFormat = "mso_mdoc") {
+            lookups++
+            didJwkMethod
+        }
+        assertTrue(selected.isOk)
+        assertNull(selected.value)
+        assertEquals(0, lookups)
+    }
+
+    @Test
+    fun coseBindingDoesNotAuthorizeOtherCredentialFormatsOrUnsupportedDids() = runTest {
+        for (format in listOf(null, "dc+sd-jwt", "jwt_vc_json")) {
+            val selected = selectHolderDidVerificationMethod(listOf("cose_key"), credentialFormat = format) {
+                lookups++
+                didJwkMethod
+            }
+            assertTrue(selected.isErr)
+            assertEquals("oid4vci.holder_binding_method_unsupported", selected.error.code)
+        }
+        assertTrue(selectHolderDidVerificationMethod(listOf("did:web"), credentialFormat = "mso_mdoc") { didJwkMethod }.isErr)
+        assertEquals(0, lookups)
+    }
 }
