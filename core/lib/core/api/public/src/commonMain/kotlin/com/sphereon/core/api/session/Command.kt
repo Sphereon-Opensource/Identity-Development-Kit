@@ -608,7 +608,7 @@ abstract class CommandAdapter<Arg : Any, SuccessResult : Any, ErrorResult : IdkE
         }
 
         val parentInvocation = currentCoroutineContext()[CommandInvocationContext]
-        val commandInvocation = parentInvocation?.enterCommand() ?: CommandInvocationContext.internalRoot()
+        val commandInvocation = CommandInvocationContext.enteredFrom(parentInvocation)
         return withContext(executionCoroutineContext + commandInvocation) {
             var lifecycleFailure: Throwable? = null
             var lifecycleResult: IdkResult<SuccessResult, ErrorResult>? = null
