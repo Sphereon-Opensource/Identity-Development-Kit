@@ -1,4 +1,4 @@
-/* Copyright 2026 Sphereon International B.V. Licensed under a commercial source-available license. */
+// Copyright 2026 Sphereon International B.V. Licensed under a commercial source-available license.
 package com.sphereon.wallet.runner.oidf
 
 import com.sphereon.oidf.conformance.OidfConformanceSuiteClient
@@ -19,19 +19,25 @@ internal data class OidfExistingWalletSuite(
 
 internal fun existingOidfWalletSuite(): OidfExistingWalletSuite? {
     val api = System.getProperty("oidf.suite.apiBaseUrl")?.takeIf(String::isNotBlank) ?: return null
+
     fun required(name: String) = checkNotNull(System.getProperty(name)?.takeIf(String::isNotBlank)) { "Missing $name" }
+
     val protocol = oidfExistingSuiteOrigin(required("oidf.suite.protocolBaseUrl"))
     val apiOrigin = oidfExistingSuiteOrigin(api)
     val source = Path.of(required("oidf.suite.dir"))
     require(Files.isDirectory(source)) { "Missing locked OIDF source directory: $source" }
     val ca = Path.of(required("oidf.suite.caCert"))
     val certificate = Files.newInputStream(ca).use { CertificateFactory.getInstance("X.509").generateCertificate(it) }
-    val keyStore = KeyStore.getInstance(KeyStore.getDefaultType()).apply {
-        load(null)
-        setCertificateEntry("explicit-oidf-suite-api", certificate)
-    }
-    val trustManagers = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm())
-        .apply { init(keyStore) }.trustManagers
+    val keyStore =
+        KeyStore.getInstance(KeyStore.getDefaultType()).apply {
+            load(null)
+            setCertificateEntry("explicit-oidf-suite-api", certificate)
+        }
+    val trustManagers =
+        TrustManagerFactory
+            .getInstance(TrustManagerFactory.getDefaultAlgorithm())
+            .apply { init(keyStore) }
+            .trustManagers
     val sslContext = SSLContext.getInstance("TLS").apply { init(null, trustManagers, null) }
     return OidfExistingWalletSuite(
         OidfConformanceSuiteClient(
@@ -46,8 +52,10 @@ internal fun existingOidfWalletSuite(): OidfExistingWalletSuite? {
 
 internal fun oidfExistingSuiteOrigin(value: String): String {
     val uri = URI.create(value)
-    require(uri.scheme == "https" && !uri.host.isNullOrBlank() && uri.rawUserInfo == null &&
-        uri.rawQuery == null && uri.rawFragment == null && uri.rawPath.orEmpty() in setOf("", "/")) {
+    require(
+        uri.scheme == "https" && !uri.host.isNullOrBlank() && uri.rawUserInfo == null &&
+            uri.rawQuery == null && uri.rawFragment == null && uri.rawPath.orEmpty() in setOf("", "/"),
+    ) {
         "OIDF suite origins must be explicit HTTPS origins without credentials, query or path"
     }
     return value.trimEnd('/')

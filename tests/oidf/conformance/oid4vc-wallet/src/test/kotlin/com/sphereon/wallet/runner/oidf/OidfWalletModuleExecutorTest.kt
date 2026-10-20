@@ -6,15 +6,15 @@
 package com.sphereon.wallet.runner.oidf
 
 import com.sphereon.wallet.interaction.WalletInteractionError
-import com.sphereon.wallet.interaction.WalletInteractionSessionId
-import com.sphereon.wallet.runner.HeadlessRunOutcome
 import com.sphereon.wallet.interaction.WalletInteractionFailureCodes
+import com.sphereon.wallet.interaction.WalletInteractionSessionId
 import com.sphereon.wallet.interaction.WalletInteractionStatus
+import com.sphereon.wallet.runner.HeadlessRunOutcome
 import kotlin.test.Test
 import kotlin.test.assertFailsWith
-import kotlin.test.assertSame
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
+import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 class OidfWalletModuleExecutorTest {
@@ -106,15 +106,21 @@ class OidfWalletModuleExecutorTest {
                 error = WalletInteractionError(WalletInteractionFailureCodes.OID4VP_REQUEST_PARSE_FAILED),
             )
         val timeout = java.net.http.HttpTimeoutException("official wait-state request timed out")
-        val failure = assertFailsWith<OidfWalletSuiteCompletionException> {
-            oidfWithObservedWalletOutcome(outcome) { throw timeout }
-        }
+        val failure =
+            assertFailsWith<OidfWalletSuiteCompletionException> {
+                oidfWithObservedWalletOutcome(outcome) { throw timeout }
+            }
         assertSame(outcome, failure.walletOutcome)
         assertSame(timeout, failure.cause)
         val observed = failure.walletOutcome
-        val matched = OidfWalletModuleOutcomePolicy.matches(
-            invalidSignature, observed.status.name, observed.terminal, observed.succeeded, observed.error?.code,
-        )
+        val matched =
+            OidfWalletModuleOutcomePolicy.matches(
+                invalidSignature,
+                observed.status.name,
+                observed.terminal,
+                observed.succeeded,
+                observed.error?.code,
+            )
         assertTrue(matched)
         val diagnostic = checkNotNull(OidfWalletModuleOutcomePolicy.executionDiagnostic(invalidSignature, "WAITING", matched, failure.stackTraceToString()))
         assertTrue(diagnostic.contains("official wait-state request timed out"))
@@ -126,25 +132,34 @@ class OidfWalletModuleExecutorTest {
 
     @Test
     fun unexpectedFailureAfterObservedWalletCrashIsNotRejectionEvidence() {
-        val outcome = HeadlessRunOutcome(
-            sessionId = WalletInteractionSessionId("unexpected-failure"),
-            status = WalletInteractionStatus.Failed,
-            terminal = true,
-            error = WalletInteractionError("unexpected.crash"),
-        )
-        val failure = assertFailsWith<OidfWalletSuiteCompletionException> {
-            oidfWithObservedWalletOutcome(outcome) { error("unexpected suite failure") }
-        }
+        val outcome =
+            HeadlessRunOutcome(
+                sessionId = WalletInteractionSessionId("unexpected-failure"),
+                status = WalletInteractionStatus.Failed,
+                terminal = true,
+                error = WalletInteractionError("unexpected.crash"),
+            )
+        val failure =
+            assertFailsWith<OidfWalletSuiteCompletionException> {
+                oidfWithObservedWalletOutcome(outcome) { error("unexpected suite failure") }
+            }
         val observed = failure.walletOutcome
-        val matched = OidfWalletModuleOutcomePolicy.matches(
-            invalidSignature, observed.status.name, observed.terminal, observed.succeeded, observed.error?.code,
-        )
+        val matched =
+            OidfWalletModuleOutcomePolicy.matches(
+                invalidSignature,
+                observed.status.name,
+                observed.terminal,
+                observed.succeeded,
+                observed.error?.code,
+            )
         assertFalse(matched)
         val diagnostic = checkNotNull(OidfWalletModuleOutcomePolicy.executionDiagnostic(invalidSignature, null, matched, failure.stackTraceToString()))
         assertFalse(diagnostic.contains("genuine wallet error-screen screenshot"))
         assertFalse(OidfWalletModuleOutcomePolicy.passed("FINISHED", "PASSED", matched, diagnostic))
     }
 
-    private fun matches(module: String, errorCode: String): Boolean =
-        OidfWalletModuleOutcomePolicy.matches(module, WalletInteractionStatus.Failed.name, true, false, errorCode)
+    private fun matches(
+        module: String,
+        errorCode: String,
+    ): Boolean = OidfWalletModuleOutcomePolicy.matches(module, WalletInteractionStatus.Failed.name, true, false, errorCode)
 }

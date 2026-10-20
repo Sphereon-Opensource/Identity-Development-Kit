@@ -156,8 +156,11 @@ class OidfConformanceMatrixTest {
             .filter { it.requiredPlan.profile == OidfProfile.HAIP_1_0 }
             .forEach { scenario ->
                 val credential = scenario.configOverrides.getValue("credential").jsonObject
-                assertEquals("{vp-signing-ca.crt}", credential.getValue("trust_anchor_pem").jsonPrimitive.content, scenario.id)
-                assertEquals("{vp-signing-ca.crt}", credential.getValue("status_list_trust_anchor_pem").jsonPrimitive.content, scenario.id)
+                val isMdoc = scenario.variant.getValue("credential_format") == "iso_mdl"
+                val credentialTrustAnchor = if (isMdoc) "{mdoc-iaca-root.crt}" else "{vp-signing-ca.crt}"
+                val statusTrustAnchor = if (isMdoc) "{mdoc-iaca-root.crt}" else "{vci-test-root.crt}"
+                assertEquals(credentialTrustAnchor, credential.getValue("trust_anchor_pem").jsonPrimitive.content, scenario.id)
+                assertEquals(statusTrustAnchor, credential.getValue("status_list_trust_anchor_pem").jsonPrimitive.content, scenario.id)
             }
     }
 

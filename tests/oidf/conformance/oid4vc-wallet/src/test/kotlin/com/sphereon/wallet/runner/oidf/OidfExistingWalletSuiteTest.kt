@@ -1,4 +1,4 @@
-/* Copyright 2026 Sphereon International B.V. Licensed under a commercial source-available license. */
+// Copyright 2026 Sphereon International B.V. Licensed under a commercial source-available license.
 package com.sphereon.wallet.runner.oidf
 
 import kotlin.test.Test
@@ -14,7 +14,17 @@ class OidfExistingWalletSuiteTest {
 
     @Test
     fun refusesNonTlsCredentialsPathsAndAmbiguousOrigins() {
-        for (value in listOf("http://localhost:18443", "https://user:pass@example.test", "https://example.test/api", "https://example.test?x=1", "https://example.test#fragment", "https:///missing-host")) {
+        for (
+        value in
+        listOf(
+            "http://localhost:18443",
+            "https://user:pass@example.test",
+            "https://example.test/api",
+            "https://example.test?x=1",
+            "https://example.test#fragment",
+            "https:///missing-host",
+        )
+        ) {
             assertFailsWith<IllegalArgumentException>(value) { oidfExistingSuiteOrigin(value) }
         }
     }

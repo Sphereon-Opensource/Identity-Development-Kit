@@ -18,8 +18,8 @@ import java.nio.file.Path
 import java.security.KeyStore
 import java.security.cert.CertificateFactory
 import java.time.Duration
-import java.util.Comparator
 import java.util.Base64
+import java.util.Comparator
 import java.util.concurrent.TimeUnit
 import javax.net.ssl.SSLContext
 import javax.net.ssl.TrustManagerFactory
@@ -112,10 +112,13 @@ class OidfSuiteEnvironment private constructor(
                 require(SUT_HOST_NAME.matches(it)) { "SUT hostname must be a DNS hostname: $it" }
             }
             val advertisedHost = oidfSuiteAdvertisedHost(System.getenv("OIDF_SUITE_ADVERTISED_HOST"))
-            val suiteSourceDirectory = Path.of(
-                System.getProperty("oidf.suite.dir") ?: System.getenv("OIDF_SUITE_SOURCE_DIR")
-                    ?: error("Provide matching upstream source fixtures with oidf.suite.dir or OIDF_SUITE_SOURCE_DIR"),
-            ).toAbsolutePath().normalize()
+            val suiteSourceDirectory =
+                Path
+                    .of(
+                        System.getProperty("oidf.suite.dir") ?: System.getenv("OIDF_SUITE_SOURCE_DIR")
+                            ?: error("Provide matching upstream source fixtures with oidf.suite.dir or OIDF_SUITE_SOURCE_DIR"),
+                    ).toAbsolutePath()
+                    .normalize()
             OidfSuiteConfigPreprocessor.requiredSourceFiles.forEach { relativePath ->
                 require(Files.isRegularFile(suiteSourceDirectory.resolve(relativePath))) {
                     "Missing locked upstream fixture: $relativePath"
@@ -247,31 +250,63 @@ class OidfSuiteEnvironment private constructor(
         }
 
         /** Deployment configuration only: official server and nginx image bytes remain unchanged. */
-        private fun prepareNginxRuntimeConfiguration(source: Path, target: Path) {
-            val config = Files.readString(source.resolve("nginx/nginx.conf"))
-                .replace("proxy_pass http://server:8080;", "set \$suite_server server:8080; proxy_pass http://\$suite_server;")
-                .replace("http {", "http {\n    map \$http_host \$external_port {\n        ~:(?<mapped_port>[0-9]+)$ \$mapped_port;\n        default 443;\n    }")
-                .replace("Host \$host;", "Host \$http_host;")
-                .replace("X-Forwarded-Host \$host;", "X-Forwarded-Host \$http_host;")
-                .replace(Regex("X-Forwarded-Port [0-9]+;")) { "X-Forwarded-Port \$external_port;" }
-                .lineSequence().filterNot { it.trimStart().startsWith("proxy_set_header Forwarded ") }.joinToString("\n")
+        private fun prepareNginxRuntimeConfiguration(
+            source: Path,
+            target: Path,
+        ) {
+            val config =
+                Files
+                    .readString(source.resolve("nginx/nginx.conf"))
+                    .replace("proxy_pass http://server:8080;", "set \$suite_server server:8080; proxy_pass http://\$suite_server;")
+                    .replace("http {", "http {\n    map \$http_host \$external_port {\n        ~:(?<mapped_port>[0-9]+)$ \$mapped_port;\n        default 443;\n    }")
+                    .replace("Host \$host;", "Host \$http_host;")
+                    .replace("X-Forwarded-Host \$host;", "X-Forwarded-Host \$http_host;")
+                    .replace(Regex("X-Forwarded-Port [0-9]+;")) { "X-Forwarded-Port \$external_port;" }
+                    .lineSequence()
+                    .filterNot { it.trimStart().startsWith("proxy_set_header Forwarded ") }
+                    .joinToString("\n")
             Files.writeString(target.resolve("nginx.conf"), config)
             val keyStoreFile = target.resolve("nginx.p12")
-            val keytool = Path.of(System.getProperty("java.home"), "bin", if (System.getProperty("os.name").startsWith("Windows")) "keytool.exe" else "keytool")
-            val process = ProcessBuilder(
-                keytool.toString(), "-genkeypair", "-alias", "nginx", "-keyalg", "RSA", "-keysize", "2048",
-                "-validity", "30", "-dname", "CN=localhost", "-ext",
-                "SAN=dns:localhost,dns:host.docker.internal,dns:host.testcontainers.internal,dns:localhost.emobix.co.uk,ip:127.0.0.1",
-                "-storetype", "PKCS12", "-keystore", keyStoreFile.toString(), "-storepass", String(TRUST_STORE_PASSWORD), "-noprompt",
-            ).redirectErrorStream(true).redirectOutput(target.resolve("keytool.log").toFile()).start()
+            val keytool =
+                Path.of(System.getProperty("java.home"), "bin", if (System.getProperty("os.name").startsWith("Windows")) "keytool.exe" else "keytool")
+            val process =
+                ProcessBuilder(
+                    keytool.toString(),
+                    "-genkeypair",
+                    "-alias",
+                    "nginx",
+                    "-keyalg",
+                    "RSA",
+                    "-keysize",
+                    "2048",
+                    "-validity",
+                    "30",
+                    "-dname",
+                    "CN=localhost",
+                    "-ext",
+                    "SAN=dns:localhost,dns:host.docker.internal,dns:host.testcontainers.internal,dns:localhost.emobix.co.uk,ip:127.0.0.1",
+                    "-storetype",
+                    "PKCS12",
+                    "-keystore",
+                    keyStoreFile.toString(),
+                    "-storepass",
+                    String(TRUST_STORE_PASSWORD),
+                    "-noprompt",
+                ).redirectErrorStream(true)
+                    .redirectOutput(target.resolve("keytool.log").toFile())
+                    .start()
             check(process.waitFor(60, TimeUnit.SECONDS) && process.exitValue() == 0) {
                 "Unable to generate OIDF runtime TLS material; see ${target.resolve("keytool.log")}"
             }
-            val keys = KeyStore.getInstance("PKCS12").apply {
-                Files.newInputStream(keyStoreFile).use { load(it, TRUST_STORE_PASSWORD) }
-            }
-            fun pem(type: String, bytes: ByteArray): String =
-                "-----BEGIN $type-----\n${Base64.getMimeEncoder(64, byteArrayOf(10)).encodeToString(bytes)}\n-----END $type-----\n"
+            val keys =
+                KeyStore.getInstance("PKCS12").apply {
+                    Files.newInputStream(keyStoreFile).use { load(it, TRUST_STORE_PASSWORD) }
+                }
+
+            fun pem(
+                type: String,
+                bytes: ByteArray,
+            ): String = "-----BEGIN $type-----\n${Base64.getMimeEncoder(64, byteArrayOf(10)).encodeToString(bytes)}\n-----END $type-----\n"
             Files.writeString(target.resolve("nginx.crt"), pem("CERTIFICATE", keys.getCertificate("nginx").encoded))
             Files.writeString(target.resolve("nginx.key"), pem("PRIVATE KEY", keys.getKey("nginx", TRUST_STORE_PASSWORD).encoded))
         }
@@ -371,13 +406,19 @@ internal fun oidfSuiteAdvertisedHost(configuredHost: String?): String {
 
 /** An explicit subnet lets a test run on hosts whose automatic Docker pools are exhausted. */
 internal fun oidfSuiteNetwork(subnet: String?): Network =
-    Network.builder()
+    Network
+        .builder()
         .apply {
             subnet?.trim()?.takeIf(String::isNotEmpty)?.let { selectedSubnet ->
                 createNetworkCmdModifier { command ->
                     command.withIpam(
-                        com.github.dockerjava.api.model.Network.Ipam()
-                            .withConfig(com.github.dockerjava.api.model.Network.Ipam.Config().withSubnet(selectedSubnet)),
+                        com.github.dockerjava.api.model.Network
+                            .Ipam()
+                            .withConfig(
+                                com.github.dockerjava.api.model.Network.Ipam
+                                    .Config()
+                                    .withSubnet(selectedSubnet),
+                            ),
                     )
                 }
             }

@@ -21,6 +21,7 @@ import com.sphereon.core.api.http.GenericHttpRequest
 import com.sphereon.core.api.http.GenericHttpResponse
 import com.sphereon.core.api.http.dispatch.HttpAdapterDispatcher
 import com.sphereon.core.api.http.dispatch.HttpAdapterRouteMatch
+import com.sphereon.core.api.session.CommandInvocationContext
 import dev.zacsweers.metro.createGraph
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
@@ -49,6 +50,8 @@ import io.ktor.utils.io.readAvailable
 import io.ktor.utils.io.readRemaining
 import io.ktor.utils.io.writeFully
 import kotlin.coroutines.cancellation.CancellationException
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.flow.flowOn
 
 /**
  * Per-call attribute holding the Layer 1 resolved base tenant id.
@@ -193,7 +196,7 @@ private suspend fun ApplicationCall.dispatchUniversal(config: UniversalHttpAdapt
         if (config.verboseLogging) {
             this.application.log.info("Dispatching: ${genericRequest.method} ${genericRequest.path}")
         }
-        val genericResponse = dispatcher.dispatch(genericRequest, selectedRoute)
+        val genericResponse = dispatchUniversalHttpRequest(dispatcher, genericRequest, selectedRoute)
         this.respondWithGenericResponse(genericResponse)
     } catch (cancelled: CancellationException) {
         throw cancelled
@@ -219,6 +222,23 @@ private suspend fun ApplicationCall.dispatchUniversal(config: UniversalHttpAdapt
             )
         }
     }
+}
+
+/** The network ingress owns a fresh boundary even when the handler has no standalone command. */
+internal suspend fun dispatchUniversalHttpRequest(
+    dispatcher: HttpAdapterDispatcher,
+    request: GenericHttpRequest,
+    route: HttpAdapterRouteMatch,
+): GenericHttpResponse = withContext(CommandInvocationContext.externalBoundary()) {
+    val response = dispatcher.dispatch(request, route)
+    val body = response.bodyContent
+    if (body is GenericHttpBody.TextStream) {
+        // A lazy body outlives dispatch. A declared command owns the stream; an inline handler's
+        // first command remains an external root when the body is collected later by Ktor.
+        val invocation = if (route.commandId == null) CommandInvocationContext.externalBoundary()
+            else CommandInvocationContext.externalCommand()
+        response.copy(bodyContent = GenericHttpBody.TextStream(body.flow.flowOn(invocation), body.charset))
+    } else response
 }
 
 /**

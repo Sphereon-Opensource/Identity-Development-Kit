@@ -102,7 +102,10 @@ internal class OidfWalletModuleExecutor(
                 walletTerminal = error.walletOutcome.terminal
                 walletSucceeded = error.walletOutcome.succeeded
                 walletErrorCode = error.walletOutcome.error?.code
-                walletErrorArguments = error.walletOutcome.error?.arguments.orEmpty()
+                walletErrorArguments =
+                    error.walletOutcome.error
+                        ?.arguments
+                        .orEmpty()
             }
             testId?.let { id ->
                 runCatching { suite.info(id) }
@@ -155,7 +158,6 @@ internal class OidfWalletModuleExecutor(
     }
 
     fun close() = harness.close()
-
 }
 
 /** Explicit pinned suite behavior: a negative-looking name alone never changes acceptance. */
@@ -166,11 +168,12 @@ internal object OidfWalletModuleOutcomePolicy {
             "fapi2-security-profile-final-client-test-ensure-authorization-response-with-invalid-state-fails",
         )
     private val fapiRejections =
-        stateRejections + setOf(
-            "fapi2-security-profile-final-client-test-discovery-issuer-mismatch",
-            "fapi2-security-profile-final-client-test-invalid-authorization-response-iss",
-            "fapi2-security-profile-final-client-test-remove-authorization-response-iss",
-        )
+        stateRejections +
+            setOf(
+                "fapi2-security-profile-final-client-test-discovery-issuer-mismatch",
+                "fapi2-security-profile-final-client-test-invalid-authorization-response-iss",
+                "fapi2-security-profile-final-client-test-remove-authorization-response-iss",
+            )
 
     // VP1FinalWalletTestPlan and the modules' rejection/error-response contracts. In particular,
     // multisigned-one-invalid-signature retains another valid signature and MUST complete.
@@ -208,25 +211,48 @@ internal object OidfWalletModuleOutcomePolicy {
             walletStatus == WalletInteractionStatus.AuthorizationRequired.name &&
             terminal == false && succeeded == false &&
             errorCode == WalletInteractionFailureCodes.OID4VCI_AUTHORIZATION_STATE_MISMATCH
-        ) return true
+        ) {
+            return true
+        }
         if (terminal != true || succeeded != false || errorCode.isNullOrBlank()) return false
         return when (moduleName) {
-            in vpRequestRejections -> errorCode == WalletInteractionFailureCodes.OID4VP_REQUEST_PARSE_FAILED ||
-                errorCode == WalletInteractionFailureCodes.OID4VP_REQUEST_RESOLVE_FAILED
-            in vpSelectionRejections -> errorCode == WalletInteractionFailureCodes.OID4VP_SELECTION_UNSATISFIABLE
-            else -> true
+            in vpRequestRejections -> {
+                errorCode == WalletInteractionFailureCodes.OID4VP_REQUEST_PARSE_FAILED ||
+                    errorCode == WalletInteractionFailureCodes.OID4VP_REQUEST_RESOLVE_FAILED
+            }
+
+            in vpSelectionRejections -> {
+                errorCode == WalletInteractionFailureCodes.OID4VP_SELECTION_UNSATISFIABLE
+            }
+
+            else -> {
+                true
+            }
         }
     }
 
-    fun passed(suiteStatus: String?, suiteResult: String?, walletOutcomeMatched: Boolean, executionError: String?): Boolean =
-        executionError == null && suiteStatus == "FINISHED" && suiteResult == "PASSED" && walletOutcomeMatched
+    fun passed(
+        suiteStatus: String?,
+        suiteResult: String?,
+        walletOutcomeMatched: Boolean,
+        executionError: String?,
+    ): Boolean = executionError == null && suiteStatus == "FINISHED" && suiteResult == "PASSED" && walletOutcomeMatched
 
-    fun executionDiagnostic(moduleName: String, suiteStatus: String?, walletOutcomeMatched: Boolean, originalError: String?): String? {
+    fun executionDiagnostic(
+        moduleName: String,
+        suiteStatus: String?,
+        walletOutcomeMatched: Boolean,
+        originalError: String?,
+    ): String? {
         val review = pendingReviewDiagnostic(moduleName, suiteStatus, walletOutcomeMatched)
         return listOfNotNull(originalError, review).takeIf { it.isNotEmpty() }?.joinToString("\n\n")
     }
 
-    fun pendingReviewDiagnostic(moduleName: String, suiteStatus: String?, walletOutcomeMatched: Boolean): String? =
+    fun pendingReviewDiagnostic(
+        moduleName: String,
+        suiteStatus: String?,
+        walletOutcomeMatched: Boolean,
+    ): String? =
         if (moduleName in vpRejections && walletOutcomeMatched && suiteStatus != "FINISHED") {
             "Wallet rejected the VP request, but the official suite is still $suiteStatus. " +
                 "Inspect the test's outstanding requirements: rejection without a protocol error response can require " +

@@ -12,8 +12,8 @@ import com.sphereon.oidf.conformance.OidfPlanModule
 import com.sphereon.oidf.conformance.OidfSuiteConfigPreprocessor
 import com.sphereon.wallet.interaction.WalletEntryPoint
 import com.sphereon.wallet.interaction.WalletInteractionAction
-import com.sphereon.wallet.interaction.WalletInteractionFlowKind
 import com.sphereon.wallet.interaction.WalletInteractionFailureCodes
+import com.sphereon.wallet.interaction.WalletInteractionFlowKind
 import com.sphereon.wallet.interaction.WalletInteractionInput
 import com.sphereon.wallet.interaction.WalletInteractionStatus
 import com.sphereon.wallet.interaction.protocol.oid4vci.Oid4vciInteractionLaunchAttributes
@@ -253,9 +253,10 @@ internal class OidfWalletConformanceHarness(
 
     private suspend fun bindProfileWalletUnit(bootstrap: HeadlessWalletRunnerBootstrap) {
         val profile = bootstrap.profileRegistry.get(profileId).getOrElse { error(it.toString()) }
-        walletUnitId = checkNotNull(profile.providerBinding?.descriptor?.walletUnitId) {
-            "OIDF fixture requires the selected profile's wallet-unit binding"
-        }
+        walletUnitId =
+            checkNotNull(profile.providerBinding?.descriptor?.walletUnitId) {
+                "OIDF fixture requires the selected profile's wallet-unit binding"
+            }
     }
 
     private suspend fun runWallet(
@@ -490,7 +491,10 @@ internal class OidfWalletConformanceHarness(
                 }
             }
             require(setupExecution.outcome.succeeded) {
-                val providerCode = setupExecution.outcome.error?.arguments?.get("providerErrorCode")
+                val providerCode =
+                    setupExecution.outcome.error
+                        ?.arguments
+                        ?.get("providerErrorCode")
                 "OIDF credential setup wallet flow failed: ${setupExecution.outcome.error?.code ?: setupExecution.outcome.status}" +
                     (providerCode?.let { "; providerErrorCode=${it.toString().take(160)}" } ?: "")
             }
@@ -655,17 +659,21 @@ private fun oidfVciPreAuthorizedSmokeVariant(): JsonObject =
 private fun oidfVciPresentationCredentialVariant(format: String): JsonObject =
     oidfVciPreAuthorizedSmokeVariant().let { base ->
         JsonObject(
-            base + mapOf(
-                "credential_format" to JsonPrimitive(if (format == "iso_mdl") "mdoc" else format),
-                "authorization_request_type" to JsonPrimitive("rar"),
-            ),
+            base +
+                mapOf(
+                    "credential_format" to JsonPrimitive(if (format == "iso_mdl") "mdoc" else format),
+                    "authorization_request_type" to JsonPrimitive("rar"),
+                ),
         )
     }
 
 private const val VCI_SETUP_PLAN = "oid4vci-1_0-wallet-test-plan"
 private const val VCI_SETUP_MODULE = "oid4vci-1_0-wallet-test-credential-issuance"
-internal fun oidfCredentialRequestEncryption(planVariant: Map<String, String>, moduleVariant: Map<String, String>): Boolean =
-    (planVariant + moduleVariant)["vci_credential_encryption"] == "encrypted"
+
+internal fun oidfCredentialRequestEncryption(
+    planVariant: Map<String, String>,
+    moduleVariant: Map<String, String>,
+): Boolean = (planVariant + moduleVariant)["vci_credential_encryption"] == "encrypted"
 
 internal fun oidfWalletInitiatedIssuance(
     planVariant: Map<String, String>,

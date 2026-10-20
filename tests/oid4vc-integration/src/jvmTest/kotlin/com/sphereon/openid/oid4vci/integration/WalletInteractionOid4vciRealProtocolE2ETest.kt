@@ -223,12 +223,14 @@ class WalletInteractionOid4vciRealProtocolE2ETest {
                     .preAuthorizedCode!!
                     .preAuthorizedCode
 
+            ctx.ensurePublicWalletClient(WALLET_CLIENT_ID)
             val adapter =
                 Oid4vciWalletInteractionProtocolAdapter(
                     holder = holder,
                     issuanceExecutor =
                         Oid4vciHolderIssuanceExecutor(
                             holder = holder,
+                            tokenEndpointProofsProvider = integrationPublicWalletTokenEndpointProofs(WALLET_CLIENT_ID),
                             optionsProvider =
                                 object : Oid4vciIssuanceOptionsProvider {
                                     override suspend fun options(

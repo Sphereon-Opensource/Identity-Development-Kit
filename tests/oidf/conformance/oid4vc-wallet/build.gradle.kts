@@ -45,7 +45,11 @@ dependencies {
 tasks.withType<Test>().configureEach {
     useJUnitPlatform()
     // Relative runtime stores must be isolated per execution, outside the source tree.
-    val runtimeRoot = layout.buildDirectory.dir("oidf-runtime").get().asFile
+    val runtimeRoot =
+        layout.buildDirectory
+            .dir("oidf-runtime")
+            .get()
+            .asFile
     val sutWorkspace = projectDir.absolutePath
     doFirst {
         runtimeRoot.mkdirs()

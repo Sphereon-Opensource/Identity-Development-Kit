@@ -78,23 +78,23 @@ class OidfWalletPlanConformanceTest {
             suite = existingSuite.client
             preprocessor = existingSuite.preprocessor
         } else {
-        val runningEnvironment =
-            OidfSuiteEnvironment.start(
-                lock = lock,
-                startupEvidenceDirectory = evidenceDirectory.resolve("containers-startup"),
-            )
-        environment = runningEnvironment
-        trustScope = runningEnvironment.installJvmTrustStore()
-        val runningSuite = runningEnvironment.client()
-        suite = runningSuite
-        val runningPreprocessor =
-            OidfSuiteConfigPreprocessor(
-                suiteDir = runningEnvironment.suiteSourceDirectory,
-                baseUrl = runningEnvironment.advertisedBaseUrl,
-                localBaseUrl = runningEnvironment.apiBaseUrl,
-                mtlsBaseUrl = runningEnvironment.advertisedMtlsBaseUrl,
-            )
-        preprocessor = runningPreprocessor
+            val runningEnvironment =
+                OidfSuiteEnvironment.start(
+                    lock = lock,
+                    startupEvidenceDirectory = evidenceDirectory.resolve("containers-startup"),
+                )
+            environment = runningEnvironment
+            trustScope = runningEnvironment.installJvmTrustStore()
+            val runningSuite = runningEnvironment.client()
+            suite = runningSuite
+            val runningPreprocessor =
+                OidfSuiteConfigPreprocessor(
+                    suiteDir = runningEnvironment.suiteSourceDirectory,
+                    baseUrl = runningEnvironment.advertisedBaseUrl,
+                    localBaseUrl = runningEnvironment.apiBaseUrl,
+                    mtlsBaseUrl = runningEnvironment.advertisedMtlsBaseUrl,
+                )
+            preprocessor = runningPreprocessor
         }
         val runningSuite = checkNotNull(suite)
         val runningPreprocessor = checkNotNull(preprocessor)

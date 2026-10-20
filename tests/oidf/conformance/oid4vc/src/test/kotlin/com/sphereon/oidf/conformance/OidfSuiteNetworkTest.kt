@@ -5,8 +5,8 @@
 package com.sphereon.oidf.conformance
 
 import com.github.dockerjava.api.command.CreateNetworkCmd
-import java.lang.reflect.Proxy
 import org.testcontainers.containers.Network
+import java.lang.reflect.Proxy
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
