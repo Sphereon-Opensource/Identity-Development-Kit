@@ -326,10 +326,7 @@ class GetIssuerMetadataEndpointCommandImpl(
 
         val signingKey = configProvider.signingKey()
 
-        if (wantsJwt) {
-            if (signingKey == null) {
-                return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Signed issuer metadata is not supported: no signing key configured"))
-            }
+        if (wantsJwt && signingKey != null) {
             return buildSignedMetadataCommand
                 .execute(
                     BuildSignedIssuerMetadataArgs(

@@ -171,6 +171,8 @@ data class CreateAuthorizationRequestArgs(
     /** Selects atomic durable creation; the original request must match on replay. */
     val operationFingerprint: String? = null,
     val templateRevision: String? = null,
+    /** Browser origins permitted to present a signed DC API request (OID4VP Appendix A.2). */
+    val expectedOrigins: List<String>? = null,
 )
 
 /**
@@ -318,6 +320,8 @@ data class ValidateAuthorizationResponseArgs(
     @kotlinx.serialization.Transient
     @JsExportIgnoreCompat
     val iso18013MdocGeneratedNonce: String? = null,
+    /** Server-resolved session key when DC API omits the wire `state` parameter. */
+    val sessionCorrelationId: String? = null,
 )
 
 /**
@@ -393,9 +397,9 @@ data class VerifyHolderBindingArgs(
     /** Purpose-tagged sources admitted for holder or credential-issuer authentication. */
     val trustedAuthentications: List<TrustedAuthenticationResolution> = emptyList(),
     /**
-     * mDoc-only: the verifier's OID4VP `client_id` (after §5.9.3 prefixing). Used with
-     * [responseUri] and [verifierEncryptionJwkThumbprint] to reconstruct the
-     * SessionTranscript per OID4VP 1.0 final §B.2.6. Ignored for SD-JWT and JWT VP.
+     * mDoc-only: the verifier's OID4VP `client_id` (after §5.9.3 prefixing). For
+     * direct-post this is combined with [responseUri]; for DC API the raw
+     * [callerOrigin] is used instead. Ignored for SD-JWT and JWT VP.
      */
     val clientId: String? = null,
     /**
@@ -443,6 +447,10 @@ data class VerifyHolderBindingArgs(
     @kotlinx.serialization.Transient
     @JsExportIgnoreCompat
     val iso18013MdocGeneratedNonce: String? = null,
+    /** Persisted OID4VP response mode; selects the DC API mdoc handover when applicable. */
+    val responseMode: String? = null,
+    /** Raw browser Origin validated against the signed request's expected_origins. */
+    val callerOrigin: String? = null,
 ) {
     init {
         require((credentialFormat == null) xor (presentationFormat == null)) {
@@ -673,6 +681,8 @@ data class HandleDirectPostResponseArgs(
     @kotlinx.serialization.Transient
     @JsExportIgnoreCompat
     val iso18013MdocGeneratedNonce: String? = null,
+    /** Server-resolved session key for DC API responses, which have no wire `state`. */
+    val sessionCorrelationId: String? = null,
 )
 
 /**

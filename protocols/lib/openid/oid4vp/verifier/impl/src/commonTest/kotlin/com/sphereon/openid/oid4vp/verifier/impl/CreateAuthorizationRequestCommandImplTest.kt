@@ -50,6 +50,34 @@ class CreateAuthorizationRequestCommandImplTest {
     private val command = createTestCommand(sessionStore)
 
     @Test
+    fun digitalCredentialsSignedRequestKeepsCorrelationOffTheWire() = runTest {
+        val result = command.createAuthorizationRequest(
+            CreateAuthorizationRequestArgs(
+                instanceId = "dc-api-verifier",
+                dcqlQuery = DcqlQuery(
+                    credentials = listOf(DcqlCredentialQuery(id = "identity", format = "dc+sd-jwt", meta = sdJwtVcMeta("urn:test:identity"))),
+                ),
+                clientId = "x509_hash:verifier-key",
+                responseMode = ResponseMode.DC_API_JWT,
+                expectedOrigins = listOf("https://verifier.example.com"),
+                nonce = "nonce12345678",
+                state = "private-correlation-id",
+            ),
+        )
+
+        assertIs<Ok<*>>(result)
+        val request = result.value.request
+        assertEquals("dc_api.jwt", request.responseMode)
+        assertNull(request.state)
+        assertNull(request.redirectUri)
+        assertNull(request.additionalParameters["response_uri"])
+        assertEquals("[\"https://verifier.example.com\"]", request.additionalParameters["expected_origins"].toString())
+        assertEquals("origin:https://verifier.example.com", holderBindingClientId(request))
+        assertEquals("private-correlation-id", result.value.sessionId)
+        assertNotNull(sessionStore.get("private-correlation-id").getOrNull())
+    }
+
+    @Test
     fun `test create basic authorization request`() =
         runTest {
             // Given: Basic DCQL query requesting identity credential

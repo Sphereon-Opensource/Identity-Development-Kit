@@ -39,6 +39,8 @@ import com.sphereon.mdoc.data.MdocValidations
 import com.sphereon.mdoc.data.device.DeviceResponseCborCodec
 import com.sphereon.mdoc.data.device.DocumentResponseEncryptionProviderResolver
 import com.sphereon.mdoc.data.device.ZkProofProviderResolver
+import com.sphereon.mdoc.oid4vp.Oid4vpDeviceAuthenticationContext
+import com.sphereon.mdoc.oid4vp.toSessionTranscript
 import com.sphereon.mdoc.transfer.reader.SessionTranscript
 import com.sphereon.openid.oid4vp.common.CredentialFormat
 import com.sphereon.openid.oid4vc.common.vcdm.VcdmClassifier
@@ -185,6 +187,8 @@ class VerifyHolderBindingCommandImpl(
                     expectedNonce = expectedNonce,
                     clientId = processedArgs.clientId,
                     responseUri = processedArgs.responseUri,
+                    responseMode = processedArgs.responseMode,
+                    callerOrigin = processedArgs.callerOrigin,
                     expectedMdocDocumentType = processedArgs.expectedMdocDocumentType,
                     verifierEncryptionJwkThumbprint = processedArgs.verifierEncryptionJwkThumbprint,
                     expectedZkRequests = processedArgs.mdocZkRequests,
@@ -432,10 +436,9 @@ class VerifyHolderBindingCommandImpl(
      * 2. For each `Document`:
      *    - Run [MdocValidations.fromDocument] (cert chain, IssuerAuth COSE_Sign1, validity
      *      window, docType match, IssuerSignedItem digest match against MSO `valueDigests`).
-     *    - Reconstruct the OID4VP `SessionTranscript` from the verifier's `client_id`,
-     *      `nonce`, encryption-key JWK thumbprint, and `response_uri` per OID4VP 1.0 final
-     *      §B.2.6 (`["OpenID4VPHandover", sha256(handoverInfoBytes)]` envelope around
-     *      `[client_id, nonce, JwkThumbprint OR null, response_uri]`).
+     *    - Reconstruct the OID4VP `SessionTranscript` using the existing mdoc library:
+     *      `OpenID4VPHandover` for direct-post, or `OpenID4VPDCAPIHandover` for DC API
+     *      with the raw browser Origin, nonce, and encryption-key JWK thumbprint.
      *    - Verify the `DeviceAuth` COSE_Sign1 over that transcript using the device public
      *      key from the MSO.
      * 3. Aggregate per-document results — any critical=true failure marks the whole binding
@@ -451,6 +454,8 @@ class VerifyHolderBindingCommandImpl(
         expectedNonce: String,
         clientId: String?,
         responseUri: String?,
+        responseMode: String?,
+        callerOrigin: String?,
         expectedMdocDocumentType: String?,
         verifierEncryptionJwkThumbprint: ByteArray?,
         expectedZkRequests: List<com.sphereon.mdoc.data.device.ZkRequest>,
@@ -462,7 +467,9 @@ class VerifyHolderBindingCommandImpl(
     ): IdkResult<HolderBindingResult, IdkError> {
         log.debug("Verifying mDoc holder binding")
 
-        if (clientId.isNullOrBlank() || responseUri.isNullOrBlank()) {
+        val dcApiResponseMode = responseMode?.takeIf { it == "dc_api" || it == "dc_api.jwt" }
+        val digitalCredentialsApi = dcApiResponseMode != null
+        if (clientId.isNullOrBlank()) {
             return Ok(
                 HolderBindingResult(
                     verified = false,
@@ -473,11 +480,13 @@ class VerifyHolderBindingCommandImpl(
                     sdHashValid = null,
                     errors =
                         listOf(
-                            "mDoc holder-binding verification requires the OID4VP context " +
-                                "(clientId, responseUri). One or more were missing.",
+                            "mDoc holder-binding verification requires the OID4VP context (clientId).",
                         ),
                 ),
             )
+        }
+        if (!digitalCredentialsApi && responseUri.isNullOrBlank()) {
+            return Ok(mdocFailure("mDoc holder-binding verification requires the OID4VP context (responseUri)."))
         }
 
         // The presentation is base64url(CBOR(DeviceResponse)) — see ISO 18013-7 §B.3.
@@ -503,10 +512,33 @@ class VerifyHolderBindingCommandImpl(
         }
 
         val expectedSessionTranscript =
-            if (iso18013MdocGeneratedNonce != null) {
+            if (dcApiResponseMode != null) {
+                val origin = callerOrigin
+                if (origin.isNullOrBlank() || clientId != "origin:$origin") {
+                    return Ok(mdocFailure("DC API mDoc verification requires the validated browser origin matching client_id."))
+                }
+                if (iso18013MdocGeneratedNonce != null) {
+                    return Ok(mdocFailure("DC API mDoc verification cannot use the ISO Annex B mdoc-generated nonce."))
+                }
+                try {
+                    Oid4vpDeviceAuthenticationContext(
+                        responseMode = dcApiResponseMode,
+                        clientId = clientId,
+                        authorizationRequestNonce = expectedNonce,
+                        responseUri = responseUri,
+                        callerOrigin = origin,
+                        verifierEncryptionJwkThumbprint = verifierEncryptionJwkThumbprint,
+                        iso18013MdocGeneratedNonce = iso18013MdocGeneratedNonce,
+                    ).toSessionTranscript()
+                } catch (expected: IllegalArgumentException) {
+                    return Ok(mdocFailure(expected.message ?: "Invalid DC API mDoc handover context."))
+                } catch (expected: IllegalStateException) {
+                    return Ok(mdocFailure(expected.message ?: "Invalid DC API mDoc handover context."))
+                }
+            } else if (iso18013MdocGeneratedNonce != null) {
                 SessionTranscript.fromIso18013Oid4vp(
                     clientId = clientId,
-                    responseUri = responseUri,
+                    responseUri = responseUri ?: return Ok(mdocFailure("Missing OID4VP responseUri.")),
                     mdocGeneratedNonce = iso18013MdocGeneratedNonce,
                     nonce = expectedNonce,
                 )
@@ -515,7 +547,7 @@ class VerifyHolderBindingCommandImpl(
                     clientId = clientId,
                     nonce = expectedNonce,
                     jwkThumbprint = verifierEncryptionJwkThumbprint,
-                    responseUri = responseUri,
+                    responseUri = responseUri ?: return Ok(mdocFailure("Missing OID4VP responseUri.")),
                 )
             }
 

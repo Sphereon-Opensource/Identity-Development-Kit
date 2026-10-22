@@ -328,6 +328,28 @@ class Oid4vciIssuerProtocolHttpAdapterTest {
         }
 
     @Test
+    fun metadataEndpointFallsBackToJsonWhenSignedMetadataIsRequestedWithoutSigningKey() =
+        runTest {
+            configureMetadataSuccess()
+
+            val request =
+                GenericHttpRequest(
+                    method = "GET",
+                    path = "/.well-known/openid-credential-issuer",
+                    headers = mapOf("host" to "issuer.example.com", "Accept" to "application/jwt"),
+                )
+
+            val response = metadataAdapter.dispatchForTest(request, metadataRegistry)
+
+            assertEquals(200, response.statusCode)
+            assertEquals("application/json", response.headers["Content-Type"])
+            val body = json.parseToJsonElement(assertNotNull(response.body)).jsonObject
+            assertEquals("https://issuer.example.com", body["credential_issuer"]?.jsonPrimitive?.content)
+            assertNull(body["signed_metadata"])
+            assertNull(fakeBuildSignedMetadata.lastArgs)
+        }
+
+    @Test
     fun pathBearingMetadataEndpointReturns200WithoutTenantResolution() =
         runTest {
             val pathConfigProvider =

@@ -59,6 +59,7 @@ import com.sphereon.mdoc.data.device.ZkSystemSpec
 import com.sphereon.mdoc.data.mso.MobileSecurityObject
 import com.sphereon.mdoc.DecodedMdoc
 import com.sphereon.mdoc.transfer.reader.SessionTranscript
+import com.sphereon.mdoc.transfer.reader.OID4VPDCAPIHandover
 import com.sphereon.openid.oid4vp.verifier.VerifyHolderBindingArgs
 import com.sphereon.openid.oid4vc.common.CredentialFormat
 import com.sphereon.openid.oid4vc.common.PresentationFormat
@@ -304,6 +305,65 @@ class VerifyHolderBindingCommandImplTest {
     // ============================================================================
     // mDoc (DeviceAuth) Tests
     // ============================================================================
+
+    @Test
+    fun mdocDcApiJwtUsesRawOriginAndEncryptionKeyInHandover() = runTest {
+        val thumbprint = ByteArray(32) { it.toByte() }
+        var transcript: SessionTranscript? = null
+        val captureDeviceAuth = object : DeviceAuthValidation by AlwaysPassDeviceAuthValidation {
+            override suspend fun verifyDeviceAuth(
+                document: Document,
+                expectedSessionTranscript: SessionTranscript,
+            ): VerifySignatureResultType<CoseKeyType> {
+                transcript = expectedSessionTranscript
+                return AlwaysPassDeviceAuthValidation.verifyDeviceAuth(document, expectedSessionTranscript)
+            }
+        }
+        val command = commandForMdocResponse(
+            DeviceResponse(documents = arrayOf(testDocument(MDL_DOC_TYPE)), original = null),
+            deviceAuthValidation = captureDeviceAuth,
+        )
+        val args = mdocArgs().copy(
+            expectedAudience = "origin:https://verifier.example.com",
+            clientId = "origin:https://verifier.example.com",
+            responseUri = null,
+            responseMode = "dc_api.jwt",
+            callerOrigin = "https://verifier.example.com",
+            verifierEncryptionJwkThumbprint = thumbprint,
+        )
+
+        val result = command.execute(args)
+
+        assertIs<Ok<*>>(result)
+        assertTrue(result.value.verified)
+        val handover = assertIs<OID4VPDCAPIHandover>(transcript?.handover)
+        assertEquals("https://verifier.example.com", handover.origin)
+        assertEquals("nonce456", handover.nonce)
+        assertTrue(handover.jwkThumbprint?.contentEquals(thumbprint) == true)
+    }
+
+    @Test
+    fun mdocDcApiJwtFailsClosedWithoutOriginOrEncryptionKey() = runTest {
+        val command = commandForMdocResponse(DeviceResponse(documents = arrayOf(testDocument(MDL_DOC_TYPE)), original = null))
+        val args = mdocArgs().copy(
+            expectedAudience = "origin:https://verifier.example.com",
+            clientId = "origin:https://verifier.example.com",
+            responseUri = null,
+            responseMode = "dc_api.jwt",
+            callerOrigin = "https://verifier.example.com",
+            verifierEncryptionJwkThumbprint = ByteArray(32),
+        )
+
+        val missingOrigin = command.execute(args.copy(callerOrigin = null))
+        val missingKey = command.execute(args.copy(verifierEncryptionJwkThumbprint = null))
+
+        assertIs<Ok<*>>(missingOrigin)
+        assertFalse(missingOrigin.value.verified)
+        assertTrue(missingOrigin.value.errors.any { it.contains("validated browser origin") })
+        assertIs<Ok<*>>(missingKey)
+        assertFalse(missingKey.value.verified)
+        assertTrue(missingKey.value.errors.any { it.contains("JWK thumbprint") })
+    }
 
     @Test
     fun `mDoc holder binding rejects bogus presentation when OID4VP context is supplied`() =
@@ -1252,12 +1312,15 @@ class VerifyHolderBindingCommandImplTest {
             }
         }
 
-    private fun commandForMdocResponse(response: DeviceResponse): VerifyHolderBindingCommandImpl =
+    private fun commandForMdocResponse(
+        response: DeviceResponse,
+        deviceAuthValidation: DeviceAuthValidation = AlwaysPassDeviceAuthValidation,
+    ): VerifyHolderBindingCommandImpl =
         createTestCommand(
             verifySdJwtCommand = MockVerifySdJwtCommand(true),
             verificationShouldSucceed = true,
             mdocValidations = AlwaysPassMdocValidations,
-            deviceAuthValidation = AlwaysPassDeviceAuthValidation,
+            deviceAuthValidation = deviceAuthValidation,
             deviceResponseCborCodec =
                 object : DeviceResponseCborCodec {
                     override fun encode(value: DeviceResponse): IdkResult<ByteArray, IdkError> = Ok(byteArrayOf(0x01))

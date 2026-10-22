@@ -52,6 +52,7 @@ import com.sphereon.mdoc.data.device.DeviceResponseCborCodec
 import com.sphereon.mdoc.data.mso.MobileSecurityObjectCborCodec
 import com.sphereon.oauth2.common.model.AuthorizationRequest
 import com.sphereon.openid.oid4vp.common.CredentialFormat
+import com.sphereon.openid.oid4vp.common.ResponseMode
 import com.sphereon.openid.oid4vp.dcql.DcqlCredentialQuery
 import com.sphereon.openid.oid4vp.common.clientMetadata
 import com.sphereon.openid.oid4vp.common.responseUri
@@ -118,6 +119,17 @@ import kotlin.time.Clock
 import kotlin.time.Instant
 
 import dev.zacsweers.metro.ExposeImplBinding
+
+/** Appendix A.4 binds a DC API presentation to the browser Origin, even for a signed request. */
+internal fun holderBindingClientId(request: AuthorizationRequest): String? {
+    if (request.responseMode != ResponseMode.DC_API_JWT.value) return request.clientId
+    val origins = request.additionalParameters?.get("expected_origins") as? JsonArray ?: return null
+    if (origins.size != 1) return null
+    val origin = (origins.single() as? JsonPrimitive)?.contentOrNull ?: return null
+    if (!origin.matches(Regex("^https?://[^/?#@\\s]+$"))) return null
+    return "origin:$origin"
+}
+
 /**
  * Implementation of ValidateAuthorizationResponseCommand for OpenID4VP RP (Verifier).
  *
@@ -187,7 +199,7 @@ class ValidateAuthorizationResponseCommandImpl(
         applyDuring: (ValidateAuthorizationResponseArgs) -> ValidateAuthorizationResponseArgs,
     ): IdkResult<ValidationResult, IdkError> {
         val correlationId =
-            args.originalRequest.state?.takeIf(String::isNotBlank)
+            (args.sessionCorrelationId ?: args.originalRequest.state)?.takeIf(String::isNotBlank)
                 ?: return Err(
                     IdkError.ILLEGAL_ARGUMENT_ERROR(
                         message = "OID4VP authorization response has no session correlation state",
@@ -220,7 +232,7 @@ class ValidateAuthorizationResponseCommandImpl(
                 if (authorization.isErr) businessAuthorizationError = authorization.error
             }
         }
-        val correlation = args.originalRequest.state
+        val correlation = args.sessionCorrelationId ?: args.originalRequest.state
         if (!correlation.isNullOrBlank()) {
             val previousSession = pendingHistorySession
             pendingHistorySession = authorizationSessionStore.storeValidationResultDeferred(
@@ -336,6 +348,7 @@ class ValidateAuthorizationResponseCommandImpl(
         matchingQuery: DcqlCredentialQuery,
         processedArgs: ValidateAuthorizationResponseArgs,
         bindingRequest: AuthorizationRequest,
+        holderBindingClientId: String,
         bindingNonce: String,
         effectiveVerifierId: String?,
         effectiveDcqlQueryId: String?,
@@ -382,7 +395,7 @@ class ValidateAuthorizationResponseCommandImpl(
                         ProofPurpose.AUTHENTICATION
                     },
                     expectedController = declaredDataIntegrityController,
-                    expectedDomain = if (documentKind == VcdmDocumentKind.PRESENTATION) bindingRequest.clientId else null,
+                    expectedDomain = if (documentKind == VcdmDocumentKind.PRESENTATION) holderBindingClientId else null,
                     expectedChallenge = if (documentKind == VcdmDocumentKind.PRESENTATION) bindingNonce else null,
                     requireDomainAndChallenge = documentKind == VcdmDocumentKind.PRESENTATION,
                     verificationMethodResolutionPolicy = processedArgs.verificationMethodResolutionPolicy,
@@ -429,9 +442,9 @@ class ValidateAuthorizationResponseCommandImpl(
                 val childFailure = verifyDataIntegrityPresentationChildren(
                     document = verifiedDocument,
                     queryId = queryId,
-                    expectedDomain = bindingRequest.clientId,
+                    expectedDomain = holderBindingClientId,
                     expectedChallenge = bindingNonce,
-                    expectedAudience = bindingRequest.clientId,
+                    expectedAudience = holderBindingClientId,
                     verifierEncryptionJwkThumbprint = processedArgs.verifierEncryptionJwkThumbprint,
                     verifierId = effectiveVerifierId,
                     dcqlQueryId = effectiveDcqlQueryId,
@@ -650,11 +663,13 @@ class ValidateAuthorizationResponseCommandImpl(
                     credentialFormat = if (compactClassification?.document?.kind == VcdmDocumentKind.PRESENTATION) null else detectedCredentialFormat,
                     presentationFormat = compactClassification?.presentationFormat,
                     expectedNonce = bindingNonce,
-                    expectedAudience = bindingRequest.clientId,
+                    expectedAudience = holderBindingClientId,
                     requireCryptographicHolderBinding = matchingQuery.require_cryptographic_holder_binding,
                     trustedAuthentications = processedArgs.trustedAuthentications,
-                    clientId = bindingRequest.clientId,
+                    clientId = holderBindingClientId,
                     responseUri = bindingRequest.responseUri,
+                    responseMode = bindingRequest.responseMode,
+                    callerOrigin = holderBindingClientId.takeIf { it.startsWith("origin:") }?.removePrefix("origin:"),
                     expectedMdocDocumentType =
                         (matchingQuery.meta["doctype_value"] as? JsonPrimitive)
                             ?.takeIf { it.isString }
@@ -738,7 +753,7 @@ class ValidateAuthorizationResponseCommandImpl(
                     classification = compactClassification,
                     queryId = queryId,
                     expectedNonce = bindingNonce,
-                    expectedAudience = bindingRequest.clientId,
+                    expectedAudience = holderBindingClientId,
                     verifierEncryptionJwkThumbprint = processedArgs.verifierEncryptionJwkThumbprint,
                     verifierId = effectiveVerifierId,
                     dcqlQueryId = effectiveDcqlQueryId,
@@ -1015,6 +1030,11 @@ class ValidateAuthorizationResponseCommandImpl(
         val persistedRequest = authorizationSession.authorizationRequest
         val bindingRequest = persistedRequest
         val bindingNonce = persistedRequest.nonce ?: callerExpectedNonce
+        val holderBindingClientId = holderBindingClientId(bindingRequest)
+        if (holderBindingClientId == null) {
+            errors.add("Digital Credentials request has no single valid expected browser origin")
+            return Ok(ValidationResult(valid = false, errors = errors))
+        }
         if (persistedRequest.clientId != originalRequest.clientId) {
             errors.add("Authorization request client_id does not match the persisted session")
         }
@@ -1087,6 +1107,7 @@ class ValidateAuthorizationResponseCommandImpl(
                     matchingQuery = matchingQuery,
                     processedArgs = effectiveArgs,
                     bindingRequest = bindingRequest,
+                    holderBindingClientId = holderBindingClientId,
                     bindingNonce = bindingNonce ?: processedArgs.expectedNonce,
                     effectiveVerifierId = effectiveVerifierId,
                     effectiveDcqlQueryId = effectiveDcqlQueryId,

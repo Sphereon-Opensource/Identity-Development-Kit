@@ -58,6 +58,7 @@ import com.sphereon.openid.oid4vp.verifier.config.Oid4vpVerifierInstanceIdProvid
 import com.sphereon.openid.oid4vp.verifier.config.ResponseEncryptionKeyConfig
 import com.sphereon.openid.oid4vp.verifier.config.currentInstanceIdOrDefault
 import com.sphereon.openid.oid4vp.verifier.requesturi.RequestObjectSigningConfig
+import com.sphereon.openid.oid4vp.verifier.requesturi.RequestUriHandler
 import com.sphereon.openid.oid4vp.verifier.store.AuthorizationSessionStore
 import com.sphereon.openid.oid4vp.verifier.store.ClientMetadataConfigurationStore
 import com.sphereon.openid.oid4vp.universal.impl.event.putSessionEventIdentity
@@ -132,6 +133,7 @@ class CreateAuthRequestServiceCommandImpl(
     private val qrCodeService: QrCodeService,
     private val configProvider: UniversalOid4vpConfigProvider,
     private val requestObjectSigningConfig: RequestObjectSigningConfig,
+    private val requestUriHandler: RequestUriHandler,
     private val responseEncryptionKeyConfig: ResponseEncryptionKeyConfig,
     private val kms: KeyManagerService,
 ) : TypedServiceCommandAdapter<CreateAuthorizationRequestInput, CreateAuthorizationRequestOutput, IdkError>(
@@ -228,7 +230,8 @@ class CreateAuthRequestServiceCommandImpl(
         val derivedFromSigner =
             if (
                 requestObjectSigningConfig.enabled &&
-                input.authorizationRequestMethod == AuthorizationRequestMethod.REQUEST_URI
+                (input.authorizationRequestMethod == AuthorizationRequestMethod.REQUEST_URI ||
+                    input.authorizationRequestMethod == AuthorizationRequestMethod.DC_API)
             ) {
                 requestObjectSigningConfig.resolveSignerBinding(input.clientIdScheme)?.clientId
             } else {
@@ -303,6 +306,24 @@ class CreateAuthRequestServiceCommandImpl(
                         ),
                     )
             } ?: ResponseMode.DIRECT_POST
+        val digitalCredentialsRequest = input.authorizationRequestMethod == AuthorizationRequestMethod.DC_API
+        if (digitalCredentialsRequest != (resolvedResponseMode == ResponseMode.DC_API_JWT)) {
+            return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "dc_api authorization_request_method requires response_mode dc_api.jwt, and dc_api.jwt requires dc_api invocation"))
+        }
+        if (digitalCredentialsRequest) {
+            if (!requestObjectSigningConfig.enabled) {
+                return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Signed DC API requests require configured request-object signing"))
+            }
+            val expectedOrigins = input.expectedOrigins
+            if (expectedOrigins == null || expectedOrigins.size != 1 || expectedOrigins.any { !it.matches(Regex("^https?://[^/?#@\\s]+$")) }) {
+                return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Signed dc_api.jwt requests require exactly one browser origin in expected_origins"))
+            }
+            if (!input.requestUriMethod.isNullOrBlank() || input.directPostResponseRedirectUri != null) {
+                return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "DC API requests cannot use request_uri_method or direct_post_response_redirect_uri"))
+            }
+        } else if (input.expectedOrigins != null) {
+            return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "expected_origins is only valid for DC API requests"))
+        }
         // For direct_post.jwt the wallet encrypts the response with the verifier's public key. That
         // key belongs to the verifier instance and is provisioned durably out of band: the server
         // resolves its name from its own binding for the active tenant and instance, publishes the
@@ -310,7 +331,7 @@ class CreateAuthRequestServiceCommandImpl(
         // response arrives. Nothing is minted on this path, and no alias or provider id from
         // configuration or from the request takes part in the selection.
         val jarmKey: JarmEncryptionKey? =
-            if (resolvedResponseMode == ResponseMode.DIRECT_POST_JWT) {
+            if (resolvedResponseMode == ResponseMode.DIRECT_POST_JWT || resolvedResponseMode == ResponseMode.DC_API_JWT) {
                 val encryptionKeyName =
                     responseEncryptionKeyConfig.resolveEncryptionKeyName(instanceId)
                         ?: return Err(
@@ -387,6 +408,7 @@ class CreateAuthRequestServiceCommandImpl(
                 clientId = clientId,
                 responseUri = responseUri,
                 responseMode = resolvedResponseMode,
+                expectedOrigins = input.expectedOrigins,
                 nonce = nonce,
                 // Use the pre-generated correlationId. CreateAuthorizationRequestCommandImpl
                 // copies state → effectiveState (the AuthorizationSession.correlationId), so
@@ -510,7 +532,7 @@ class CreateAuthRequestServiceCommandImpl(
                 )
             deeplinkPrefix = null
         }
-        if (input.authorizationRequestMethod == AuthorizationRequestMethod.URL_QUERY && !input.requestUriMethod.isNullOrBlank()) {
+        if (input.authorizationRequestMethod != AuthorizationRequestMethod.REQUEST_URI && !input.requestUriMethod.isNullOrBlank()) {
             return Err(
                 IdkError.ILLEGAL_ARGUMENT_ERROR(
                     message = "request_uri_method is only valid when authorization_request_method is request_uri",
@@ -518,7 +540,7 @@ class CreateAuthRequestServiceCommandImpl(
             )
         }
         val requestUri =
-            oid4vpVerifierService
+            if (digitalCredentialsRequest) null else oid4vpVerifierService
                 .buildAuthorizationRequestUri(
                     BuildAuthorizationRequestUriArgs(
                         request = created.request,
@@ -540,10 +562,18 @@ class CreateAuthRequestServiceCommandImpl(
                     )
                 }.value
 
+        // A DC API verifier passes the signed Request Object directly to the browser API.
+        // Reuse the same signer/binding that serves request_uri so x5c/kid identity cannot drift.
+        val digitalCredentialsJar =
+            if (digitalCredentialsRequest) {
+                requestUriHandler.handleGet(buildRequestUri(sessionId, input.requestUriBase))
+                    .getOrElse { return Err(it) }.signedJar
+            } else null
+
         // 10. Generate QR code as data URI (only if qr_code options provided)
         val qrUri =
-            input.qrCodeOptions?.let { qrOptions ->
-                qrCodeService.generateDataUri(requestUri, qrOptions)
+            input.qrCodeOptions?.takeUnless { digitalCredentialsRequest }?.let { qrOptions ->
+                qrCodeService.generateDataUri(requireNotNull(requestUri), qrOptions)
             }
 
         // 11. Emit SESSION_CREATED event
@@ -555,6 +585,7 @@ class CreateAuthRequestServiceCommandImpl(
                 sessionId = persistedSession.sessionId,
                 correlationId = sessionId,
                 queryId = input.queryId,
+                request = digitalCredentialsJar,
                 requestUri = requestUri,
                 statusUri = "/oid4vp/backend/auth/requests/$sessionId",
                 qrUri = qrUri,

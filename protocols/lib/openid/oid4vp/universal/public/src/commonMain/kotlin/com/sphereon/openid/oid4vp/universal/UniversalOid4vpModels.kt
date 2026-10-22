@@ -53,6 +53,10 @@ enum class AuthorizationRequestMethod {
 
     @SerialName("request_uri")
     REQUEST_URI,
+
+    /** Return a signed Request Object for browser/native Digital Credentials API invocation. */
+    @SerialName("dc_api")
+    DC_API,
 }
 
 /**
@@ -142,10 +146,13 @@ data class CreateAuthorizationRequestInput(
     @SerialName("response_type")
     val responseType: String? = null,
     /**
-     * Response mode: "direct_post" or "direct_post.jwt". Default: "direct_post".
+     * Response mode: "direct_post", "direct_post.jwt", or "dc_api.jwt". Default: "direct_post".
      */
     @SerialName("response_mode")
     val responseMode: String? = null,
+    /** Verifier browser origins in a signed DC API Request Object (OID4VP Appendix A.2). */
+    @SerialName("expected_origins")
+    val expectedOrigins: List<String>? = null,
     /**
      * Base64url-encoded JSON objects with transaction details.
      */
