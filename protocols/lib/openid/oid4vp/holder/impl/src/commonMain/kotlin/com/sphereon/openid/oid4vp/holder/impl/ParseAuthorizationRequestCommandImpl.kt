@@ -337,17 +337,10 @@ class ParseAuthorizationRequestCommandImpl(
         val parsed =
             when (request.protocol) {
                 DIGITAL_CREDENTIAL_PROTOCOL_UNSIGNED -> {
-                    if ("client_id" in request.data || "expected_origins" in request.data) {
-                        return Err(
-                            IdkError.ILLEGAL_ARGUMENT_ERROR(
-                                message = "Unsigned Digital Credentials requests must derive client_id from the browser origin",
-                            ),
-                        )
-                    }
                     parseAuthorizationRequestUri(
                         requestUri =
                             authorizationRequestUri(
-                                request.data + ("client_id" to JsonPrimitive("origin:${request.origin}")),
+                                unsignedDigitalCredentialsRequestData(request.data, request.origin),
                             ),
                         walletConfig = walletConfig,
                     ).getOrElse { return Err(it) }
@@ -791,6 +784,17 @@ class ParseAuthorizationRequestCommandImpl(
         return Ok(resolved.keyInfo)
     }
 }
+
+/**
+ * OID4VP 1.0 Appendix A.2 requires wallets to ignore `client_id` and `expected_origins`
+ * in unsigned DC API requests. The authenticated platform origin supplies the response
+ * identity, so a caller-provided client_id must never override it.
+ */
+internal fun unsignedDigitalCredentialsRequestData(data: JsonObject, origin: String): JsonObject =
+    JsonObject(
+        data.filterKeys { it != "client_id" && it != "expected_origins" } +
+            ("client_id" to JsonPrimitive("origin:$origin")),
+    )
 
 internal const val DIGITAL_CREDENTIAL_ORIGIN_PARAMETER: String = "__idk_dc_api_origin"
 internal const val DIGITAL_CREDENTIAL_PROTOCOL_PARAMETER: String = "__idk_dc_api_protocol"

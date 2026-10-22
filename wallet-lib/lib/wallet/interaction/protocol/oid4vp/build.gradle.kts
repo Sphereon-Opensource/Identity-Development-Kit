@@ -46,6 +46,8 @@ kotlin {
                 api(projects.libWalletInteractionPublic)
                 api(projects.libWalletPublic)
                 api(projects.libWalletWscaPublic)
+                api(if (rootProject.findProperty("idk.consumeLowerAsArtifacts") == "true") "com.sphereon.idk:lib-credential-claims-mapper-public:$version" else project(":lib-credential-claims-mapper-public"))
+                implementation(if (rootProject.findProperty("idk.consumeLowerAsArtifacts") == "true") "com.sphereon.idk:lib-credential-claims-mapper-impl:$version" else project(":lib-credential-claims-mapper-impl"))
                 api(if (rootProject.findProperty("idk.consumeLowerAsArtifacts") == "true") "com.sphereon.idk:lib-crypto-data-integrity-proof-public:$version" else project(":lib-crypto-data-integrity-proof-public"))
                 // Production Data Integrity holder signing uses the concrete cryptosuites and
                 // JsonLdProcessor (see Oid4vpDataIntegrityCryptosuiteSigner).
