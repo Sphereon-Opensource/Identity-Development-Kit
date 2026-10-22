@@ -122,7 +122,9 @@ import dev.zacsweers.metro.ExposeImplBinding
 
 /** Appendix A.4 binds a DC API presentation to the browser Origin, even for a signed request. */
 internal fun holderBindingClientId(request: AuthorizationRequest): String? {
-    if (request.responseMode != ResponseMode.DC_API_JWT.value) return request.clientId
+    if (request.responseMode != ResponseMode.DC_API.value && request.responseMode != ResponseMode.DC_API_JWT.value) {
+        return request.clientId
+    }
     val origins = request.additionalParameters?.get("expected_origins") as? JsonArray ?: return null
     if (origins.size != 1) return null
     val origin = (origins.single() as? JsonPrimitive)?.contentOrNull ?: return null

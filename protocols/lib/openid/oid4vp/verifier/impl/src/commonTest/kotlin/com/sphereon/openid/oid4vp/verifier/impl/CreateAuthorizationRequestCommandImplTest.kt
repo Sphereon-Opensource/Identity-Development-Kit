@@ -73,6 +73,18 @@ class CreateAuthorizationRequestCommandImplTest {
         assertNull(request.additionalParameters["response_uri"])
         assertEquals("[\"https://verifier.example.com\"]", request.additionalParameters["expected_origins"].toString())
         assertEquals("origin:https://verifier.example.com", holderBindingClientId(request))
+        assertEquals(
+            "origin:https://verifier.example.com",
+            holderBindingClientId(request.copy(responseMode = ResponseMode.DC_API.value)),
+        )
+        assertNull(
+            holderBindingClientId(
+                request.copy(
+                    responseMode = ResponseMode.DC_API.value,
+                    additionalParameters = request.additionalParameters - "expected_origins",
+                ),
+            ),
+        )
         assertEquals("private-correlation-id", result.value.sessionId)
         assertNotNull(sessionStore.get("private-correlation-id").getOrNull())
     }
