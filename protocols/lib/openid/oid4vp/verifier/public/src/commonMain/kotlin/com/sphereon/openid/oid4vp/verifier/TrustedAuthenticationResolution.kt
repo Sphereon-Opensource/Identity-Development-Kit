@@ -39,8 +39,14 @@ data class TrustedAuthenticationResolution(
     val trustedJwks: JsonObject? = null,
     /** Keeps holder authentication separate from credential-issuer authentication policy. */
     val purpose: TrustedAuthenticationPurpose = TrustedAuthenticationPurpose.HOLDER,
+    /** Admitted mdoc types for this material; null is unrestricted, an empty set permits none. */
+    val documentTypes: Set<String>? = null,
+    /** Authenticated certificate profile identifiers retained from the admission policy. */
+    val certificateProfiles: Set<String> = emptySet(),
 ) {
     init {
+        require(documentTypes == null || documentTypes.all { it.isNotBlank() }) { "trusted_authentication_document_type_blank" }
+        require(certificateProfiles.all { it.isNotBlank() }) { "trusted_authentication_certificate_profile_blank" }
         require(controller.isNotBlank()) { "trusted_authentication_resolution_controller_blank" }
         require((identifier != null) xor (trustedJwks != null)) {
             "trusted_authentication_resolution_requires_exactly_one_source"

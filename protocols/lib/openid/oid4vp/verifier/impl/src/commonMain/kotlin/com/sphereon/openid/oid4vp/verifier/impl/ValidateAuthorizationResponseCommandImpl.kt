@@ -872,7 +872,7 @@ class ValidateAuthorizationResponseCommandImpl(
         val statusInput = credentialStatusInputFor(
             presentation,
             requireNotNull(detectedCredentialFormat),
-            mdocStatusTrustAnchors(processedArgs.trustedAuthentications),
+            processedArgs.trustedAuthentications,
         )
         val statusPolicy = statusPolicies[queryId] ?: CredentialStatusPolicy()
         var statusEvaluation = CredentialStatusEvaluation(CredentialStatusDecision.SKIPPED)
@@ -2444,7 +2444,7 @@ class ValidateAuthorizationResponseCommandImpl(
     private fun credentialStatusInputFor(
         presentation: String,
         format: CredentialFormat,
-        mdocTrustAnchors: List<String>? = null,
+        mdocAuthentications: List<TrustedAuthenticationResolution> = emptyList(),
     ): CredentialStatusInput? =
         when (format) {
             CredentialFormat.SD_JWT_VC, CredentialFormat.W3C_VC_SD_JWT -> {
@@ -2461,7 +2461,7 @@ class ValidateAuthorizationResponseCommandImpl(
             }
 
             CredentialFormat.MSO_MDOC -> {
-                extractMdocStatusMetadata(presentation, mdocTrustAnchors)?.let { metadata ->
+                extractMdocStatusMetadata(presentation, mdocAuthentications)?.let { metadata ->
                     CredentialStatusInput(metadata = metadata)
                 }
             }
@@ -2476,19 +2476,20 @@ class ValidateAuthorizationResponseCommandImpl(
      * claim shape. This is deliberately metadata-only: MSO status never becomes an ordinary
      * disclosed namespace claim.
      */
-    private fun extractMdocStatusMetadata(presentation: String, trustAnchors: List<String>?): CredentialStatusMetadata? {
+    private fun extractMdocStatusMetadata(presentation: String, authentications: List<TrustedAuthenticationResolution>): CredentialStatusMetadata? {
         val deviceResponseBytes = runCatching { presentation.decodeFromBase64Url() }.getOrNull() ?: return null
         val response = deviceResponseCborCodec.decode(deviceResponseBytes).getOrNull()?.value ?: return null
         val statuses = response.documents
             ?.asSequence()
             ?.mapNotNull { document ->
                 val payload = document.issuerSigned.issuerAuth.payload?.value ?: return@mapNotNull null
-                mobileSecurityObjectCborCodec.decode(payload).getOrNull()?.value?.status
+                mobileSecurityObjectCborCodec.decode(payload).getOrNull()?.value?.status?.let { it to document.docType.toString() }
             }
             ?.toList()
             .orEmpty()
         if (statuses.isEmpty()) return null
-        val references = statuses.flatMap { status ->
+        val references = statuses.flatMap { (status, documentType) ->
+            val trustAnchors = mdocStatusTrustAnchors(authentications, documentType)
             buildList {
                 status.statusList?.let { statusList ->
                     add(
@@ -2886,10 +2887,19 @@ class ValidateAuthorizationResponseCommandImpl(
  * roots that may verify it. Holder authentications and non-X.509 issuer evidence never contribute;
  * null when the session resolved no X.509 issuer evidence, so the status verifier keeps its own roots.
  */
-internal fun mdocStatusTrustAnchors(trustedAuthentications: List<TrustedAuthenticationResolution>): List<String>? =
-    trustedAuthentications
-        .filter { it.purpose == TrustedAuthenticationPurpose.CREDENTIAL_ISSUER }
+internal fun mdocStatusTrustAnchors(
+    trustedAuthentications: List<TrustedAuthenticationResolution>,
+    documentType: String? = null,
+): List<String>? {
+    val issuerSources = trustedAuthentications.filter {
+        it.purpose == TrustedAuthenticationPurpose.CREDENTIAL_ISSUER && it.identifier is ExternalIdentifierX5cOpts
+    }
+    if (issuerSources.isEmpty()) return null
+    // An explicitly constrained source with no match yields an empty trust set, not null:
+    // null would allow the status verifier to fall back to unrelated configured roots.
+    return issuerSources
+        .filter { it.documentTypes == null || (documentType != null && documentType in it.documentTypes!!) }
         .mapNotNull { it.identifier as? ExternalIdentifierX5cOpts }
         .flatMap { it.identifier }
         .distinct()
-        .takeIf { it.isNotEmpty() }
+}

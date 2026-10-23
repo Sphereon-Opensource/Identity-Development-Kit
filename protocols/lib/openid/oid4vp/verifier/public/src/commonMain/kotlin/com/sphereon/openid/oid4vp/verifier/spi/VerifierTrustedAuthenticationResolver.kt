@@ -39,6 +39,9 @@ data class VerifierTrustedAuthenticationRequest(
     val templateId: String? = null,
     val originalRequest: AuthorizationRequest,
     val dcqlQuery: DcqlQuery,
+    /** Optional exact mdoc selection; absent for session-wide resolution of constrained material. */
+    val documentType: String? = null,
+    val certificateProfiles: Set<String> = emptySet(),
 )
 
 /**
