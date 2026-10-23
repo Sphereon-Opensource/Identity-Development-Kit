@@ -23,7 +23,7 @@ data class Oid4vciKeyAttestationClaims(
         }) { "OID4VCI key attestation requires public asymmetric JWKs" }
     }
 
-    private companion object {
-        val PRIVATE_JWK_MEMBERS = setOf("d", "p", "q", "dp", "dq", "qi", "oth", "k")
+    companion object {
+        private val PRIVATE_JWK_MEMBERS = setOf("d", "p", "q", "dp", "dq", "qi", "oth", "k")
     }
 }
