@@ -55,6 +55,7 @@ import com.sphereon.oauth2.client.command.MergeRequestObjectArgs
 import com.sphereon.oauth2.common.model.AuthorizationRequest
 import com.sphereon.openid.oid4vp.common.ClientIdScheme
 import com.sphereon.openid.oid4vp.common.ClientMetadata
+import com.sphereon.openid.oid4vp.common.JarConstants
 import com.sphereon.openid.oid4vp.common.Oid4vpJson
 import com.sphereon.openid.oid4vp.common.Oid4vpRequestTrustMaterialProvider
 import com.sphereon.openid.oid4vp.common.qualifyDidJarVerificationMethodId
@@ -63,7 +64,6 @@ import com.sphereon.openid.oid4vp.holder.ParseAuthorizationRequestArgs
 import com.sphereon.openid.oid4vp.holder.ParseAuthorizationRequestCommand
 import com.sphereon.openid.oid4vp.holder.ParseAuthorizationRequestCommandService
 import com.sphereon.openid.oid4vp.holder.WalletConfig
-import com.sphereon.openid.oid4vp.holder.validation.validateOid4vpAuthorizationRequest
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import io.ktor.client.call.body
@@ -317,12 +317,9 @@ class ParseAuthorizationRequestCommandImpl(
                 additionalParameters = additionalParamsFromRequest + jarParams,
             )
 
-        // Validate the authorization request using Konform
-        return validateOid4vpAuthorizationRequest(authRequest).toIdkResult { errors ->
-            IdkError.ILLEGAL_ARGUMENT_ERROR(
-                message = "Invalid OpenID4VP authorization request: ${errors.joinToString(", ") { "${it.path}: ${it.message}" }}",
-            )
-        }
+        // Semantic validation runs after client authentication in the resolver, so a trusted
+        // verifier can receive the protocol error without any credential being prepared.
+        return Ok(authRequest)
     }
 
     private suspend fun parseDigitalCredentialsRequest(
@@ -484,6 +481,14 @@ class ParseAuthorizationRequestCommandImpl(
         walletConfig: WalletConfig?,
     ): IdkResult<io.ktor.http.Parameters, IdkError> {
         val header = extractJwtHeader(requestObjectJwt)
+        val typ = (header["typ"] as? JsonPrimitive)?.takeIf { it.isString }?.contentOrNull
+        if (typ != JarConstants.JAR_JWT_TYP) {
+            return Err(
+                IdkError.ILLEGAL_ARGUMENT_ERROR(
+                    message = "Request Object typ must be '${JarConstants.JAR_JWT_TYP}'",
+                ),
+            )
+        }
         val payloadHint = extractJwtPayload(requestObjectJwt)
         val kid = header["kid"]?.jsonPrimitive?.contentOrNull
         val x5cHeader =

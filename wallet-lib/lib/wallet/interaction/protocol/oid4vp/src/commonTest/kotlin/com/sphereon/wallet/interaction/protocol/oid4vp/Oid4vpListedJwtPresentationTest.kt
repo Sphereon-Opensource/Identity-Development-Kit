@@ -499,6 +499,15 @@ class Oid4vpListedJwtPresentationTest {
         val foreignProvider = SecureComponentOid4vpMdocHolderSigningProvider(f.holder, wsca, codec)
         assertIs<Err<IdkError>>(foreignProvider.finalize(request, plan, validation))
         assertTrue(wsca.signCalls.isEmpty())
+
+        val differentPublicKey = publicKey.copy(x = CborByteString(ByteArray(32) { 0x44 }))
+        val mismatchedWsca = RecordingWsca(
+            publicKeyJwks = mapOf("mdoc-key" to CoseJoseKeyMappingService.toJoseJwk(differentPublicKey).toJsonString()),
+        )
+        val mismatchedProvider = SecureComponentOid4vpMdocHolderSigningProvider(f.holder, mismatchedWsca, codec)
+        assertIs<Err<IdkError>>(mismatchedProvider.prepare(request))
+        assertEquals(listOf("mdoc-key"), mismatchedWsca.ensureAliases)
+        assertTrue(mismatchedWsca.signCalls.isEmpty(), "WSCA key mismatch must fail before any signing request")
     }
 
     @Test fun mdocPublicKeySnapshotRejectsPrivateMalformedAndNonCanonicalBytesBeforeWsca() = runTest {

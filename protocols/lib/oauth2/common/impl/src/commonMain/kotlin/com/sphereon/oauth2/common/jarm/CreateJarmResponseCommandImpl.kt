@@ -83,6 +83,9 @@ class CreateJarmResponseCommandImpl(
     ): IdkResult<CreateJarmResponseResult, IdkError> {
         val processedArgs = applyDuring(args)
         val config = processedArgs.jarmConfig
+        if (processedArgs.appendStandardJwtClaims && processedArgs.issuer.isNullOrBlank()) {
+            return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "JARM issuer is required when standard JWT claims are included"))
+        }
         if (!processedArgs.appendStandardJwtClaims && config.mode != JarmMode.ENCRYPTED) {
             return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Signed JARM responses require standard JWT claims"))
         }

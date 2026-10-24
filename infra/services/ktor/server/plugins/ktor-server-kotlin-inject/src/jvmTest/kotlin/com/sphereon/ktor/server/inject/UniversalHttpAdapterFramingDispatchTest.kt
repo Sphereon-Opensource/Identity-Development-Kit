@@ -50,6 +50,10 @@ class UniversalHttpAdapterFramingDispatchTest {
                 "DELETE /resource/bad-cl HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Length: 2x\r\nConnection: keep-alive\r\n\r\n",
                 "DELETE /resource/cl-te HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Length: 0\r\nTransfer-Encoding: chunked\r\nConnection: keep-alive\r\n\r\n0\r\n\r\n",
                 "DELETE /resource/te HTTP/1.1\r\nHost: 127.0.0.1\r\nTransfer-Encoding: gzip\r\nConnection: keep-alive\r\n\r\n0\r\n\r\n",
+                "DELETE /resource/te-identity HTTP/1.1\r\nHost: 127.0.0.1\r\nTransfer-Encoding: identity\r\nConnection: keep-alive\r\n\r\n",
+                "DELETE /resource/te-list HTTP/1.1\r\nHost: 127.0.0.1\r\nTransfer-Encoding: identity, chunked\r\nConnection: keep-alive\r\n\r\n0\r\n\r\n",
+                "DELETE /resource/te-order HTTP/1.1\r\nHost: 127.0.0.1\r\nTransfer-Encoding: chunked, identity\r\nConnection: keep-alive\r\n\r\n0\r\n\r\n",
+                "DELETE /resource/duplicate-te HTTP/1.1\r\nHost: 127.0.0.1\r\nTransfer-Encoding: identity\r\nTransfer-Encoding: chunked\r\nConnection: keep-alive\r\n\r\n0\r\n\r\n",
                 "DELETE /resource/multiple-cl HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Length: 0\r\nContent-Length: 0\r\nConnection: keep-alive\r\n\r\n",
             )
             malformedRequests.forEachIndexed { index, request ->

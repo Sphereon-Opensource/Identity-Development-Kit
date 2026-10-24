@@ -444,7 +444,11 @@ class MdocSignServiceImpl(
         require(request.itemsRequest.docType == document.docType) { "Request document type mismatch" }
         require(deviceAuthentication.docType == document.docType) { "DeviceAuthentication document type mismatch" }
         val mso = decodeMso(document)
-        val selectedKeyInfo = resolveDeviceSigningKeyInfo(keyInfo = deviceKeyInfo, mso = mso)
+        // Prepared signing is completed by an external signer. In the wallet holder flow the
+        // reference can be an opaque WSCA handle, not a crypto-core KMS alias; only WSCA may
+        // resolve that handle. Use the issuer-authenticated MSO public key here and let the
+        // external signer bind the opaque reference to that exact key before signing.
+        val selectedKeyInfo = resolvePreparedDeviceSigningKeyInfo(keyInfo = deviceKeyInfo, mso = mso)
         val resolvedPublicKey = getSuppliedOrMSODerivedCborKeyInfo(keyInfo = deviceKeyInfo, mso = mso)
         require(publicKeyMaterialMatches(resolvedPublicKey.key, mso.deviceKeyInfo.deviceKey)) { "Device public key does not match MSO" }
         val publicKey = resolvedPublicKey.key.toPublicKey() as? CoseKey
@@ -728,6 +732,47 @@ class MdocSignServiceImpl(
                 keyType = actual.keyType ?: keyInfo.keyType,
             ),
             mso,
+        )
+    }
+
+    private fun resolvePreparedDeviceSigningKeyInfo(
+        keyInfo: KeyInfoType<*>?,
+        mso: MobileSecurityObject,
+    ): KeyInfoType<CoseKeyType> {
+        val resolved = getSuppliedOrMSODerivedCborKeyInfo(keyInfo = keyInfo, mso = mso)
+        val msoKey = mso.deviceKeyInfo.deviceKey
+        require(publicKeyMaterialMatches(resolved.key, msoKey)) {
+            "Supplied mdoc device key does not match Mobile Security Object device key"
+        }
+
+        val msoKid = msoKey.kid?.encodeValueTo(Encoding.UTF8)
+        val suppliedKid = keyInfo?.kid ?: keyInfo?.key?.getKeyId(false)
+        if (suppliedKid != null && msoKid != null) {
+            require(suppliedKid == msoKid) {
+                "Device signing key kid does not match Mobile Security Object device key kid"
+            }
+        }
+        val alias = keyInfo?.alias
+        val kid = suppliedKid ?: msoKid ?: resolved.kid
+        require(!alias.isNullOrBlank() || !kid.isNullOrBlank()) {
+            "Device signing key reference is missing"
+        }
+        val publicKey = resolved.key.toPublicKey() as? CoseKey
+            ?: throw IllegalArgumentException("Device public key has an unsupported representation")
+        require(isPublicOnlyDeviceKey(publicKey)) { "Device public key contains private material" }
+
+        return KeyInfo(
+            key = publicKey,
+            kid = kid,
+            alias = alias,
+            providerId = keyInfo?.providerId,
+            keyVisibility = KeyVisibility.PUBLIC,
+            signatureAlgorithm = keyInfo?.signatureAlgorithm ?: resolved.signatureAlgorithm ?: msoKey.getSignatureAlgorithm(),
+            opts = keyInfo?.opts ?: resolved.opts,
+            x5c = keyInfo?.x5c ?: resolved.x5c,
+            noCache = keyInfo?.noCache ?: resolved.noCache,
+            keyEncoding = keyInfo?.keyEncoding ?: resolved.keyEncoding,
+            keyType = keyInfo?.keyType ?: resolved.keyType ?: msoKey.getKeyType(),
         )
     }
 

@@ -52,7 +52,7 @@ import kotlin.native.ObjCName
 data class CreateJarmResponseArgs(
     val responseParameters: JsonObject,
     val state: String? = null,
-    val issuer: String,
+    val issuer: String? = null,
     val audience: String,
     @kotlinx.serialization.Transient
     val signingKey: ManagedIdentifierOptsOrResult? = null,

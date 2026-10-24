@@ -25,10 +25,13 @@ import java.nio.charset.StandardCharsets
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.test.*
 
-/** Real CIO + normal application catalog/session dispatcher; this is an owning unit fixture, not live authentication evidence. */
+/**
+ * Real CIO + normal application catalog/session dispatcher; this is an owning unit fixture, not live authentication evidence.
+ * The engine supports a single chunked transfer coding; broader coding lists remain unsupported by this adapter.
+ */
 class HttpFramingCompatibilityDispatchTest {
     @Test
-    fun supportedCodingListsReachTheNormalSelectedAdapterWithExactDecodedBody() = runBlocking {
+    fun supportedChunkedCodingAndFixedLengthReachTheNormalSelectedAdapterWithExactDecodedBody() = runBlocking {
         CompatibilityFramingAdapter.hits.set(0)
         val graph = createTestAppGraph(application = Unit, appId = "framing-compatibility")
         val server = embeddedServer(CIO, host = "127.0.0.1", port = 0) {
@@ -40,12 +43,17 @@ class HttpFramingCompatibilityDispatchTest {
         }.start(wait = false)
         try {
             val port = server.engine.resolvedConnectors().first().port
-            for (fields in listOf("Transfer-Encoding: chunked\r\n", "Transfer-Encoding: identity, ChUnKeD\r\n", "Transfer-Encoding: identity\r\nTransfer-Encoding: chunked\r\n")) {
+            val payload = "coding-body"
+            val requests = listOf(
+                "Transfer-Encoding: chunked\r\n" to "${payload.length.toString(16)}\r\n$payload\r\n0\r\n\r\n",
+                "Transfer-Encoding: \tChUnKeD \t\r\n" to "${payload.length.toString(16)}\r\n$payload\r\n0\r\n\r\n",
+                "Content-Length: ${payload.length}\r\n" to payload,
+            )
+            for ((framing, body) in requests) {
                 Socket("127.0.0.1", port).use { socket ->
                     socket.soTimeout = 5_000
-                    val payload = "coding-body"
-                    val request = "DELETE /framing-compatible HTTP/1.1\r\nHost: localhost\r\nContent-Type: text/plain\r\n" + fields +
-                        "Connection: close\r\n\r\n" + payload.length.toString(16) + "\r\n" + payload + "\r\n0\r\n\r\n"
+                    val request = "DELETE /framing-compatible HTTP/1.1\r\nHost: localhost\r\nContent-Type: text/plain\r\n" + framing +
+                        "Connection: close\r\n\r\n" + body
                     socket.getOutputStream().write(request.toByteArray(StandardCharsets.US_ASCII))
                     socket.getOutputStream().flush()
                     val reader = socket.getInputStream().bufferedReader(StandardCharsets.ISO_8859_1)

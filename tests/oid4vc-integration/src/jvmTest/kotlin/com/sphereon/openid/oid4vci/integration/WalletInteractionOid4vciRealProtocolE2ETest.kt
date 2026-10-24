@@ -308,11 +308,12 @@ class WalletInteractionOid4vciRealProtocolE2ETest {
             val readStatus = (ctx.session.graph as WalletInteractionOid4vciOfferStatusTestGraph).getCredentialOfferStatusServiceCommand
             val credentialStore = (ctx.session.graph as WalletInteractionOid4vciStoreTestGraph).walletCredentialStore
             val correlationId = "request-1"
-            val request = CreateCredentialOfferInput(
-                credentialConfigurationIds = listOf(CREDENTIAL_CONFIG_ID),
-                issuerId = issuerUrl,
-                correlationId = correlationId,
-            )
+            val request =
+                CreateCredentialOfferInput(
+                    credentialConfigurationIds = listOf(CREDENTIAL_CONFIG_ID),
+                    issuerId = issuerUrl,
+                    correlationId = correlationId,
+                )
 
             val first = createOffer.execute(request)
             assertTrue(first.isOk, "Offer creation should succeed: ${if (first.isErr) first.error.message.defaultMessage else ""}")
@@ -324,9 +325,10 @@ class WalletInteractionOid4vciRealProtocolE2ETest {
             assertEquals(CredentialOfferSessionStatus.CREDENTIAL_OFFER_CREATED, readStatus.execute(GetCredentialOfferStatusInput(correlationId)).value.status)
 
             val engine = newWalletEngine(clientId = null)
-            val session = engine.start(
-                WalletInteractionInput(walletUnitId = WALLET_UNIT_ID, entryPoint = WalletEntryPoint.rawQr(first.value.offerUri)),
-            )
+            val session =
+                engine.start(
+                    WalletInteractionInput(walletUnitId = WALLET_UNIT_ID, entryPoint = WalletEntryPoint.rawQr(first.value.offerUri)),
+                )
             engine.dispatch(session.sessionId, WalletInteractionAction.continueFlow())
             val offerState = engine.observe(session.sessionId).value
             assertEquals(WalletInteractionStatus.CredentialOfferReview, offerState.status)

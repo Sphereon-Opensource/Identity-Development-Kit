@@ -12,6 +12,8 @@ import com.sphereon.core.api.Ok
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.crypto.core.generic.SignatureAlgorithm
 import com.sphereon.data.store.party.model.IdentifierType
+import com.sphereon.oauth2.common.model.AuthorizationErrorResponse
+import com.sphereon.wallet.interaction.WalletTrustPolicyDecision
 import com.sphereon.oauth2.common.model.AuthorizationRequest
 import com.sphereon.oauth2.common.model.AuthorizationResponse
 import com.sphereon.openid.oid4vp.common.ClientIdScheme
@@ -70,9 +72,12 @@ import com.sphereon.wallet.interaction.WalletCounterpartyTrustSummary
 import com.sphereon.wallet.interaction.WalletCredentialRequirement
 import com.sphereon.wallet.interaction.WalletCredentialSelection
 import com.sphereon.wallet.interaction.WalletCredentialSelectionRequest
+import com.sphereon.wallet.interaction.WalletCredentialSetRequirement
+import com.sphereon.wallet.interaction.WalletCredentialSetOption
 import com.sphereon.wallet.interaction.WalletDisclosureSummary
 import com.sphereon.wallet.interaction.WalletEntryPoint
 import com.sphereon.wallet.interaction.WalletInteractionAction
+import com.sphereon.wallet.interaction.WalletInteractionCompletionTransport
 import com.sphereon.wallet.interaction.WalletInteractionActivityType
 import com.sphereon.wallet.interaction.WalletInteractionContext
 import com.sphereon.wallet.interaction.ProtocolExecutionOwner
@@ -121,6 +126,81 @@ import kotlin.test.assertTrue
 import kotlin.time.Clock
 
 class Oid4vpWalletInteractionProtocolAdapterTest {
+    @Test
+    fun trustedProtocolErrorPreservesFailedStateAndOneUsePrivateVerifierContinuation() = runTest {
+        val completionUri = "https://verifier.example/complete#one-use-test-value"
+        val holder = RecordingOid4vpHolderService(
+            resolvedRequest = resolvedRequest().copy(authorizationError = AuthorizationErrorResponse("invalid_request", state = "state")),
+            submissionResult = SubmissionResult.Success(redirectUri = completionUri),
+        )
+        val context = WalletInteractionContext(
+            sessionId = WalletInteractionSessionId("error-continuation"), walletUnitId = "wallet",
+            executionOwner = ProtocolExecutionOwner.WALLET_APP,
+            trustResolver = object : WalletCounterpartyTrustResolver {
+                override suspend fun resolve(input: WalletCounterpartyTrustRequest) = WalletCounterpartyTrustSummary(input.counterparty, WalletTrustStatus.TRUSTED)
+            },
+            trustPolicy = WalletTrustPolicy.warn,
+        )
+        val adapter = Oid4vpWalletInteractionProtocolAdapter(holder = holder, presentationExecutor = Oid4vpPresentationExecutor.notConfigured)
+        val state = adapter.start(context, WalletEntryPoint.rawQr("openid4vp://?client_id=verifier")).state
+        assertEquals(WalletInteractionStatus.Failed, state.status)
+        assertTrue(state.terminal)
+        assertEquals(WalletInteractionCompletionTransport.BROWSER_REDIRECT, state.completionHandoffTransport)
+        assertFalse(Json.encodeToString(state).contains("one-use-test-value"))
+        val ref = requireNotNull(state.completionHandoffRef)
+        assertNull(context.sensitiveInputAuthority.consume(WalletInteractionSessionId("other-session"), WalletInteractionSensitiveInputPurpose.PROTOCOL_COMPLETION_HANDOFF, ref))
+        assertEquals(completionUri, context.sensitiveInputAuthority.consume(state.sessionId, WalletInteractionSensitiveInputPurpose.PROTOCOL_COMPLETION_HANDOFF, ref))
+        assertNull(context.sensitiveInputAuthority.consume(state.sessionId, WalletInteractionSensitiveInputPurpose.PROTOCOL_COMPLETION_HANDOFF, ref))
+        assertEquals(1, holder.errorSubmitCalls)
+    }
+
+    @Test
+    fun invalidRequestErrorRequiresValidatedClientAndTrustedAllowedCounterpartyWithoutCredentialAccess() = runTest {
+        data class Case(val validClient: Boolean, val trust: WalletTrustStatus, val action: WalletTrustPolicyAction, val expectedSubmissions: Int)
+        val cases = listOf(
+            Case(true, WalletTrustStatus.TRUSTED, WalletTrustPolicyAction.ALLOW, 1),
+            Case(false, WalletTrustStatus.TRUSTED, WalletTrustPolicyAction.ALLOW, 0),
+            Case(true, WalletTrustStatus.UNKNOWN, WalletTrustPolicyAction.ALLOW, 0),
+            Case(true, WalletTrustStatus.BLOCKED, WalletTrustPolicyAction.ALLOW, 0),
+            Case(true, WalletTrustStatus.TRUSTED, WalletTrustPolicyAction.BLOCK, 0),
+            Case(true, WalletTrustStatus.TRUSTED, WalletTrustPolicyAction.ASK_USER, 0),
+        )
+        for (case in cases) {
+            val error = AuthorizationErrorResponse(error = "invalid_request", state = "state")
+            val request = resolvedRequest().let { it.copy(authorizationError = error, verifierInfo = it.verifierInfo.copy(clientIdValid = case.validClient)) }
+            val holder = RecordingOid4vpHolderService(resolvedRequest = request)
+            val gate = RecordingSecurityGate()
+            val adapter = Oid4vpWalletInteractionProtocolAdapter(
+                presentationExecutor = Oid4vpPresentationExecutor.notConfigured,
+                holder = holder,
+                candidateResolver = object : Oid4vpCredentialCandidateResolver {
+                    override suspend fun candidateCredentialIds(context: WalletInteractionContext, resolvedRequest: ResolvedOid4vpRequest): Map<String, List<String>> =
+                        kotlin.error("Invalid requests must not discover wallet credentials")
+                },
+            )
+            val session = adapter.start(
+                WalletInteractionContext(
+                    sessionId = WalletInteractionSessionId("invalid-request"), walletUnitId = "wallet",
+                    executionOwner = ProtocolExecutionOwner.WALLET_APP, securityGate = gate,
+                    trustResolver = object : WalletCounterpartyTrustResolver {
+                        override suspend fun resolve(input: WalletCounterpartyTrustRequest) = WalletCounterpartyTrustSummary(input.counterparty, case.trust)
+                    },
+                    trustPolicy = object : WalletTrustPolicy {
+                        override suspend fun evaluate(summary: WalletCounterpartyTrustSummary) = WalletTrustPolicyDecision(case.action)
+                    },
+                ),
+                WalletEntryPoint.rawQr("openid4vp://?client_id=verifier"),
+            )
+            assertEquals(WalletInteractionStatus.Failed, session.state.status)
+            assertTrue(session.state.terminal)
+            assertEquals(case.expectedSubmissions, holder.errorSubmitCalls)
+            assertEquals(0, holder.submitCalls)
+            assertTrue(holder.createdSelectedCredentials.isEmpty())
+            assertEquals(0, gate.calls)
+            if (case.expectedSubmissions == 1) assertEquals(error, holder.submittedError)
+        }
+    }
+
     @Test
     fun legacyHolderSubmitOverrideRefusesPreparedRecipientBinding() = runTest {
         val holder = RecordingOid4vpHolderService()
@@ -1711,6 +1791,99 @@ class Oid4vpWalletInteractionProtocolAdapterTest {
         }
 
     @Test
+    fun optionalUnavailableCredentialSetDoesNotBlockRequiredSelection() = runTest {
+        assertCredentialSetSelection(
+            sets = listOf(set("required", true, listOf("identity")), set("optional", false, listOf("missing"))),
+            selections = mapOf("identity" to listOf("cred-1")),
+            expectedError = null,
+        )
+    }
+
+    @Test
+    fun requiredAlternativeCanOmitAnUnavailableQuery() = runTest {
+        assertCredentialSetSelection(
+            sets = listOf(set("required", true, listOf("missing"), listOf("identity"))),
+            selections = mapOf("identity" to listOf("cred-1")),
+            expectedError = null,
+        )
+    }
+
+    @Test
+    fun incompleteRequiredCompoundDoesNotReachSecurityGate() = runTest {
+        assertCredentialSetSelection(
+            sets = listOf(set("required", true, listOf("identity", "other"))),
+            selections = mapOf("identity" to listOf("cred-1")),
+            expectedError = "oid4vp.selection_missing_requirement",
+        )
+    }
+
+    @Test
+    fun partialOptionalSetCannotIntroduceAnExtraCredential() = runTest {
+        assertCredentialSetSelection(
+            sets = listOf(set("required", true, listOf("identity")), set("optional", false, listOf("other", "missing"))),
+            selections = mapOf("identity" to listOf("cred-1"), "other" to listOf("cred-2")),
+            expectedError = "oid4vp.selection_unsatisfiable",
+        )
+    }
+
+    @Test
+    fun overlappingOptionalSetDoesNotBlockRequiredSelection() = runTest {
+        assertCredentialSetSelection(
+            sets = listOf(set("required", true, listOf("identity")), set("optional", false, listOf("identity", "missing"))),
+            selections = mapOf("identity" to listOf("cred-1")),
+            expectedError = null,
+        )
+    }
+
+    @Test
+    fun emptyCandidateListDoesNotPermitAnInjectedRecord() = runTest {
+        assertCredentialSetSelection(
+            sets = listOf(set("required", true, listOf("missing"))),
+            selections = mapOf("missing" to listOf("injected")),
+            expectedError = "oid4vp.selection_credential_not_candidate",
+        )
+    }
+
+    @Test
+    fun unknownCredentialSetReferenceDoesNotReachSecurityGate() = runTest {
+        assertCredentialSetSelection(
+            sets = listOf(set("required", true, listOf("unknown"))),
+            selections = mapOf("identity" to listOf("cred-1")),
+            expectedError = "oid4vp.selection_unsatisfiable",
+        )
+    }
+
+    private fun set(id: String, required: Boolean, vararg options: List<String>) = WalletCredentialSetRequirement(
+        id = id,
+        required = required,
+        options = options.map { WalletCredentialSetOption(requirementIds = it, satisfiable = true) },
+    )
+
+    private suspend fun assertCredentialSetSelection(
+        sets: List<WalletCredentialSetRequirement>,
+        selections: Map<String, List<String>>,
+        expectedError: String?,
+    ) {
+        val adapter = Oid4vpWalletInteractionProtocolAdapter(Oid4vpPresentationExecutor.notConfigured)
+        val gate = RecordingSecurityGate()
+        val state = credentialSelectionState(WalletCredentialSelectionRequest(
+            requirements = listOf(
+                WalletCredentialRequirement(id = "identity", candidateCredentialIds = listOf("cred-1")),
+                WalletCredentialRequirement(id = "other", candidateCredentialIds = listOf("cred-2")),
+                WalletCredentialRequirement(id = "missing", candidateCredentialIds = emptyList()),
+            ),
+            satisfiable = true,
+            credentialSets = sets,
+        ))
+        val next = adapter.handle(context(gate), state, WalletInteractionAction.selectCredentials(WalletCredentialSelection(selections)))
+        assertEquals(if (expectedError == null) 1 else 0, gate.calls)
+        if (expectedError != null) {
+            assertEquals(WalletInteractionStatus.CredentialSelection, next.status)
+            assertEquals(expectedError, next.error?.code)
+        }
+    }
+
+    @Test
     fun unsatisfiedDcqlSelectionStaysInCredentialSelectionWithoutSecurityGate() =
         runTest {
             val adapter = Oid4vpWalletInteractionProtocolAdapter(Oid4vpPresentationExecutor.notConfigured)
@@ -2441,6 +2614,8 @@ class Oid4vpWalletInteractionProtocolAdapterTest {
         private val resolveError: IdkError? = null,
         private val submitError: IdkError? = null,
     ) : Oid4vpHolderService {
+        var errorSubmitCalls: Int = 0
+        var submittedError: AuthorizationErrorResponse? = null
         var submitCalls: Int = 0
         var submittedResponseMode: ResponseMode? = null
         var submittedJarmOptions: JarmOptions? = null
@@ -2482,6 +2657,17 @@ class Oid4vpWalletInteractionProtocolAdapterTest {
                     additionalParameters = mapOf("vp_token" to JsonPrimitive("vp-token-secret")),
                 ),
             ).asResult()
+        }
+
+        override suspend fun submitAuthorizationErrorResponse(
+            resolvedRequest: ResolvedOid4vpRequest,
+            error: AuthorizationErrorResponse,
+            responseMode: ResponseMode?,
+            jarmOptions: JarmOptions?,
+        ): IdkResult<SubmissionResult, IdkError> {
+            errorSubmitCalls++
+            submittedError = error
+            return submitError?.let { Err(it).asResult() } ?: Ok(submissionResult).asResult()
         }
 
         override suspend fun submitAuthorizationResponse(
