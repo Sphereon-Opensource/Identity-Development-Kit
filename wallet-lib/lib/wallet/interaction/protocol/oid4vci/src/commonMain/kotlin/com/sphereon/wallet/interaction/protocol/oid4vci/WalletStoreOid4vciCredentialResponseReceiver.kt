@@ -206,7 +206,13 @@ class WalletStoreOid4vciCredentialResponseReceiver(
                                 kid = holderVerificationMethods.getOrNull(index)?.value,
                             ),
                         lifecycleState = CredentialLifecycleState.ACTIVE,
-                        validity = CredentialValidityWindow(),
+                        validity =
+                            if (credentialFormat.isMdoc) {
+                                acceptance.mdocValidityWindow(raw)
+                                    ?: error("OID4VCI mso_mdoc credential has no decodable MSO validity window")
+                            } else {
+                                CredentialValidityWindow()
+                            },
                         issuedAt = now,
                         storedAt = now,
                         updatedAt = now,

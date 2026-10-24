@@ -1171,7 +1171,7 @@ class Oid4vpWalletInteractionProtocolAdapterTest {
         }
 
     @Test
-    fun walletStoreCandidateResolverMatchesMdocDoctypeWithoutOpeningBodies() =
+    fun walletStoreCandidateResolverMatchesMdocDoctypeAfterCheckingConcreteValidity() =
         runTest {
             val store =
                 RecordingWalletCredentialStore(
@@ -1179,6 +1179,7 @@ class Oid4vpWalletInteractionProtocolAdapterTest {
                         id = "mdl-record",
                         format = CredentialFormat.MSO_MDOC,
                         typeRefs = setOf(credentialTypeRef(CredentialFormat.MSO_MDOC, CredentialTypeRefKind.MDOC_DOCTYPE, "org.iso.18013.5.1.mDL")),
+                        raw = mdocCredential("2020-01-20T12:00:00Z", "2099-12-31T23:59:59Z"),
                     ),
                 )
             val resolver = WalletStoreOid4vpCredentialResolver(store)
@@ -1197,7 +1198,7 @@ class Oid4vpWalletInteractionProtocolAdapterTest {
             val candidates = resolver.candidateCredentialIds(context = walletContext(), resolvedRequest = resolved)
 
             assertEquals(mapOf("mdl" to listOf("mdl-record")), candidates)
-            assertEquals(emptyList(), store.credentialReads)
+            assertEquals(listOf("mdl-record"), store.credentialReads)
         }
 
     @Test

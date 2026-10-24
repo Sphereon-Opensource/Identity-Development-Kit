@@ -68,7 +68,7 @@ class WalletStoreOid4vpCredentialResolver(
             for (credentialRecordId in selectedCredentialIdsByRequirement[query.id].orEmpty().distinct()) {
                 val record = credentialStore.requireCredential(context.walletUnitId, credentialRecordId)
                 val instance =
-                    record.presentableInstance(now)
+                    record.presentableOid4vpInstance(now)
                         ?: error("Credential record '$credentialRecordId' has no presentable instance")
                 val holderVerificationMethod =
                     if (
@@ -216,7 +216,17 @@ class WalletStoreOid4vpCredentialResolver(
                 result.value
             }
 
-        return metadata.filter { it.isPresentationCandidate() }
+        val now = Clock.System.now()
+        val candidates = mutableListOf<CredentialMetadata>()
+        for (candidate in metadata) {
+            if (!candidate.isPresentationCandidate()) continue
+            if (candidate.format.isMdoc) {
+                val record = credentialStore.requireCredential(walletUnitId, candidate.credentialRecordId)
+                if (record.presentableOid4vpInstance(now) == null) continue
+            }
+            candidates += candidate
+        }
+        return candidates
     }
 
     private suspend fun WalletCredentialStore.requireCredential(
@@ -242,7 +252,7 @@ class WalletStoreOid4vpCredentialResolver(
             val record = credentialStore.requireCredential(context.walletUnitId, credentialRecordId)
             val alias =
                 record
-                    .presentableInstance(now)
+                    .presentableOid4vpInstance(now)
                     ?.holderKeyRef
                     ?.alias
             if (!alias.isNullOrBlank()) return alias

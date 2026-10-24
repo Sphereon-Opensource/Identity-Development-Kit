@@ -8,6 +8,7 @@ package com.sphereon.wallet.interaction.protocol.oid4vci
 
 import com.sphereon.cbor.CborByteString
 import com.sphereon.cbor.TDate
+import com.sphereon.cbor.tDateToEpochSeconds
 import com.sphereon.core.api.Err
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
@@ -816,6 +817,9 @@ class WalletStoreOid4vciCredentialResponseReceiverTest {
                     .getOrThrow()
             assertNotNull(stored)
             assertEquals(rawMdocCredential, stored.instances.single().raw)
+            val expectedValidity = TDate("2025-01-20T12:00:00Z").tDateToEpochSeconds()
+            assertEquals(expectedValidity, stored.instances.single().validity.validFrom?.epochSeconds)
+            assertEquals(expectedValidity, stored.instances.single().validity.validUntil?.epochSeconds)
             assertEquals(MDOC_CREDENTIAL_CONFIGURATION_ID, stored.issuanceProvenance?.credentialConfigurationId)
             assertEquals(
                 MDOC_DOCTYPE,

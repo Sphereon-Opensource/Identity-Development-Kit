@@ -11,6 +11,7 @@ import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
 import com.sphereon.core.api.decodeFromBase64Url
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.cbor.tDateToEpochSeconds
 import com.sphereon.crypto.jose.jws.JwsUtils
 import com.sphereon.crypto.jose.jws.JwsCompact
 import com.sphereon.crypto.jose.jws.command.VerifyJwsArgs
@@ -19,6 +20,7 @@ import com.sphereon.data.store.party.model.IdentityRole
 import com.sphereon.data.store.party.model.IdentifierType
 import com.sphereon.mdoc.data.device.IssuerSignedCborCodec
 import com.sphereon.mdoc.data.device.IssuerSignedCborCodecImpl
+import com.sphereon.mdoc.data.mso.MobileSecurityObject
 import com.sphereon.mdoc.data.mso.MobileSecurityObjectCborCodec
 import com.sphereon.mdoc.data.mso.MobileSecurityObjectCborCodecImpl
 import com.sphereon.openid.oid4vc.common.vcdm.VcdmClassifier
@@ -44,6 +46,7 @@ import com.sphereon.wallet.credential.CredentialSubjectExtractor
 import com.sphereon.wallet.credential.CredentialTypeRef
 import com.sphereon.wallet.credential.CredentialTypeRefKind
 import com.sphereon.wallet.credential.CredentialTypeRefSource
+import com.sphereon.wallet.credential.CredentialValidityWindow
 import com.sphereon.wallet.credential.IdentifierRef
 import com.sphereon.wallet.credential.IssuanceDiagnostic
 import com.sphereon.wallet.credential.IssuanceDiagnosticCode
@@ -395,23 +398,9 @@ class Oid4vciIssuedCredentialAcceptance(
         raw: String,
         format: CredentialFormat,
     ): Set<CredentialTypeRef> {
-        val issuerSignedBytes =
-            try {
-                raw.decodeFromBase64Url()
-            } catch (_: Exception) {
-                return emptySet()
-            }
-        val issuerSignedResult = acceptanceIssuerSignedCborCodec.decode(issuerSignedBytes)
-        if (issuerSignedResult.isErr) return emptySet()
-
-        val msoPayload =
-            issuerSignedResult.value.value.issuerAuth.payload
-                ?.value ?: return emptySet()
-        val msoResult = acceptanceMobileSecurityObjectCborCodec.decode(msoPayload)
-        if (msoResult.isErr) return emptySet()
-
+        val mso = decodeMdocMso(raw) ?: return emptySet()
         val doctype =
-            msoResult.value.value.docType
+            mso.docType
                 .toString()
                 .takeIf { it.isNotBlank() } ?: return emptySet()
         return setOf(
@@ -423,6 +412,30 @@ class Oid4vciIssuedCredentialAcceptance(
                 primary = true,
             ),
         )
+    }
+
+    /**
+     * Returns the validity window carried by an mdoc's MSO using the existing IssuerSigned/MSO
+     * codecs. A missing or malformed MSO is not stored with an UNKNOWN validity window.
+     */
+    internal fun mdocValidityWindow(raw: String): CredentialValidityWindow? {
+        val validityInfo = decodeMdocMso(raw)?.validityInfo ?: return null
+        return CredentialValidityWindow(
+            validFrom = Instant.fromEpochSeconds(validityInfo.validFrom.tDateToEpochSeconds()),
+            validUntil = Instant.fromEpochSeconds(validityInfo.validUntil.tDateToEpochSeconds()),
+        )
+    }
+
+    private fun decodeMdocMso(raw: String): MobileSecurityObject? {
+        return try {
+            val issuerSignedBytes = raw.decodeFromBase64Url()
+            val issuerSigned = acceptanceIssuerSignedCborCodec.decode(issuerSignedBytes).getOrNull()?.value
+                ?: return null
+            val msoPayload = issuerSigned.issuerAuth.payload?.value ?: return null
+            acceptanceMobileSecurityObjectCborCodec.decode(msoPayload).getOrNull()?.value
+        } catch (_: Exception) {
+            null
+        }
     }
 
     private fun w3cTypesFromJwt(

@@ -37,7 +37,8 @@ class WalletCredentialClaimValuesResolverTest {
     fun projectsTypedResolverValuesForThePresentableRecordInstance() = kotlinx.coroutines.test.runTest {
         val mapping = RecordingClaimsMappingService()
         val resolver = WalletCredentialClaimValuesResolver(mapping)
-        val record = record(CredentialFormat.MSO_MDOC, "opaque-mdoc-body")
+        val rawMdoc = mdocCredential("2020-01-20T12:00:00Z", "2099-12-31T23:59:59Z")
+        val record = record(CredentialFormat.MSO_MDOC, rawMdoc)
         val values = mapOf("org.iso.18013.5.1.family_name" to JsonPrimitive("Lindgren"))
         mapping.result = values
 
@@ -47,7 +48,24 @@ class WalletCredentialClaimValuesResolverTest {
         assertEquals(values, result.value)
         assertEquals("instance-active", mapping.credential?.credentialId)
         assertEquals(CredentialFormat.MSO_MDOC, mapping.credential?.format)
-        assertEquals("opaque-mdoc-body", mapping.credential?.payload)
+        assertEquals(rawMdoc, mapping.credential?.payload)
+    }
+
+    @Test
+    fun projectsTheSameFreshMdocInstanceSelectedForPresentation() = kotlinx.coroutines.test.runTest {
+        val mapping = RecordingClaimsMappingService()
+        val resolver = WalletCredentialClaimValuesResolver(mapping)
+        val old = instance("instance-expired", mdocCredential("2025-01-20T12:00:00Z", "2026-01-20T12:00:00Z"), CredentialLifecycleState.ACTIVE, CredentialFormat.MSO_MDOC)
+        val freshRaw = mdocCredential("2026-01-20T12:00:00Z", "2099-12-31T23:59:59Z")
+        val fresh = instance("instance-fresh", freshRaw, CredentialLifecycleState.ACTIVE, CredentialFormat.MSO_MDOC)
+        val record = record(CredentialFormat.MSO_MDOC, old.requireRaw()).copy(instances = listOf(old, fresh))
+        mapping.result = emptyMap()
+
+        val result = resolver.resolve(record)
+
+        assertTrue(result.isOk)
+        assertEquals("instance-fresh", mapping.credential?.credentialId)
+        assertEquals(freshRaw, mapping.credential?.payload)
     }
 
     @Test

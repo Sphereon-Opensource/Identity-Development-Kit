@@ -46,6 +46,8 @@ kotlin {
                 api(projects.libWalletInteractionPublic)
                 api(projects.libWalletPublic)
                 api(projects.libWalletWscaPublic)
+                // IssuerSigned/MSO codecs derive per-instance mdoc validity for presentation selection.
+                implementation(if (rootProject.findProperty("idk.consumeLowerAsArtifacts") == "true") "com.sphereon.idk:lib-mdoc-core-impl:$version" else project(":lib-mdoc-core-impl"))
                 api(if (rootProject.findProperty("idk.consumeLowerAsArtifacts") == "true") "com.sphereon.idk:lib-credential-claims-mapper-public:$version" else project(":lib-credential-claims-mapper-public"))
                 implementation(if (rootProject.findProperty("idk.consumeLowerAsArtifacts") == "true") "com.sphereon.idk:lib-credential-claims-mapper-impl:$version" else project(":lib-credential-claims-mapper-impl"))
                 api(if (rootProject.findProperty("idk.consumeLowerAsArtifacts") == "true") "com.sphereon.idk:lib-crypto-data-integrity-proof-public:$version" else project(":lib-crypto-data-integrity-proof-public"))
