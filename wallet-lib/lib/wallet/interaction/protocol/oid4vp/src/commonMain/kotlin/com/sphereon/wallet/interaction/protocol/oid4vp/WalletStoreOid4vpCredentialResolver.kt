@@ -143,45 +143,51 @@ class WalletStoreOid4vpCredentialResolver(
             selectedCredentials
                 .groupBy { it.credentialQueryId }
                 .mapValues { (_, credentials) -> credentials.map { it.credentialId }.toSet() }
-        val verifierRef = resolvedRequest.verifierInfo.clientId.toVerifierRef()
-        val boundAt = Clock.System.now()
-        val updates = linkedMapOf<String, CredentialRecord>()
-
+        val selectedRequirementIdsByRecordAndInstance = linkedMapOf<String, MutableMap<String, MutableSet<String>>>()
         for ((requirementId, credentialRecordIds) in selectedCredentialIdsByRequirement) {
             val selectedInstanceIds = selectedInstanceIdsByRequirement[requirementId].orEmpty()
             if (selectedInstanceIds.isEmpty()) continue
-
             for (credentialRecordId in credentialRecordIds.distinct()) {
-                val record = credentialStore.requireCredential(context.walletUnitId, credentialRecordId)
-                val updated =
+                val requirementIdsByInstance = selectedRequirementIdsByRecordAndInstance.getOrPut(credentialRecordId) { linkedMapOf() }
+                for (instanceId in selectedInstanceIds) {
+                    requirementIdsByInstance.getOrPut(instanceId) { linkedSetOf() }.add(requirementId)
+                }
+            }
+        }
+        if (selectedRequirementIdsByRecordAndInstance.isEmpty()) return
+        val verifierRef = resolvedRequest.verifierInfo.clientId.toVerifierRef()
+        val boundAt = Clock.System.now()
+        for ((credentialRecordId, requirementIdsByInstance) in selectedRequirementIdsByRecordAndInstance) {
+            val updateResult =
+                credentialStore.updateCredentialEnvelope(context.walletUnitId, credentialRecordId) { record ->
+                    if (record.instances.none { it.id in requirementIdsByInstance }) return@updateCredentialEnvelope record
                     record.copy(
                         instances =
                             record.instances.map { instance ->
-                                if (instance.id in selectedInstanceIds) {
+                                val presentationIds = requirementIdsByInstance[instance.id].orEmpty()
+                                if (presentationIds.isEmpty()) {
+                                    instance
+                                } else {
                                     instance.copy(
                                         bindingRefs =
                                             instance.bindingRefs +
-                                                CredentialBindingRef(
-                                                    verifierRef = verifierRef,
-                                                    boundAt = boundAt,
-                                                    presentationId = requirementId,
-                                                ),
+                                                presentationIds.map { presentationId ->
+                                                    CredentialBindingRef(
+                                                        verifierRef = verifierRef,
+                                                        boundAt = boundAt,
+                                                        presentationId = presentationId,
+                                                    )
+                                                },
                                         updatedAt = boundAt,
                                     )
-                                } else {
-                                    instance
                                 }
                             },
                         updatedAt = boundAt,
                         syncState = record.syncState.copy(localRevision = record.syncState.localRevision + 1),
                     )
-                if (updated != record) updates[updated.id] = updated
-            }
-        }
-
-        for (record in updates.values) {
-            val putResult = credentialStore.putCredential(context.walletUnitId, record)
-            if (putResult.isErr) error("Failed to update wallet presentation history: ${putResult.error.code}")
+                }
+            if (updateResult.isErr) error("Failed to update wallet presentation history: ${updateResult.error.code}")
+            if (updateResult.value == null) error("Failed to update wallet presentation history: credential record is unavailable")
         }
     }
 

@@ -1734,6 +1734,44 @@ class Oid4vpWalletInteractionProtocolAdapterTest {
         }
 
     @Test
+    fun walletStoreResolverDoesNotUpdateRecordsOutsideRequirementSelection() =
+        runTest {
+            val selectedRecord =
+                walletCredentialRecord(
+                    id = "selected-record",
+                    format = CredentialFormat.SD_JWT_VC,
+                    typeRefs = setOf(credentialTypeRef(CredentialFormat.SD_JWT_VC, CredentialTypeRefKind.SD_JWT_VCT, "https://example.com/pid")),
+                )
+            val otherRecord =
+                walletCredentialRecord(
+                    id = "other-record",
+                    format = CredentialFormat.SD_JWT_VC,
+                    typeRefs = setOf(credentialTypeRef(CredentialFormat.SD_JWT_VC, CredentialTypeRefKind.SD_JWT_VCT, "https://example.com/other")),
+                )
+            val store = RecordingWalletCredentialStore(selectedRecord, otherRecord)
+            val resolver = WalletStoreOid4vpCredentialResolver(store)
+
+            resolver.recordPresentationSubmitted(
+                context = walletContext(),
+                state = credentialSelectionState(WalletCredentialSelectionRequest(emptyList(), satisfiable = true)),
+                resolvedRequest = resolvedRequest(),
+                selectedCredentialIdsByRequirement = mapOf("identity" to listOf("other-record")),
+                selectedCredentials =
+                    listOf(
+                        SelectedCredential(
+                            credentialQueryId = "identity",
+                            credentialId = selectedRecord.instances.single().id,
+                            presentation = JsonPrimitive("presentation"),
+                            credentialFormat = CredentialFormat.SD_JWT_VC,
+                        ),
+                    ),
+            )
+
+            assertTrue(store.putRecords.isEmpty())
+            assertTrue(store.records.values.all { record -> record.instances.all { it.bindingRefs.isEmpty() } })
+        }
+
+    @Test
     fun blockedVerifierTrustFailsWithoutExposingProtocolRequest() =
         runTest {
             val adapter = Oid4vpWalletInteractionProtocolAdapter(Oid4vpPresentationExecutor.notConfigured)
