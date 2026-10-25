@@ -86,6 +86,7 @@ import com.sphereon.wallet.credential.walletCredentialInstanceBodyPath
 import com.sphereon.wallet.credential.walletCredentialMetadataPath
 import com.sphereon.wallet.credential.walletCredentialRecordEnvelopePath
 import com.sphereon.wallet.credential.walletDeferredAccessTokenPath
+import com.sphereon.wallet.credential.walletRefreshTokenPath
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
@@ -759,6 +760,7 @@ class BlobWalletCredentialStoreTest {
 
             val refreshRef = store.storeRefreshToken(WALLET_A, credentialRecordId, "refresh-token-a")
             assertTrue(refreshRef.isOk)
+            assertEquals(walletRefreshTokenPath(WALLET_A, credentialRecordId), refreshRef.value.id)
             assertTrue(refreshRef.value.id.endsWith("/refresh-token"))
             assertTrue(refreshRef.value.id != deferredRef.value.id, "Refresh token blob path must not collide with the deferred access token blob path")
 

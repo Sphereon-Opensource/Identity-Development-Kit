@@ -32,8 +32,8 @@ import com.sphereon.wallet.credential.StoreRef
 import com.sphereon.wallet.credential.walletDeferredAccessTokenPath
 import com.sphereon.wallet.credential.walletIssuancePrefix
 import com.sphereon.wallet.credential.walletIssuanceSessionPath
-import com.sphereon.wallet.credential.walletIssuanceSecretsPrefix
 import com.sphereon.wallet.credential.walletPathSegment
+import com.sphereon.wallet.credential.walletRefreshTokenPath
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
@@ -251,9 +251,4 @@ class BlobWalletIssuanceSessionStore(
         walletUnitId: String,
         issuanceSessionId: String,
     ): BlobInfo = BlobInfo(path = walletIssuanceSessionPath(walletUnitId, issuanceSessionId))
-
-    private fun walletRefreshTokenPath(
-        walletUnitId: String,
-        credentialRecordId: String,
-    ): String = walletIssuanceSecretsPrefix(walletUnitId) + walletPathSegment(credentialRecordId, "credentialRecordId") + "/refresh-token"
 }

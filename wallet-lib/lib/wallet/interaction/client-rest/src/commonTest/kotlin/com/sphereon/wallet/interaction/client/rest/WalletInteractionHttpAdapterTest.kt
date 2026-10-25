@@ -35,17 +35,23 @@ import com.sphereon.di.session.SessionContext
 import com.sphereon.di.session.SessionContextManager
 import com.sphereon.wallet.interaction.DispatchWalletInteractionActionBody
 import com.sphereon.wallet.interaction.ListWalletInteractionActivityResult
+import com.sphereon.wallet.interaction.WalletApprovalOperation
 import com.sphereon.wallet.interaction.WalletCounterpartyAssociationDecision
+import com.sphereon.wallet.interaction.WalletCounterpartyRole
+import com.sphereon.wallet.interaction.WalletCounterpartySummary
+import com.sphereon.wallet.interaction.WalletCounterpartyTrustSummary
 import com.sphereon.wallet.interaction.ConsumeWalletInteractionHandoffRequest
 import com.sphereon.wallet.interaction.ConsumeWalletInteractionHandoffResult
 import com.sphereon.wallet.interaction.RegisterWalletInteractionSensitiveInputRequest
 import com.sphereon.wallet.interaction.RegisterWalletInteractionSensitiveInputResult
 import com.sphereon.wallet.interaction.StartWalletInteractionBody
 import com.sphereon.wallet.interaction.WalletEntryPoint
+import com.sphereon.wallet.interaction.WalletInteractionCompletionTransport
 import com.sphereon.wallet.interaction.WalletInteractionAction
 import com.sphereon.wallet.interaction.WalletInteractionApiConstants
 import com.sphereon.wallet.interaction.WalletInteractionClientFrame
 import com.sphereon.wallet.interaction.WalletInteractionClientFrameType
+import com.sphereon.wallet.interaction.WalletInteractionContext
 import com.sphereon.wallet.interaction.WalletInteractionInput
 import com.sphereon.wallet.interaction.WalletInteractionLaunchAuthority
 import com.sphereon.wallet.interaction.WalletInteractionRevisionConflict
@@ -56,10 +62,17 @@ import com.sphereon.wallet.interaction.WalletInteractionSessionEnvelope
 import com.sphereon.wallet.interaction.WalletInteractionSessionId
 import com.sphereon.wallet.interaction.WalletInteractionState
 import com.sphereon.wallet.interaction.WalletInteractionPrivateSessionData
+import com.sphereon.wallet.interaction.WalletInteractionProtocolAdapter
 import com.sphereon.wallet.interaction.WalletInteractionStateEnvelope
 import com.sphereon.wallet.interaction.WalletInteractionSensitiveInputPurpose
 import com.sphereon.wallet.interaction.WalletInteractionStateEvent
 import com.sphereon.wallet.interaction.WalletInteractionStatus
+import com.sphereon.wallet.interaction.WalletSecurityAssurance
+import com.sphereon.wallet.interaction.WalletSecurityChallenge
+import com.sphereon.wallet.interaction.WalletSecurityChallengeKind
+import com.sphereon.wallet.interaction.WalletTrustSource
+import com.sphereon.wallet.interaction.WalletTrustSourceType
+import com.sphereon.wallet.interaction.WalletTrustStatus
 import com.sphereon.wallet.interaction.actionsPath
 import com.sphereon.wallet.interaction.activityPath
 import com.sphereon.wallet.interaction.eventsPath
@@ -218,6 +231,88 @@ class WalletInteractionHttpAdapterTest {
             assertEquals(200, cancelResponse.statusCode)
             assertEquals(WalletInteractionStatus.Cancelled, engine.observe(started.sessionId).value.status)
         }
+
+    @Test
+    fun currentOpenApiStateFieldsRoundTripThroughTheRestStateEndpoint() = runTest {
+        val baseAdapter = StaticWalletInteractionProtocolAdapter.oid4vci()
+        val operations = listOf(WalletApprovalOperation("holder-signing-key", "sha256:approved-input"))
+        val trustSources = listOf(
+            WalletTrustSource(
+                type = WalletTrustSourceType.TRUST_DOMAIN,
+                identifier = "trust-domain:example",
+                displayName = "Example trust domain",
+            ),
+            WalletTrustSource(
+                type = WalletTrustSourceType.WALLET_TRUST_ANCHOR,
+                identifier = "wallet-anchor:example",
+                displayName = "Example wallet anchor",
+            ),
+        )
+        val adapterWithCurrentContractFields = object : WalletInteractionProtocolAdapter by baseAdapter {
+            override suspend fun start(
+                context: WalletInteractionContext,
+                entryPoint: WalletEntryPoint,
+            ) = baseAdapter.start(context, entryPoint).let { session ->
+                session.copy(
+                    state = session.state.copy(
+                        completionHandoffTransport = WalletInteractionCompletionTransport.DIGITAL_CREDENTIALS_API,
+                        securityChallenge = WalletSecurityChallenge(
+                            challengeId = "challenge-current-schema",
+                            kind = WalletSecurityChallengeKind.PASSKEY,
+                            reasonKey = "wallet.interaction.approval.required",
+                            requiredAssurance = WalletSecurityAssurance.PASSKEY,
+                            operations = operations,
+                        ),
+                        trust = WalletCounterpartyTrustSummary(
+                            counterparty = WalletCounterpartySummary(
+                                role = WalletCounterpartyRole.ISSUER,
+                                identifier = "https://issuer.example",
+                            ),
+                            status = WalletTrustStatus.TRUSTED,
+                            sources = trustSources,
+                        ),
+                    ),
+                )
+            }
+        }
+        val adapter = testAdapter(testEngine(adapters = listOf(adapterWithCurrentContractFields)))
+
+        val startedResponse = adapter.handle(
+            GenericHttpRequest.withTextBody(
+                method = "POST",
+                path = WalletInteractionApiConstants.interactionsPath("wallet"),
+                body = defaultWalletInteractionJson.encodeToString(
+                    StartWalletInteractionBody.serializer(),
+                    StartWalletInteractionBody(
+                        WalletInteractionInput("wallet", WalletEntryPoint.rawQr("openid-credential-offer://?credential_offer=x")),
+                    ),
+                ),
+            ),
+        )
+        val started = defaultWalletInteractionJson.decodeFromString(
+            WalletInteractionSessionEnvelope.serializer(),
+            requireBody(startedResponse.body),
+        ).session
+        val stateResponse = adapter.handle(
+            GenericHttpRequest(
+                method = "GET",
+                path = WalletInteractionApiConstants.statePath("wallet", started.sessionId),
+            ),
+        )
+        val state = defaultWalletInteractionJson.decodeFromString(
+            WalletInteractionStateEnvelope.serializer(),
+            requireBody(stateResponse.body),
+        ).state
+
+        assertEquals(started.state, state)
+        assertEquals(WalletInteractionCompletionTransport.DIGITAL_CREDENTIALS_API, state.completionHandoffTransport)
+        assertEquals(operations, state.securityChallenge?.operations)
+        assertEquals(
+            listOf(WalletTrustSourceType.TRUST_DOMAIN, WalletTrustSourceType.WALLET_TRUST_ANCHOR),
+            state.trust?.sources?.map { it.type },
+        )
+        assertEquals(trustSources, state.trust?.sources)
+    }
 
     @Test
     fun sseEndpointReturnsBoundedSnapshotFrame() =
@@ -865,10 +960,11 @@ class WalletInteractionHttpAdapterTest {
         authority: StoreBackedWalletInteractionSensitiveInputAuthority =
             StoreBackedWalletInteractionSensitiveInputAuthority(InMemoryWalletInteractionPrivateSessionStore()),
         privateStore: InMemoryWalletInteractionPrivateSessionStore = InMemoryWalletInteractionPrivateSessionStore(),
+        adapters: List<WalletInteractionProtocolAdapter> = listOf(StaticWalletInteractionProtocolAdapter.oid4vci()),
     ): DefaultWalletInteractionEngine =
         DefaultWalletInteractionEngine(
             sensitiveInputAuthority = authority,
-            adapters = listOf(StaticWalletInteractionProtocolAdapter.oid4vci()),
+            adapters = adapters,
             sessionIdGenerator = FixedWalletInteractionSessionIdGenerator(),
             privateSessionStore = privateStore,
             sessionStore = InMemoryWalletInteractionSessionStore(),

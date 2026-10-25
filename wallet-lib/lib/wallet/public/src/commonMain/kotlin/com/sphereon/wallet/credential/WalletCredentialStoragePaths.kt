@@ -59,6 +59,14 @@ fun walletDeferredAccessTokenPath(
     issuanceSessionId: String,
 ): String = walletIssuanceSecretsPrefix(walletUnitId) + walletPathSegment(issuanceSessionId, "issuanceSessionId") + "/access-token"
 
+fun walletRefreshTokenPath(
+    walletUnitId: String,
+    credentialRecordId: String,
+): String =
+    walletIssuanceSecretsPrefix(walletUnitId) +
+        walletPathSegment(credentialRecordId, "credentialRecordId") +
+        "/refresh-token"
+
 private fun walletCredentialPrefix(
     walletUnitId: String,
     credentialRecordId: String,
