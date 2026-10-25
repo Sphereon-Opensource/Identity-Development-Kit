@@ -12,9 +12,14 @@ import com.sphereon.core.api.error.IdkError
 import com.sphereon.credential.claims.mapper.api.error.ClaimMappingErrors
 import com.sphereon.credential.claims.mapper.api.mapper.ClaimsMappingService
 import com.sphereon.credential.claims.mapper.api.model.CredentialWithId
+import com.sphereon.credential.claims.mapper.api.resolver.CredentialClaimResolver
+import com.sphereon.sdjwt.SdJwtCodec
 import com.sphereon.wallet.credential.CredentialInstance
 import com.sphereon.wallet.credential.CredentialRecord
+import com.sphereon.wallet.credential.CredentialFormat
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
 import kotlin.time.Clock
 
 /**
@@ -25,6 +30,7 @@ import kotlin.time.Clock
 class WalletCredentialClaimValuesResolver(
     private val claimsMappingService: ClaimsMappingService,
     private val clock: Clock = Clock.System,
+    private val credentialClaimResolvers: Set<CredentialClaimResolver> = emptySet(),
 ) {
     /**
      * Resolve values from the record's currently presentable active instance, or from the exact
@@ -54,6 +60,40 @@ class WalletCredentialClaimValuesResolver(
                 payload = raw,
             ),
         )
+    }
+
+    /**
+     * Check a DCQL path against the same active instance used to resolve [claimValues]. Exact mdoc
+     * namespace/element lookup is delegated to the format resolver because its display map is flat.
+     */
+    suspend fun containsDisclosurePath(
+        record: CredentialRecord,
+        credentialInstanceId: String,
+        path: List<JsonElement>,
+    ): Boolean {
+        val instance = record.instances.firstOrNull { it.id == credentialInstanceId } ?: return false
+        if (record.deletedAt != null || !instance.isPresentableOid4vpInstance(clock.now())) return false
+        val raw = instance.raw ?: return false
+        val resolver = credentialClaimResolvers.singleOrNull { it.supports(instance.format) } ?: return false
+        if (instance.format.isMdoc) {
+            if (path.size != 2) return false
+            val namespace = (path[0] as? JsonPrimitive)?.takeIf { it.isString }?.contentOrNull ?: return false
+            val element = (path[1] as? JsonPrimitive)?.takeIf { it.isString }?.contentOrNull ?: return false
+            val result = resolver.extractClaim(raw, instance.format, listOf(namespace, element))
+            return result.isOk && result.value != null
+        }
+        if (instance.format == CredentialFormat.SD_JWT_VC || instance.format == CredentialFormat.W3C_VC_SD_JWT) {
+            val parsed = SdJwtCodec.parse(raw)
+            if (parsed.isErr) return false
+            return parsed.value.payload.fullPayload.containsDisclosurePath(path)
+        }
+        val pathSegments = mutableListOf<String>()
+        for (component in path) {
+            val property = (component as? JsonPrimitive)?.takeIf { it.isString }?.contentOrNull ?: return false
+            pathSegments += property
+        }
+        val result = resolver.extractClaim(raw, instance.format, pathSegments)
+        return result.isOk && result.value != null
     }
 
     private fun extractionError(

@@ -125,13 +125,13 @@ internal data class Oid4vciCredentialRequestTarget(
 object Oid4vciInteractionLaunchAttributes {
     const val SIGNING_ALGORITHM: String = "oid4vci.signing.algorithm"
     const val CLIENT_ID: String = "oid4vci.client.id"
-    const val CLIENT_AUTHENTICATION_METHOD: String = "oid4vci.client.authentication.method"
-    const val DPOP_ENABLED: String = "oid4vci.dpop.enabled"
+    const val CLIENT_AUTHENTICATION_METHOD: String = com.sphereon.wallet.interaction.CapturedInteractionLaunchAttributes.OID4VCI_CLIENT_AUTHENTICATION_METHOD
+    const val DPOP_ENABLED: String = com.sphereon.wallet.interaction.CapturedInteractionLaunchAttributes.OID4VCI_DPOP_ENABLED
     const val REDIRECT_URI: String = "oid4vci.redirect.uri"
     const val CREDENTIAL_CONFIGURATION_ID: String = "oid4vci.credential.configuration.id"
-    const val CREDENTIAL_BATCH_SIZE: String = "oid4vci.credential.batch.size"
-    const val USE_PAR: String = "oid4vci.use.par"
-    const val ENCRYPT_CREDENTIAL_REQUEST: String = "oid4vci.credential.request.encrypt"
+    const val CREDENTIAL_BATCH_SIZE: String = com.sphereon.wallet.interaction.CapturedInteractionLaunchAttributes.OID4VCI_CREDENTIAL_BATCH_SIZE
+    const val USE_PAR: String = com.sphereon.wallet.interaction.CapturedInteractionLaunchAttributes.OID4VCI_USE_PAR
+    const val ENCRYPT_CREDENTIAL_REQUEST: String = com.sphereon.wallet.interaction.CapturedInteractionLaunchAttributes.OID4VCI_ENCRYPT_CREDENTIAL_REQUEST
     const val IAE_CODE_VERIFIER: String = "oid4vci.iae.code.verifier"
     const val IAE_CODE_CHALLENGE: String = "oid4vci.iae.code.challenge"
     const val IAE_CODE_CHALLENGE_METHOD: String = "oid4vci.iae.code.challenge.method"

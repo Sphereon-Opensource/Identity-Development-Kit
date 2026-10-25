@@ -18,7 +18,13 @@ import com.sphereon.crypto.core.cose.CoseSign1
 import com.sphereon.mdoc.data.device.DocType
 import com.sphereon.mdoc.data.device.IssuerSigned
 import com.sphereon.mdoc.data.device.IssuerSignedCborCodecImpl
+import com.sphereon.mdoc.data.device.IssuerSignedItem
+import com.sphereon.mdoc.data.device.IssuerSignedItemCborCodecImpl
+import com.sphereon.mdoc.data.device.NameSpace
+import com.sphereon.mdoc.data.device.DataElementIdentifier
+import com.sphereon.mdoc.data.device.RandomValue
 import com.sphereon.mdoc.data.mso.DeviceKeyInfo
+import com.sphereon.mdoc.data.mso.DigestID
 import com.sphereon.mdoc.data.mso.DigestAlgorithm
 import com.sphereon.mdoc.data.mso.MobileSecurityObject
 import com.sphereon.mdoc.data.mso.MobileSecurityObjectCborCodecImpl
@@ -28,6 +34,8 @@ import com.sphereon.mdoc.data.mso.ValidityInfo
 internal fun mdocCredential(
     validFrom: String,
     validUntil: String,
+    claims: Map<String, Any> = emptyMap(),
+    additionalNamespaces: Map<String, Map<String, Any>> = emptyMap(),
 ): String {
     val msoCodec = MobileSecurityObjectCborCodecImpl()
     val issuerSignedCodec = IssuerSignedCborCodecImpl()
@@ -62,7 +70,22 @@ internal fun mdocCredential(
         )
     val issuerSigned =
         IssuerSigned(
-            nameSpaces = emptyMap(),
+            nameSpaces =
+                buildMap {
+                    if (claims.isNotEmpty()) put(NameSpace("org.iso.18013.5.1"), claims)
+                    putAll(additionalNamespaces.mapKeys { (namespace, _) -> NameSpace(namespace) })
+                }.mapValues { (_, elements) ->
+                    elements.entries.mapIndexed { index, (identifier, value) ->
+                        IssuerSignedItemCborCodecImpl().encodeItem(
+                            IssuerSignedItem(
+                                digestID = DigestID(index.toUInt()),
+                                random = RandomValue(ByteArray(24) { 0x42.toByte() }),
+                                elementIdentifier = DataElementIdentifier(identifier),
+                                elementValue = value,
+                            ),
+                        ).getOrThrow()
+                    }.toTypedArray()
+                },
             issuerAuth =
                 CoseSign1<MobileSecurityObject>(
                     protectedHeader = CoseHeaderCbor(alg = CoseAlgorithm.ES256),

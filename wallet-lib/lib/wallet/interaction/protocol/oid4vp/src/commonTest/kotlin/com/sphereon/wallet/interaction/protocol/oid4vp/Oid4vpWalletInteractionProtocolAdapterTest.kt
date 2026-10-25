@@ -9,7 +9,12 @@ package com.sphereon.wallet.interaction.protocol.oid4vp
 import com.sphereon.core.api.Err
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
+import com.sphereon.core.api.encodeToBase64Url
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.credential.claims.mapper.impl.mapper.ClaimsMappingServiceImpl
+import com.sphereon.credential.claims.mapper.impl.resolver.MdocClaimResolver
+import com.sphereon.credential.claims.mapper.impl.resolver.SdJwtClaimResolver
+import com.sphereon.credential.claims.mapper.api.resolver.CredentialClaimResolver
 import com.sphereon.crypto.core.generic.SignatureAlgorithm
 import com.sphereon.data.store.party.model.IdentifierType
 import com.sphereon.oauth2.common.model.AuthorizationErrorResponse
@@ -22,6 +27,7 @@ import com.sphereon.openid.oid4vp.common.ResponseMode
 import com.sphereon.openid.oid4vp.common.VpFormatInfo
 import com.sphereon.openid.oid4vp.dcql.DcqlClaimQuery
 import com.sphereon.openid.oid4vp.dcql.ClaimsPathPointer
+import com.sphereon.openid.oid4vp.dcql.claimsPathPointer
 import com.sphereon.openid.oid4vp.dcql.DcqlCredentialQuery
 import com.sphereon.openid.oid4vp.dcql.DcqlCredentialSetQuery
 import com.sphereon.openid.oid4vp.dcql.DcqlQuery
@@ -34,8 +40,10 @@ import com.sphereon.openid.oid4vp.holder.Oid4vpHolderService
 import com.sphereon.openid.oid4vp.holder.PreparedOid4vpJweRecipientBinding
 import com.sphereon.openid.oid4vp.holder.PreparedPresentation
 import com.sphereon.openid.oid4vp.holder.ResolvedOid4vpRequest
+import com.sphereon.openid.oid4vp.holder.credentialDisclosurePathOptions
 import com.sphereon.openid.oid4vp.holder.SelectedCredential
 import com.sphereon.openid.oid4vp.holder.SubmissionResult
+import com.sphereon.mdoc.data.device.IssuerSignedCborCodecImpl
 import com.sphereon.openid.oid4vp.holder.VerifierInfo
 import com.sphereon.openid.oid4vp.holder.WalletConfig
 import com.sphereon.wallet.credential.BodyStorageKind
@@ -114,6 +122,8 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -1123,6 +1133,54 @@ class Oid4vpWalletInteractionProtocolAdapterTest {
     }
 
     @Test
+    fun dcqlDisclosurePathMatcherHandlesArrayIndicesWildcardsAndDottedProperties() {
+        val values =
+            mapOf(
+                "addresses" to
+                    JsonArray(
+                        listOf(
+                            buildJsonObject { put("city", JsonPrimitive("Utrecht")) },
+                            buildJsonObject { put("city", JsonPrimitive("Amsterdam")) },
+                        ),
+                    ),
+                "a.b" to JsonPrimitive("literal dotted property"),
+                "a" to buildJsonObject { put("b", JsonPrimitive("nested property")) },
+            )
+
+        assertTrue(
+            values.containsDisclosurePath(
+                listOf(JsonPrimitive("addresses"), JsonPrimitive(1), JsonPrimitive("city")),
+            ),
+        )
+        assertTrue(
+            values.containsDisclosurePath(
+                listOf(JsonPrimitive("addresses"), JsonNull, JsonPrimitive("city")),
+            ),
+        )
+        assertTrue(values.containsDisclosurePath(listOf(JsonPrimitive("a.b"))))
+        assertTrue(
+            values.containsDisclosurePath(
+                listOf(JsonPrimitive("a"), JsonPrimitive("b")),
+            ),
+        )
+        assertFalse(
+            values.containsDisclosurePath(
+                listOf(JsonPrimitive("a"), JsonPrimitive("c")),
+            ),
+        )
+        assertFalse(
+            mapOf("addresses" to JsonArray(listOf(buildJsonObject { put("city", JsonPrimitive("Utrecht")) }, JsonPrimitive("not-an-object"))))
+                .containsDisclosurePath(listOf(JsonPrimitive("addresses"), JsonNull, JsonPrimitive("city"))),
+            "a wildcard selection cannot ignore an element with an incompatible type",
+        )
+        assertTrue(
+            mapOf("addresses" to JsonArray(listOf(buildJsonObject { put("city", JsonPrimitive("Utrecht")) }, buildJsonObject { })))
+                .containsDisclosurePath(listOf(JsonPrimitive("addresses"), JsonNull, JsonPrimitive("city"))),
+            "a missing property drops only that selected object",
+        )
+    }
+
+    @Test
     fun dcqlRequirementsWithoutCandidateCredentialsAreUnsatisfiable() {
         val request =
             DcqlQuery(
@@ -1199,6 +1257,209 @@ class Oid4vpWalletInteractionProtocolAdapterTest {
 
             assertEquals(mapOf("mdl" to listOf("mdl-record")), candidates)
             assertEquals(listOf("mdl-record"), store.credentialReads)
+        }
+
+    @Test
+    fun walletStoreCandidateResolverExcludesMdocMissingAnyRequiredClaim() =
+        runTest {
+            val record =
+                walletCredentialRecord(
+                    id = "pid-record",
+                    format = CredentialFormat.MSO_MDOC,
+                    typeRefs = setOf(credentialTypeRef(CredentialFormat.MSO_MDOC, CredentialTypeRefKind.MDOC_DOCTYPE, "eu.europa.ec.eudi.pid.1")),
+                    raw = mdocCredential(
+                        validFrom = "2020-01-20T12:00:00Z",
+                        validUntil = "2099-12-31T23:59:59Z",
+                        claims = mapOf("family_name" to "Lindgren"),
+                    ),
+                )
+            val store = RecordingWalletCredentialStore(record)
+            val resolver = WalletStoreOid4vpCredentialResolver(store, credentialClaimValuesResolver = claimValuesResolver())
+            val resolved =
+                resolvedRequest(
+                    DcqlCredentialQuery(
+                        id = "pid",
+                        format = "mso_mdoc",
+                        meta = mdocMeta("eu.europa.ec.eudi.pid.1"),
+                        claims =
+                            listOf(
+                                DcqlClaimQuery(path = claimsPathPointer("org.iso.18013.5.1", "family_name")),
+                                DcqlClaimQuery(path = claimsPathPointer("org.iso.18013.5.1", "age_over_18")),
+                            ),
+                    ),
+                )
+
+            val candidates = resolver.candidateCredentialIds(walletContext(), resolved)
+
+            assertEquals(emptyList(), candidates.getValue("pid"))
+        }
+
+    @Test
+    fun walletStoreCandidateResolverUsesFirstSatisfiableClaimSetWithoutChangingOptionOrder() =
+        runTest {
+            val record =
+                walletCredentialRecord(
+                    id = "pid-record",
+                    format = CredentialFormat.MSO_MDOC,
+                    typeRefs = setOf(credentialTypeRef(CredentialFormat.MSO_MDOC, CredentialTypeRefKind.MDOC_DOCTYPE, "eu.europa.ec.eudi.pid.1")),
+                    raw = mdocCredential(
+                        validFrom = "2020-01-20T12:00:00Z",
+                        validUntil = "2099-12-31T23:59:59Z",
+                        claims = mapOf("family_name" to "Lindgren"),
+                    ),
+                )
+            val store = RecordingWalletCredentialStore(record)
+            val resolver = WalletStoreOid4vpCredentialResolver(store, credentialClaimValuesResolver = claimValuesResolver())
+            val resolved =
+                resolvedRequest(
+                    DcqlCredentialQuery(
+                        id = "pid",
+                        format = "mso_mdoc",
+                        meta = mdocMeta("eu.europa.ec.eudi.pid.1"),
+                        claims =
+                            listOf(
+                                DcqlClaimQuery(path = claimsPathPointer("org.iso.18013.5.1", "age_over_18"), id = "age"),
+                                DcqlClaimQuery(path = claimsPathPointer("org.iso.18013.5.1", "family_name"), id = "name"),
+                            ),
+                        claim_sets = listOf(listOf("age"), listOf("name")),
+                    ),
+                )
+
+            val candidates = resolver.candidateCredentialIds(walletContext(), resolved)
+
+            assertEquals(listOf("pid-record"), candidates.getValue("pid"))
+            assertEquals(
+                listOf(
+                    listOf(listOf(JsonPrimitive("org.iso.18013.5.1"), JsonPrimitive("age_over_18"))),
+                    listOf(listOf(JsonPrimitive("org.iso.18013.5.1"), JsonPrimitive("family_name"))),
+                ),
+                resolved.credentialDisclosurePathOptions("pid"),
+            )
+        }
+
+    @Test
+    fun walletStoreCandidateResolverDoesNotConflateMdocNamespaceAndElementBoundaries() =
+        runTest {
+            val record =
+                walletCredentialRecord(
+                    id = "pid-record",
+                    format = CredentialFormat.MSO_MDOC,
+                    typeRefs = setOf(credentialTypeRef(CredentialFormat.MSO_MDOC, CredentialTypeRefKind.MDOC_DOCTYPE, "eu.europa.ec.eudi.pid.1")),
+                    raw =
+                        mdocCredential(
+                            validFrom = "2020-01-20T12:00:00Z",
+                            validUntil = "2099-12-31T23:59:59Z",
+                            additionalNamespaces = mapOf("a" to mapOf("b.c" to "present")),
+                        ),
+                )
+            val store = RecordingWalletCredentialStore(record)
+            val resolver = WalletStoreOid4vpCredentialResolver(store, credentialClaimValuesResolver = claimValuesResolver())
+            val resolved =
+                resolvedRequest(
+                    DcqlCredentialQuery(
+                        id = "pid",
+                        format = "mso_mdoc",
+                        meta = mdocMeta("eu.europa.ec.eudi.pid.1"),
+                        claims = listOf(DcqlClaimQuery(path = claimsPathPointer("a.b", "c"))),
+                    ),
+                )
+
+            val candidates = resolver.candidateCredentialIds(walletContext(), resolved)
+
+            assertEquals(emptyList(), candidates.getValue("pid"))
+        }
+
+    @Test
+    fun walletStoreCandidateResolverUsesStructuredParsedSdJwtClaims() =
+        runTest {
+            val validCredential =
+                sdJwtCredential(
+                    buildJsonObject {
+                        put("vct", JsonPrimitive("https://example.com/pid"))
+                        put("address", buildJsonObject { put("city", JsonPrimitive("Utrecht")) })
+                        put(
+                            "addresses",
+                            JsonArray(
+                                listOf(
+                                    buildJsonObject { put("city", JsonPrimitive("Utrecht")) },
+                                    buildJsonObject { put("city", JsonPrimitive("Amsterdam")) },
+                                ),
+                            ),
+                        )
+                    },
+                )
+            val mixedTypeCredential =
+                sdJwtCredential(
+                    buildJsonObject {
+                        put("vct", JsonPrimitive("https://example.com/pid"))
+                        put(
+                            "addresses",
+                            JsonArray(
+                                listOf(
+                                    buildJsonObject { put("city", JsonPrimitive("Utrecht")) },
+                                    JsonPrimitive("not-an-object"),
+                                ),
+                            ),
+                        )
+                    },
+                )
+            val store =
+                RecordingWalletCredentialStore(
+                    walletCredentialRecord(
+                        id = "valid-pid-record",
+                        format = CredentialFormat.SD_JWT_VC,
+                        typeRefs = setOf(credentialTypeRef(CredentialFormat.SD_JWT_VC, CredentialTypeRefKind.SD_JWT_VCT, "https://example.com/pid")),
+                        raw = validCredential,
+                    ),
+                    walletCredentialRecord(
+                        id = "mixed-pid-record",
+                        format = CredentialFormat.SD_JWT_VC,
+                        typeRefs = setOf(credentialTypeRef(CredentialFormat.SD_JWT_VC, CredentialTypeRefKind.SD_JWT_VCT, "https://example.com/pid")),
+                        raw = mixedTypeCredential,
+                    ),
+                )
+            val resolver = WalletStoreOid4vpCredentialResolver(store, credentialClaimValuesResolver = claimValuesResolver())
+            val nestedClaimRequest =
+                resolvedRequest(
+                    DcqlCredentialQuery(
+                        id = "nested-address",
+                        format = "dc+sd-jwt",
+                        meta = sdJwtVcMeta("https://example.com/pid"),
+                        claims = listOf(DcqlClaimQuery(path = claimsPathPointer("address", "city"))),
+                    ),
+                )
+            val arrayWildcardRequest =
+                resolvedRequest(
+                    DcqlCredentialQuery(
+                        id = "address-cities",
+                        format = "dc+sd-jwt",
+                        meta = sdJwtVcMeta("https://example.com/pid"),
+                        claims =
+                            listOf(
+                                DcqlClaimQuery(
+                                    path = ClaimsPathPointer(listOf(JsonPrimitive("addresses"), JsonNull, JsonPrimitive("city"))),
+                                ),
+                            ),
+                    ),
+                )
+            val arrayIndexRequest =
+                resolvedRequest(
+                    DcqlCredentialQuery(
+                        id = "first-address-city",
+                        format = "dc+sd-jwt",
+                        meta = sdJwtVcMeta("https://example.com/pid"),
+                        claims =
+                            listOf(
+                                DcqlClaimQuery(
+                                    path = ClaimsPathPointer(listOf(JsonPrimitive("addresses"), JsonPrimitive(0), JsonPrimitive("city"))),
+                                ),
+                            ),
+                    ),
+                )
+
+            assertEquals(listOf("valid-pid-record"), resolver.candidateCredentialIds(walletContext(), nestedClaimRequest).getValue("nested-address"))
+            assertEquals(listOf("valid-pid-record"), resolver.candidateCredentialIds(walletContext(), arrayWildcardRequest).getValue("address-cities"))
+            assertEquals(listOf("valid-pid-record", "mixed-pid-record"), resolver.candidateCredentialIds(walletContext(), arrayIndexRequest).getValue("first-address-city"))
         }
 
     @Test
@@ -2471,6 +2732,24 @@ class Oid4vpWalletInteractionProtocolAdapterTest {
             privateSessionStore = privateSessionStore,
             attributes = attributes,
         )
+
+    private fun claimValuesResolver(): WalletCredentialClaimValuesResolver {
+        val resolvers: Set<CredentialClaimResolver> =
+            setOf(
+                SdJwtClaimResolver(),
+                MdocClaimResolver(IssuerSignedCborCodecImpl()),
+            )
+        return WalletCredentialClaimValuesResolver(
+            claimsMappingService = ClaimsMappingServiceImpl(resolvers),
+            credentialClaimResolvers = resolvers,
+        )
+    }
+
+    private fun sdJwtCredential(payload: JsonObject): String {
+        val header = """{"alg":"ES256","typ":"dc+sd-jwt"}""".encodeToByteArray().encodeToBase64Url()
+        val encodedPayload = payload.toString().encodeToByteArray().encodeToBase64Url()
+        return "$header.$encodedPayload.issuer-signature~"
+    }
 
     private fun resolvedRequest(vararg credentials: DcqlCredentialQuery): ResolvedOid4vpRequest =
         ResolvedOid4vpRequest(
