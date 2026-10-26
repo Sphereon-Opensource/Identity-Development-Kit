@@ -34,6 +34,7 @@ import com.sphereon.sdjwt.SdJwtCodec
 import com.sphereon.sdjwt.vc.IssuerMetadataResolutionError
 import com.sphereon.sdjwt.vc.IssuerMetadataResolutionResult
 import com.sphereon.sdjwt.vc.IssuerMetadataResolver
+import com.sphereon.sdjwt.vc.SdJwtVcClaims
 import com.sphereon.sdjwt.vc.SdJwtVcVerificationOpts
 import com.sphereon.sdjwt.vc.VerifySdJwtVcArgs
 import com.sphereon.sdjwt.vc.command.VerifySdJwtVcCommand
@@ -377,12 +378,7 @@ class Oid4vciIssuedCredentialAcceptance(
     ): Set<CredentialTypeRef> {
         val parseResult = SdJwtCodec.parse(raw)
         if (parseResult.isErr) return emptySet()
-        val vct =
-            parseResult.value.payload.fullPayload["vct"]
-                ?.jsonPrimitive
-                ?.contentOrNull
-                ?.takeIf { it.isNotBlank() }
-                ?: return emptySet()
+        val vct = SdJwtVcClaims.vct(parseResult.value.payload.fullPayload) ?: return emptySet()
         return setOf(
             CredentialTypeRef(
                 format = format,

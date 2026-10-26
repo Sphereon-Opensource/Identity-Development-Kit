@@ -280,6 +280,7 @@ class ValidateAuthorizationResponseMdocClaimExtractionTest {
                     credentialStatusVerifiers = emptySet(),
                     credentialTrustValidators = emptySet(),
                     businessAuthorizations = emptySet(),
+                    credentialTypeMatcher = com.sphereon.openid.oid4vp.verifier.impl.testutil.testCredentialTypeMatcher(),
                 )
 
             val claims = command.extractDisclosedClaims(presentation, CredentialFormat.MSO_MDOC)
@@ -323,6 +324,7 @@ class ValidateAuthorizationResponseMdocClaimExtractionTest {
                     credentialStatusVerifiers = emptySet(),
                     credentialTrustValidators = emptySet(),
                     businessAuthorizations = emptySet(),
+                    credentialTypeMatcher = com.sphereon.openid.oid4vp.verifier.impl.testutil.testCredentialTypeMatcher(),
                 )
 
             // Valid base64url ("notcbor") but not a CBOR DeviceResponse -> graceful empty map.

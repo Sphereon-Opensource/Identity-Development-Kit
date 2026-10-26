@@ -64,6 +64,8 @@ import com.sphereon.openid.oid4vc.common.vcdm.VcdmUris
 import com.sphereon.openid.oid4vc.common.vcdm.VcdmVersion
 import com.sphereon.openid.oid4vc.common.PresentationFormat
 import com.sphereon.openid.oid4vp.verifier.CredentialIssuerRef
+import com.sphereon.openid.oid4vp.verifier.CredentialTypeMatcher
+import com.sphereon.sdjwt.vc.SdJwtVcClaims
 import com.sphereon.openid.oid4vp.verifier.CredentialTrustValidation
 import com.sphereon.openid.oid4vp.verifier.CredentialTrustValidationMode
 import com.sphereon.openid.oid4vp.verifier.TrustedAuthenticationResolution
@@ -180,6 +182,7 @@ class ValidateAuthorizationResponseCommandImpl(
      */
     private val credentialTrustValidators: Set<Oid4vpCredentialTrustValidator>,
     private val businessAuthorizations: Set<com.sphereon.openid.oid4vp.verifier.Oid4vpBusinessAuthorization>,
+    private val credentialTypeMatcher: CredentialTypeMatcher,
     private val eventService: SessionEventService? = null,
 ) : TypedServiceCommandAdapter<ValidateAuthorizationResponseArgs, ValidationResult, IdkError>(
         commandId = ValidateAuthorizationResponseCommand.COMMAND_ID,
@@ -435,7 +438,7 @@ class ValidateAuthorizationResponseCommandImpl(
             val verifiedDocument = diResult.value.verifiedDocument
             val renderedPresentation = JSON_LENIENT.encodeToString(JsonElement.serializer(), presentationElement)
             if (documentKind == VcdmDocumentKind.PRESENTATION) {
-                val dataIntegrityRecursionState = VcdmRecursionState()
+                val dataIntegrityRecursionState = VcdmRecursionState(matchingQuery)
                 if (matchingQuery.require_cryptographic_holder_binding) {
                     dataIntegrityRecursionState.boundHolder = boundDidHolder(
                         declaredDataIntegrityController ?: diResult.value.authenticatedControllers.singleOrNull(),
@@ -511,6 +514,10 @@ class ValidateAuthorizationResponseCommandImpl(
                     emitStatusRejected(queryId, evaluation)
                     return
                 }
+            }
+            credentialTypeFailure(verifiedDocument, matchingQuery)?.let {
+                errors.add("Credential for query '$queryId' at index $presentationIndex rejected: $it")
+                return
             }
             matchedCredentials.add(
                 MatchedCredential(
@@ -769,6 +776,7 @@ class ValidateAuthorizationResponseCommandImpl(
                     } else {
                         null
                     },
+                    matchingQuery = matchingQuery,
                 )
             rejections.addAll(recursiveResult.rejections)
             if (recursiveResult.error != null) {
@@ -902,6 +910,23 @@ class ValidateAuthorizationResponseCommandImpl(
 
         // Extract disclosed claims from the presentation
         val compactVcdmCredential = compactClassification?.takeIf { it.document.kind == VcdmDocumentKind.CREDENTIAL }?.document?.json
+        val typeCheckedCredential =
+            compactVcdmCredential
+                ?: if (detectedCredentialFormat == CredentialFormat.SD_JWT_VC) {
+                    // vct and vct#integrity are never selectively disclosable, so the issuer-signed JWT alone carries them.
+                    SdJwtCodec.parse(presentation.substringBefore('~') + "~").getOrElse {
+                        errors.add("SD-JWT VC for query '$queryId' at index $presentationIndex could not be parsed for its type check: ${it.message.defaultMessage}")
+                        return
+                    }.payload.fullPayload
+                } else {
+                    null
+                }
+        if (typeCheckedCredential != null) {
+            credentialTypeFailure(typeCheckedCredential, matchingQuery)?.let {
+                errors.add("Credential for query '$queryId' at index $presentationIndex rejected: $it")
+                return
+            }
+        }
         val disclosedClaims = compactVcdmCredential?.let(::vcdmSubjectClaims)
             ?: extractDisclosedClaims(presentation, requireNotNull(detectedCredentialFormat))
 
@@ -922,6 +947,22 @@ class ValidateAuthorizationResponseCommandImpl(
     }
 
     /**
+     * Applies the credential type constraint of [query] to an authenticated credential. Returns the
+     * reason the credential is refused, or null when it satisfies the query. Formats without a type
+     * constraint handled by [CredentialTypeMatcher] are left to their existing checks.
+     */
+    private suspend fun credentialTypeFailure(
+        credential: JsonObject,
+        query: DcqlCredentialQuery,
+    ): String? {
+        if (query.format !in TYPE_CHECKED_FORMATS) return null
+        val matches =
+            credentialTypeMatcher.matches(credential, query)
+                .getOrElse { return "credential type could not be verified: ${it.message.defaultMessage}" }
+        return if (matches) null else "credential type does not match query '${query.id}'"
+    }
+
+    /**
      * The digital credential type (Universal OID4VP `VerifiedClaimsValue.type`: "a vct value, or for
      * instance a json-ld type"): the SD-JWT VC `vct` or the mdoc docType.
      */
@@ -929,7 +970,7 @@ class ValidateAuthorizationResponseCommandImpl(
         when (format) {
             CredentialFormat.SD_JWT_VC, CredentialFormat.W3C_VC_SD_JWT ->
                 SdJwtCodec.parse(presentation).fold(
-                    success = { (it.payload.fullPayload["vct"] as? JsonPrimitive)?.takeIf { p -> p.isString }?.content },
+                    success = { SdJwtVcClaims.vct(it.payload.fullPayload) },
                     failure = { null },
                 )
             CredentialFormat.MSO_MDOC -> issuer?.docType
@@ -1235,7 +1276,7 @@ class ValidateAuthorizationResponseCommandImpl(
         verificationMethodResolutionPolicy: VerificationMethodResolutionPolicy,
         issuerAlgAllowlist: Set<String>?,
         depth: Int = 0,
-        state: VcdmRecursionState = VcdmRecursionState(),
+        state: VcdmRecursionState,
     ): String? {
         if (depth > VCDM_MAX_RECURSION_DEPTH) return "maximum nested Data Integrity presentation depth exceeded"
         if (depth == 0 && state.decodedBytes == 0L) {
@@ -1392,6 +1433,7 @@ class ValidateAuthorizationResponseCommandImpl(
                         return "verifiableCredential child[$index] status rejected"
                     }
                 }
+                credentialTypeFailure(verifiedChild, state.credentialQuery)?.let { return "verifiableCredential child[$index] $it" }
             }
         }
         return null
@@ -1642,8 +1684,9 @@ class ValidateAuthorizationResponseCommandImpl(
         verificationMethodResolutionPolicy: VerificationMethodResolutionPolicy,
         issuerAlgAllowlist: Set<String>?,
         boundHolder: String?,
+        matchingQuery: DcqlCredentialQuery,
     ): VcdmVerifiedChildren {
-        val state = VcdmRecursionState()
+        val state = VcdmRecursionState(matchingQuery)
         state.boundHolder = boundHolder
         state.artifacts += artifact
         state.decodedBytes = artifact.encodeToByteArray().size.toLong()
@@ -1835,6 +1878,7 @@ class ValidateAuthorizationResponseCommandImpl(
                 return "VCDM 1.1 JSON child status rejected"
             }
         }
+        credentialTypeFailure(verifiedDocument, state.credentialQuery)?.let { return "VCDM 1.1 JSON child $it" }
         state.credentialFormats += CredentialFormat.LDP_VC
         return null
     }
@@ -2034,6 +2078,7 @@ class ValidateAuthorizationResponseCommandImpl(
             }
         }
         if (classification.kind == VcdmDocumentKind.CREDENTIAL) {
+            credentialTypeFailure(verifiedChild, state.credentialQuery)?.let { return "direct Data Integrity child $it" }
             state.credentialFormats += CredentialFormat.LDP_VC
         }
         return null
@@ -2141,6 +2186,7 @@ class ValidateAuthorizationResponseCommandImpl(
                 return "child credential status rejected"
             }
         }
+        credentialTypeFailure(classification.document.json, state.credentialQuery)?.let { return "child credential rejected: $it" }
         return null
     }
 
@@ -2161,7 +2207,10 @@ class ValidateAuthorizationResponseCommandImpl(
         val rejections: List<CredentialValidationRejection> = emptyList(),
     )
 
-    private class VcdmRecursionState {
+    private class VcdmRecursionState(
+        /** The query every credential in the presentation must satisfy on its own. */
+        val credentialQuery: DcqlCredentialQuery,
+    ) {
         /**
          * The DID holder of the presentation whose credentials are being verified, when that
          * presentation must carry Cryptographic Holder Binding; null when no subject binding applies.
@@ -2863,6 +2912,10 @@ class ValidateAuthorizationResponseCommandImpl(
          * the only signal separating that rejection from a required-but-absent one.
          */
         const val UNRESOLVABLE_STATUS_REASON_PREFIX = "status could not be resolved"
+
+        /** Query formats whose credential type constraint is enforced through [CredentialTypeMatcher]. */
+        val TYPE_CHECKED_FORMATS: Set<String> =
+            setOf(CredentialFormat.SD_JWT_VC.value, CredentialFormat.JWT_VC_JSON.value, CredentialFormat.LDP_VC.value)
 
         const val MDOC_MIN_ENCODED_LENGTH = 20
         const val VCDM_MAX_RECURSION_DEPTH = 4

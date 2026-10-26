@@ -21,6 +21,7 @@ import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
 import com.sphereon.core.api.binary.TypeToken
 import com.sphereon.core.api.binary.typeToken
+import com.sphereon.core.api.encodeToBase64
 import com.sphereon.core.api.encodeToBase64Url
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.crypto.dataintegrity.model.ProofPurpose
@@ -62,7 +63,12 @@ import com.sphereon.openid.oid4vp.verifier.ValidateAuthorizationResponseArgs
 import com.sphereon.openid.oid4vp.verifier.VerifyHolderBindingArgs
 import com.sphereon.openid.oid4vp.verifier.VerifyHolderBindingCommand
 import com.sphereon.openid.oid4vp.verifier.TrustedAuthenticationResolution
+import com.sphereon.openid.oid4vp.verifier.CredentialTypeMatcher
+import com.sphereon.openid.oid4vp.verifier.impl.testutil.CountingTypeMetadataCommand
 import com.sphereon.openid.oid4vp.verifier.impl.testutil.Oid4vpVerifierTestContext
+import com.sphereon.openid.oid4vp.verifier.impl.testutil.testCredentialTypeMatcher
+import com.sphereon.sdjwt.vc.SdJwtVcTypeMetadata
+import com.sphereon.sdjwt.vc.StaticTypeMetadataResolver
 import com.sphereon.openid.oid4vp.verifier.model.AuthorizationSession
 import com.sphereon.openid.oid4vp.verifier.model.AuthorizationSessionStatus
 import com.sphereon.openid.oid4vp.verifier.store.AuthorizationSessionStore
@@ -70,6 +76,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
@@ -124,7 +131,7 @@ class ValidateAuthorizationResponseCommandImplTest {
                 )
 
             // And: Parsed response with SD-JWT in DCQL format
-            val sdJwt = "eyJhbGciOiJFUzI1NiJ9.payload.signature~WyJhYmMxMjMiLCJmaXJzdF9uYW1lIiwiSm9obiJd~eyJhbGciOiJFUzI1NiJ9.kb.sig"
+            val sdJwt = "eyJhbGciOiJFUzI1NiJ9.eyJpc3MiOiJodHRwczovL2lzc3Vlci5leGFtcGxlIiwidmN0IjoidXJuOnRlc3Q6aWRlbnRpdHkifQ.signature~WyJhYmMxMjMiLCJmaXJzdF9uYW1lIiwiSm9obiJd~eyJhbGciOiJFUzI1NiJ9.kb.sig"
             val parsedResponse =
                 ParsedAuthorizationResponse(
                     vpToken = vpTokenOf("identity_credential", sdJwt),
@@ -169,7 +176,7 @@ class ValidateAuthorizationResponseCommandImplTest {
                 DcqlQuery(
                     credentials = listOf(DcqlCredentialQuery(id = "identity_credential", format = "dc+sd-jwt", meta = sdJwtVcMeta("urn:test:identity"))),
                 )
-            val sdJwt = "eyJhbGciOiJFUzI1NiJ9.payload.signature~WyJhYmMxMjMiLCJmaXJzdF9uYW1lIiwiSm9obiJd~eyJhbGciOiJFUzI1NiJ9.kb.sig"
+            val sdJwt = "eyJhbGciOiJFUzI1NiJ9.eyJpc3MiOiJodHRwczovL2lzc3Vlci5leGFtcGxlIiwidmN0IjoidXJuOnRlc3Q6aWRlbnRpdHkifQ.signature~WyJhYmMxMjMiLCJmaXJzdF9uYW1lIiwiSm9obiJd~eyJhbGciOiJFUzI1NiJ9.kb.sig"
             val args =
                 ValidateAuthorizationResponseArgs(
                     parsedResponse =
@@ -286,7 +293,7 @@ class ValidateAuthorizationResponseCommandImplTest {
                 DcqlQuery(
                     credentials = listOf(DcqlCredentialQuery(id = "identity_credential", format = "dc+sd-jwt", meta = sdJwtVcMeta("urn:test:identity"))),
                 )
-            val sdJwt = "eyJhbGciOiJFUzI1NiJ9.payload.signature~WyJhYmMxMjMiLCJmaXJzdF9uYW1lIiwiSm9obiJd~eyJhbGciOiJFUzI1NiJ9.kb.sig"
+            val sdJwt = "eyJhbGciOiJFUzI1NiJ9.eyJpc3MiOiJodHRwczovL2lzc3Vlci5leGFtcGxlIiwidmN0IjoidXJuOnRlc3Q6aWRlbnRpdHkifQ.signature~WyJhYmMxMjMiLCJmaXJzdF9uYW1lIiwiSm9obiJd~eyJhbGciOiJFUzI1NiJ9.kb.sig"
             val args =
                 ValidateAuthorizationResponseArgs(
                     parsedResponse =
@@ -326,7 +333,7 @@ class ValidateAuthorizationResponseCommandImplTest {
                 DcqlQuery(
                     credentials = listOf(DcqlCredentialQuery(id = "identity_credential", format = "dc+sd-jwt", meta = sdJwtVcMeta("urn:test:identity"))),
                 )
-            val sdJwt = "eyJhbGciOiJFUzI1NiJ9.payload.signature~WyJhYmMxMjMiLCJmaXJzdF9uYW1lIiwiSm9obiJd~eyJhbGciOiJFUzI1NiJ9.kb.sig"
+            val sdJwt = "eyJhbGciOiJFUzI1NiJ9.eyJpc3MiOiJodHRwczovL2lzc3Vlci5leGFtcGxlIiwidmN0IjoidXJuOnRlc3Q6aWRlbnRpdHkifQ.signature~WyJhYmMxMjMiLCJmaXJzdF9uYW1lIiwiSm9obiJd~eyJhbGciOiJFUzI1NiJ9.kb.sig"
             // args.templateId is deliberately left null — the wallet direct_post response never
             // carries a templateId. Only the session (persisted at request-creation time from the
             // template) knows it.
@@ -369,7 +376,7 @@ class ValidateAuthorizationResponseCommandImplTest {
                 DcqlQuery(
                     credentials = listOf(DcqlCredentialQuery(id = "identity_credential", format = "dc+sd-jwt", meta = sdJwtVcMeta("urn:test:identity"))),
                 )
-            val sdJwt = "eyJhbGciOiJFUzI1NiJ9.payload.signature~WyJhYmMxMjMiLCJmaXJzdF9uYW1lIiwiSm9obiJd~eyJhbGciOiJFUzI1NiJ9.kb.sig"
+            val sdJwt = "eyJhbGciOiJFUzI1NiJ9.eyJpc3MiOiJodHRwczovL2lzc3Vlci5leGFtcGxlIiwidmN0IjoidXJuOnRlc3Q6aWRlbnRpdHkifQ.signature~WyJhYmMxMjMiLCJmaXJzdF9uYW1lIiwiSm9obiJd~eyJhbGciOiJFUzI1NiJ9.kb.sig"
             val args =
                 ValidateAuthorizationResponseArgs(
                     parsedResponse =
@@ -407,7 +414,7 @@ class ValidateAuthorizationResponseCommandImplTest {
                 DcqlQuery(
                     credentials = listOf(DcqlCredentialQuery(id = "identity_credential", format = "dc+sd-jwt", meta = sdJwtVcMeta("urn:test:identity"))),
                 )
-            val sdJwt = "eyJhbGciOiJFUzI1NiJ9.payload.signature~WyJhYmMxMjMiLCJmaXJzdF9uYW1lIiwiSm9obiJd~eyJhbGciOiJFUzI1NiJ9.kb.sig"
+            val sdJwt = "eyJhbGciOiJFUzI1NiJ9.eyJpc3MiOiJodHRwczovL2lzc3Vlci5leGFtcGxlIiwidmN0IjoidXJuOnRlc3Q6aWRlbnRpdHkifQ.signature~WyJhYmMxMjMiLCJmaXJzdF9uYW1lIiwiSm9obiJd~eyJhbGciOiJFUzI1NiJ9.kb.sig"
             val args =
                 ValidateAuthorizationResponseArgs(
                     parsedResponse =
@@ -582,7 +589,7 @@ class ValidateAuthorizationResponseCommandImplTest {
                     credentials = listOf(DcqlCredentialQuery(id = "test", format = "dc+sd-jwt", meta = sdJwtVcMeta("urn:test:credential"))),
                 )
 
-            val sdjwt = "eyJhbGciOiJFUzI1NiJ9.payload.signature~disclosure~kb"
+            val sdjwt = "eyJhbGciOiJFUzI1NiJ9.eyJpc3MiOiJodHRwczovL2lzc3Vlci5leGFtcGxlIiwidmN0IjoidXJuOnRlc3Q6Y3JlZGVudGlhbCJ9.signature~disclosure~kb"
             val parsedResponse =
                 ParsedAuthorizationResponse(
                     vpToken = vpTokenOf("test", sdjwt),
@@ -628,7 +635,7 @@ class ValidateAuthorizationResponseCommandImplTest {
                 )
 
             // And: Response with multiple presentations (DCQL format)
-            val sdJwt = "eyJhbGciOiJFUzI1NiJ9.payload.signature~disclosure~kb"
+            val sdJwt = "eyJhbGciOiJFUzI1NiJ9.eyJpc3MiOiJodHRwczovL2lzc3Vlci5leGFtcGxlIiwidmN0IjoidXJuOnRlc3Q6aWRlbnRpdHkifQ.signature~disclosure~kb"
             val mdoc = "o2d2ZXJzaW9uYzEuMGlkb2N1bWVudHOBo2dkb2NUeXBl"
             val parsedResponse =
                 ParsedAuthorizationResponse(
@@ -739,7 +746,7 @@ class ValidateAuthorizationResponseCommandImplTest {
                 )
 
             // And: Response with mismatched format (no SD-JWT, just regular JWT)
-            val jwt = "eyJhbGciOiJFUzI1NiJ9.payload.signature"
+            val jwt = "eyJhbGciOiJFUzI1NiJ9.eyJpc3MiOiJodHRwczovL2lzc3Vlci5leGFtcGxlIiwidmN0IjoidXJuOnRlc3Q6cmVxdWlyZWQifQ.signature"
             val parsedResponse =
                 ParsedAuthorizationResponse(
                     vpToken = vpTokenOf("required_cred", jwt),
@@ -879,7 +886,7 @@ class ValidateAuthorizationResponseCommandImplTest {
             // entirely (referencesVcdm2Context returns false because there is no
             // @context at the JWT body root) and the SD-JWT path goes through as
             // before. This is the regression-guard for the older 8 tests.
-            val sdJwt = "eyJhbGciOiJFUzI1NiJ9.payload.signature~WyJhYmMxMjMiLCJmaXJzdF9uYW1lIiwiSm9obiJd~eyJhbGciOiJFUzI1NiJ9.kb.sig"
+            val sdJwt = "eyJhbGciOiJFUzI1NiJ9.eyJpc3MiOiJodHRwczovL2lzc3Vlci5leGFtcGxlIiwidmN0IjoidXJuOnRlc3Q6Y3JlZGVudGlhbCJ9.signature~WyJhYmMxMjMiLCJmaXJzdF9uYW1lIiwiSm9obiJd~eyJhbGciOiJFUzI1NiJ9.kb.sig"
             val dcqlQuery =
                 DcqlQuery(
                     credentials =
@@ -1933,7 +1940,7 @@ class ValidateAuthorizationResponseCommandImplTest {
                                             "type_values" to
                                                 JsonArray(
                                                     listOf(
-                                                        JsonArray(listOf(JsonPrimitive("VerifiableCredential"))),
+                                                        JsonArray(listOf(JsonPrimitive("https://www.w3.org/2018/credentials#VerifiableCredential"))),
                                                     ),
                                                 ),
                                         ),
@@ -3276,7 +3283,7 @@ class ValidateAuthorizationResponseCommandImplTest {
     private fun vcdm11CredentialMeta(): JsonObject =
         buildJsonObject {
             putJsonArray("type_values") {
-                add(JsonArray(listOf(JsonPrimitive("VerifiableCredential"))))
+                add(JsonArray(listOf(JsonPrimitive("https://www.w3.org/2018/credentials#VerifiableCredential"))))
             }
         }
 
@@ -3287,6 +3294,743 @@ class ValidateAuthorizationResponseCommandImplTest {
         const val VCDM2_VC_JWT = "eyJhbGciOiJub25lIn0.eyJAY29udGV4dCI6WyJodHRwczovL3d3dy53My5vcmcvbnMvY3JlZGVudGlhbHMvdjIiXSwidHlwZSI6WyJWZXJpZmlhYmxlQ3JlZGVudGlhbCJdLCJjcmVkZW50aWFsU3ViamVjdCI6eyJpZCI6ImRpZDpleGFtcGxlOmhvbGRlciJ9fQ.fakesig"
     }
 
+    private fun sdJwtOfType(
+        vct: String,
+        integrity: String? = null,
+    ): String {
+        val claims =
+            buildJsonObject {
+                put("iss", "https://issuer.example")
+                put("vct", vct)
+                integrity?.let { put("vct#integrity", it) }
+            }
+        return "eyJhbGciOiJFUzI1NiJ9.${claims.toString().encodeToByteArray().encodeToBase64Url()}.signature~WyJhYmMxMjMiLCJmaXJzdF9uYW1lIiwiSm9obiJd~eyJhbGciOiJFUzI1NiJ9.kb.sig"
+    }
+
+    private suspend fun validateSdJwtTypes(
+        accepted: String,
+        credentials: List<String>,
+        instance: String,
+        matcher: CredentialTypeMatcher = testCredentialTypeMatcher(),
+    ): com.sphereon.openid.oid4vp.verifier.ValidationResult {
+        val state = "state-$instance"
+        val args =
+            ValidateAuthorizationResponseArgs(
+                parsedResponse =
+                    ParsedAuthorizationResponse(
+                        vpToken = vpTokenOf(*credentials.map { "typed" to it }.toTypedArray()),
+                        state = state,
+                        rawVpToken = "{}",
+                    ),
+                originalRequest = AuthorizationRequest(clientId = "https://verifier.example.com", redirectUri = "https://verifier.example.com/callback", state = state),
+                dcqlQuery = DcqlQuery(credentials = listOf(DcqlCredentialQuery(id = "typed", format = "dc+sd-jwt", meta = sdJwtVcMeta(accepted), multiple = true))),
+                expectedNonce = "nonce123",
+            )
+        val result = validateWithPersistedSession(args, instanceId = "verifier-$instance", credentialTypeMatcher = matcher)
+        assertIs<Ok<*>>(result)
+        return result.value
+    }
+
+    @Test
+    fun shouldAcceptExactVctWithoutResolvingMetadata() =
+        runTest {
+            val metadata = CountingTypeMetadataCommand()
+
+            val validation = validateSdJwtTypes("urn:test:pid", listOf(sdJwtOfType("urn:test:pid")), "exact", testCredentialTypeMatcher(metadata))
+
+            assertTrue(validation.valid, validation.errors.toString())
+            assertTrue(metadata.resolvedVcts.isEmpty())
+        }
+
+    @Test
+    fun shouldRefuseAVctThatIsNotListedAndInheritsFromNothingListed() =
+        runTest {
+            val metadata =
+                CountingTypeMetadataCommand(StaticTypeMetadataResolver(mapOf("urn:test:other" to SdJwtVcTypeMetadata(vct = "urn:test:other"))))
+
+            val validation = validateSdJwtTypes("urn:test:pid", listOf(sdJwtOfType("urn:test:other")), "unlisted", testCredentialTypeMatcher(metadata))
+
+            assertFalse(validation.valid)
+            assertTrue(validation.matchedCredentials.isEmpty())
+        }
+
+    @Test
+    fun shouldAcceptATypeThatExtendsAListedTypeThroughAParent() =
+        runTest {
+            val metadata =
+                CountingTypeMetadataCommand(
+                    StaticTypeMetadataResolver(
+                        mapOf(
+                            "urn:test:leaf" to SdJwtVcTypeMetadata(vct = "urn:test:leaf", extends = "urn:test:middle"),
+                            "urn:test:middle" to SdJwtVcTypeMetadata(vct = "urn:test:middle", extends = "urn:test:pid"),
+                            "urn:test:pid" to SdJwtVcTypeMetadata(vct = "urn:test:pid"),
+                        ),
+                    ),
+                )
+
+            val validation = validateSdJwtTypes("urn:test:pid", listOf(sdJwtOfType("urn:test:leaf")), "inherits", testCredentialTypeMatcher(metadata))
+
+            assertTrue(validation.valid, validation.errors.toString())
+            assertEquals(listOf("urn:test:leaf", "urn:test:middle", "urn:test:pid"), metadata.resolvedVcts)
+        }
+
+    @Test
+    fun shouldRefuseWhenTheExtendsChainClosesALoop() =
+        runTest {
+            val metadata =
+                CountingTypeMetadataCommand(
+                    StaticTypeMetadataResolver(
+                        mapOf(
+                            "urn:test:leaf" to SdJwtVcTypeMetadata(vct = "urn:test:leaf", extends = "urn:test:middle"),
+                            "urn:test:middle" to SdJwtVcTypeMetadata(vct = "urn:test:middle", extends = "urn:test:leaf"),
+                        ),
+                    ),
+                )
+
+            assertFalse(validateSdJwtTypes("urn:test:pid", listOf(sdJwtOfType("urn:test:leaf")), "loop", testCredentialTypeMatcher(metadata)).valid)
+        }
+
+    @Test
+    fun shouldRefuseWhenTheMetadataNamesAnotherVct() =
+        runTest {
+            val metadata =
+                CountingTypeMetadataCommand(
+                    StaticTypeMetadataResolver(mapOf("urn:test:leaf" to SdJwtVcTypeMetadata(vct = "urn:test:pid", extends = "urn:test:pid"))),
+                )
+
+            assertFalse(validateSdJwtTypes("urn:test:pid", listOf(sdJwtOfType("urn:test:leaf")), "identity", testCredentialTypeMatcher(metadata)).valid)
+        }
+
+    @Test
+    fun shouldRefuseWhenTheTypeMetadataFailsItsIntegrityCheck() =
+        runTest {
+            val document = """{"vct":"urn:test:leaf","extends":"urn:test:pid"}""".encodeToByteArray()
+            val metadata =
+                CountingTypeMetadataCommand(
+                    StaticTypeMetadataResolver(
+                        mapOf(
+                            "urn:test:leaf" to SdJwtVcTypeMetadata(vct = "urn:test:leaf", extends = "urn:test:pid"),
+                            "urn:test:pid" to SdJwtVcTypeMetadata(vct = "urn:test:pid"),
+                        ),
+                        mapOf("urn:test:leaf" to document),
+                    ),
+                )
+            val wrongPin = "sha256-" + com.sphereon.crypto.core.generic.hash("tampered".encodeToByteArray()).encodeToBase64()
+
+            val validation = validateSdJwtTypes("urn:test:pid", listOf(sdJwtOfType("urn:test:leaf", wrongPin)), "integrity", testCredentialTypeMatcher(metadata))
+
+            assertFalse(validation.valid)
+        }
+
+    @Test
+    fun shouldAcceptWhenTheTypeMetadataMatchesItsIntegrityPin() =
+        runTest {
+            val document = """{"vct":"urn:test:leaf","extends":"urn:test:pid"}""".encodeToByteArray()
+            val metadata =
+                CountingTypeMetadataCommand(
+                    StaticTypeMetadataResolver(
+                        mapOf(
+                            "urn:test:leaf" to SdJwtVcTypeMetadata(vct = "urn:test:leaf", extends = "urn:test:pid"),
+                            "urn:test:pid" to SdJwtVcTypeMetadata(vct = "urn:test:pid"),
+                        ),
+                        mapOf("urn:test:leaf" to document),
+                    ),
+                )
+            val pin = "sha256-" + com.sphereon.crypto.core.generic.hash(document).encodeToBase64()
+
+            val validation = validateSdJwtTypes("urn:test:pid", listOf(sdJwtOfType("urn:test:leaf", pin)), "pinned", testCredentialTypeMatcher(metadata))
+
+            assertTrue(validation.valid, validation.errors.toString())
+        }
+
+    @Test
+    fun shouldRefuseWhenTheTypeMetadataCannotBeFetched() =
+        runTest {
+            assertFalse(validateSdJwtTypes("urn:test:pid", listOf(sdJwtOfType("urn:test:leaf")), "unavailable").valid)
+        }
+
+    @Test
+    fun shouldInvalidateTheResponseWhenOneOfTwoPresentationsIsOfAnotherType() =
+        runTest {
+            val metadata =
+                CountingTypeMetadataCommand(StaticTypeMetadataResolver(mapOf("urn:test:other" to SdJwtVcTypeMetadata(vct = "urn:test:other"))))
+
+            val validation =
+                validateSdJwtTypes(
+                    "urn:test:pid",
+                    listOf(sdJwtOfType("urn:test:pid"), sdJwtOfType("urn:test:other")),
+                    "second-wrong",
+                    testCredentialTypeMatcher(metadata),
+                )
+
+            assertFalse(validation.valid)
+        }
+
+    @Test
+    fun shouldAcceptTwoPresentationsThatAreBothOfTheRequestedType() =
+        runTest {
+            val validation = validateSdJwtTypes("urn:test:pid", listOf(sdJwtOfType("urn:test:pid"), sdJwtOfType("urn:test:pid")), "both-right")
+
+            assertTrue(validation.valid, validation.errors.toString())
+            assertEquals(2, validation.matchedCredentials.size)
+        }
+
+    private suspend fun validateVcdm11Types(
+        children: List<String>,
+        alternatives: List<List<String>>,
+        instance: String,
+        matcher: CredentialTypeMatcher = testCredentialTypeMatcher(),
+    ): com.sphereon.openid.oid4vp.verifier.ValidationResult {
+        val presentation = validVcdm11VpJwtWithEmbeddedVc(*children.toTypedArray())
+        val state = "state-$instance"
+        val meta =
+            buildJsonObject {
+                putJsonArray("type_values") { alternatives.forEach { add(JsonArray(it.map(::JsonPrimitive))) } }
+            }
+        val args =
+            ValidateAuthorizationResponseArgs(
+                parsedResponse =
+                    ParsedAuthorizationResponse(
+                        vpToken = vpTokenOf("presentation", presentation),
+                        state = state,
+                        rawVpToken = """{"presentation":["$presentation"]}""",
+                    ),
+                originalRequest = AuthorizationRequest(clientId = "https://verifier.example.com", redirectUri = "https://verifier.example.com/callback", state = state),
+                dcqlQuery = DcqlQuery(credentials = listOf(DcqlCredentialQuery("presentation", "jwt_vc_json", meta))),
+                expectedNonce = "nonce-v1",
+            )
+        val result =
+            validateWithPersistedSession(
+                args = args,
+                instanceId = "verifier-$instance",
+                verifyHolderBindingCommand = RecordingHolderBindingCommand(),
+                verifyJwsCommand = FixedVerifyJwsCommand(valid = true),
+                credentialTypeMatcher = matcher,
+            )
+        assertIs<Ok<*>>(result)
+        return result.value
+    }
+
+    private val verifiableCredentialIri = "https://www.w3.org/2018/credentials#VerifiableCredential"
+
+    @Test
+    fun shouldAcceptAPresentationWhoseCredentialsAllMatchTheirQueryType() =
+        runTest {
+            val children = listOf(
+                validVcdm11VcJwt(subjectId = "holder", credentialId = "urn:example:first", credentialType = "IdentityCredential"),
+                validVcdm11VcJwt(subjectId = "holder", credentialId = "urn:example:second", credentialType = "IdentityCredential"),
+            )
+
+            val validation = validateVcdm11Types(children, listOf(listOf(verifiableCredentialIri, "IdentityCredential")), "w3c-all-match")
+
+            assertTrue(validation.valid, validation.errors.toString())
+        }
+
+    @Test
+    fun shouldRefuseACredentialOfAnotherType() =
+        runTest {
+            val children = listOf(validVcdm11VcJwt(subjectId = "holder", credentialType = "OtherCredential"))
+
+            val validation = validateVcdm11Types(children, listOf(listOf(verifiableCredentialIri, "IdentityCredential")), "w3c-wrong-type")
+
+            assertFalse(validation.valid)
+        }
+
+    @Test
+    fun shouldRefuseThePresentationWhenOnlyTheSecondCredentialHasTheWrongType() =
+        runTest {
+            val children = listOf(
+                validVcdm11VcJwt(subjectId = "holder", credentialId = "urn:example:first", credentialType = "IdentityCredential"),
+                validVcdm11VcJwt(subjectId = "holder", credentialId = "urn:example:second"),
+            )
+
+            val validation = validateVcdm11Types(children, listOf(listOf("IdentityCredential")), "w3c-second-wrong")
+
+            assertFalse(validation.valid)
+        }
+
+    @Test
+    fun shouldNotLetTwoCredentialsJointlySatisfyOneAlternative() =
+        runTest {
+            val children = listOf(
+                validVcdm11VcJwt(subjectId = "holder", credentialId = "urn:example:first", credentialType = "TypeA"),
+                validVcdm11VcJwt(subjectId = "holder", credentialId = "urn:example:second", credentialType = "TypeB"),
+            )
+
+            val validation = validateVcdm11Types(children, listOf(listOf("TypeA", "TypeB")), "w3c-joint")
+
+            assertFalse(validation.valid)
+        }
+
+    @Test
+    fun shouldAcceptEachCredentialAgainstItsOwnAlternative() =
+        runTest {
+            val children = listOf(
+                validVcdm11VcJwt(subjectId = "holder", credentialId = "urn:example:first", credentialType = "TypeA"),
+                validVcdm11VcJwt(subjectId = "holder", credentialId = "urn:example:second", credentialType = "TypeB"),
+            )
+
+            val validation = validateVcdm11Types(children, listOf(listOf("TypeA"), listOf("TypeB")), "w3c-own-alternative")
+
+            assertTrue(validation.valid, validation.errors.toString())
+        }
+
+    @Test
+    fun shouldRefuseTheDefinedShortNameOfAnExpandedType() =
+        runTest {
+            val children = listOf(validVcdm11VcJwt(subjectId = "holder"))
+
+            val validation = validateVcdm11Types(children, listOf(listOf("VerifiableCredential")), "w3c-short-name")
+
+            assertFalse(validation.valid)
+        }
+
+    @Test
+    fun shouldRefuseACredentialWhoseContextCannotBeLoaded() =
+        runTest {
+            val unreachable =
+                com.sphereon.jsonld.loader.LinkedDataDocumentLoader { iri ->
+                    Err(com.sphereon.jsonld.JsonLdError.LoadingDocumentFailed(iri, "context server is down"))
+                }
+            val children = listOf(validVcdm11VcJwt(subjectId = "holder", credentialType = "IdentityCredential"))
+
+            val validation =
+                validateVcdm11Types(
+                    children,
+                    listOf(listOf("VerifiableCredential", "IdentityCredential")),
+                    "w3c-context-unavailable",
+                    testCredentialTypeMatcher(documentLoader = unreachable),
+                )
+
+            assertFalse(validation.valid)
+        }
+
+    private suspend fun validateBareVcdm11Credential(
+        credential: String,
+        alternatives: List<List<String>>,
+        instance: String,
+    ): com.sphereon.openid.oid4vp.verifier.ValidationResult {
+        val state = "state-$instance"
+        val meta =
+            buildJsonObject {
+                putJsonArray("type_values") { alternatives.forEach { add(JsonArray(it.map(::JsonPrimitive))) } }
+            }
+        val args =
+            ValidateAuthorizationResponseArgs(
+                parsedResponse =
+                    ParsedAuthorizationResponse(
+                        vpToken = vpTokenOf("credential", credential),
+                        state = state,
+                        rawVpToken = """{"credential":["$credential"]}""",
+                    ),
+                originalRequest = AuthorizationRequest(clientId = "https://verifier.example.com", redirectUri = "https://verifier.example.com/callback", state = state),
+                dcqlQuery =
+                    DcqlQuery(
+                        credentials = listOf(DcqlCredentialQuery("credential", "jwt_vc_json", meta, require_cryptographic_holder_binding = false)),
+                    ),
+                expectedNonce = "nonce-is-not-a-vp-claim",
+            )
+        val result =
+            validateWithPersistedSession(args, instanceId = "verifier-$instance", verifyJwsCommand = FixedVerifyJwsCommand(valid = true))
+        assertIs<Ok<*>>(result)
+        return result.value
+    }
+
+    @Test
+    fun shouldAcceptABareCredentialOfTheRequestedType() =
+        runTest {
+            val validation =
+                validateBareVcdm11Credential(
+                    validVcdm11VcJwt(credentialType = "IdentityCredential"),
+                    listOf(listOf(verifiableCredentialIri, "IdentityCredential")),
+                    "bare-right",
+                )
+
+            assertTrue(validation.valid, validation.errors.toString())
+        }
+
+    @Test
+    fun shouldRefuseABareCredentialOfAnotherType() =
+        runTest {
+            val validation =
+                validateBareVcdm11Credential(
+                    validVcdm11VcJwt(credentialType = "OtherCredential"),
+                    listOf(listOf(verifiableCredentialIri, "IdentityCredential")),
+                    "bare-wrong",
+                )
+
+            assertFalse(validation.valid)
+            assertTrue(validation.matchedCredentials.isEmpty())
+        }
+
+    @Test
+    fun shouldRefuseASecuredJsonChildOfAnotherType() =
+        runTest {
+            val child =
+                buildJsonObject {
+                    putJsonArray("@context") { add(JsonPrimitive("https://www.w3.org/2018/credentials/v1")) }
+                    putJsonArray("type") {
+                        add(JsonPrimitive("VerifiableCredential"))
+                        add(JsonPrimitive("OtherCredential"))
+                    }
+                    put("issuer", "did:example:issuer")
+                    put("issuanceDate", "2026-08-25T12:00:00Z")
+                    putJsonObject("credentialSubject") { put("id", "did:example:holder") }
+                    putJsonObject("proof") {
+                        put("type", "DataIntegrityProof")
+                        put("cryptosuite", "eddsa-jcs-2022")
+                        put("proofPurpose", "assertionMethod")
+                        put("verificationMethod", "did:example:issuer#key")
+                        put("proofValue", "zproof")
+                    }
+                }
+            val state = "state-di-child-wrong-type"
+            val presentation = validVcdm11VpJwtWithEmbeddedJsonVc(child)
+            val args =
+                ValidateAuthorizationResponseArgs(
+                    parsedResponse =
+                        ParsedAuthorizationResponse(
+                            vpToken = vpTokenOf("presentation", presentation),
+                            state = state,
+                            rawVpToken = "{\"presentation\":[\"$presentation\"]}",
+                        ),
+                    originalRequest = AuthorizationRequest(clientId = "https://verifier.example.com", redirectUri = "https://verifier.example.com/callback", state = state),
+                    dcqlQuery =
+                        DcqlQuery(
+                            credentials =
+                                listOf(
+                                    DcqlCredentialQuery(
+                                        "presentation",
+                                        "ldp_vc",
+                                        buildJsonObject {
+                                            putJsonArray("type_values") { add(JsonArray(listOf(JsonPrimitive(verifiableCredentialIri), JsonPrimitive("IdentityCredential")))) }
+                                        },
+                                    ),
+                                ),
+                        ),
+                    expectedNonce = "nonce-v1",
+                )
+
+            val result =
+                validateWithPersistedSession(
+                    args = args,
+                    instanceId = "verifier-$state",
+                    verifyHolderBindingCommand = RecordingHolderBindingCommand(),
+                    verifyJwsCommand = FixedVerifyJwsCommand(valid = true),
+                    vcdmDataIntegrityVerifier = RecordingDataIntegrityVerifier(mutableListOf()),
+                )
+
+            assertIs<Ok<*>>(result)
+            assertFalse(result.value.valid)
+        }
+
+    private fun securedJsonChild(
+        id: String,
+        vararg extraTypes: String,
+    ): JsonObject =
+        buildJsonObject {
+            putJsonArray("@context") { add(JsonPrimitive("https://www.w3.org/2018/credentials/v1")) }
+            putJsonArray("type") {
+                add(JsonPrimitive("VerifiableCredential"))
+                extraTypes.forEach { add(JsonPrimitive(it)) }
+            }
+            put("id", id)
+            put("issuer", "did:example:issuer")
+            put("issuanceDate", "2026-08-25T12:00:00Z")
+            putJsonObject("credentialSubject") { put("id", "did:example:holder") }
+            putJsonObject("proof") {
+                put("type", "DataIntegrityProof")
+                put("cryptosuite", "eddsa-jcs-2022")
+                put("proofPurpose", "assertionMethod")
+                put("verificationMethod", "did:example:issuer#key")
+                put("proofValue", "zproof")
+            }
+        }
+
+    private suspend fun validateSecuredJsonChildren(
+        children: List<JsonObject>,
+        instance: String,
+        matcher: CredentialTypeMatcher = testCredentialTypeMatcher(),
+    ): com.sphereon.openid.oid4vp.verifier.ValidationResult {
+        val state = "state-$instance"
+        val presentation = validVcdm11VpJwtWithEmbeddedJsonVc(*children.toTypedArray())
+        val args =
+            ValidateAuthorizationResponseArgs(
+                parsedResponse =
+                    ParsedAuthorizationResponse(
+                        vpToken = vpTokenOf("presentation", presentation),
+                        state = state,
+                        rawVpToken = "{\"presentation\":[\"$presentation\"]}",
+                    ),
+                originalRequest = AuthorizationRequest(clientId = "https://verifier.example.com", redirectUri = "https://verifier.example.com/callback", state = state),
+                dcqlQuery =
+                    DcqlQuery(
+                        credentials =
+                            listOf(
+                                DcqlCredentialQuery(
+                                    "presentation",
+                                    "ldp_vc",
+                                    buildJsonObject {
+                                        putJsonArray("type_values") { add(JsonArray(listOf(JsonPrimitive(verifiableCredentialIri), JsonPrimitive("IdentityCredential")))) }
+                                    },
+                                ),
+                            ),
+                    ),
+                expectedNonce = "nonce-v1",
+            )
+        val result =
+            validateWithPersistedSession(
+                args = args,
+                instanceId = "verifier-$instance",
+                verifyHolderBindingCommand = RecordingHolderBindingCommand(),
+                verifyJwsCommand = FixedVerifyJwsCommand(valid = true),
+                vcdmDataIntegrityVerifier = RecordingDataIntegrityVerifier(mutableListOf()),
+                credentialTypeMatcher = matcher,
+            )
+        assertIs<Ok<*>>(result)
+        return result.value
+    }
+
+    @Test
+    fun shouldAcceptSecuredJsonChildrenThatAllMatch() =
+        runTest {
+            val validation =
+                validateSecuredJsonChildren(
+                    listOf(securedJsonChild("urn:example:one", "IdentityCredential"), securedJsonChild("urn:example:two", "IdentityCredential")),
+                    "di-all-match",
+                )
+
+            assertTrue(validation.valid, validation.errors.toString())
+        }
+
+    @Test
+    fun shouldRefuseSecuredJsonChildrenWhenOnlyTheSecondHasTheWrongType() =
+        runTest {
+            val validation =
+                validateSecuredJsonChildren(
+                    listOf(securedJsonChild("urn:example:one", "IdentityCredential"), securedJsonChild("urn:example:two", "OtherCredential")),
+                    "di-second-wrong",
+                )
+
+            assertFalse(validation.valid)
+        }
+
+    @Test
+    fun shouldRefuseSecuredJsonChildrenWhoseContextCannotBeLoaded() =
+        runTest {
+            val unreachable =
+                com.sphereon.jsonld.loader.LinkedDataDocumentLoader { iri ->
+                    Err(com.sphereon.jsonld.JsonLdError.LoadingDocumentFailed(iri, "context server is down"))
+                }
+
+            val validation =
+                validateSecuredJsonChildren(
+                    listOf(securedJsonChild("urn:example:one", "IdentityCredential")),
+                    "di-context-unavailable",
+                    testCredentialTypeMatcher(documentLoader = unreachable),
+                )
+
+            assertFalse(validation.valid)
+        }
+
+    private suspend fun validateBareLdpCredential(
+        types: List<String>,
+        instance: String,
+        matcher: CredentialTypeMatcher = testCredentialTypeMatcher(),
+    ): com.sphereon.openid.oid4vp.verifier.ValidationResult {
+        val state = "state-$instance"
+        val args =
+            ValidateAuthorizationResponseArgs(
+                parsedResponse =
+                    ParsedAuthorizationResponse(
+                        vpToken = VpToken(mapOf("credential" to listOf(dataIntegrityCredential("bare")))),
+                        state = state,
+                        rawVpToken = "{}",
+                    ),
+                originalRequest = AuthorizationRequest(clientId = "https://verifier.example.com", redirectUri = "https://verifier.example.com/callback", state = state),
+                dcqlQuery =
+                    DcqlQuery(
+                        credentials =
+                            listOf(
+                                DcqlCredentialQuery(
+                                    id = "credential",
+                                    format = "ldp_vc",
+                                    meta = buildJsonObject { putJsonArray("type_values") { add(JsonArray(types.map(::JsonPrimitive))) } },
+                                    require_cryptographic_holder_binding = false,
+                                ),
+                            ),
+                    ),
+                expectedNonce = "nonce-not-used-for-bare-vc",
+            )
+        val result =
+            validateWithPersistedSession(
+                args = args,
+                instanceId = "verifier-$instance",
+                vcdmDataIntegrityVerifier = RecordingDataIntegrityVerifier(mutableListOf()),
+                credentialTypeMatcher = matcher,
+            )
+        assertIs<Ok<*>>(result)
+        return result.value
+    }
+
+    @Test
+    fun shouldAcceptABareLdpCredentialOfTheRequestedType() =
+        runTest {
+            assertTrue(validateBareLdpCredential(listOf(verifiableCredentialIri), "ldp-bare-right").valid)
+        }
+
+    @Test
+    fun shouldRefuseABareLdpCredentialOfAnotherType() =
+        runTest {
+            assertFalse(validateBareLdpCredential(listOf(verifiableCredentialIri, "IdentityCredential"), "ldp-bare-wrong").valid)
+        }
+
+    @Test
+    fun shouldRefuseABareLdpCredentialWhoseContextCannotBeLoaded() =
+        runTest {
+            val unreachable =
+                com.sphereon.jsonld.loader.LinkedDataDocumentLoader { iri ->
+                    Err(com.sphereon.jsonld.JsonLdError.LoadingDocumentFailed(iri, "context server is down"))
+                }
+
+            val validation =
+                validateBareLdpCredential(listOf(verifiableCredentialIri), "ldp-bare-context", testCredentialTypeMatcher(documentLoader = unreachable))
+
+            assertFalse(validation.valid)
+        }
+
+    private val issuerDependentIdentityIri = "IdentityCredential"
+
+    private fun v2TypedChild(
+        name: String,
+        vararg extraTypes: String,
+    ): JsonObject =
+        JsonObject(
+            dataIntegrityCredential(name) +
+                ("type" to buildJsonArray { (listOf("VerifiableCredential") + extraTypes).forEach { add(JsonPrimitive(it)) } }),
+        )
+
+    private fun v2Presentation(vararg children: JsonObject): JsonObject =
+        buildJsonObject {
+            putJsonArray("@context") { add(JsonPrimitive("https://www.w3.org/ns/credentials/v2")) }
+            putJsonArray("type") { add(JsonPrimitive("VerifiablePresentation")) }
+            putJsonArray("verifiableCredential") { children.forEach { add(it) } }
+            put("proof", authenticationProof("did:example:holder#key"))
+        }
+
+    private suspend fun validateDataIntegrityPresentation(
+        presentation: JsonObject,
+        instance: String,
+        matcher: CredentialTypeMatcher = testCredentialTypeMatcher(),
+    ): com.sphereon.openid.oid4vp.verifier.ValidationResult {
+        val state = "state-$instance"
+        val args =
+            ValidateAuthorizationResponseArgs(
+                parsedResponse =
+                    ParsedAuthorizationResponse(
+                        vpToken = VpToken(mapOf("presentation" to listOf(presentation))),
+                        state = state,
+                        rawVpToken = "{}",
+                    ),
+                originalRequest = AuthorizationRequest(clientId = "https://verifier.example.com", redirectUri = "https://verifier.example.com/callback", state = state),
+                dcqlQuery =
+                    DcqlQuery(
+                        credentials =
+                            listOf(
+                                DcqlCredentialQuery(
+                                    id = "presentation",
+                                    format = "ldp_vc",
+                                    meta =
+                                        buildJsonObject {
+                                            putJsonArray("type_values") {
+                                                add(JsonArray(listOf(JsonPrimitive(verifiableCredentialIri), JsonPrimitive(issuerDependentIdentityIri))))
+                                            }
+                                        },
+                                    require_cryptographic_holder_binding = false,
+                                ),
+                            ),
+                    ),
+                expectedNonce = "nonce-vp",
+            )
+        val result =
+            validateWithPersistedSession(
+                args = args,
+                instanceId = "verifier-$instance",
+                vcdmDataIntegrityVerifier = RecordingDataIntegrityVerifier(mutableListOf(), authenticatedControllers = setOf("did:example:holder")),
+                credentialTypeMatcher = matcher,
+            )
+        assertIs<Ok<*>>(result)
+        return result.value
+    }
+
+    @Test
+    fun shouldAcceptADataIntegrityPresentationWhoseChildrenAllMatch() =
+        runTest {
+            val presentation = v2Presentation(v2TypedChild("one", "IdentityCredential"), v2TypedChild("two", "IdentityCredential"))
+
+            val validation = validateDataIntegrityPresentation(presentation, "dip-all-match")
+
+            assertTrue(validation.valid, validation.errors.toString())
+        }
+
+    @Test
+    fun shouldRefuseADataIntegrityPresentationWhenOnlyTheSecondChildHasTheWrongType() =
+        runTest {
+            val presentation = v2Presentation(v2TypedChild("one", "IdentityCredential"), v2TypedChild("two", "OtherCredential"))
+
+            assertFalse(validateDataIntegrityPresentation(presentation, "dip-second-wrong").valid)
+        }
+
+    @Test
+    fun shouldRefuseADataIntegrityPresentationWhoseContextCannotBeLoaded() =
+        runTest {
+            val unreachable =
+                com.sphereon.jsonld.loader.LinkedDataDocumentLoader { iri ->
+                    Err(com.sphereon.jsonld.JsonLdError.LoadingDocumentFailed(iri, "context server is down"))
+                }
+
+            val validation =
+                validateDataIntegrityPresentation(
+                    v2Presentation(v2TypedChild("one", "IdentityCredential")),
+                    "dip-context",
+                    testCredentialTypeMatcher(documentLoader = unreachable),
+                )
+
+            assertFalse(validation.valid)
+        }
+
+    @Test
+    fun shouldAcceptANestedPresentationWhoseChildrenAllMatch() =
+        runTest {
+            val inner = v2Presentation(v2TypedChild("one", "IdentityCredential"), v2TypedChild("two", "IdentityCredential"))
+
+            val validation = validateDataIntegrityPresentation(v2Presentation(inner), "dip-nested-right")
+
+            assertTrue(validation.valid, validation.errors.toString())
+        }
+
+    @Test
+    fun shouldRefuseANestedPresentationWhenOnlyTheSecondChildHasTheWrongType() =
+        runTest {
+            val inner = v2Presentation(v2TypedChild("one", "IdentityCredential"), v2TypedChild("two", "OtherCredential"))
+
+            assertFalse(validateDataIntegrityPresentation(v2Presentation(inner), "dip-nested-wrong").valid)
+        }
+
+    @Test
+    fun shouldRefuseANestedPresentationWhoseContextCannotBeLoaded() =
+        runTest {
+            val unreachable =
+                com.sphereon.jsonld.loader.LinkedDataDocumentLoader { iri ->
+                    Err(com.sphereon.jsonld.JsonLdError.LoadingDocumentFailed(iri, "context server is down"))
+                }
+            val inner = v2Presentation(v2TypedChild("one", "IdentityCredential"))
+
+            val validation = validateDataIntegrityPresentation(v2Presentation(inner), "dip-nested-context", testCredentialTypeMatcher(documentLoader = unreachable))
+
+            assertFalse(validation.valid)
+        }
+
     private fun createTestCommand(
         credentialStatusVerifiers: Set<com.sphereon.statuslist.spi.CredentialStatusVerifier> = emptySet(),
         credentialTrustValidators: Set<Oid4vpCredentialTrustValidator> = emptySet(),
@@ -3294,6 +4038,7 @@ class ValidateAuthorizationResponseCommandImplTest {
         verifyHolderBindingCommand: VerifyHolderBindingCommand = AlwaysValidHolderBindingCommand,
         verifyJwsCommand: VerifyJwsCommand = FixedVerifyJwsCommand(valid = false),
         vcdmDataIntegrityVerifier: VcdmDataIntegrityVerifier = RejectingVcdmDataIntegrityVerifier,
+        credentialTypeMatcher: CredentialTypeMatcher = testCredentialTypeMatcher(),
     ): ValidateAuthorizationResponseCommandImpl {
         // Validators wired through the built-in W3C/UNTP @context bundle so
         // VCDM 2.0 references resolve from the JAR (no network). For
@@ -3327,6 +4072,7 @@ class ValidateAuthorizationResponseCommandImplTest {
             credentialStatusVerifiers = credentialStatusVerifiers,
             credentialTrustValidators = credentialTrustValidators,
             businessAuthorizations = emptySet(),
+            credentialTypeMatcher = credentialTypeMatcher,
         )
     }
 
@@ -3344,6 +4090,7 @@ class ValidateAuthorizationResponseCommandImplTest {
         sessionTemplateId: String? = args.templateId,
         persistedAuthorizationRequest: AuthorizationRequest = args.originalRequest,
         persistedDcqlQuery: DcqlQuery = args.dcqlQuery,
+        credentialTypeMatcher: CredentialTypeMatcher = testCredentialTypeMatcher(),
     ): IdkResult<com.sphereon.openid.oid4vp.verifier.ValidationResult, IdkError> {
         val correlationState = requireNotNull(args.originalRequest.state) { "Test authorization request must have correlation state" }
         val authorizationSessionStore = TestAuthorizationSessionStore()
@@ -3398,6 +4145,7 @@ class ValidateAuthorizationResponseCommandImplTest {
             verifyHolderBindingCommand = verifyHolderBindingCommand,
             verifyJwsCommand = verifyJwsCommand,
             vcdmDataIntegrityVerifier = vcdmDataIntegrityVerifier,
+            credentialTypeMatcher = credentialTypeMatcher,
         ).validateAuthorizationResponse(args)
     }
 }
