@@ -46,6 +46,7 @@ import com.sphereon.openid.oid4vp.universal.VerifiedDataOpts
 import com.sphereon.openid.oid4vp.verifier.CredentialIssuerRef
 import com.sphereon.openid.oid4vp.verifier.CredentialTrustValidation
 import com.sphereon.openid.oid4vp.verifier.MatchedCredential
+import com.sphereon.openid.oid4vp.verifier.claimValueToJson
 import com.sphereon.openid.oid4vp.verifier.ParsedAuthorizationResponse
 import com.sphereon.openid.oid4vp.verifier.CredentialValidationRejection
 import com.sphereon.openid.oid4vp.verifier.ValidationResult
@@ -71,14 +72,9 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.booleanOrNull
-import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.longOrNull
 import kotlin.time.Clock
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.Duration.Companion.milliseconds
@@ -231,15 +227,7 @@ class KvAuthorizationSessionStore(
                 credentialFormat = requireNotNull(com.sphereon.openid.oid4vc.common.CredentialFormat.fromValue(credentialFormat)),
                 presentationFormat = presentationFormat?.let { requireNotNull(com.sphereon.openid.oid4vc.common.PresentationFormat.fromValue(it)) },
                 presentation = presentation,
-                disclosedClaims =
-                    disclosedClaims.mapValues { (_, element) ->
-                        when (element) {
-                            is JsonPrimitive -> if (element.isString) element.content else
-                                element.booleanOrNull ?: element.longOrNull ?: element.doubleOrNull ?: element.contentOrNull
-                            is JsonNull -> null
-                            else -> element
-                        }
-                    },
+                disclosedClaims = disclosedClaims.toClaimValues(),
                 issuer = issuer,
                 trust = trust,
                 verificationEvidence = verificationEvidence,
@@ -257,17 +245,7 @@ class KvAuthorizationSessionStore(
                     trust = matched.trust,
                     verificationEvidence = matched.verificationEvidence,
                     credentialType = matched.credentialType,
-                    disclosedClaims =
-                        matched.disclosedClaims.mapValues { (_, value) ->
-                            when (value) {
-                                is JsonElement -> value
-                                is String -> JsonPrimitive(value)
-                                is Number -> JsonPrimitive(value)
-                                is Boolean -> JsonPrimitive(value)
-                                null -> JsonNull
-                                else -> JsonPrimitive(value.toString())
-                            }
-                        },
+                    disclosedClaims = matched.disclosedClaims.mapValues { (_, value) -> claimValueToJson(value) },
                 )
         }
     }

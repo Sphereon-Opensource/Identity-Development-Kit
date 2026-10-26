@@ -245,6 +245,59 @@ class VerifiedDataBuilderTest {
         }
     }
 
+    @Test
+    fun shouldSerializeClaimsAtTheirJsonTypesWithoutTurningStructureIntoText() {
+        val address = Json.parseToJsonElement("""{"street":"Main","geo":[1,2.5],"unit":null}""")
+        val typed = claimsFor(
+            matched(CredentialFormat.SD_JWT_VC, credentialType = null).copy(
+                disclosedClaims = linkedMapOf(
+                    "phone" to "0612345678",
+                    "flag_text" to "true",
+                    "nan_text" to "NaN",
+                    "age" to 30L,
+                    "score" to 1.5,
+                    "active" to true,
+                    "none" to null,
+                    "address" to address,
+                    "tags" to Json.parseToJsonElement("""["a","b"]"""),
+                    "sub" to "protected-and-dropped",
+                ),
+            ),
+        )
+
+        val encoded = Json.encodeToJsonElement(VerifiedClaimsValue.serializer(), typed).jsonObject.getValue("claims")
+
+        assertEquals(
+            Json.parseToJsonElement(
+                """{"phone":"0612345678","flag_text":"true","nan_text":"NaN","age":30,"score":1.5,"active":true,"none":null,"address":{"street":"Main","geo":[1,2.5],"unit":null},"tags":["a","b"]}""",
+            ),
+            encoded,
+        )
+        assertEquals(true, typed.claims?.getValue("phone")?.jsonPrimitive?.isString)
+        assertEquals(false, typed.claims?.getValue("age")?.jsonPrimitive?.isString)
+    }
+
+    @Test
+    fun shouldReportEachMatchedCredentialOfOneQueryAsItsOwnEntry() {
+        val session = sessionWith(
+            matched(CredentialFormat.JWT_VC_JSON, credentialType = "Diploma").copy(disclosedClaims = mapOf("name" to "one")),
+            matched(CredentialFormat.LDP_VC, credentialType = "Passport").copy(disclosedClaims = mapOf("name" to "two")),
+        )
+
+        val entries = assertNotNull(buildVerifiedData(session, allModes)).credentialClaims!!
+
+        assertEquals(listOf("Diploma", "Passport"), entries.map { it.type })
+        assertEquals(listOf(CredentialFormat.JWT_VC_JSON, CredentialFormat.LDP_VC), entries.map { it.format })
+        assertEquals(listOf("one", "two"), entries.map { it.claims?.getValue("name")?.jsonPrimitive?.content })
+    }
+
+    @Test
+    fun shouldRefuseAClaimValueThatCannotBeRepresentedAsJson() {
+        assertFailsWith<IllegalArgumentException> {
+            claimsFor(matched(CredentialFormat.SD_JWT_VC, credentialType = null).copy(disclosedClaims = mapOf("opaque" to Any())))
+        }
+    }
+
     private fun matched(format: CredentialFormat, credentialType: String?) =
         MatchedCredential(
             credentialQueryId = "passport",
@@ -255,21 +308,21 @@ class VerifiedDataBuilderTest {
         )
 
     // The requested query always asks for dc+sd-jwt, so a matched format that differs proves the output does not echo the request.
-    private fun claimsFor(matched: MatchedCredential): VerifiedClaimsValue {
-        val session =
-            AuthorizationSession(
-                instanceId = "verifier-instance-verified-data-builder",
-                sessionId = "session-format",
-                correlationId = "corr-format",
-                queryId = "format-query",
-                dcqlQuery = DcqlQuery(credentials = listOf(DcqlCredentialQuery(id = "passport", format = "dc+sd-jwt", meta = sdJwtVcMeta("urn:test:passport")))),
-                authorizationRequest = AuthorizationRequest(clientId = "https://verifier.example.com", redirectUri = "https://verifier.example.com/callback"),
-                status = AuthorizationSessionStatus.AUTHORIZATION_RESPONSE_VERIFIED,
-                validationResult = ValidationResult(valid = true, matchedCredentials = listOf(matched)),
-                createdAt = 1L,
-                updatedAt = 2L,
-                expiresAt = 3L,
-            )
-        return assertNotNull(buildVerifiedData(session, allModes)).credentialClaims!!.single()
-    }
+    private fun claimsFor(matched: MatchedCredential): VerifiedClaimsValue =
+        assertNotNull(buildVerifiedData(sessionWith(matched), allModes)).credentialClaims!!.single()
+
+    private fun sessionWith(vararg matched: MatchedCredential) =
+        AuthorizationSession(
+            instanceId = "verifier-instance-verified-data-builder",
+            sessionId = "session-format",
+            correlationId = "corr-format",
+            queryId = "format-query",
+            dcqlQuery = DcqlQuery(credentials = listOf(DcqlCredentialQuery(id = "passport", format = "dc+sd-jwt", meta = sdJwtVcMeta("urn:test:passport")))),
+            authorizationRequest = AuthorizationRequest(clientId = "https://verifier.example.com", redirectUri = "https://verifier.example.com/callback"),
+            status = AuthorizationSessionStatus.AUTHORIZATION_RESPONSE_VERIFIED,
+            validationResult = ValidationResult(valid = true, matchedCredentials = matched.toList()),
+            createdAt = 1L,
+            updatedAt = 2L,
+            expiresAt = 3L,
+        )
 }

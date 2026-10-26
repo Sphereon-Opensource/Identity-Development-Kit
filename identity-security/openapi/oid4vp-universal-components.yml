@@ -88,9 +88,8 @@ components:
           description: The digital credential type. Can be a vct value, or for instance a json-ld type
         claims:
           type: object
-          additionalProperties:
-            type: string
-          description: The claims returned and deserialized in the form of a map, where the keys represent the claim names
+          additionalProperties: {}
+          description: The claims returned and deserialized in the form of a map, where the keys represent the claim names. Values keep their JSON type, including nested objects, arrays and null.
 
         presentation:
           type: string

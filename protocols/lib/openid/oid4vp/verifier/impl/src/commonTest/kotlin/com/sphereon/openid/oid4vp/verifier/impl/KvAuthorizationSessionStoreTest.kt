@@ -141,6 +141,62 @@ class KvAuthorizationSessionStoreTest {
         assertEquals(evidence, store.get(correlation).value?.validationResult?.matchedCredentials?.single()?.verificationEvidence)
     }
 
+    @Test
+    fun shouldKeepClaimJsonTypesWhenAFreshStoreReadsTheSameBacking() = runTest {
+        val manager = KvStoreTestKvStoreManager(Clock.System)
+        val correlation = "claim-types-roundtrip"
+        val address = Json.parseToJsonElement("""{"street":"Main","geo":[1,2.5],"unit":null}""")
+        val tags = Json.parseToJsonElement("""["a","0612"]""")
+        val written = linkedMapOf<String, Any?>(
+            "phone" to "0612345678",
+            "flag_text" to "true",
+            "nan_text" to "NaN",
+            "json_text" to "{\"x\":1}",
+            "age" to 30L,
+            "score" to 1.5,
+            "active" to true,
+            "none" to null,
+            "address" to address,
+            "tags" to tags,
+        )
+        val writer = createStore(manager = manager)
+        assertEquals(true, writer.put(correlation, session(null, correlation), 600).isOk)
+        val matched = com.sphereon.openid.oid4vp.verifier.MatchedCredential(
+            credentialQueryId = "identity_credential",
+            credentialFormat = com.sphereon.openid.oid4vc.common.CredentialFormat.SD_JWT_VC,
+            presentation = "verified-presentation",
+            disclosedClaims = written,
+        )
+        assertEquals(true, writer.storeValidationResult(correlation, ValidationResult(true, listOf(matched))).isOk)
+
+        val read = createStore(manager = manager).get(correlation).value?.validationResult?.matchedCredentials?.single()?.disclosedClaims
+
+        assertEquals(written, read)
+        assertEquals(written.keys.toList(), read?.keys?.toList())
+    }
+
+    @Test
+    fun shouldReadStoredClaimsAsTheyWereStoredWithoutRepairingHistory() {
+        val entry = KvAuthorizationSessionStore.MatchedCredentialEntry(
+            credentialQueryId = "q",
+            credentialFormat = "dc+sd-jwt",
+            presentation = "p",
+            disclosedClaims = mapOf(
+                "object_as_text" to kotlinx.serialization.json.JsonPrimitive("{\"x\":1}"),
+                "number" to kotlinx.serialization.json.JsonPrimitive(7),
+                "text_that_looks_numeric" to kotlinx.serialization.json.JsonPrimitive("7"),
+                "object" to Json.parseToJsonElement("""{"x":1}"""),
+            ),
+        )
+
+        val claims = entry.toPublic().disclosedClaims
+
+        assertEquals("{\"x\":1}", claims["object_as_text"])
+        assertEquals(7L, claims["number"])
+        assertEquals("7", claims["text_that_looks_numeric"])
+        assertEquals(Json.parseToJsonElement("""{"x":1}"""), claims["object"])
+    }
+
     // The status endpoint reports VerifiedClaimsValue.type from the persisted session, so the credential
     // type must survive the session store; an untyped match stays untyped.
     @Test

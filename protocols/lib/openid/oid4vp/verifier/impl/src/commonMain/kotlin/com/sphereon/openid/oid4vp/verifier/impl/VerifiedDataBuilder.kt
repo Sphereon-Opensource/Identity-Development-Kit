@@ -20,12 +20,10 @@ import com.sphereon.openid.oid4vp.universal.VerifiedClaimsValue
 import com.sphereon.openid.oid4vp.universal.VerifiedData
 import com.sphereon.openid.oid4vp.universal.VerifiedDataMode
 import com.sphereon.openid.oid4vp.verifier.ValidationResult
+import com.sphereon.openid.oid4vp.verifier.claimValueToJson
 import com.sphereon.openid.oid4vp.verifier.model.AuthorizationSession
 import com.sphereon.openid.oid4vp.verifier.model.AuthorizationSessionStatus
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
@@ -104,7 +102,7 @@ private fun buildVerifiedClaims(validationResult: ValidationResult): List<Verifi
         val claimsMap =
             matched.disclosedClaims
                 .filterKeys { it !in PROTECTED_CLAIMS }
-                .mapValues { (_, value) -> disclosedClaimJson(value) }
+                .mapValues { (_, value) -> claimValueToJson(value) }
 
         VerifiedClaimsValue(
             id = matched.credentialQueryId,
@@ -120,24 +118,6 @@ private fun buildVerifiedClaims(validationResult: ValidationResult): List<Verifi
             },
         )
     }
-
-/** Preserve disclosed JSON structure so relying parties can evaluate arrays and nested claim paths. */
-private fun disclosedClaimJson(value: Any?): JsonElement = when (value) {
-    null -> JsonNull
-    is JsonElement -> value
-    is String -> JsonPrimitive(value)
-    is Number -> JsonPrimitive(value)
-    is Boolean -> JsonPrimitive(value)
-    is Map<*, *> -> buildJsonObject {
-        for ((key, child) in value) {
-            require(key is String) { "Disclosed claim object keys must be strings" }
-            put(key, disclosedClaimJson(child))
-        }
-    }
-    is Iterable<*> -> JsonArray(value.map(::disclosedClaimJson))
-    is Array<*> -> JsonArray(value.map(::disclosedClaimJson))
-    else -> JsonPrimitive(value.toString())
-}
 
 private fun buildAuthorizationResponse(session: AuthorizationSession): JsonObject? {
     val parsedResponse = session.parsedResponse

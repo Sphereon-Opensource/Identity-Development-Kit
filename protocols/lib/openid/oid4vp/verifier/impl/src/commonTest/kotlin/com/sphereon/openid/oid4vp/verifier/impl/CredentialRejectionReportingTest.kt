@@ -219,6 +219,7 @@ class CredentialRejectionReportingTest {
             mobileSecurityObjectCborCodec =
                 com.sphereon.mdoc.data.mso
                     .MobileSecurityObjectCborCodecImpl(),
+            cborParser = com.sphereon.cbor.CborParserImpl(),
             vcdmDataIntegrityVerifier = UnusedVcdmDataIntegrityVerifier,
             credentialStatusVerifiers = setOf(statusVerifier),
             credentialTrustValidators = emptySet(),
