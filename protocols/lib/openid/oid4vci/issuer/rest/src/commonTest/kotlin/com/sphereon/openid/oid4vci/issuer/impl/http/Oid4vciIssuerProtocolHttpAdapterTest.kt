@@ -22,6 +22,9 @@ import com.sphereon.openid.oid4vci.common.model.Oid4vciErrors
 import com.sphereon.openid.oid4vci.issuer.config.MutableOid4vciIssuerInstanceIdProvider
 import com.sphereon.openid.oid4vci.issuer.config.Oid4vciIssuerInstanceResolver
 import com.sphereon.openid.oid4vci.issuer.config.Oid4vciIssuerSpecProfile
+import com.sphereon.openid.oid4vci.issuer.config.CredentialSigningConfig
+import com.sphereon.openid.oid4vci.issuer.format.SigningKeyMode
+import com.sphereon.openid.oid4vci.issuer.impl.signing.IssuerKeyIdResolver
 import com.sphereon.openid.oid4vci.issuer.authorization.Oid4vciAuthorizationGrant
 import com.sphereon.openid.oid4vci.issuer.authorization.Oid4vciAuthorizationPolicySnapshot
 import com.sphereon.openid.oid4vci.issuer.impl.http.command.DefaultOid4vciIssuerPublicUrlResolver
@@ -34,6 +37,8 @@ import com.sphereon.openid.oid4vci.issuer.impl.http.command.IssueNonceEndpointCo
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlin.test.Test
@@ -45,6 +50,37 @@ import kotlin.uuid.ExperimentalUuidApi
 import kotlin.uuid.Uuid
 
 class Oid4vciIssuerProtocolHttpAdapterTest {
+    @Test
+    fun servedIssuerMetadataPublishesTheConfiguredCredentialThumbprintKey() = runTest {
+        val publicKey = Json.parseToJsonElement("""{"kty":"EC","crv":"P-256","x":"f83OJ3D2xF1Bg8vub9tLe1gHMzV76e8Tus9uPHvRVEU","y":"x_FEzRu9m36HLN_tue659LNpXW6pCyStikYjKIWI5a0"}""").jsonObject
+        val provider = object : com.sphereon.openid.oid4vci.issuer.config.Oid4vciIssuerConfigProvider by fakeConfigProvider {
+            override val credentialConfigurations = mapOf("selected" to CredentialConfigurationSupported(format = "dc+sd-jwt"))
+            override suspend fun credentialSigningConfigs() = mapOf("selected" to CredentialSigningConfig("server-owned-key", SigningKeyMode.JwkThumbprint))
+        }
+        fakeBuildMetadata.result = Ok(CredentialIssuerMetadata(
+            credentialIssuer = "https://issuer.example.com",
+            credentialEndpoint = "https://issuer.example.com/oid4vci/credential",
+            credentialConfigurationsSupported = provider.credentialConfigurations,
+        ))
+        val resolver = object : IssuerKeyIdResolver {
+            override suspend fun resolveDidVerificationMethodId(keyAlias: String, didMethod: String): IdkResult<String, IdkError> = error("No DID lookup")
+            override suspend fun resolvePublicJwk(keyAlias: String): IdkResult<JsonObject, IdkError> {
+                assertEquals("server-owned-key", keyAlias)
+                return Ok(publicKey)
+            }
+        }
+        val command = GetIssuerMetadataEndpointCommandImpl(execution, fakeBuildMetadata, fakeBuildSignedMetadata,
+            provider, fakeRestConfigProvider, FakeMultiManagedIdentifierService,
+            DefaultOid4vciIssuerPublicUrlResolver(NoOpAppConfigService), resolver)
+        val response = command.execute(GenericHttpRequest(method = "GET", path = "/.well-known/openid-credential-issuer")).getOrThrow()
+        assertEquals(200, response.statusCode)
+        val body = Json.parseToJsonElement(response.body!!).jsonObject
+        val published = body.getValue("jwks").jsonObject.getValue("keys").jsonArray.single().jsonObject
+        assertEquals(publicKey, JsonObject(published - "kid" - "use"))
+        assertTrue(published.getValue("kid").jsonPrimitive.content.startsWith("urn:ietf:params:oauth:jwk-thumbprint:sha-256:"))
+        assertEquals(JsonPrimitive("sig"), published["use"])
+    }
+
     private val routedIssuerId = "8b1c1e72-3677-4d46-8491-7bfcc7ed3f5e"
     private val json =
         Json {

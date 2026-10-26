@@ -16,6 +16,8 @@
 
 package com.sphereon.openid.oid4vp.verifier.impl
 
+import com.sphereon.openid.oid4vp.verifier.store.AuthorizationSessionStore
+
 import com.sphereon.core.api.Err
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
@@ -60,8 +62,13 @@ import com.sphereon.openid.oid4vp.verifier.CredentialValidationRejectionReason
 import com.sphereon.openid.oid4vp.verifier.ValidationResult
 import com.sphereon.openid.oid4vp.verifier.model.AuthorizationSession
 import com.sphereon.openid.oid4vp.verifier.model.AuthorizationSessionStatus
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.JsonObject
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -82,6 +89,25 @@ import kotlin.time.Instant
  * `toPublic()`, or `put()` mapping.
  */
 class KvAuthorizationSessionStoreTest {
+    @Test
+    fun nestedDisclosedClaimsSurviveThePersistedValidationRoundTrip() = runTest {
+        val store = createStore()
+        val correlation = "structured-claims-roundtrip"
+        assertEquals(true, store.put(correlation, session(null, correlation), 600).isOk)
+        val objectClaim = Json.parseToJsonElement("""{"personal_care":true,"detail":{"level":1}}""")
+        val arrayClaim = Json.parseToJsonElement("""[1,false,null]""")
+        val matched = com.sphereon.openid.oid4vp.verifier.MatchedCredential(
+            credentialQueryId = "achievement", credentialFormat = com.sphereon.openid.oid4vc.common.CredentialFormat.SD_JWT_VC,
+            presentation = "verified-presentation", disclosedClaims = mapOf("outcomes" to objectClaim, "items" to arrayClaim, "reference" to "001", "text" to "true"),
+        )
+        assertEquals(true, store.storeValidationResult(correlation, ValidationResult(true, listOf(matched))).isOk)
+        val reloaded = store.getByCorrelationId(correlation).value!!.validationResult!!.matchedCredentials.single().disclosedClaims
+        assertEquals(objectClaim, reloaded["outcomes"])
+        assertEquals(arrayClaim, reloaded["items"])
+        assertEquals("001", reloaded["reference"])
+        assertEquals("true", reloaded["text"])
+    }
+
     @Test
     fun `server verification evidence survives persistence without promotion of skipped checks`() = runTest {
         val store = createStore()
@@ -265,9 +291,13 @@ class KvAuthorizationSessionStoreTest {
         )
     }
 
-    private fun createStore(clock: Clock = Clock.System, claimed: Boolean = false): KvAuthorizationSessionStore =
+    private fun createStore(
+        clock: Clock = Clock.System,
+        claimed: Boolean = false,
+        manager: KvStoreManager = KvStoreTestKvStoreManager(clock),
+    ): KvAuthorizationSessionStore =
         KvAuthorizationSessionStore(
-            kvStoreManager = KvStoreTestKvStoreManager(clock),
+            kvStoreManager = manager,
             kvStoreService = KvStoreTestNoOpKvStoreService(claimed),
             dcqlQueryConfigurationStore = KvStoreTestNoOpDcqlQueryConfigurationStore(),
             callbackDispatcher = KvStoreTestNoOpCallbackDispatcher(),
@@ -304,7 +334,7 @@ class KvAuthorizationSessionStoreTest {
     @Test
     fun `claimed creation replays original and rejects conflicts and terminal overwrite`() = runTest {
         val store = createStore(claimed = true)
-        val key = "oid4vp-claim:atomic-operation"
+        val key = AuthorizationSessionStore.CLAIMED_CORRELATION_PREFIX + "atomic-operation"
         val proposal = session("template-a", key)
         val first = store.createClaimedSession(proposal, "fingerprint", 600).getOrElse { error(it.toString()) }
         val replay = store.createClaimedSession(proposal.copy(sessionId = "losing-concurrent-session"), "fingerprint", 600)
@@ -332,6 +362,115 @@ class KvAuthorizationSessionStoreTest {
         val key = "oid4vp-claim:no-fallback"
         assertIs<Err<*>>(createStore().createClaimedSession(session(null, key), "fingerprint", 600))
         assertIs<Err<*>>(createStore(claimed = true).put(key, session(null, key), 600))
+    }
+
+    @Test
+    fun legacyClaimReplaysThroughUrlSafeStateWithoutReplacingNonceOrTerminalHistory() = runTest {
+        val manager = KvStoreTestKvStoreManager(Clock.System)
+        val oldStore = createStore(claimed = true, manager = manager)
+        val newStore = createStore(claimed = true, manager = manager)
+        val legacyKey = AuthorizationSessionStore.LEGACY_CLAIMED_CORRELATION_PREFIX + "persisted-operation"
+        val publicKey = AuthorizationSessionStore.CLAIMED_CORRELATION_PREFIX + "persisted-operation"
+        val original = session("template", legacyKey).let {
+            it.copy(authorizationRequest = it.authorizationRequest.copy(nonce = "original-nonce"))
+        }
+        val created = oldStore.createClaimedSession(original, "fingerprint", 600).value
+        val proposal = session("template", publicKey).let {
+            it.copy(authorizationRequest = it.authorizationRequest.copy(nonce = "replacement-nonce"))
+        }
+        assertEquals(created, newStore.createClaimedSession(proposal, "fingerprint", 600).value)
+        assertEquals(created, newStore.get(publicKey).value)
+        val response = com.sphereon.openid.oid4vp.verifier.ParsedAuthorizationResponse(
+            vpToken = com.sphereon.openid.oid4vp.common.vpTokenOf("identity_credential", "presentation"),
+            rawVpToken = "{\"identity_credential\":[\"presentation\"]}", state = legacyKey,
+        )
+        assertEquals(true, newStore.storeResponse(publicKey, response).isOk)
+        val completed = newStore.storeValidationResult(publicKey, ValidationResult(true)).value
+        assertEquals(completed, oldStore.get(legacyKey).value)
+        assertEquals(completed, newStore.createClaimedSession(proposal, "fingerprint", 600).value)
+        assertEquals("original-nonce", completed.authorizationRequest.nonce)
+        assertEquals(legacyKey, completed.authorizationRequest.state)
+        assertIs<Err<*>>(newStore.createClaimedSession(proposal, "changed", 600))
+        assertIs<Err<*>>(newStore.put(publicKey, created, 600))
+    }
+
+    @Test
+    fun legacyEncryptedClaimReplaysCorrelationKidButKeepsEncryptionMaterialPinned() = runTest {
+        val store = createStore(claimed = true)
+        val legacy = AuthorizationSessionStore.LEGACY_CLAIMED_CORRELATION_PREFIX + "encrypted-operation"
+        val urlSafe = AuthorizationSessionStore.CLAIMED_CORRELATION_PREFIX + "encrypted-operation"
+        fun metadata(kid: String, x: String = "public-x", alg: String = "ECDH-ES", use: String = "enc", enc: String = "A256GCM") =
+            JsonObject(mapOf(
+                "jwks" to JsonObject(mapOf("keys" to JsonArray(listOf(JsonObject(mapOf(
+                    "kty" to JsonPrimitive("EC"), "crv" to JsonPrimitive("P-256"),
+                    "x" to JsonPrimitive(x), "y" to JsonPrimitive("public-y"),
+                    "kid" to JsonPrimitive(kid), "alg" to JsonPrimitive(alg), "use" to JsonPrimitive(use),
+                )))))),
+                "encrypted_response_enc_values_supported" to JsonArray(listOf(JsonPrimitive(enc))),
+            ))
+        val original = session("template", legacy).let { it.copy(authorizationRequest = it.authorizationRequest.copy(
+            nonce = "original-encrypted-nonce", responseMode = "direct_post.jwt",
+            additionalParameters = mapOf("client_metadata" to metadata(legacy)),
+        )) }
+        val created = store.createClaimedSession(original, "fingerprint", 600).value
+        val proposal = original.copy(correlationId = urlSafe, authorizationRequest = original.authorizationRequest.copy(
+            state = urlSafe, nonce = "replacement-encrypted-nonce",
+            additionalParameters = mapOf("client_metadata" to metadata(urlSafe)),
+        ))
+        assertEquals(created, store.createClaimedSession(proposal, "fingerprint", 600).value)
+        for (altered in listOf(
+            metadata(urlSafe, x = "different-public-x"), metadata(urlSafe, alg = "ECDH-ES+A256KW"),
+            metadata(urlSafe, use = "sig"), metadata(urlSafe, enc = "A128GCM"),
+            metadata(AuthorizationSessionStore.CLAIMED_CORRELATION_PREFIX + "another-operation"),
+        )) {
+            assertIs<Err<*>>(store.createClaimedSession(proposal.copy(authorizationRequest = proposal.authorizationRequest.copy(
+                additionalParameters = mapOf("client_metadata" to altered),
+            )), "fingerprint", 600))
+        }
+        assertEquals(original.authorizationRequest, store.get(urlSafe).value?.authorizationRequest)
+
+        val unrelatedKidOriginal = original.copy(correlationId = "$legacy-custom",
+            authorizationRequest = original.authorizationRequest.copy(state = "$legacy-custom",
+                additionalParameters = mapOf("client_metadata" to metadata("$legacy-unrelated"))))
+        assertEquals(true, store.createClaimedSession(unrelatedKidOriginal, "custom-fingerprint", 600).isOk)
+        val unrelatedKidProposal = unrelatedKidOriginal.copy(correlationId = "$urlSafe-custom",
+            authorizationRequest = unrelatedKidOriginal.authorizationRequest.copy(state = "$urlSafe-custom",
+                additionalParameters = mapOf("client_metadata" to metadata("$urlSafe-unrelated"))))
+        assertIs<Err<*>>(store.createClaimedSession(unrelatedKidProposal, "custom-fingerprint", 600))
+    }
+
+    @Test
+    fun competingClaimPrefixesShareOneAtomicOperationAcrossStoreInstances() = runTest {
+        for (matchingFingerprint in listOf(true, false)) {
+            val manager = KvStoreTestKvStoreManager(Clock.System)
+            val stores = List(2) { createStore(claimed = true, manager = manager) }
+            val start = CompletableDeferred<Unit>()
+            val keys = listOf(AuthorizationSessionStore.CLAIMED_CORRELATION_PREFIX,
+                AuthorizationSessionStore.LEGACY_CLAIMED_CORRELATION_PREFIX).map { it + "concurrent-operation" }
+            val proposals = keys.mapIndexed { index, key -> session("template", key).let {
+                it.copy(authorizationRequest = it.authorizationRequest.copy(nonce = "nonce-$index"))
+            } }
+            val pending = stores.mapIndexed { index, store -> async {
+                start.await()
+                store.createClaimedSession(proposals[index], if (matchingFingerprint) "same" else "fingerprint-$index", 600)
+            } }
+            start.complete(Unit)
+            val results = pending.awaitAll()
+            assertEquals(if (matchingFingerprint) 2 else 1, results.count { it.isOk })
+            if (matchingFingerprint) assertEquals(results[0].value, results[1].value)
+            val persisted = stores[0].get(keys[0]).value
+            assertEquals(persisted, stores[1].get(keys[1]).value)
+            assertEquals(true, results.filter { it.isOk }.all { it.value == persisted })
+            assertIs<Err<*>>(stores[0].createClaimedSession(proposals[0].copy(templateId = "altered"), "same", 600))
+        }
+    }
+
+    @Test
+    fun ordinaryPutCannotReplaceEitherClaimNamespace() = runTest {
+        for (prefix in listOf(AuthorizationSessionStore.CLAIMED_CORRELATION_PREFIX, AuthorizationSessionStore.LEGACY_CLAIMED_CORRELATION_PREFIX)) {
+            val key = prefix + "reserved-operation"
+            assertIs<Err<*>>(createStore(claimed = true).put(key, session(null, key), 600))
+        }
     }
 
     @Test
@@ -465,6 +604,8 @@ private class KvStoreTestKvStore(
     }
 
     override suspend fun <V : Any> append(namespace: KvNamespace<V>, key: String, expectedPreviousVersionId: String?, value: V, ttl: Duration): IdkResult<KvVersionAppendResult<V>, IdkError> {
+        // Let competing proposals reach the storage boundary before taking its atomic lock.
+        kotlinx.coroutines.yield()
         versionMutex.lock()
         try {
             val head = getHead(namespace, key).value

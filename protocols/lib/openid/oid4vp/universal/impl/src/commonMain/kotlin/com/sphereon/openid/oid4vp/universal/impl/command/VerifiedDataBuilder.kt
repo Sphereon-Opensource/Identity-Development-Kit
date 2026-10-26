@@ -20,6 +20,9 @@ import com.sphereon.openid.oid4vp.universal.VerifiedClaimsValue
 import com.sphereon.openid.oid4vp.universal.VerifiedData
 import com.sphereon.openid.oid4vp.verifier.model.AuthorizationSession
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
@@ -71,15 +74,7 @@ internal fun buildVerifiedData(session: AuthorizationSession): VerifiedData? {
             val claimsMap =
                 matched.disclosedClaims
                     .filterKeys { it !in PROTECTED_CLAIMS }
-                    .mapValues { (_, value) ->
-                        when (value) {
-                            is String -> JsonPrimitive(value)
-                            is Number -> JsonPrimitive(value)
-                            is Boolean -> JsonPrimitive(value)
-                            null -> JsonPrimitive(null as String?)
-                            else -> JsonPrimitive(value.toString())
-                        }
-                    }
+                    .mapValues { (_, value) -> disclosedClaimJson(value) }
 
             VerifiedClaimsValue(
                 id = matched.credentialQueryId,
@@ -100,6 +95,24 @@ internal fun buildVerifiedData(session: AuthorizationSession): VerifiedData? {
         credentialClaims = claims,
         authorizationResponse = buildAuthorizationResponse(session),
     )
+}
+
+/** Preserve disclosed JSON structure so relying parties can evaluate arrays and nested claim paths. */
+private fun disclosedClaimJson(value: Any?): JsonElement = when (value) {
+    null -> JsonNull
+    is JsonElement -> value
+    is String -> JsonPrimitive(value)
+    is Number -> JsonPrimitive(value)
+    is Boolean -> JsonPrimitive(value)
+    is Map<*, *> -> buildJsonObject {
+        for ((key, child) in value) {
+            require(key is String) { "Disclosed claim object keys must be strings" }
+            put(key, disclosedClaimJson(child))
+        }
+    }
+    is Iterable<*> -> JsonArray(value.map(::disclosedClaimJson))
+    is Array<*> -> JsonArray(value.map(::disclosedClaimJson))
+    else -> JsonPrimitive(value.toString())
 }
 
 private fun buildAuthorizationResponse(session: AuthorizationSession): JsonObject? {

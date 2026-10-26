@@ -213,7 +213,9 @@ class CreateAuthorizationRequestCommandImpl(
         // A caller-selected state is also the persistence key. Never turn create into a blind
         // upsert that replaces another live request's nonce and DCQL query.
         val correlationIdExists = authorizationSessionStore.exists(effectiveState).getOrElse { return Err(it) }
-        if (processedArgs.operationFingerprint == null && effectiveState.startsWith(AuthorizationSessionStore.CLAIMED_CORRELATION_PREFIX)) {
+        if (processedArgs.operationFingerprint == null &&
+            (effectiveState.startsWith(AuthorizationSessionStore.CLAIMED_CORRELATION_PREFIX) ||
+                effectiveState.startsWith(AuthorizationSessionStore.LEGACY_CLAIMED_CORRELATION_PREFIX))) {
             return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Reserved claimed-session correlation namespace"))
         }
         if (correlationIdExists && processedArgs.operationFingerprint == null) {
@@ -330,7 +332,7 @@ class CreateAuthorizationRequestCommandImpl(
         return Ok(
             CreatedAuthorizationRequest(
                 request = persisted.authorizationRequest,
-                sessionId = effectiveState,
+                sessionId = persisted.correlationId,
             ),
         )
     }

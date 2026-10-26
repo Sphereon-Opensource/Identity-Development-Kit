@@ -43,6 +43,20 @@ import kotlin.test.assertNull
 
 class VerifiedDataBuilderTest {
     @Test
+    fun verifiedClaimsRetainDisclosedArraysNestedObjectsAndScalarTypes() {
+        val values = claimsFor(matched(CredentialFormat.SD_JWT_VC, "urn:test:achievement").copy(
+            disclosedClaims = mapOf(
+                "outcomes" to listOf("personal-care", "mobility"),
+                "assessment" to mapOf("level" to 2, "supervised" to true, "notes" to null),
+                "structured" to Json.parseToJsonElement("""{"items":[1,false,null]}"""),
+            ),
+        ))
+        assertEquals(Json.parseToJsonElement("""["personal-care","mobility"]"""), values.claims?.get("outcomes"))
+        assertEquals(Json.parseToJsonElement("""{"level":2,"supervised":true,"notes":null}"""), values.claims?.get("assessment"))
+        assertEquals(Json.parseToJsonElement("""{"items":[1,false,null]}"""), values.claims?.get("structured"))
+    }
+
+    @Test
     fun `build verified data reconstructs authorization response and credential set refs`() {
         val session =
             AuthorizationSession(

@@ -38,7 +38,7 @@ import com.sphereon.crypto.core.KeyType
 import com.sphereon.crypto.resolution.managed.ManagedOptsKeyInfo
 import com.sphereon.di.session.SessionScope
 import com.sphereon.oauth2.common.config.OAuth2ServersConfigProvider
-import com.sphereon.oauth2.common.config.OAuth2ServerInstanceIdProvider
+import com.sphereon.oauth2.common.config.MutableOAuth2ServerInstanceIdProvider
 import com.sphereon.oauth2.common.config.TokenFormat
 import com.sphereon.oauth2.server.authorization.command.CreateAccessTokenArgs
 import com.sphereon.oauth2.server.authorization.command.CreateAccessTokenCommand
@@ -57,6 +57,8 @@ import com.sphereon.oauth2.server.authorization.storage.TokenStorage
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.Named
 import dev.zacsweers.metro.SingleIn
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
@@ -104,7 +106,7 @@ class CreateAccessTokenCommandImpl(
     private val tokenStorage: TokenStorage,
     private val secureRandom: SecureRandom,
     private val configProvider: OAuth2ServersConfigProvider,
-    private val asInstanceIdProvider: OAuth2ServerInstanceIdProvider,
+    private val asInstanceIdProvider: MutableOAuth2ServerInstanceIdProvider,
     private val signingIdentifierResolver: AsServerSigningIdentifierResolver,
     private val eventService: SessionEventService? = null,
     private val asServerJwsSigner: AsServerJwsSigner =
@@ -116,6 +118,10 @@ class CreateAccessTokenCommandImpl(
         outputTypeToken = typeToken<StringResult>(),
     ),
     CreateAccessTokenCommand {
+    // The selected server is shared with signing collaborators for this session. Keep
+    // capture, temporary selection and restoration within one invocation boundary.
+    private val issuanceMutex = Mutex()
+
     override val commandId: String get() = CreateAccessTokenCommand.COMMAND_ID
 
     override suspend fun supports(args: Any): Boolean = args is CreateAccessTokenArgs
@@ -123,12 +129,19 @@ class CreateAccessTokenCommandImpl(
     override suspend fun doExecute(
         args: CreateAccessTokenArgs,
         applyDuring: (CreateAccessTokenArgs) -> CreateAccessTokenArgs,
+    ): IdkResult<StringResult, IdkError> = issuanceMutex.withLock {
+        executeSelected(args, applyDuring)
+    }
+
+    private suspend fun executeSelected(
+        args: CreateAccessTokenArgs,
+        applyDuring: (CreateAccessTokenArgs) -> CreateAccessTokenArgs,
     ): IdkResult<StringResult, IdkError> {
         val applied = applyDuring(args)
         val root = configProvider.getConfig()
         val captured =
             try {
-                CapturedAsServerConfig.select(root, asInstanceIdProvider.currentAsInstanceId())
+                CapturedAsServerConfig.select(root, applied.serverId ?: asInstanceIdProvider.currentAsInstanceId())
             } catch (expected: IllegalArgumentException) {
                 log.error("OAuth2 token issuance failed command=$commandId stage=server-selection error_type=IllegalArgumentException")
                 return Err(IdkError.INVALID_STATE(message = expected.message ?: "Invalid authorization server selection"))
@@ -172,7 +185,9 @@ class CreateAccessTokenCommandImpl(
             }
 
         val timings = TokenPathStageTimings(operation = "access-token-mint")
-        val result =
+        val previousServerId = asInstanceIdProvider.currentAsInstanceId()
+        captured.serverKey?.let(asInstanceIdProvider::setCurrentAsInstanceId)
+        val result = try {
             executeInternal(
                 timings,
                 applied.subject,
@@ -189,6 +204,10 @@ class CreateAccessTokenCommandImpl(
                 issuerUrl,
                 captured,
             ).map { StringResult(it) }.mapError { IdkError.fromDTO(it) }
+        } finally {
+            if (previousServerId == null) asInstanceIdProvider.clearCurrentAsInstanceId()
+            else asInstanceIdProvider.setCurrentAsInstanceId(previousServerId)
+        }
         timings.report(log, if (result.isOk) "success" else "failed")
         emitOutcome(applied, result)
         return result

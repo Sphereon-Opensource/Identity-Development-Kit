@@ -2396,8 +2396,8 @@ class ValidateAuthorizationResponseCommandImpl(
      * `<namespace>.<elementIdentifier>` (e.g. `org.iso.18013.5.1.given_name`). This mirrors the
      * mdoc DCQL `claims[].path` representation `[namespace, elementIdentifier]` (a two-segment
      * path joined by `.`), keeping the verifier's normalized claims map aligned with the query
-     * paths used to request them. Values are kept consistent with the SD-JWT mapping: primitives
-     * (String/Long/Boolean/Double) pass through; anything richer is rendered via toString().
+     * paths used to request them. Primitives retain their JSON type; objects and arrays
+     * stay structured so downstream recognition can evaluate nested claim paths.
      */
     internal fun extractDisclosedClaims(
         presentation: String,
@@ -2413,8 +2413,9 @@ class ValidateAuthorizationResponseCommandImpl(
                         val internalKeys = setOf("_sd", "_sd_alg", "cnf", "iss", "iat", "exp", "nbf", "vct", "status")
                         payload.filterKeys { it !in internalKeys }.mapValues { (_, element) ->
                             when (element) {
-                                is JsonPrimitive -> element.booleanOrNull ?: element.longOrNull ?: element.doubleOrNull ?: element.contentOrNull
-                                else -> element.toString()
+                                is JsonPrimitive -> if (element.isString) element.content else
+                                    element.booleanOrNull ?: element.longOrNull ?: element.doubleOrNull ?: element.contentOrNull
+                                else -> element
                             }
                         }
                     },

@@ -47,6 +47,7 @@ import com.sphereon.openid.oid4vci.issuer.command.BuildIssuerMetadataCommand
 import com.sphereon.openid.oid4vci.issuer.command.BuildSignedIssuerMetadataArgs
 import com.sphereon.openid.oid4vci.issuer.command.BuildSignedIssuerMetadataCommand
 import com.sphereon.openid.oid4vci.issuer.config.Oid4vciIssuerConfigProvider
+import com.sphereon.openid.oid4vci.issuer.impl.signing.IssuerKeyIdResolver
 import com.sphereon.openid.oid4vci.rest.Oid4vciRestConfigProvider
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
@@ -242,6 +243,7 @@ class GetIssuerMetadataEndpointCommandImpl(
     private val restConfigProvider: Oid4vciRestConfigProvider,
     private val multiManagedIdentifierService: MultiManagedIdentifierService,
     private val publicUrlResolver: Oid4vciIssuerPublicUrlResolver,
+    private val issuerKeyIdResolver: IssuerKeyIdResolver? = null,
 ) : HttpEndpointCommandAdapter(
         id = GetIssuerMetadataEndpointCommand.COMMAND_ID,
         execution = execution,
@@ -296,6 +298,11 @@ class GetIssuerMetadataEndpointCommandImpl(
             resolveCredentialRequestEncryption(configProvider.credentialRequestEncryption)
                 .getOrElse { error -> return Err(error) }
 
+        // Federation consumers resolve protocol keys from this same served metadata.
+        // These are credential-scoped keys, separate from Entity Statement signing keys.
+        val signingJwks = issuerThumbprintSigningJwks(configProvider, issuerKeyIdResolver)
+            .getOrElse { error -> return Err(error) }
+
         val metadataResult =
             buildMetadataCommand.execute(
                 BuildIssuerMetadataArgs(
@@ -323,6 +330,10 @@ class GetIssuerMetadataEndpointCommandImpl(
                 // that tenant's host. Done BEFORE signing + JSON encode so both surfaces agree.
                 .withAbsoluteAssetUris(publicUrls.endpointBaseUrl)
                 .withHostedVctUrls(publicUrls.issuerIdentifier)
+                .let { metadata ->
+                    if (signingJwks == null) metadata
+                    else metadata.copy(additionalMetadata = metadata.additionalMetadata + ("jwks" to signingJwks))
+                }
 
         val signingKey = configProvider.signingKey()
 

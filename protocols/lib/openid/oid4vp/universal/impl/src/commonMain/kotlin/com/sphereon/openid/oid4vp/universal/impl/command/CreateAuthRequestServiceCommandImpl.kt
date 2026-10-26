@@ -54,7 +54,6 @@ import com.sphereon.openid.oid4vp.verifier.Oid4vpVerifierService
 import com.sphereon.openid.oid4vp.verifier.model.AuthorizationSessionCallbackConfig
 import com.sphereon.openid.oid4vp.verifier.model.AuthorizationSessionStatus
 import com.sphereon.openid.oid4vp.verifier.model.Oid4vpSessionIdentity
-import com.sphereon.openid.oid4vp.verifier.config.Oid4vpVerifierInstanceIdProvider
 import com.sphereon.openid.oid4vp.verifier.config.ResponseEncryptionKeyConfig
 import com.sphereon.openid.oid4vp.verifier.config.currentInstanceIdOrDefault
 import com.sphereon.openid.oid4vp.verifier.requesturi.RequestObjectSigningConfig
@@ -69,7 +68,36 @@ import kotlinx.serialization.json.put
 import kotlin.random.Random
 
 import dev.zacsweers.metro.ExposeImplBinding
+import com.sphereon.openid.oid4vp.verifier.config.MutableOid4vpVerifierInstanceIdProvider
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+
+internal suspend fun <T> withRequestedVerifierInstance(
+    provider: MutableOid4vpVerifierInstanceIdProvider,
+    requested: String?,
+    action: suspend () -> IdkResult<T, IdkError>,
+): IdkResult<T, IdkError> {
+    val previous = provider.currentInstanceId()
+    if (requested == null) return action()
+    val selected = try {
+        Oid4vpSessionIdentity.normalize("verifierId", requested)
+    } catch (e: IllegalArgumentException) {
+        return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = e.message ?: "Invalid verifierId"))
+    }
+    if (previous != null && previous != selected) {
+        return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "verifierId does not match the routed verifier instance"))
+    }
+    provider.setCurrentInstanceId(selected)
+    return try {
+        action()
+    } finally {
+        if (previous == null) provider.clearCurrentInstanceId() else provider.setCurrentInstanceId(previous)
+    }
+}
 internal const val SUPPORTED_RESPONSE_TYPE: String = "vp_token"
+
+internal fun claimedAuthorizationState(operationId: String): String =
+    AuthorizationSessionStore.CLAIMED_CORRELATION_PREFIX + hash(operationId.encodeToByteArray(), DigestAlg.SHA256).encodeToBase64Url()
 
 internal fun validateCreateAuthResponseType(responseType: String?): IdkError? {
     val requested = responseType?.takeIf { it.isNotBlank() } ?: return null
@@ -129,7 +157,7 @@ class CreateAuthRequestServiceCommandImpl(
     private val dcqlQueryResolver: DcqlQueryResolver,
     private val clientMetadataConfigStore: ClientMetadataConfigurationStore,
     private val sessionEventService: SessionEventService,
-    private val instanceIdProvider: Oid4vpVerifierInstanceIdProvider,
+    private val instanceIdProvider: MutableOid4vpVerifierInstanceIdProvider,
     private val qrCodeService: QrCodeService,
     private val configProvider: UniversalOid4vpConfigProvider,
     private val requestObjectSigningConfig: RequestObjectSigningConfig,
@@ -144,12 +172,21 @@ class CreateAuthRequestServiceCommandImpl(
     ),
     CreateAuthRequestServiceCommand {
     override val commandId: String get() = CreateAuthRequestServiceCommand.COMMAND_ID
+    private val instanceMutationMutex = Mutex()
 
     override suspend fun doExecute(
         args: CreateAuthorizationRequestInput,
         applyDuring: (CreateAuthorizationRequestInput) -> CreateAuthorizationRequestInput,
     ): IdkResult<CreateAuthorizationRequestOutput, IdkError> {
         val input = applyDuring(args)
+        return instanceMutationMutex.withLock {
+            withRequestedVerifierInstance(instanceIdProvider, input.verifierId) {
+                executeForInstance(input)
+            }
+        }
+    }
+
+    private suspend fun executeForInstance(input: CreateAuthorizationRequestInput): IdkResult<CreateAuthorizationRequestOutput, IdkError> {
         val instanceId =
             try {
                 Oid4vpSessionIdentity.normalize(
@@ -219,7 +256,7 @@ class CreateAuthRequestServiceCommandImpl(
             hash(kotlinx.serialization.json.Json.encodeToString(CreateAuthorizationRequestInput.serializer(), input).encodeToByteArray(), DigestAlg.SHA256).encodeToBase64Url()
         }
         val correlationId = operationId?.let {
-            AuthorizationSessionStore.CLAIMED_CORRELATION_PREFIX + hash(it.encodeToByteArray(), DigestAlg.SHA256).encodeToBase64Url()
+            claimedAuthorizationState(it)
         } ?: resolveSessionCorrelationId(input.correlationId, input.state) {
                 ByteArray(16).also { Random.nextBytes(it) }.encodeToBase64Url()
             }.getOrElse { return Err(it) }

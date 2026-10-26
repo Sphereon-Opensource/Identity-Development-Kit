@@ -91,6 +91,18 @@ class ValidateAuthorizationResponseCommandImplTest {
     private val testContext = Oid4vpVerifierTestContext("validate-auth-response-test", this)
 
     @Test
+    fun sdJwtExtractionRetainsNestedClaimStructureAndStringTypes() {
+        val header = """{"alg":"ES256","typ":"dc+sd-jwt"}"""
+        val payload = """{"iss":"https://issuer.example","vct":"urn:test:achievement","outcomes":{"personal_care":true},"items":[1,false,null],"reference":"001","text":"true"}"""
+        val compact = "${header.encodeToByteArray().encodeToBase64Url()}.${payload.encodeToByteArray().encodeToBase64Url()}.signature~"
+        val claims = createTestCommand().extractDisclosedClaims(compact, CredentialFormat.SD_JWT_VC)
+        assertEquals(buildJsonObject { put("personal_care", JsonPrimitive(true)) }, claims["outcomes"])
+        assertEquals(JsonArray(listOf(JsonPrimitive(1), JsonPrimitive(false), kotlinx.serialization.json.JsonNull)), claims["items"])
+        assertEquals("001", claims["reference"])
+        assertEquals("true", claims["text"])
+    }
+
+    @Test
     fun `test validate response with matching SD-JWT credential`() =
         runTest {
             // Given: DCQL query requesting SD-JWT credential

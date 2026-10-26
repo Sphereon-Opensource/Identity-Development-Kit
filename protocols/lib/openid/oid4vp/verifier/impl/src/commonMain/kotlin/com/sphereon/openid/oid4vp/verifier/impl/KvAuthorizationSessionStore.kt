@@ -68,6 +68,7 @@ import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
@@ -227,9 +228,10 @@ class KvAuthorizationSessionStore(
                 disclosedClaims =
                     disclosedClaims.mapValues { (_, element) ->
                         when (element) {
-                            is JsonPrimitive -> element.booleanOrNull ?: element.longOrNull ?: element.doubleOrNull ?: element.contentOrNull
+                            is JsonPrimitive -> if (element.isString) element.content else
+                                element.booleanOrNull ?: element.longOrNull ?: element.doubleOrNull ?: element.contentOrNull
                             is JsonNull -> null
-                            else -> element.toString()
+                            else -> element
                         }
                     },
                 issuer = issuer,
@@ -732,7 +734,39 @@ class KvAuthorizationSessionStore(
         )
     }
 
-    private fun isClaimed(key: String) = key.startsWith(AuthorizationSessionStore.CLAIMED_CORRELATION_PREFIX)
+    private fun isClaimed(key: String) = key.startsWith(AuthorizationSessionStore.CLAIMED_CORRELATION_PREFIX) ||
+        key.startsWith(AuthorizationSessionStore.LEGACY_CLAIMED_CORRELATION_PREFIX)
+
+    // Keep the original durable key across public state encodings. Both forms must
+    // contend on the same append-if-absent operation, including during rolling upgrades.
+    private fun claimedStorageKey(key: String): String =
+        if (key.startsWith(AuthorizationSessionStore.CLAIMED_CORRELATION_PREFIX)) {
+            AuthorizationSessionStore.LEGACY_CLAIMED_CORRELATION_PREFIX +
+                key.removePrefix(AuthorizationSessionStore.CLAIMED_CORRELATION_PREFIX)
+        } else key
+
+    private fun comparableClaimRequest(entry: AuthorizationSessionEntry): Map<String, JsonElement> =
+        entry.authorizationRequestJson.filterKeys { it != "nonce" }.mapValues { (name, value) ->
+            when {
+                name == "state" && value is JsonPrimitive && value.isString -> JsonPrimitive(claimedStorageKey(value.content))
+                name == "client_metadata" && value is JsonObject -> comparableClaimMetadata(value, entry.correlationId)
+                else -> value
+            }
+        }
+
+    private fun comparableClaimMetadata(metadata: JsonObject, correlationId: String): JsonObject {
+        val jwks = metadata["jwks"] as? JsonObject ?: return metadata
+        val keys = jwks["keys"] as? JsonArray ?: return metadata
+        val comparableKeys = keys.map { value ->
+            val key = value as? JsonObject
+            // Only the encryption kid derived from this exact correlation changes with
+            // the state encoding. Keep key material, capabilities and other kids pinned.
+            if (key != null && key["kid"] == JsonPrimitive(correlationId) && key["use"] == JsonPrimitive("enc")) {
+                JsonObject(key + ("kid" to JsonPrimitive(claimedStorageKey(correlationId))))
+            } else value
+        }
+        return JsonObject(metadata + ("jwks" to JsonObject(jwks + ("keys" to JsonArray(comparableKeys)))))
+    }
 
     private fun durableVersioning(): IdkResult<KvStoreVersioning, IdkError> {
         val config = resolveEffectiveStoreConfig()
@@ -746,7 +780,7 @@ class KvAuthorizationSessionStore(
     private suspend fun readEntry(key: String): IdkResult<AuthorizationSessionEntry?, IdkError> {
         if (!isClaimed(key)) return kv.get(namespace, key)
         val store = durableVersioning().getOrElse { return Err(it) }
-        return store.getHead(namespace, key).map { it?.value }
+        return store.getHead(namespace, claimedStorageKey(key)).map { it?.value }
     }
 
     override suspend fun createClaimedSession(
@@ -762,7 +796,7 @@ class KvAuthorizationSessionStore(
         val now = clock.now().toEpochMilliseconds()
         val expires = authorizationSessionExpiresAt(now, ttlSeconds).getOrElse { return Err(it) }
         val entry = toEntry(session, now, expires).copy(claimFingerprint = fingerprint)
-        return when (val result = store.append(namespace, session.correlationId, null, entry, ttlSeconds.seconds).getOrElse { return Err(it) }) {
+        return when (val result = store.append(namespace, claimedStorageKey(session.correlationId), null, entry, ttlSeconds.seconds).getOrElse { return Err(it) }) {
             is KvVersionAppendResult.Applied -> Ok(result.entry.value.toPublic(json))
             is KvVersionAppendResult.Conflict -> {
                 val original = result.currentHead?.value
@@ -770,7 +804,7 @@ class KvAuthorizationSessionStore(
                     original.dcqlQuery != entry.dcqlQuery || original.dcqlQueryId != entry.dcqlQueryId ||
                     original.dcqlQueryVersion != entry.dcqlQueryVersion || original.templateId != entry.templateId || original.templateRevision != entry.templateRevision ||
                     original.credentialStatusPolicies != entry.credentialStatusPolicies ||
-                    original.authorizationRequestJson.filterKeys { it != "nonce" } != entry.authorizationRequestJson.filterKeys { it != "nonce" }
+                    comparableClaimRequest(original) != comparableClaimRequest(entry)
                 ) Err(IdkError.INVALID_STATE(message = "Claimed verification operation conflicts with its original request"))
                 else if (original.expiresAt <= now) Err(IdkError.INVALID_STATE(message = "Claimed verification operation has expired"))
                 else Ok(original.toPublic(json))
@@ -781,7 +815,7 @@ class KvAuthorizationSessionStore(
     /** Whole-session configuration writes may not overwrite a concurrent response or alter request pins. */
     private suspend fun updateClaimedSnapshot(key: String, value: AuthorizationSession): IdkResult<StoreMetadata, IdkError> {
         val store = durableVersioning().getOrElse { return Err(it) }
-        val head = store.getHead(namespace, key).getOrElse { return Err(it) }
+        val head = store.getHead(namespace, claimedStorageKey(key)).getOrElse { return Err(it) }
             ?: return Err(IdkError.INVALID_STATE(message = "Claimed session must be created atomically"))
         val existing = head.value
         val public = existing.toPublic(json)
@@ -795,7 +829,7 @@ class KvAuthorizationSessionStore(
         val now = clock.now().toEpochMilliseconds()
         if (now >= existing.expiresAt) return Err(IdkError.INVALID_STATE(message = "Claimed session expired"))
         val updated = toEntry(value, now, existing.expiresAt).copy(claimFingerprint = existing.claimFingerprint)
-        return when (store.append(namespace, key, head.versionId, updated, (existing.expiresAt - now).milliseconds).getOrElse { return Err(it) }) {
+        return when (store.append(namespace, claimedStorageKey(key), head.versionId, updated, (existing.expiresAt - now).milliseconds).getOrElse { return Err(it) }) {
             is KvVersionAppendResult.Applied -> Ok(StoreMetadata(existing.createdAt, existing.expiresAt))
             is KvVersionAppendResult.Conflict -> Err(IdkError.INVALID_STATE(message = "Concurrent claimed session update"))
         }
@@ -809,7 +843,7 @@ class KvAuthorizationSessionStore(
         val now = clock.now().toEpochMilliseconds()
 
         val versionStore = if (isClaimed(correlationId)) durableVersioning().getOrElse { return Err(it) } else null
-        val head = versionStore?.getHead(namespace, correlationId)?.getOrElse { return Err(it) }
+        val head = versionStore?.getHead(namespace, claimedStorageKey(correlationId))?.getOrElse { return Err(it) }
         val existing =
             (if (versionStore != null) Ok(head?.value) else kv.get(namespace, correlationId)).getOrElse { e ->
                 return Err(
@@ -842,7 +876,7 @@ class KvAuthorizationSessionStore(
             return Err(IdkError.INVALID_STATE(message = "Completed authorization verification is immutable"))
         }
         if (versionStore != null) {
-            val result = versionStore.append(namespace, correlationId, head?.versionId, updated, (existing.expiresAt - now).milliseconds).getOrElse { return Err(it) }
+            val result = versionStore.append(namespace, claimedStorageKey(correlationId), head?.versionId, updated, (existing.expiresAt - now).milliseconds).getOrElse { return Err(it) }
             if (result is KvVersionAppendResult.Conflict) return Err(IdkError.INVALID_STATE(message = "Concurrent claimed verification update"))
             val public = updated.toPublic(json)
             if (dispatch) {
