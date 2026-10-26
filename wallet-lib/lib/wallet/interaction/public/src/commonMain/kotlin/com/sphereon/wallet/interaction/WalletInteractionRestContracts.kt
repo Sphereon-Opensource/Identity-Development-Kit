@@ -32,6 +32,7 @@ object WalletInteractionApiConstants {
         const val AUTHORIZATION_HANDOFF: String = "/wallets/{walletUnitId}/interactions/{sessionId}/authorization-handoff"
         const val COMPLETION_HANDOFF: String = "/wallets/{walletUnitId}/interactions/{sessionId}/completion-handoff"
         const val ACTIVITY: String = "/wallets/{walletUnitId}/activity"
+        const val TASKS: String = "/wallets/{walletUnitId}/tasks"
     }
 
     object Commands {
@@ -59,6 +60,7 @@ object WalletInteractionApiConstants {
         const val CONSUME_AUTHORIZATION_HANDOFF: String = ConsumeWalletInteractionAuthorizationHandoffCommand.COMMAND_ID
         const val CONSUME_COMPLETION_HANDOFF: String = ConsumeWalletInteractionCompletionHandoffCommand.COMMAND_ID
         const val LIST_ACTIVITY: String = ListWalletInteractionActivityCommand.COMMAND_ID
+        const val LIST_TASKS: String = ListWalletInteractionTasksCommand.COMMAND_ID
     }
 
     object EndpointCommands {
@@ -73,6 +75,7 @@ object WalletInteractionApiConstants {
         const val CONSUME_AUTHORIZATION_HANDOFF: String = "wallet.interaction-http.consume-authorization-handoff"
         const val CONSUME_COMPLETION_HANDOFF: String = "wallet.interaction-http.consume-completion-handoff"
         const val LIST_ACTIVITY: String = "wallet.interaction-http.list-activity"
+        const val LIST_TASKS: String = "wallet.interaction-http.list-tasks"
     }
 
     object Sse {

@@ -47,6 +47,9 @@ import com.sphereon.wallet.interaction.GetWalletInteractionStateCommand
 import com.sphereon.wallet.interaction.ListWalletInteractionActivityArgs
 import com.sphereon.wallet.interaction.ListWalletInteractionActivityCommand
 import com.sphereon.wallet.interaction.ListWalletInteractionActivityResult
+import com.sphereon.wallet.interaction.ListWalletInteractionTasksArgs
+import com.sphereon.wallet.interaction.ListWalletInteractionTasksCommand
+import com.sphereon.wallet.interaction.ListWalletInteractionTasksResult
 import com.sphereon.wallet.interaction.RegisterWalletInteractionSensitiveInputArgs
 import com.sphereon.wallet.interaction.RegisterWalletInteractionSensitiveInputCommand
 import com.sphereon.wallet.interaction.RegisterWalletInteractionSensitiveInputRequest
@@ -264,6 +267,21 @@ interface ListWalletInteractionActivityHttpEndpointCommand : HttpEndpointCommand
     }
 }
 
+interface ListWalletInteractionTasksHttpEndpointCommand : HttpEndpointCommand {
+    companion object {
+        const val COMMAND_ID: String = WalletInteractionApiConstants.EndpointCommands.LIST_TASKS
+        val ENDPOINT: HttpEndpointDescriptor =
+            walletInteractionEndpoint(
+                method = HttpMethod.GET,
+                pathPattern = WalletInteractionApiConstants.Paths.TASKS,
+                produces = JSON_MEDIA,
+                operationId = "listWalletInteractionTasks",
+                commandId = WalletInteractionApiConstants.Commands.LIST_TASKS,
+                handlerCommandId = COMMAND_ID,
+            )
+    }
+}
+
 /**
  * Public REST adapter for wallet interaction sessions.
  *
@@ -334,6 +352,7 @@ object WalletInteractionHttpEndpoints {
             ConsumeWalletInteractionAuthorizationHandoffHttpEndpointCommand.ENDPOINT,
             ConsumeWalletInteractionCompletionHandoffHttpEndpointCommand.ENDPOINT,
             ListWalletInteractionActivityHttpEndpointCommand.ENDPOINT,
+            ListWalletInteractionTasksHttpEndpointCommand.ENDPOINT,
         )
 }
 
@@ -823,6 +842,40 @@ class ListWalletInteractionActivityHttpEndpointCommandImpl(
                 .execute(listArgs)
                 .orAbort()
                 .json(ListWalletInteractionActivityResult.serializer())
+        }
+}
+
+@Inject
+@SingleIn(SessionScope::class)
+@ContributesIntoMap(SessionScope::class, binding = binding<HttpEndpointCommand>())
+@StringKey(ListWalletInteractionTasksHttpEndpointCommand.COMMAND_ID)
+class ListWalletInteractionTasksHttpEndpointCommandImpl(
+    execution: SessionExecution,
+    private val command: ListWalletInteractionTasksCommand,
+) : WalletInteractionHttpEndpointCommandAdapter(
+        id = ListWalletInteractionTasksHttpEndpointCommand.COMMAND_ID,
+        execution = execution,
+        endpoint = ListWalletInteractionTasksHttpEndpointCommand.ENDPOINT,
+    ),
+    ListWalletInteractionTasksHttpEndpointCommand {
+    override suspend fun doExecute(
+        args: GenericHttpRequest,
+        applyDuring: (GenericHttpRequest) -> GenericHttpRequest,
+    ): IdkResult<GenericHttpResponse, IdkError> =
+        runWalletInteractionEndpoint {
+            val request = applyDuring(args)
+            val walletUnitId = request.walletUnitId().orAbort()
+            val limit =
+                request
+                    .optionalIntQueryParam(PARAM_LIMIT, min = ACTIVITY_LIMIT_MIN, max = ACTIVITY_LIMIT_MAX)
+                    .orAbort()
+            val listArgs =
+                ListWalletInteractionTasksArgs(walletUnitId = walletUnitId)
+                    .let { base -> if (limit == null) base else base.copy(limit = limit) }
+            command
+                .execute(listArgs)
+                .orAbort()
+                .json(ListWalletInteractionTasksResult.serializer())
         }
 }
 
