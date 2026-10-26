@@ -56,7 +56,10 @@ import com.sphereon.openid.oid4vp.dcql.sdJwtVcMeta
 import com.sphereon.openid.oid4vp.dcql.store.DcqlQueryConfigurationStore
 import com.sphereon.openid.oid4vp.dcql.store.model.DcqlQueryConfiguration
 import com.sphereon.openid.oid4vp.verifier.callback.AuthorizationSessionCallbackDispatcher
-import com.sphereon.openid.oid4vp.verifier.callback.AuthorizationSessionStatusUpdate
+import com.sphereon.openid.oid4vp.universal.GetAuthorizationRequestStatusOutput
+import com.sphereon.openid.oid4vp.universal.VerifiedDataMode
+import com.sphereon.openid.oid4vp.universal.VerifiedDataOpts
+import com.sphereon.openid.oid4vp.verifier.model.AuthorizationSessionCallbackConfig
 import com.sphereon.openid.oid4vp.verifier.CredentialValidationRejection
 import com.sphereon.openid.oid4vp.verifier.CredentialValidationRejectionReason
 import com.sphereon.openid.oid4vp.verifier.ValidationResult
@@ -285,6 +288,7 @@ class KvAuthorizationSessionStoreTest {
             kvStoreService = KvStoreTestNoOpKvStoreService(),
             dcqlQueryConfigurationStore = KvStoreTestNoOpDcqlQueryConfigurationStore(),
             callbackDispatcher = KvStoreTestNoOpCallbackDispatcher(),
+            statusResponseMapper = AuthorizationSessionStatusResponseMapperImpl(),
             appLogManager = KvStoreTestAppLogManager(),
             execution = execution,
             clock = Clock.System,
@@ -294,16 +298,206 @@ class KvAuthorizationSessionStoreTest {
     private fun createStore(
         clock: Clock = Clock.System,
         claimed: Boolean = false,
+        dispatcher: AuthorizationSessionCallbackDispatcher = KvStoreTestNoOpCallbackDispatcher(),
         manager: KvStoreManager = KvStoreTestKvStoreManager(clock),
     ): KvAuthorizationSessionStore =
         KvAuthorizationSessionStore(
             kvStoreManager = manager,
             kvStoreService = KvStoreTestNoOpKvStoreService(claimed),
             dcqlQueryConfigurationStore = KvStoreTestNoOpDcqlQueryConfigurationStore(),
-            callbackDispatcher = KvStoreTestNoOpCallbackDispatcher(),
+            callbackDispatcher = dispatcher,
+            statusResponseMapper = AuthorizationSessionStatusResponseMapperImpl(),
             appLogManager = KvStoreTestAppLogManager(),
             execution = KvStoreTestSessionExecution(),
             clock = clock,
+        )
+
+    @Test
+    fun shouldPersistTheCallbackVerifiedDataOptionsThroughTheStore() =
+        runTest {
+            val store = createStore()
+            val cases =
+                listOf(
+                    "absent" to null,
+                    "empty" to VerifiedDataOpts(),
+                    "claims" to VerifiedDataOpts(listOf(VerifiedDataMode.CREDENTIAL_CLAIMS_DESERIALIZED)),
+                    "mixed" to VerifiedDataOpts(VerifiedDataMode.entries.toList() + VerifiedDataMode.VP_TOKEN),
+                )
+            for ((name, options) in cases) {
+                val correlationId = "callback-options-$name"
+                assertEquals(true, store.put(correlationId, callbackSession(correlationId, options), 600).isOk)
+                assertEquals(options, store.get(correlationId).value?.callback?.verifiedData, name)
+            }
+        }
+
+    @Test
+    fun shouldDecodeAStoredCallbackWithoutVerifiedDataAsHavingNone() {
+        val legacy = """{"url":"https://receiver.example.com/cb","statuses":["ERROR"]}"""
+        val entry = Json.decodeFromString(KvAuthorizationSessionStore.AuthorizationSessionCallbackEntry.serializer(), legacy)
+        assertNull(entry.toPublic().verifiedData)
+    }
+
+    @Test
+    fun shouldDispatchOneMappedStatusResponsePerPersistedTransition() =
+        runTest {
+            val dispatcher = KvStoreTestRecordingCallbackDispatcher()
+            val store = createStore(dispatcher = dispatcher)
+            val id = "callback-lifecycle"
+            val options = VerifiedDataOpts(listOf(VerifiedDataMode.CREDENTIAL_CLAIMS_DESERIALIZED))
+
+            assertEquals(true, store.put(id, callbackSession(id, options), 600).isOk)
+            assertEquals(1, dispatcher.delivered.size)
+            val retrieved = store.updateStatus(id, AuthorizationSessionStatus.AUTHORIZATION_REQUEST_RETRIEVED).value!!
+            assertEquals(2, dispatcher.delivered.size)
+            store.storeResponse(id, parsedResponse(id))
+            assertEquals(3, dispatcher.delivered.size)
+            val verified = store.storeValidationResult(id, validResult()).value!!
+            assertEquals(4, dispatcher.delivered.size)
+
+            assertEquals(
+                listOf(
+                    AuthorizationSessionStatus.AUTHORIZATION_REQUEST_CREATED,
+                    AuthorizationSessionStatus.AUTHORIZATION_REQUEST_RETRIEVED,
+                    AuthorizationSessionStatus.AUTHORIZATION_RESPONSE_RECEIVED,
+                    AuthorizationSessionStatus.AUTHORIZATION_RESPONSE_VERIFIED,
+                ),
+                dispatcher.delivered.map { it.second.status },
+            )
+            assertEquals(retrieved.updatedAt, dispatcher.delivered[1].second.lastUpdated)
+            assertEquals(verified.updatedAt, dispatcher.delivered[3].second.lastUpdated)
+            assertEquals(listOf(null, null, null), dispatcher.delivered.take(3).map { it.second.verifiedData })
+            val data = dispatcher.delivered[3].second.verifiedData!!
+            assertEquals(true, data.credentialClaims != null)
+            assertNull(data.authorizationResponse)
+        }
+
+    @Test
+    fun shouldDispatchOnlyForTheStatusesTheCallbackLists() =
+        runTest {
+            val dispatcher = KvStoreTestRecordingCallbackDispatcher()
+            val store = createStore(dispatcher = dispatcher)
+            val id = "callback-status-filter"
+            val session = callbackSession(id, VerifiedDataOpts(VerifiedDataMode.entries.toList()))
+            val filtered = session.copy(callback = session.callback!!.copy(statuses = listOf(AuthorizationSessionStatus.AUTHORIZATION_RESPONSE_VERIFIED)))
+
+            assertEquals(true, store.put(id, filtered, 600).isOk)
+            store.updateStatus(id, AuthorizationSessionStatus.AUTHORIZATION_REQUEST_RETRIEVED)
+            store.storeResponse(id, parsedResponse(id))
+            assertEquals(0, dispatcher.delivered.size)
+            store.storeValidationResult(id, validResult())
+
+            assertEquals(listOf(AuthorizationSessionStatus.AUTHORIZATION_RESPONSE_VERIFIED), dispatcher.delivered.map { it.second.status })
+        }
+
+    @Test
+    fun shouldCarryNoVerifiedDataWithoutRequestedModes() =
+        runTest {
+            for ((name, options) in listOf("absent" to null, "empty" to VerifiedDataOpts())) {
+                val dispatcher = KvStoreTestRecordingCallbackDispatcher()
+                val store = createStore(dispatcher = dispatcher)
+                val id = "callback-no-modes-$name"
+                store.put(id, callbackSession(id, options), 600)
+                store.updateStatus(id, AuthorizationSessionStatus.AUTHORIZATION_REQUEST_RETRIEVED)
+                store.storeResponse(id, parsedResponse(id))
+                store.storeValidationResult(id, validResult())
+
+                assertEquals(4, dispatcher.delivered.size, name)
+                assertEquals(emptyList(), dispatcher.delivered.mapNotNull { it.second.verifiedData }, name)
+            }
+        }
+
+    @Test
+    fun shouldSendNoCallbackWhenTheSessionConfiguresNone() =
+        runTest {
+            val dispatcher = KvStoreTestRecordingCallbackDispatcher()
+            val store = createStore(dispatcher = dispatcher)
+            store.put("no-callback", session(null, "no-callback"), 600)
+            store.updateStatus("no-callback", AuthorizationSessionStatus.AUTHORIZATION_REQUEST_RETRIEVED)
+
+            assertEquals(0, dispatcher.delivered.size)
+        }
+
+    @Test
+    fun shouldKeepThePersistedTransitionAndAttemptOnceWhenDeliveryFails() =
+        runTest {
+            val dispatcher = KvStoreTestRecordingCallbackDispatcher(Err(IdkError.fromString(message = "receiver unavailable")))
+            val store = createStore(dispatcher = dispatcher)
+            val id = "callback-delivery-failure"
+            store.put(id, callbackSession(id, null), 600)
+            dispatcher.delivered.clear()
+
+            val updated = store.updateStatus(id, AuthorizationSessionStatus.AUTHORIZATION_REQUEST_RETRIEVED)
+
+            assertEquals(true, updated.isOk)
+            assertEquals(1, dispatcher.delivered.size)
+            assertEquals(AuthorizationSessionStatus.AUTHORIZATION_REQUEST_RETRIEVED, store.get(id).value?.status)
+        }
+
+    @Test
+    fun shouldNotRepeatTheCallbackWhenAWriteLeavesTheStatusUnchanged() =
+        runTest {
+            val dispatcher = KvStoreTestRecordingCallbackDispatcher()
+            val store = createStore(dispatcher = dispatcher)
+            val id = "callback-same-status"
+            store.put(id, callbackSession(id, null), 600)
+            store.updateStatus(id, AuthorizationSessionStatus.AUTHORIZATION_REQUEST_RETRIEVED)
+            store.storeResponse(id, parsedResponse(id))
+            val delivered = dispatcher.delivered.size
+
+            store.storeResponse(id, parsedResponse(id))
+            store.updateStatus(id, AuthorizationSessionStatus.AUTHORIZATION_RESPONSE_RECEIVED)
+
+            assertEquals(delivered, dispatcher.delivered.size)
+        }
+
+    @Test
+    fun shouldDispatchADeferredValidationOnceWhenItIsDelivered() =
+        runTest {
+            val dispatcher = KvStoreTestRecordingCallbackDispatcher()
+            val store = createStore(dispatcher = dispatcher)
+            val id = "callback-deferred"
+            store.put(id, callbackSession(id, VerifiedDataOpts(listOf(VerifiedDataMode.VP_TOKEN))), 600)
+            store.updateStatus(id, AuthorizationSessionStatus.AUTHORIZATION_REQUEST_RETRIEVED)
+            store.storeResponse(id, parsedResponse(id))
+            val before = dispatcher.delivered.size
+
+            store.storeValidationResultDeferred(id, validResult())
+            assertEquals(before, dispatcher.delivered.size)
+
+            store.dispatchDeferredValidation(id)
+            assertEquals(before + 1, dispatcher.delivered.size)
+            val data = dispatcher.delivered.last().second.verifiedData!!
+            assertNull(data.credentialClaims)
+            assertEquals(true, data.authorizationResponse != null)
+        }
+
+    private fun callbackSession(correlationId: String, options: VerifiedDataOpts?): AuthorizationSession =
+        session(null, correlationId).copy(
+            callback = AuthorizationSessionCallbackConfig(
+                url = "https://receiver.example.com/cb",
+                verifiedData = options,
+                secretRef = "secret-ref-never-used",
+            ),
+        )
+
+    private fun parsedResponse(correlationId: String) =
+        com.sphereon.openid.oid4vp.verifier.ParsedAuthorizationResponse(
+            vpToken = com.sphereon.openid.oid4vp.common.vpTokenOf("identity_credential", "presentation"),
+            rawVpToken = "{\"identity_credential\":[\"presentation\"]}",
+            state = correlationId,
+        )
+
+    private fun validResult() =
+        ValidationResult(
+            valid = true,
+            matchedCredentials = listOf(
+                com.sphereon.openid.oid4vp.verifier.MatchedCredential(
+                    credentialQueryId = "identity_credential",
+                    credentialFormat = com.sphereon.openid.oid4vc.common.CredentialFormat.SD_JWT_VC,
+                    presentation = "presentation",
+                    disclosedClaims = mapOf("given_name" to "Ada"),
+                ),
+            ),
         )
 
     private fun session(
@@ -573,7 +767,7 @@ class KvAuthorizationSessionStoreTest {
 // round-trips through namespace.codec.encode/decode, not a pass-through-by-reference fake).
 // ---------------------------------------------------------------------------
 
-private class KvStoreTestKvStore(
+internal class KvStoreTestKvStore(
     private val clock: Clock,
 ) : KvStoreVersioning {
     override val config: KvStoreConfigBase =
@@ -702,7 +896,7 @@ private class KvStoreTestKvStore(
     }
 }
 
-private class KvStoreTestKvStoreManager(
+internal class KvStoreTestKvStoreManager(
     clock: Clock,
 ) : KvStoreManager {
     private val store = KvStoreTestKvStore(clock)
@@ -726,7 +920,7 @@ private class FixedClock(
     override fun now(): Instant = instant
 }
 
-private class KvStoreTestNoOpKvStoreService(private val claimed: Boolean = false) : KvStoreService {
+internal class KvStoreTestNoOpKvStoreService(private val claimed: Boolean = false) : KvStoreService {
     override fun getStoreIds(): Array<String> = emptyArray()
 
     override fun getStoreConfig(storeId: String): KvStoreConfigBase = if (claimed)
@@ -736,7 +930,7 @@ private class KvStoreTestNoOpKvStoreService(private val claimed: Boolean = false
     override fun getStore(storeId: String): KvStore = throw UnsupportedOperationException("no store in test")
 }
 
-private class KvStoreTestSessionExecution : SessionExecution {
+internal class KvStoreTestSessionExecution : SessionExecution {
     override val sessionContextManager: SessionContextManager
         get() = throw UnsupportedOperationException("not used in store tests")
     override val sessionContext: SessionContext
@@ -747,22 +941,36 @@ private class KvStoreTestSessionExecution : SessionExecution {
         get() = throw UnsupportedOperationException("not used in store tests")
 }
 
-private class KvStoreTestAppLogManager :
+internal class KvStoreTestAppLogManager :
     AbstractLogManager(scope = IdkScope.APP, loggers = emptySet()),
     AppLogManager
 
 private class KvStoreTestNoOpCallbackDispatcher : AuthorizationSessionCallbackDispatcher {
     override suspend fun dispatch(
         url: String,
-        update: AuthorizationSessionStatusUpdate,
+        status: GetAuthorizationRequestStatusOutput,
     ): IdkResult<Unit, IdkError> = Ok(Unit)
+}
+
+private class KvStoreTestRecordingCallbackDispatcher(
+    private val outcome: IdkResult<Unit, IdkError> = Ok(Unit),
+) : AuthorizationSessionCallbackDispatcher {
+    val delivered = mutableListOf<Pair<String, GetAuthorizationRequestStatusOutput>>()
+
+    override suspend fun dispatch(
+        url: String,
+        status: GetAuthorizationRequestStatusOutput,
+    ): IdkResult<Unit, IdkError> {
+        delivered += url to status
+        return outcome
+    }
 }
 
 /**
  * Never exercised by put/get/getByCorrelationId (only [KvAuthorizationSessionStore.createSession]
  * reads it, which this test does not call) — every member throws to make that explicit.
  */
-private class KvStoreTestNoOpDcqlQueryConfigurationStore : DcqlQueryConfigurationStore {
+internal class KvStoreTestNoOpDcqlQueryConfigurationStore : DcqlQueryConfigurationStore {
     private fun notUsed(): Nothing = throw UnsupportedOperationException("not used in store tests")
 
     override suspend fun getByQueryId(queryId: String): IdkResult<DcqlQueryConfiguration?, IdkError> = notUsed()

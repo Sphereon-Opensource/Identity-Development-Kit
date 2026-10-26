@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package com.sphereon.openid.oid4vp.universal.impl.command
+package com.sphereon.openid.oid4vp.verifier.impl
 
 import com.sphereon.oauth2.common.model.AuthorizationRequest
 import com.sphereon.openid.oid4vp.dcql.DcqlCredentialQuery
@@ -23,6 +23,7 @@ import com.sphereon.openid.oid4vp.dcql.DcqlQuery
 import com.sphereon.openid.oid4vp.dcql.sdJwtVcMeta
 import com.sphereon.openid.oid4vc.common.CredentialFormat
 import com.sphereon.openid.oid4vp.universal.VerifiedClaimsValue
+import com.sphereon.openid.oid4vp.universal.VerifiedDataMode
 import com.sphereon.openid.oid4vp.verifier.CredentialIssuerRef
 import com.sphereon.openid.oid4vp.verifier.CredentialTrustValidation
 import com.sphereon.openid.oid4vp.verifier.CredentialTrustValidationMode
@@ -40,6 +41,8 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+
+private val allModes = VerifiedDataMode.entries.toList()
 
 class VerifiedDataBuilderTest {
     @Test
@@ -137,7 +140,7 @@ class VerifiedDataBuilderTest {
                 expiresAt = 3L,
             )
 
-        val verifiedData = buildVerifiedData(session)
+        val verifiedData = buildVerifiedData(session, allModes)
         assertNotNull(verifiedData)
 
         val authorizationResponse = verifiedData.authorizationResponse
@@ -163,7 +166,7 @@ class VerifiedDataBuilderTest {
             verificationEvidence = evidence,
             disclosedClaims = mapOf("verificationEvidence" to "forged", "verifiedAtEpochMillis" to 999L),
         ))))
-        val exposed = assertNotNull(buildVerifiedData(withEvidence)?.credentialClaims?.single()?.verificationEvidence)
+        val exposed = assertNotNull(buildVerifiedData(withEvidence, allModes)?.credentialClaims?.single()?.verificationEvidence)
         assertEquals("server-digest", exposed.presentationSha256)
         assertEquals(2L, exposed.verifiedAtEpochMillis)
         assertEquals(CredentialTrustValidationMode.AUDIT, exposed.trust?.mode)
@@ -175,7 +178,7 @@ class VerifiedDataBuilderTest {
         // type); the format is only the fallback for a credential whose type is unknown.
         assertEquals("urn:example:passport", buildVerifiedData(session.copy(validationResult = ValidationResult(true, listOf(
             original.copy(credentialType = "urn:example:passport"),
-        ))))?.credentialClaims?.single()?.type)
+        ))), allModes)?.credentialClaims?.single()?.type)
         assertEquals(CredentialFormat.SD_JWT_VC.value, verifiedData.credentialClaims?.single()?.type)
         assertEquals(CredentialFormat.SD_JWT_VC, verifiedData.credentialClaims?.single()?.format)
     }
@@ -267,6 +270,6 @@ class VerifiedDataBuilderTest {
                 updatedAt = 2L,
                 expiresAt = 3L,
             )
-        return assertNotNull(buildVerifiedData(session)).credentialClaims!!.single()
+        return assertNotNull(buildVerifiedData(session, allModes)).credentialClaims!!.single()
     }
 }

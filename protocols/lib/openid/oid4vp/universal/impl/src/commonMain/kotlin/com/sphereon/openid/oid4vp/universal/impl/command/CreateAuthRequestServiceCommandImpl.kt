@@ -510,6 +510,7 @@ class CreateAuthRequestServiceCommandImpl(
                             AuthorizationSessionCallbackConfig(
                                 url = it.url,
                                 statuses = it.statuses,
+                                verifiedData = it.verifiedData,
                                 secretRef = it.secretRef,
                                 signing = it.signing,
                             )

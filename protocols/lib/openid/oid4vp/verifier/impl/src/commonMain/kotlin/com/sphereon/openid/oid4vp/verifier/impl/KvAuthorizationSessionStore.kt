@@ -42,6 +42,7 @@ import com.sphereon.openid.oid4vp.common.buildOid4vpAuthorizationRequest
 import com.sphereon.openid.oid4vp.common.store.StoreMetadata
 import com.sphereon.openid.oid4vp.dcql.DcqlQuery
 import com.sphereon.openid.oid4vp.dcql.store.DcqlQueryConfigurationStore
+import com.sphereon.openid.oid4vp.universal.VerifiedDataOpts
 import com.sphereon.openid.oid4vp.verifier.CredentialIssuerRef
 import com.sphereon.openid.oid4vp.verifier.CredentialTrustValidation
 import com.sphereon.openid.oid4vp.verifier.MatchedCredential
@@ -49,7 +50,7 @@ import com.sphereon.openid.oid4vp.verifier.ParsedAuthorizationResponse
 import com.sphereon.openid.oid4vp.verifier.CredentialValidationRejection
 import com.sphereon.openid.oid4vp.verifier.ValidationResult
 import com.sphereon.openid.oid4vp.verifier.callback.AuthorizationSessionCallbackDispatcher
-import com.sphereon.openid.oid4vp.verifier.callback.AuthorizationSessionStatusUpdate
+import com.sphereon.openid.oid4vp.verifier.callback.AuthorizationSessionStatusResponseMapper
 import com.sphereon.openid.oid4vp.verifier.Oid4vpVerifierSessionEventTypes
 import com.sphereon.openid.oid4vp.verifier.impl.event.emitOid4vpSessionHistoryEvent
 import com.sphereon.openid.oid4vp.verifier.model.AuthorizationSession
@@ -99,6 +100,7 @@ class KvAuthorizationSessionStore(
     private val kvStoreService: KvStoreService,
     private val dcqlQueryConfigurationStore: DcqlQueryConfigurationStore,
     private val callbackDispatcher: AuthorizationSessionCallbackDispatcher,
+    private val statusResponseMapper: AuthorizationSessionStatusResponseMapper,
     appLogManager: AppLogManager,
     private val execution: SessionExecution,
     private val clock: Clock,
@@ -153,6 +155,8 @@ class KvAuthorizationSessionStore(
          * Empty means "all transitions".
          */
         val statuses: List<String> = emptyList(),
+        /** Absent on sessions stored before callback modes were persisted, which means no verified data. */
+        val verifiedData: VerifiedDataOpts? = null,
         val secretRef: String? = null,
         val signing: String? = null,
     ) {
@@ -160,6 +164,7 @@ class KvAuthorizationSessionStore(
             AuthorizationSessionCallbackConfig(
                 url = url,
                 statuses = statuses.mapNotNull { name -> AuthorizationSessionStatus.entries.firstOrNull { it.name == name } },
+                verifiedData = verifiedData,
                 secretRef = secretRef,
                 signing = signing?.let { name -> CallbackSigningAlgorithm.entries.firstOrNull { it.name == name } },
             )
@@ -169,6 +174,7 @@ class KvAuthorizationSessionStore(
                 AuthorizationSessionCallbackEntry(
                     url = config.url,
                     statuses = config.statuses.map(AuthorizationSessionStatus::name),
+                    verifiedData = config.verifiedData,
                     secretRef = config.secretRef,
                     signing = config.signing?.name,
                 )
@@ -880,8 +886,9 @@ class KvAuthorizationSessionStore(
             if (result is KvVersionAppendResult.Conflict) return Err(IdkError.INVALID_STATE(message = "Concurrent claimed verification update"))
             val public = updated.toPublic(json)
             if (dispatch) {
-                emitStatusTransition(existing.toPublic(json), public)
-                dispatchIfConfigured(public)
+                val previous = existing.toPublic(json)
+                emitStatusTransition(previous, public)
+                if (previous.status != public.status) dispatchIfConfigured(public)
             }
             return Ok(public)
         }
@@ -895,7 +902,7 @@ class KvAuthorizationSessionStore(
         val public = updated.toPublic(json)
         if (dispatch) {
             emitStatusTransition(previous, public)
-            dispatchIfConfigured(public)
+            if (previous.status != public.status) dispatchIfConfigured(public)
         }
         return Ok(public)
     }
@@ -929,14 +936,10 @@ class KvAuthorizationSessionStore(
             return
         }
 
-        val update =
-            AuthorizationSessionStatusUpdate(
-                correlationId = session.correlationId,
-                status = session.status,
-                updatedAt = session.updatedAt,
-                errorCode = session.error?.code,
-                errorMessage = session.error?.message,
-            )
+        // Mapped from the session handed in. Every immediate caller passes the snapshot it just
+        // persisted, so the callback describes that transition even when another one follows. The
+        // deferred path hands in the stored session read when it dispatches.
+        val status = statusResponseMapper.build(session, callback.verifiedData?.modes.orEmpty())
 
         eventService?.emitOid4vpSessionHistoryEvent(
             type = Oid4vpVerifierSessionEventTypes.CALLBACK_ATTEMPTED,
@@ -947,7 +950,7 @@ class KvAuthorizationSessionStore(
             stage = "CALLBACK",
             outcome = "ATTEMPTED",
         )
-        callbackDispatcher.dispatch(callback.url, update).fold(
+        callbackDispatcher.dispatch(callback.url, status).fold(
             success = {
                 eventService?.emitOid4vpSessionHistoryEvent(
                     type = Oid4vpVerifierSessionEventTypes.CALLBACK_SUCCEEDED,
