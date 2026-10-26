@@ -1311,6 +1311,60 @@ components:
           description: >
             Identifier of the hop toward the anchor that attested this hop. Absent on the ANCHOR,
             where nothing further attests.
+        organisation:
+          allOf:
+            - $ref: '#/components/schemas/WalletCounterpartyOrganisation'
+          nullable: true
+          description: >
+            The organisation behind this hop as the chain's signed statements describe it, for
+            example its OpenID Federation federation_entity metadata. Absent when they describe none.
+
+    WalletCounterpartyOrganisation:
+      type: object
+      additionalProperties: false
+      description: >
+        Organisation details a trust framework vouches for, such as the signed OpenID Federation
+        federation_entity metadata (organization_name, display_name, contacts, logo_uri,
+        organization_uri, information_uri, policy_uri). Never the counterparty's self-declared
+        display data: that stays on WalletCounterpartySummary. Authoritative data like this takes
+        precedence over self-declared metadata (OpenID4VP 1.0 section 5.1).
+      properties:
+        name:
+          type: string
+          nullable: true
+          minLength: 1
+        legalName:
+          type: string
+          nullable: true
+          minLength: 1
+        contacts:
+          type: array
+          description: Email addresses, phone numbers or URLs, as published.
+          items:
+            type: string
+            minLength: 1
+          default: []
+        website:
+          type: string
+          nullable: true
+          format: uri
+        contactPage:
+          type: string
+          nullable: true
+          format: uri
+        privacyPolicy:
+          type: string
+          nullable: true
+          format: uri
+        logoUri:
+          type: string
+          nullable: true
+          minLength: 1
+        attestedBy:
+          type: string
+          nullable: true
+          minLength: 1
+          description: Display name of the authority whose signed statement carries these details.
 
     WalletTrustChain:
       type: object
@@ -1327,6 +1381,13 @@ components:
             $ref: '#/components/schemas/WalletTrustChainHop'
         links:
           $ref: '#/components/schemas/WalletTrustChainLinks'
+        trustMarks:
+          type: array
+          description: Verified trust mark types the counterparty holds under the chain's anchor.
+          items:
+            type: string
+            minLength: 1
+          default: []
 
     WalletTrustDomainPosture:
       type: string
@@ -1421,6 +1482,8 @@ components:
           $ref: '#/components/schemas/WalletTrustDomainAdmission'
         attestationAuthorisation:
           $ref: '#/components/schemas/WalletAttestationAuthorisation'
+        organisation:
+          $ref: '#/components/schemas/WalletCounterpartyOrganisation'
         issuerAuthentication:
           $ref: '#/components/schemas/WalletIssuerAuthenticationResult'
 

@@ -68,18 +68,41 @@ enum class WalletTrustChainLinksPresentation { VERIFIED, BROKEN }
 @Serializable
 enum class WalletTrustChainHopPositionPresentation { LEAF, INTERMEDIATE, ANCHOR }
 
+/**
+ * Organisation details a trust framework vouches for, such as signed OpenID Federation metadata.
+ * Links are https only; contacts are shown as published.
+ */
+@Serializable
+data class WalletOrganisationPresentation(
+    val name: String? = null,
+    val legalName: String? = null,
+    val contacts: List<String> = emptyList(),
+    val website: String? = null,
+    val contactPage: String? = null,
+    val privacyPolicy: String? = null,
+    val logoUri: String? = null,
+    /** Display name of the authority whose signed statement carries these details. */
+    val attestedBy: String? = null,
+) {
+    init {
+        listOf(website, contactPage, privacyPolicy).forEach { require(it == null || it.startsWith("https://")) { "wallet_organisation_link_not_https" } }
+    }
+}
+
 @Serializable
 data class WalletTrustChainHopPresentation(
     val identifier: String,
     val position: WalletTrustChainHopPositionPresentation,
     val displayName: String? = null,
     val assertedBy: String? = null,
+    val organisation: WalletOrganisationPresentation? = null,
 )
 
 @Serializable
 data class WalletTrustChainPresentation(
     val hops: List<WalletTrustChainHopPresentation>,
     val links: WalletTrustChainLinksPresentation,
+    val trustMarks: List<String> = emptyList(),
 )
 
 @Serializable
@@ -91,6 +114,8 @@ data class WalletTrustPresentation(
     val markedTrustedByUser: Boolean,
     val chain: WalletTrustChainPresentation? = null,
     val admission: WalletTrustAdmissionPresentation = WalletTrustAdmissionPresentation.ABSENT,
+    /** The counterparty's organisation as the recognising trust framework describes it; null when self-declared only. */
+    val organisation: WalletOrganisationPresentation? = null,
 )
 
 @Serializable
