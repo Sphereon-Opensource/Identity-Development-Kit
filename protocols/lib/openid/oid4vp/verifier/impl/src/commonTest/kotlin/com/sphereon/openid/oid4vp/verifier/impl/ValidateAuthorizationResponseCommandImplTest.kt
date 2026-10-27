@@ -895,7 +895,7 @@ class ValidateAuthorizationResponseCommandImplTest {
                 DcqlQuery(
                     credentials =
                         listOf(
-                            DcqlCredentialQuery(id = "id", format = "dc+sd-jwt", meta = sdJwtVcMeta("urn:test:credential")),
+                            DcqlCredentialQuery(id = "id", format = "dc+sd-jwt", meta = sdJwtVcMeta("urn:test:identity")),
                         ),
                 )
             val parsedResponse =
@@ -3774,7 +3774,14 @@ class ValidateAuthorizationResponseCommandImplTest {
                 put("vct", vct)
                 integrity?.let { put("vct#integrity", it) }
             }
-        return "eyJhbGciOiJFUzI1NiJ9.${claims.toString().encodeToByteArray().encodeToBase64Url()}.signature~WyJhYmMxMjMiLCJmaXJzdF9uYW1lIiwiSm9obiJd~eyJhbGciOiJFUzI1NiJ9.kb.sig"
+        val keyBinding =
+            buildJsonObject {
+                put("nonce", "nonce123")
+                put("aud", "https://verifier.example.com")
+                put("iat", 1_700_000_000)
+            }
+        return "eyJhbGciOiJFUzI1NiJ9.${claims.toString().encodeToByteArray().encodeToBase64Url()}.signature~WyJhYmMxMjMiLCJmaXJzdF9uYW1lIiwiSm9obiJd~" +
+            "eyJ0eXAiOiJrYitqd3QiLCJhbGciOiJFUzI1NiJ9.${keyBinding.toString().encodeToByteArray().encodeToBase64Url()}.sig"
     }
 
     private suspend fun validateSdJwtTypes(

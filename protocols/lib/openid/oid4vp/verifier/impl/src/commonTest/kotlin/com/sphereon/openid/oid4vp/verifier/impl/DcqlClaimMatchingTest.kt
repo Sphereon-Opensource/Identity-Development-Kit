@@ -27,6 +27,7 @@ import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlin.test.Test
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
@@ -191,18 +192,22 @@ class DcqlClaimMatchingTest {
     fun shouldRejectAnEmptyClaimSetInsteadOfAcceptingEverything() {
         val claims = listOf(claim("a", "a"))
 
-        assertFalse(satisfied(claims, """{}""", listOf(emptyList())))
-        assertFalse(satisfied(claims, """{"b":1}""", listOf(emptyList())))
-        assertTrue(satisfied(claims, """{"a":1}""", listOf(emptyList(), listOf("a"))))
+        // An empty claim set option would accept every credential; the query model refuses it, so no
+        // request can carry one and matching never sees it (OID4VP 1.0 section 6.4.1).
+        assertFailsWith<IllegalArgumentException> { query(claims, listOf(emptyList())) }
+        assertFailsWith<IllegalArgumentException> { query(claims, listOf(emptyList(), listOf("a"))) }
+        assertTrue(satisfied(claims, """{"a":1}""", listOf(listOf("a"))))
     }
 
     @Test
-    fun shouldTreatEqualDecimalsWithDifferentTextAsTheSameAllowedValue() {
-        val claims = listOf(claim(null, "ratio", values = listOf(JsonPrimitive(1.5))))
+    fun shouldRefuseDecimalAllowedValuesAndMatchIntegersByValue() {
+        // OID4VP 1.0 section 6.3: values holds only strings, integers or booleans.
+        assertFailsWith<IllegalArgumentException> { claim(null, "ratio", values = listOf(JsonPrimitive(1.5))) }
 
-        assertTrue(satisfied(claims, """{"ratio":1.50}"""))
-        assertFalse(satisfied(claims, """{"ratio":1.6}"""))
-        assertFalse(satisfied(claims, """{"ratio":"1.5"}"""))
+        val claims = listOf(claim(null, "count", values = listOf(JsonPrimitive(15))))
+        assertTrue(satisfied(claims, """{"count":15}"""))
+        assertFalse(satisfied(claims, """{"count":16}"""))
+        assertFalse(satisfied(claims, """{"count":"15"}"""))
     }
 
     @Test
