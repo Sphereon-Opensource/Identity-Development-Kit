@@ -37,6 +37,7 @@ import com.sphereon.openid.oid4vci.common.model.CredentialDefinition
 import com.sphereon.openid.oid4vci.common.model.CredentialRequest
 import com.sphereon.openid.oid4vci.issuer.format.IssuanceContext
 import com.sphereon.openid.oid4vci.issuer.format.SdPolicy
+import com.sphereon.openid.oid4vci.issuer.format.SigningKeyMode
 import com.sphereon.openid.oid4vci.issuer.impl.signing.IssuerKeyIdResolver
 import com.sphereon.sdjwt.Disclosure
 import com.sphereon.sdjwt.IssueSdJwtArgs
@@ -277,6 +278,109 @@ class IssuerConformanceFixtureTest {
             // Verify the SD-JWT string contains the tilde separator
             val sdJwtString = (envelope.credential as JsonPrimitive).content
             assertTrue(sdJwtString.contains("~"), "SD-JWT should contain tilde-separated disclosures")
+        }
+
+    /** Accepts exactly the did:web assertion method the issuer is configured with. */
+    private object DidWebIssuerKeyIdResolver : IssuerKeyIdResolver {
+        const val VERIFICATION_METHOD = "did:web:summa.fed.nk.sphereon.com#issuer-assertion-summa"
+
+        override suspend fun resolveDidVerificationMethodId(
+            keyAlias: String,
+            didMethod: String,
+        ): IdkResult<String, IdkError> = Ok(VERIFICATION_METHOD)
+
+        override suspend fun resolvePublicJwk(keyAlias: String): IdkResult<kotlinx.serialization.json.JsonObject, IdkError> =
+            error("resolvePublicJwk is not used for DID-signed SD-JWT VCs")
+
+        override suspend fun validateDidVerificationMethodId(
+            keyAlias: String,
+            verificationMethodId: String,
+        ): IdkResult<String, IdkError> = Ok(verificationMethodId)
+    }
+
+    private fun didWebFederationContext(federationEntityIdentifier: String?): IssuanceContext =
+        makeContext(
+            config = makeSdJwtVcConfig("https://example.com/credentials/identity"),
+            attributes = mapOf("email" to JsonPrimitive("user@example.com")),
+        ).copy(
+            issuerIdentifier = "https://summa.fed.nk.sphereon.com/oid4vci/summa",
+            signingKeyMode = SigningKeyMode.Did("web"),
+            signingVerificationMethodId = DidWebIssuerKeyIdResolver.VERIFICATION_METHOD,
+            federationEntityIdentifier = federationEntityIdentifier,
+        )
+
+    @Test
+    fun sdJwtVcNamesTheFederationEntityInAPlainFedClaim() =
+        runTest {
+            val signer = FakeSdJwtService()
+            val handler =
+                SdJwtVcFormatHandler(
+                    sdJwtService = signer,
+                    kms = TestKmsMock(),
+                    didProviderRegistry = StubDidProviderRegistry(),
+                    issuerKeyIdResolver = DidWebIssuerKeyIdResolver,
+                )
+
+            val result =
+                handler.issueCredential(
+                    makeRequest("dc+sd-jwt"),
+                    didWebFederationContext("https://summa.fed.nk.sphereon.com/oid4vci/summa"),
+                )
+
+            assertTrue(result.isOk, "issuance must succeed: ${if (result.isErr) result.error else ""}")
+            val args = signer.lastArgs!!
+            val claims = args.payload.claims
+            // DIIP v5 Appendix B: `fed` = credential_issuer, issuer-signed and never a disclosure.
+            assertEquals(JsonPrimitive("https://summa.fed.nk.sphereon.com/oid4vci/summa"), claims["fed"])
+            assertFalse("fed" in args.payload.sdClaims, "fed must not be selectively disclosable")
+            // The signing identity is unchanged: `iss` stays the DID, the header `kid` its assertion method.
+            assertEquals(JsonPrimitive("did:web:summa.fed.nk.sphereon.com"), claims["iss"])
+            assertEquals(
+                JsonPrimitive(DidWebIssuerKeyIdResolver.VERIFICATION_METHOD),
+                args.opts.protectedHeader?.get("kid"),
+            )
+        }
+
+    @Test
+    fun sdJwtVcOmitsFedForAnIssuerThatIsNotAFederationEntity() =
+        runTest {
+            val signer = FakeSdJwtService()
+            val handler =
+                SdJwtVcFormatHandler(
+                    sdJwtService = signer,
+                    kms = TestKmsMock(),
+                    didProviderRegistry = StubDidProviderRegistry(),
+                    issuerKeyIdResolver = DidWebIssuerKeyIdResolver,
+                )
+
+            val result = handler.issueCredential(makeRequest("dc+sd-jwt"), didWebFederationContext(null))
+
+            assertTrue(result.isOk, "issuance must succeed: ${if (result.isErr) result.error else ""}")
+            val args = signer.lastArgs!!
+            assertFalse(args.payload.claims.containsKey("fed"))
+            assertFalse("fed" in args.payload.sdClaims)
+            assertEquals(JsonPrimitive("did:web:summa.fed.nk.sphereon.com"), args.payload.claims["iss"])
+        }
+
+    @Test
+    fun sdJwtVcRefusesAFedAttributeFromAFederationEntityIssuer() =
+        runTest {
+            val signer = FakeSdJwtService()
+            val handler =
+                SdJwtVcFormatHandler(
+                    sdJwtService = signer,
+                    kms = TestKmsMock(),
+                    didProviderRegistry = StubDidProviderRegistry(),
+                    issuerKeyIdResolver = DidWebIssuerKeyIdResolver,
+                )
+            val context =
+                didWebFederationContext("https://summa.fed.nk.sphereon.com/oid4vci/summa")
+                    .copy(attributes = mapOf("fed" to JsonPrimitive("https://elsewhere.example")))
+
+            val result = handler.issueCredential(makeRequest("dc+sd-jwt"), context)
+
+            assertTrue(result.isErr)
+            assertEquals(null, signer.lastArgs, "nothing may be signed")
         }
 
     @Test

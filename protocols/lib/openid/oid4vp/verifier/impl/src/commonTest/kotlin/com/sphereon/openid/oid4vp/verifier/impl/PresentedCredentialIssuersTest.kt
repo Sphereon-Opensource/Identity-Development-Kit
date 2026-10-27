@@ -13,6 +13,7 @@ import com.sphereon.core.api.encodeToBase64Url
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.crypto.resolution.extern.ExternalIdentifierX5cOpts
 import com.sphereon.openid.oid4vp.verifier.CredentialIssuerAuthenticationLookup
+import com.sphereon.openid.oid4vp.verifier.CredentialIssuerControllerClaim
 import com.sphereon.openid.oid4vp.verifier.TrustedAuthenticationPurpose
 import com.sphereon.openid.oid4vp.verifier.TrustedAuthenticationResolution
 import kotlinx.coroutines.test.runTest
@@ -21,6 +22,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 class PresentedCredentialIssuersTest {
@@ -77,6 +79,97 @@ class PresentedCredentialIssuersTest {
         assertEquals(null, mdocStatusTrustAnchors(resolved))
         assertTrue("https://configured.example" !in looked)
     }
+
+    @Test
+    fun collectsFederationEntitiesNamedByDidIssuedCredentials() {
+        val entity = "https://summa.fed.example/oid4vci/summa"
+        val sdJwt = jwt("""{"iss":"did:web:summa.fed.example","fed":"$entity","vct":"t"}""") + "~"
+        val vcdm11 = jwt("""{"iss":"did:web:other.example","vc":{"issuer":"did:web:other.example","termsOfUse":{"type":"OpenIDFederation","policyId":"https://other.fed.example"}}}""")
+        val vcdm2 = jwt("""{"iss":"did:jwk:abc","termsOfUse":[{"type":"OtherPolicy","id":"x"},{"type":"OpenIDFederation","policyId":"$entity"}]}""")
+        val entities = PresentedCredentialIssuers.collectFederationEntities(
+            listOf(
+                JsonPrimitive(sdJwt),
+                JsonPrimitive(vcdm11),
+                JsonPrimitive(vcdm2),
+                // An https issuer is resolved as itself; malformed, insecure or conflicting entities select nothing.
+                JsonPrimitive(jwt("""{"iss":"https://issuer.example","fed":"https://ignored.example"}""")),
+                JsonPrimitive(jwt("""{"iss":"did:web:a.example","fed":"http://insecure.example"}""")),
+                JsonPrimitive(jwt("""{"iss":"did:web:b.example","fed":"https://x.example#frag"}""")),
+                JsonPrimitive(jwt("""{"iss":"did:web:c.example","fed":42}""")),
+                JsonPrimitive(jwt("""{"iss":"did:web:d.example","fed":"https://one.example","termsOfUse":{"type":"OpenIDFederation","policyId":"https://two.example"}}""")),
+            ),
+        )
+        assertEquals(
+            mapOf(
+                entity to setOf("did:web:summa.fed.example", "did:jwk:abc"),
+                "https://other.fed.example" to setOf("did:web:other.example"),
+            ),
+            entities,
+        )
+    }
+
+    @Test
+    fun resolvesFederationEntitiesOnlyAsAdmittedFederationEntityMaterial() = runTest {
+        val looked = mutableListOf<String>()
+        val lookup = object : CredentialIssuerAuthenticationLookup {
+            override suspend fun resolve(issuer: String) = error("no https issuer is presented")
+
+            override suspend fun resolveFederationEntity(entityIdentifier: String): com.sphereon.core.api.IdkResult<TrustedAuthenticationResolution?, IdkError> {
+                looked += entityIdentifier
+                return when (entityIdentifier) {
+                    "https://admitted.example" -> Ok(federationEntity(entityIdentifier))
+                    // Ordinary issuer material for the entity, or material for another entity, is refused.
+                    "https://issuer-claim.example" -> Ok(admitted(entityIdentifier))
+                    "https://other-controller.example" -> Ok(federationEntity("https://someone-else.example"))
+                    "https://failing.example" -> Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "refused"))
+                    else -> Ok(null)
+                }
+            }
+        }
+        val presentations = listOf(
+            "https://admitted.example", "https://issuer-claim.example", "https://other-controller.example",
+            "https://failing.example", "https://unknown.example", "https://configured.example", "https://did-admitted.example",
+        ).mapIndexed { index, entity ->
+            val did = if (entity == "https://did-admitted.example") "did:web:admitted-did.example" else "did:web:issuer-$index.example"
+            JsonPrimitive(jwt("""{"iss":"$did","fed":"$entity"}"""))
+        }
+        val existing = listOf(federationEntity("https://configured.example"), admitted("did:web:admitted-did.example"))
+
+        val resolved = PresentedCredentialIssuers.resolve(presentations, existing, lookup)
+
+        assertEquals(listOf("https://admitted.example"), resolved.map { it.controller })
+        assertEquals(CredentialIssuerControllerClaim.FEDERATION_ENTITY, resolved.single().controllerClaim)
+        assertTrue("https://configured.example" !in looked, "an already admitted entity is not resolved again")
+        assertTrue("https://did-admitted.example" !in looked, "a DID admitted directly keeps its own admission")
+    }
+
+    @Test
+    fun federationEntityMaterialMustBeCredentialIssuerJwks() {
+        assertFailsWith<IllegalArgumentException> {
+            TrustedAuthenticationResolution(
+                "https://entity.example",
+                trustedJwks = jwks,
+                purpose = TrustedAuthenticationPurpose.HOLDER,
+                controllerClaim = CredentialIssuerControllerClaim.FEDERATION_ENTITY,
+            )
+        }
+        assertFailsWith<IllegalArgumentException> {
+            TrustedAuthenticationResolution(
+                "https://entity.example",
+                identifier = ExternalIdentifierX5cOpts(listOf("root")),
+                purpose = TrustedAuthenticationPurpose.CREDENTIAL_ISSUER,
+                controllerClaim = CredentialIssuerControllerClaim.FEDERATION_ENTITY,
+            )
+        }
+    }
+
+    private fun federationEntity(controller: String) =
+        TrustedAuthenticationResolution(
+            controller,
+            trustedJwks = jwks,
+            purpose = TrustedAuthenticationPurpose.CREDENTIAL_ISSUER,
+            controllerClaim = CredentialIssuerControllerClaim.FEDERATION_ENTITY,
+        )
 
     @Test
     fun boundsTheNumberOfLookedUpIssuers() {

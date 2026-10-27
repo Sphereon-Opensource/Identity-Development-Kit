@@ -65,6 +65,7 @@ import com.sphereon.openid.oid4vc.common.vcdm.VcdmUris
 import com.sphereon.openid.oid4vc.common.vcdm.VcdmVersion
 import com.sphereon.openid.oid4vc.common.PresentationFormat
 import com.sphereon.openid.oid4vp.verifier.CredentialIssuerRef
+import com.sphereon.openid.oid4vp.verifier.CredentialIssuerControllerClaim
 import com.sphereon.openid.oid4vp.verifier.CredentialTypeMatcher
 import com.sphereon.sdjwt.vc.SdJwtVcClaims
 import com.sphereon.openid.oid4vp.verifier.CredentialTrustValidation
@@ -655,7 +656,11 @@ class ValidateAuthorizationResponseCommandImpl(
                 return
             }
 
-            issuer = extractCredentialIssuer(presentation, requireNotNull(detectedCredentialFormat))
+            issuer = withFederationEntity(
+                extractCredentialIssuer(presentation, requireNotNull(detectedCredentialFormat)),
+                presentation,
+                processedArgs.trustedAuthentications,
+            )
             // Cryptographic issuer verification is the first security callback. Trust
             // validators must not receive attacker-controlled claims until the JWS has
             // verified successfully; this also keeps status lookups behind authenticity.
@@ -853,7 +858,11 @@ class ValidateAuthorizationResponseCommandImpl(
             return
         }
 
-        val resolvedIssuer = issuer ?: extractCredentialIssuer(presentation, requireNotNull(detectedCredentialFormat))
+        val resolvedIssuer = issuer ?: withFederationEntity(
+            extractCredentialIssuer(presentation, requireNotNull(detectedCredentialFormat)),
+            presentation,
+            processedArgs.trustedAuthentications,
+        )
         val resolvedTrust =
             trust
                 ?: if (detectedCredentialFormat == CredentialFormat.MSO_MDOC) {
@@ -1582,12 +1591,23 @@ class ValidateAuthorizationResponseCommandImpl(
     ): String? {
         val resolvedClassification = classification ?: return "VCDM credential classification is missing"
         val matchingTrustedAuthentications = trustedAuthentications.filter {
-            it.purpose == TrustedAuthenticationPurpose.CREDENTIAL_ISSUER && it.controller == issuer?.issuer
+            it.purpose == TrustedAuthenticationPurpose.CREDENTIAL_ISSUER &&
+                it.controllerClaim == CredentialIssuerControllerClaim.ISSUER &&
+                it.controller == issuer?.issuer
         }
         if (matchingTrustedAuthentications.size > 1) {
             return "multiple configured issuer-authentication sources match the credential issuer"
         }
-        val configuredIssuerAuthentication = matchingTrustedAuthentications.singleOrNull()
+        // DIIP v5 Appendix B: a credential issued under a DID that names its Issuer's OpenID Federation
+        // entity in an `OpenIDFederation` termsOfUse is admitted with that entity's `vc_issuer` keys,
+        // unless the DID itself is admitted; an entity the verifier does not admit leaves the DID path.
+        val federated = FederatedCredentialIssuer.applicableSources(
+            issuer?.issuer, decodeJwtPayloadOrNull(presentation), trustedAuthentications,
+        )
+        if (federated != null && federated.sources.size > 1) {
+            return "multiple configured issuer-authentication sources match federation entity '${federated.entity}'"
+        }
+        val configuredIssuerAuthentication = federated?.sources?.single() ?: matchingTrustedAuthentications.singleOrNull()
         val header = decodeJwtHeaderOrNull(presentation) ?: return "VCDM credential JWT header is malformed"
         val alg = header.stringClaim("alg")
         if (alg == null || alg.equals("none", ignoreCase = true)) {
@@ -2222,7 +2242,7 @@ class ValidateAuthorizationResponseCommandImpl(
         state: VcdmRecursionState,
     ): String? {
         val format = requireNotNull(classification.credentialFormat)
-        val issuer = extractCredentialIssuer(compact, format)
+        val issuer = withFederationEntity(extractCredentialIssuer(compact, format), compact, trustedAuthentications)
         // Verify the child issuer proof before invoking trust or status callbacks. The outer VP
         // holder is never reused as an issuer for this child.
         verifyVcdmCredential(compact, classification, issuer, trustedAuthentications, issuerAlgAllowlist)?.let { return "child credential rejected: $it" }
@@ -2753,6 +2773,26 @@ class ValidateAuthorizationResponseCommandImpl(
             }
         }
 
+    /**
+     * For a credential issued under a DID that is verified with the `vc_issuer` keys of the OpenID
+     * Federation entity it names (DIIP v5, Appendix B), the trust evidence is that entity: it is the
+     * admitted controller, while the credential keeps its DID as issuer. Any other credential keeps its
+     * extracted issuer reference.
+     */
+    private fun withFederationEntity(
+        issuer: CredentialIssuerRef?,
+        compact: String,
+        trustedAuthentications: List<TrustedAuthenticationResolution>,
+    ): CredentialIssuerRef? {
+        val ref = issuer ?: return null
+        val federated = FederatedCredentialIssuer.applicableSources(
+            ref.issuer, decodeJwtPayloadOrNull(compact.substringBefore('~')), trustedAuthentications,
+        ) ?: return ref
+        // Without exactly one admitted source the credential has already failed issuer verification.
+        if (federated.sources.size != 1) return ref
+        return ref.copy(method = FEDERATION_ISSUER_METHOD, oidfedEntityId = federated.entity)
+    }
+
     private fun extractDataIntegrityIssuer(document: JsonObject): CredentialIssuerRef? {
         val issuerElement = document["issuer"]
             ?: (document["vc"] as? JsonObject)?.get("issuer")
@@ -2786,7 +2826,7 @@ class ValidateAuthorizationResponseCommandImpl(
             when {
                 x5c.isNotEmpty() -> "x509"
                 did != null -> "did"
-                oidfedEntityId != null -> "openid_federation"
+                oidfedEntityId != null -> FEDERATION_ISSUER_METHOD
                 issuer?.isHttpUrl() == true -> "issuer_uri"
                 else -> null
             }
@@ -2943,6 +2983,9 @@ class ValidateAuthorizationResponseCommandImpl(
         const val VCDM2_VC_DATA_URI_PREFIX = "data:application/vc+jwt,"
         const val VCDM2_VP_DATA_URI_PREFIX = "data:application/vp+jwt,"
         const val LDP_VC_FORMAT = "ldp_vc"
+
+        /** [CredentialIssuerRef.method] of an issuer admitted as an OpenID Federation entity. */
+        const val FEDERATION_ISSUER_METHOD = "openid_federation"
         val VCDM2_ENVELOPED_TYPES = setOf(VCDM2_ENVELOPED_VC_TYPE, VCDM2_ENVELOPED_VP_TYPE)
         val JSON_LENIENT =
             Json {

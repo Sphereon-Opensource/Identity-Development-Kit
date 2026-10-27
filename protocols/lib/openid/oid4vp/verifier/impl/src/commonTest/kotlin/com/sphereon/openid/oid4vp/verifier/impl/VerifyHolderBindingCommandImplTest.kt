@@ -107,6 +107,9 @@ class VerifyHolderBindingCommandImplTest {
         const val MDL_DOC_TYPE = "org.iso.18013.5.1.mDL"
         const val WRONG_DOC_TYPE = "org.iso.18013.5.1.wrong"
         const val ISSUER_DID = "did:example:issuer"
+        const val FEDERATION_DID = "did:example:summa"
+        const val FEDERATION_KID = "did:example:summa#issuer-assertion-summa"
+        const val FEDERATION_ENTITY = "https://summa.fed.example/oid4vci/summa"
     }
 
     @Test
@@ -1520,6 +1523,138 @@ class VerifyHolderBindingCommandImplTest {
             }
             assertTrue(recording.received.isEmpty(), "a refused issuer key must never reach signature verification")
         }
+
+    @Test
+    fun `a DID-issued SD-JWT VC naming its federation entity is verified only with that entity's vc_issuer keys`() =
+        runTest {
+            val recording = RecordingVerifySdJwtCommand()
+            val command = createTestCommand(recording)
+            val source = federationEntitySource()
+
+            val result = command.execute(federatedArgs(federatedSdJwt(), listOf(source)))
+
+            assertIs<Ok<*>>(result)
+            assertTrue(result.value.verified, result.value.errors.joinToString())
+            val args = recording.received.single()
+            assertEquals(source.trustedJwks, args.trustedJwks)
+            assertEquals(null, args.identifier, "neither the DID document nor header key material is consulted")
+        }
+
+    @Test
+    fun `a DID-issued SD-JWT VC naming a federation entity fails closed without exactly its admitted vc_issuer keys`() =
+        runTest {
+            val recording = RecordingVerifySdJwtCommand()
+            val command = createTestCommand(recording, didResolverRegistry = SingleDidRegistry(federationDidDocument()))
+            val source = federationEntitySource()
+
+            listOf(
+                // Ambiguous admission.
+                federatedArgs(federatedSdJwt(), listOf(source, source.copy())),
+                // No kid, a kid of another DID, or header key material.
+                federatedArgs(federatedSdJwt(kid = null), listOf(source)),
+                federatedArgs(federatedSdJwt(kid = "did:web:attacker.example#issuer-assertion-summa"), listOf(source)),
+                federatedArgs(federatedSdJwt(extraHeader = ""","x5c":["Y2VydA"]"""), listOf(source)),
+                federatedArgs(federatedSdJwt(extraHeader = ""","jwk":{"kty":"EC"}"""), listOf(source)),
+            ).forEachIndexed { index, args ->
+                val result = command.execute(args)
+                assertIs<Ok<*>>(result)
+                assertFalse(result.value.verified, "case $index must be refused")
+            }
+            assertTrue(recording.received.isEmpty(), "a refused federation issuer must never reach signature verification")
+        }
+
+    @Test
+    fun `a federation entity the verifier does not admit leaves the SD-JWT VC on the DID path`() =
+        runTest {
+            val source = federationEntitySource()
+            listOf(
+                emptyList(),
+                listOf(federationEntitySource(entity = "https://other.fed.example/issuer")),
+                // Admitted only as an ordinary issuer, not as a federation entity.
+                listOf(TrustedAuthenticationResolution(FEDERATION_ENTITY, trustedJwks = source.trustedJwks, purpose = com.sphereon.openid.oid4vp.verifier.TrustedAuthenticationPurpose.CREDENTIAL_ISSUER)),
+            ).forEachIndexed { index, authentications ->
+                val recording = RecordingVerifySdJwtCommand()
+                val command = createTestCommand(recording, didResolverRegistry = SingleDidRegistry(federationDidDocument()))
+
+                assertIs<Ok<*>>(command.execute(federatedArgs(federatedSdJwt(), authentications)))
+                recording.received.forEach { args ->
+                    assertEquals(null, args.trustedJwks, "case $index: the entity's vc_issuer keys must not be used")
+                }
+            }
+        }
+
+    @Test
+    fun `a DID admitted directly keeps DID admission even when the SD-JWT VC names a federation entity`() =
+        runTest {
+            val recording = RecordingVerifySdJwtCommand()
+            val command = createTestCommand(recording, didResolverRegistry = SingleDidRegistry(federationDidDocument()))
+
+            val result = command.execute(
+                federatedArgs(
+                    federatedSdJwt(),
+                    listOf(
+                        TrustedAuthenticationResolution(
+                            controller = FEDERATION_DID,
+                            identifier = ExternalIdentifierDidOpts(identifier = FEDERATION_DID),
+                            purpose = com.sphereon.openid.oid4vp.verifier.TrustedAuthenticationPurpose.CREDENTIAL_ISSUER,
+                        ),
+                        federationEntitySource(),
+                    ),
+                ),
+            )
+
+            assertIs<Ok<*>>(result)
+            val args = recording.received.single()
+            assertEquals(null, args.trustedJwks)
+            assertEquals(FEDERATION_KID, assertIs<ExternalIdentifierDidOpts>(args.identifier).identifier)
+        }
+
+    private fun federatedArgs(presentation: String, authentications: List<TrustedAuthenticationResolution>) =
+        VerifyHolderBindingArgs(
+            presentation = presentation,
+            credentialFormat = CredentialFormat.SD_JWT_VC,
+            expectedNonce = "nonce123",
+            expectedAudience = "https://verifier.example.com",
+            requireCryptographicHolderBinding = false,
+            trustedAuthentications = authentications,
+        )
+
+    private fun federatedSdJwt(kid: String? = FEDERATION_KID, extraHeader: String = ""): String {
+        val header = if (kid == null) """{"alg":"ES256"$extraHeader}""" else """{"alg":"ES256","kid":"$kid"$extraHeader}"""
+        return header.encodeToByteArray().encodeToBase64Url() + "." +
+            """{"iss":"$FEDERATION_DID","fed":"$FEDERATION_ENTITY","vct":"https://example.com/vct"}""".encodeToByteArray().encodeToBase64Url() +
+            ".signature~"
+    }
+
+    private fun federationEntitySource(entity: String = FEDERATION_ENTITY) =
+        TrustedAuthenticationResolution(
+            controller = entity,
+            trustedJwks = kotlinx.serialization.json.buildJsonObject {
+                put(
+                    "keys",
+                    kotlinx.serialization.json.JsonArray(
+                        listOf(
+                            kotlinx.serialization.json.buildJsonObject {
+                                put("kty", kotlinx.serialization.json.JsonPrimitive("EC"))
+                                put("crv", kotlinx.serialization.json.JsonPrimitive("P-256"))
+                                put("x", kotlinx.serialization.json.JsonPrimitive("WbbFpp0eS8_rJlvpuX_qEyU1J2PNmXYnqPCBJTqqiBA"))
+                                put("y", kotlinx.serialization.json.JsonPrimitive("F8kbfVPRQc5M9kJA1fy3c_0Q6vCqHy1X7CZQC6XQy9I"))
+                                put("kid", kotlinx.serialization.json.JsonPrimitive(FEDERATION_KID))
+                            },
+                        ),
+                    ),
+                )
+            },
+            purpose = com.sphereon.openid.oid4vp.verifier.TrustedAuthenticationPurpose.CREDENTIAL_ISSUER,
+            controllerClaim = com.sphereon.openid.oid4vp.verifier.CredentialIssuerControllerClaim.FEDERATION_ENTITY,
+        )
+
+    private fun federationDidDocument(): DidDocument =
+        DidDocument(
+            id = FEDERATION_DID,
+            verificationMethod = listOf(VerificationMethod(id = FEDERATION_KID, type = "JsonWebKey2020", controller = FEDERATION_DID)),
+            assertionMethod = listOf(VerificationMethodOrReference.fromReference(FEDERATION_KID)),
+        )
 
     private fun didIssuerArgs(presentation: String) =
         VerifyHolderBindingArgs(

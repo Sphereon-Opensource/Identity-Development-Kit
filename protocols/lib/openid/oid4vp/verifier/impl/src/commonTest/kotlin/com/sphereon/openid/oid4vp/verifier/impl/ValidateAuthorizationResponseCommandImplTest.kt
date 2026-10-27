@@ -94,6 +94,10 @@ import kotlin.time.Clock
 /**
  * Unit tests for ValidateAuthorizationResponseCommandImpl
  */
+private const val FEDERATION_DID = "did:web:summa.fed.example"
+private const val FEDERATION_KID = "did:web:summa.fed.example#issuer-assertion-summa"
+private const val FEDERATION_ENTITY = "https://summa.fed.example/oid4vci/summa"
+
 class ValidateAuthorizationResponseCommandImplTest {
     private val testContext = Oid4vpVerifierTestContext("validate-auth-response-test", this)
 
@@ -1168,6 +1172,167 @@ class ValidateAuthorizationResponseCommandImplTest {
             assertIs<Ok<*>>(result)
             assertTrue(result.value.valid, "VCDM 2.0 typ is recommended rather than required: ${result.value.errors}")
             assertEquals(1, result.value.matchedCredentials.size)
+        }
+
+    @Test
+    fun `DIIP VCDM credential under a DID is verified with the vc_issuer keys of its OpenID Federation entity`() =
+        runTest {
+            val verifier = FixedVerifyJwsCommand(valid = true)
+            val trust = CapturingTrustValidator()
+            val federationKeys = federationEntityJwks()
+            val result = validateFederatedVcdm(
+                state = "diip-vcdm-federation-admitted",
+                trustedAuthentications = listOf(federationEntitySource(FEDERATION_ENTITY, federationKeys)),
+                verifier = verifier,
+                trust = trust,
+            )
+
+            assertIs<Ok<*>>(result)
+            assertTrue(result.value.valid, "the admitted vc_issuer keys must verify the credential: ${result.value.errors}")
+            assertEquals(1, verifier.calls)
+            assertEquals(federationKeys, verifier.trustedJwks.single(), "only the federation entity's vc_issuer keys may verify")
+            assertEquals(null, verifier.identifiers.single(), "no DID document or header key is consulted")
+            val issuer = kotlin.test.assertNotNull(trust.lastArgs?.issuer)
+            assertEquals(FEDERATION_DID, issuer.issuer, "the credential keeps its DID as issuer")
+            assertEquals(FEDERATION_ENTITY, issuer.oidfedEntityId, "the admitted controller is the federation entity")
+            assertEquals("openid_federation", issuer.method)
+        }
+
+    @Test
+    fun `DIIP VCDM credential naming a federation entity the verifier does not admit stays on the DID path`() =
+        runTest {
+            listOf(
+                emptyList(),
+                // Material for another entity, or issuer material for the entity itself, never verifies it.
+                listOf(federationEntitySource("https://other.fed.example/issuer", federationEntityJwks())),
+                listOf(
+                    TrustedAuthenticationResolution(
+                        FEDERATION_ENTITY,
+                        trustedJwks = federationEntityJwks(),
+                        purpose = com.sphereon.openid.oid4vp.verifier.TrustedAuthenticationPurpose.CREDENTIAL_ISSUER,
+                    ),
+                ),
+            ).forEachIndexed { index, authentications ->
+                val verifier = FixedVerifyJwsCommand(valid = true)
+                val result = validateFederatedVcdm(
+                    state = "diip-vcdm-federation-refused-$index",
+                    trustedAuthentications = authentications,
+                    verifier = verifier,
+                )
+
+                assertIs<Ok<*>>(result)
+                assertTrue(verifier.trustedJwks.none { it == federationEntityJwks() }, "case $index: the entity's vc_issuer keys must not be used")
+                assertTrue(result.value.errors.none { it.contains("federation entity") }, "case $index: ${result.value.errors}")
+            }
+        }
+
+    @Test
+    fun `DIIP VCDM credential whose DID the verifier admits directly keeps the DID admission`() =
+        runTest {
+            val verifier = FixedVerifyJwsCommand(valid = true)
+            val trust = CapturingTrustValidator()
+            val result = validateFederatedVcdm(
+                state = "diip-vcdm-did-anchor",
+                trustedAuthentications = listOf(
+                    TrustedAuthenticationResolution(
+                        FEDERATION_DID,
+                        identifier = ExternalIdentifierDidOpts(FEDERATION_DID),
+                        purpose = com.sphereon.openid.oid4vp.verifier.TrustedAuthenticationPurpose.CREDENTIAL_ISSUER,
+                    ),
+                    federationEntitySource(FEDERATION_ENTITY, federationEntityJwks()),
+                ),
+                verifier = verifier,
+                trust = trust,
+            )
+
+            assertIs<Ok<*>>(result)
+            assertTrue(result.value.valid, result.value.errors.joinToString())
+            assertEquals(null, verifier.trustedJwks.single())
+            assertEquals(FEDERATION_KID, (verifier.identifiers.single() as ExternalIdentifierDidOpts).identifier)
+            assertEquals("did", trust.lastArgs?.issuer?.method)
+            assertEquals(null, trust.lastArgs?.issuer?.oidfedEntityId)
+        }
+
+    private suspend fun validateFederatedVcdm(
+        state: String,
+        trustedAuthentications: List<TrustedAuthenticationResolution>,
+        verifier: FixedVerifyJwsCommand,
+        trust: Oid4vpCredentialTrustValidator? = null,
+    ): IdkResult<com.sphereon.openid.oid4vp.verifier.ValidationResult, IdkError> {
+        val presentation = federatedVcdm11VcJwt()
+        return validateWithPersistedSession(
+            ValidateAuthorizationResponseArgs(
+                parsedResponse = ParsedAuthorizationResponse(
+                    vpToken = vpTokenOf("credential", presentation),
+                    state = state,
+                    rawVpToken = """{"credential":["$presentation"]}""",
+                ),
+                originalRequest = AuthorizationRequest(
+                    clientId = "https://verifier.example.com",
+                    redirectUri = "https://verifier.example.com/callback",
+                    state = state,
+                ),
+                dcqlQuery = DcqlQuery(
+                    credentials = listOf(
+                        DcqlCredentialQuery(
+                            id = "credential",
+                            format = "jwt_vc_json",
+                            meta = vcdm11CredentialMeta(),
+                            require_cryptographic_holder_binding = false,
+                        ),
+                    ),
+                ),
+                expectedNonce = "nonce-is-not-a-vp-claim",
+                trustedAuthentications = trustedAuthentications,
+            ),
+            instanceId = "verifier-instance-$state",
+            credentialTrustValidators = listOfNotNull(trust).toSet(),
+            verifyJwsCommand = verifier,
+        )
+    }
+
+    /** A VCDM 1.1 credential issued under did:web that names its Issuer's federation entity (DIIP v5, Appendix B). */
+    private fun federatedVcdm11VcJwt(): String {
+        val payload =
+            """
+            {
+                "iss": "$FEDERATION_DID",
+                "sub": "did:example:subject",
+                "nbf": 1700000000,
+                "vc": {
+                    "@context": ["https://www.w3.org/2018/credentials/v1"],
+                    "type": ["VerifiableCredential"],
+                    "issuanceDate": "2023-11-14T22:13:20Z",
+                    "termsOfUse": [{"type": "OpenIDFederation", "policyId": "$FEDERATION_ENTITY"}],
+                    "credentialSubject": {"id": "did:example:subject", "name": "Alice"}
+                }
+            }
+            """.trimIndent()
+        val header = """{"alg":"ES256","typ":"JWT","kid":"$FEDERATION_KID"}"""
+        return "${header.encodeToByteArray().encodeToBase64Url()}.${payload.encodeToByteArray().encodeToBase64Url()}.fakesig"
+    }
+
+    private fun federationEntitySource(entity: String, jwks: JsonObject) =
+        TrustedAuthenticationResolution(
+            controller = entity,
+            trustedJwks = jwks,
+            purpose = com.sphereon.openid.oid4vp.verifier.TrustedAuthenticationPurpose.CREDENTIAL_ISSUER,
+            controllerClaim = com.sphereon.openid.oid4vp.verifier.CredentialIssuerControllerClaim.FEDERATION_ENTITY,
+        )
+
+    private fun federationEntityJwks(): JsonObject =
+        buildJsonObject {
+            putJsonArray("keys") {
+                add(
+                    buildJsonObject {
+                        put("kty", "EC")
+                        put("crv", "P-256")
+                        put("x", "WbbFpp0eS8_rJlvpuX_qEyU1J2PNmXYnqPCBJTqqiBA")
+                        put("y", "F8kbfVPRQc5M9kJA1fy3c_0Q6vCqHy1X7CZQC6XQy9I")
+                        put("kid", FEDERATION_KID)
+                    },
+                )
+            }
         }
 
     @Test
@@ -4655,6 +4820,7 @@ private class FixedVerifyJwsCommand(
     var calls: Int = 0
         private set
     val identifiers = mutableListOf<IdentifierOptsOrResult?>()
+    val trustedJwks = mutableListOf<JsonObject?>()
 
     override val commandId: String = VerifyJwsCommand.COMMAND_ID
     override val inputTypeToken: TypeToken<VerifyJwsArgs> = typeToken<VerifyJwsArgs>()
@@ -4666,6 +4832,7 @@ private class FixedVerifyJwsCommand(
     override suspend fun execute(args: VerifyJwsArgs): IdkResult<JwsValidationResult, IdkError> {
         calls++
         identifiers += args.identifier
+        trustedJwks += args.trustedJwks
         if (args.jws == null) return Err(IdkError.fromString("JWS is required"))
         val resultValid = valid && calls != rejectOnCall
         return Ok(

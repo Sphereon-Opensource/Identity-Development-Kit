@@ -47,6 +47,7 @@ import com.sphereon.openid.oid4vc.common.vcdm.VcdmClassifier
 import com.sphereon.openid.oid4vc.common.vcdm.VcdmDocumentKind
 import com.sphereon.openid.oid4vc.common.vcdm.VcdmProfiles
 import com.sphereon.openid.oid4vc.common.vcdm.VcdmVersion
+import com.sphereon.openid.oid4vp.verifier.CredentialIssuerControllerClaim
 import com.sphereon.openid.oid4vp.verifier.HolderBindingResult
 import com.sphereon.openid.oid4vp.verifier.TrustedAuthenticationResolution
 import com.sphereon.openid.oid4vp.verifier.TrustedAuthenticationPurpose
@@ -240,7 +241,9 @@ class VerifyHolderBindingCommandImpl(
 
         val issuer = sdJwtIssuer(presentation)
         val matchingSources = trustedAuthentications.filter {
-            it.purpose == TrustedAuthenticationPurpose.CREDENTIAL_ISSUER && it.controller == issuer
+            it.purpose == TrustedAuthenticationPurpose.CREDENTIAL_ISSUER &&
+                it.controllerClaim == CredentialIssuerControllerClaim.ISSUER &&
+                it.controller == issuer
         }
         if (matchingSources.size > 1) {
             return holderBindingFailure("multiple configured issuer authentication sources match controller '$issuer'")
@@ -248,6 +251,14 @@ class VerifyHolderBindingCommandImpl(
         val configuredSource = matchingSources.singleOrNull()
         if (!issuer.isNullOrBlank() && !issuer.startsWith("did:") && configuredSource == null) {
             return holderBindingFailure("non-DID SD-JWT issuer '$issuer' requires an exact configured authentication source")
+        }
+        // DIIP v5 Appendix B: a credential issued under a DID that names its Issuer's OpenID Federation
+        // entity in `fed` is admitted with that entity's `vc_issuer` keys, unless the DID itself is admitted.
+        val federated = FederatedCredentialIssuer.applicableSources(issuer, sdJwtIssuerPayload(presentation), trustedAuthentications)
+        if (federated != null) {
+            return verifySdJwtWithFederationEntity(
+                presentation, issuer!!, federated, expectedNonce, expectedAudience, requireCryptographicHolderBinding,
+            )
         }
 
         // The issuer JWT is untrusted until its signature has been verified.  The generic JWS
@@ -314,12 +325,72 @@ class VerifyHolderBindingCommandImpl(
                 configuredSource?.identifier
             }
 
+        return verifySdJwtWithIssuerSource(
+            presentation = presentation,
+            issuerIdentifier = issuerIdentifier,
+            trustedJwks = configuredSource?.trustedJwks,
+            expectedNonce = expectedNonce,
+            expectedAudience = expectedAudience,
+            requireCryptographicHolderBinding = requireCryptographicHolderBinding,
+        )
+    }
+
+    /**
+     * Verifies a DID-issued SD-JWT VC through the OpenID Federation entity it names in `fed` (DIIP v5,
+     * Appendix B): exactly one admitted `vc_issuer` key set of that entity, and a header `kid` that is a
+     * DID URL of the `iss` DID and equals the `kid` of one of its keys. No DID document is consulted and
+     * no header key material is accepted; anything else fails closed.
+     */
+    private suspend fun verifySdJwtWithFederationEntity(
+        presentation: String,
+        issuer: String,
+        federated: FederatedCredentialIssuer.Applicable,
+        expectedNonce: String,
+        expectedAudience: String,
+        requireCryptographicHolderBinding: Boolean,
+    ): IdkResult<HolderBindingResult, IdkError> {
+        if (federated.sources.size > 1) {
+            return holderBindingFailure("multiple configured issuer authentication sources match federation entity '${federated.entity}'")
+        }
+        val header = sdJwtIssuerHeader(presentation)
+            ?: return holderBindingFailure("SD-JWT issuer JWT protected header is malformed")
+        val headerIssuerElement = header["iss"]
+        if (headerIssuerElement != null && (headerIssuerElement as? JsonPrimitive)?.takeIf { it.isString }?.content != issuer) {
+            return holderBindingFailure("SD-JWT issuer JWT protected-header iss must agree with the issuer claim")
+        }
+        listOf("jwk", "jku", "x5u", "x5c").firstOrNull(header::containsKey)?.let { member ->
+            return holderBindingFailure("SD-JWT issuer JWT header '$member' cannot be used with OpenID Federation issuer keys")
+        }
+        val kid = (header["kid"] as? JsonPrimitive)?.takeIf { it.isString }?.content?.takeIf(String::isNotBlank)
+            ?: return holderBindingFailure("SD-JWT issuer JWT from DID issuer '$issuer' must name its signing key in kid")
+        if (!FederatedCredentialIssuer.isDidUrlOf(issuer, kid)) {
+            return holderBindingFailure("SD-JWT issuer JWT kid '$kid' is not a DID URL of the issuer DID '$issuer'")
+        }
+        // The verifier selects the key by exact kid from the admitted vc_issuer JWK Set only.
+        return verifySdJwtWithIssuerSource(
+            presentation = presentation,
+            issuerIdentifier = null,
+            trustedJwks = federated.sources.single().trustedJwks,
+            expectedNonce = expectedNonce,
+            expectedAudience = expectedAudience,
+            requireCryptographicHolderBinding = requireCryptographicHolderBinding,
+        )
+    }
+
+    private suspend fun verifySdJwtWithIssuerSource(
+        presentation: String,
+        issuerIdentifier: com.sphereon.crypto.resolution.IdentifierOptsOrResult?,
+        trustedJwks: JsonObject?,
+        expectedNonce: String,
+        expectedAudience: String,
+        requireCryptographicHolderBinding: Boolean,
+    ): IdkResult<HolderBindingResult, IdkError> {
         // Use the existing SD-JWT verification which handles full KB-JWT verification
         val verifyArgs =
             VerifySdJwtArgs(
                 sdJwt = presentation,
                 identifier = issuerIdentifier,
-                trustedJwks = configuredSource?.trustedJwks,
+                trustedJwks = trustedJwks,
                 expectedAudience = expectedAudience,
                 expectedNonce = expectedNonce,
                 validateDisclosures = true,
@@ -405,6 +476,13 @@ class VerifyHolderBindingCommandImpl(
             val payloadSegment = presentation.substringBefore('~').split('.').getOrNull(1) ?: return null
             val payload = json.parseToJsonElement(decodeBase64Url(payloadSegment)).jsonObject
             (payload["iss"] as? JsonPrimitive)?.takeIf { it.isString }?.content
+        }.getOrNull()
+
+    /** The issuer-signed payload as presented (plain claims only), used to select issuer material. */
+    private fun sdJwtIssuerPayload(presentation: String): JsonObject? =
+        runCatching {
+            val payloadSegment = presentation.substringBefore('~').split('.').getOrNull(1) ?: return null
+            json.parseToJsonElement(decodeBase64Url(payloadSegment)).jsonObject
         }.getOrNull()
 
     private fun sdJwtIssuerHeader(presentation: String): JsonObject? =

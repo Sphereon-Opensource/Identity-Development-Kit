@@ -240,6 +240,37 @@ class JwtVcJsonFormatHandlerTest {
         }
 
     @Test
+    fun vcdm11FederationEntityIssuerAddsOpenIdFederationTermsOfUseInsideVc() =
+        runTest {
+            val jwtService = RecordingJwtService()
+            val vcdm11Handler =
+                JwtVcJsonFormatHandler(
+                    signatureService = (jwtService).asSignatureServiceFixture(),
+                    kms = TestKmsMock(),
+                    issuerKeyIdResolver = StubIssuerKeyIdResolver,
+                )
+
+            val result =
+                vcdm11Handler.issueCredential(
+                    makeRequest("jwt_vc_json"),
+                    makeContext(makeConfig("jwt_vc_json")).copy(federationEntityIdentifier = "https://issuer.example.com"),
+                )
+
+            assertTrue(result.isOk, "issuance must succeed: ${if (result.isErr) result.error else ""}")
+            val payload = assertNotNull(jwtService.lastArgs?.payload as? JsonObject)
+            val vc = assertNotNull(payload["vc"]?.jsonObject)
+            assertEquals(
+                buildJsonObject {
+                    put("type", "OpenIDFederation")
+                    put("policyId", "https://issuer.example.com")
+                },
+                vc["termsOfUse"],
+            )
+            assertNull(payload["termsOfUse"], "termsOfUse is a VC property, not a JWT claim")
+            assertEquals("https://issuer.example.com", payload["iss"]?.jsonPrimitive?.content)
+        }
+
+    @Test
     fun vcdm11IssueKeepsFutureDataValiditySeparateFromSigningIat() =
         runTest {
             val jwtService = RecordingJwtService()
