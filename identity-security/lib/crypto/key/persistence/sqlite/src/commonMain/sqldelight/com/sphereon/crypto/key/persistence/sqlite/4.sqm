@@ -1,0 +1,17 @@
+CREATE TABLE managed_key_reference_publication (
+    tenant_id TEXT NOT NULL,
+    logical_resource_id TEXT NOT NULL,
+    resource_handle TEXT NOT NULL,
+    logical_alias TEXT NOT NULL,
+    provider_id TEXT NOT NULL,
+    key_reference_id TEXT NOT NULL REFERENCES key_reference(id) ON DELETE RESTRICT,
+    public_key_thumbprint TEXT NOT NULL,
+    PRIMARY KEY (tenant_id, logical_resource_id),
+    CHECK (length(tenant_id) BETWEEN 1 AND 255),
+    CHECK (length(logical_resource_id) BETWEEN 1 AND 255),
+    CHECK (length(resource_handle) BETWEEN 1 AND 255),
+    CHECK (length(logical_alias) BETWEEN 1 AND 255),
+    CHECK (length(provider_id) BETWEEN 1 AND 255),
+    CHECK (length(key_reference_id) BETWEEN 1 AND 36),
+    CHECK (length(public_key_thumbprint) = 43 AND public_key_thumbprint NOT GLOB '*[^A-Za-z0-9_-]*')
+);

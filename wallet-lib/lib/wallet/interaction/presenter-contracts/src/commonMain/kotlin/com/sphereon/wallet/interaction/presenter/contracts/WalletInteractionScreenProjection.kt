@@ -106,9 +106,9 @@ sealed interface WalletInteractionScreenProjection {
 }
 
 /**
- * The reviewed receive facts a result screen needs when it is attached after the live review
- * presenter was disposed. This is present only when the interaction had a fully resolved safe
- * issuer, offer, trust, and encounter transcript before reaching its terminal state.
+ * The reviewed receive facts a route needs when it is attached after the live review presenter was
+ * disposed. This is present only when the interaction had a fully resolved safe issuer, offer,
+ * trust, and encounter transcript. It may be retained by a live screen model or a terminal result.
  */
 @Serializable
 data class WalletReceiveTerminalContextPresentation(

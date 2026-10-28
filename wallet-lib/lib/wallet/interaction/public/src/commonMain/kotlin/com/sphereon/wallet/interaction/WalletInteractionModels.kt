@@ -53,6 +53,34 @@ enum class WalletInteractionCaptureSource {
     MOBILE_DEEPLINK,
     WEB_UI,
     API,
+    DIGITAL_CREDENTIALS_API,
+}
+
+/** Discriminator for captured bytes that are either opaque input or a versioned parsed platform request. */
+@Serializable
+enum class CapturedInteractionPayloadFormat {
+    OPAQUE_BYTES,
+    DIGITAL_CREDENTIALS_API_V1,
+}
+
+/**
+ * Typed Digital Credentials API request carried inside [CapturedInteractionInput.rawPayload].
+ * The platform verifier origin and selected credential identifiers remain separate from request
+ * data so they cannot be inferred from verifier-controlled JSON.
+ */
+@Serializable
+data class CapturedDigitalCredentialsPayload(
+    val protocol: String,
+    val data: JsonObject,
+    val platformVerifierOrigin: String,
+    val selectedEntryId: String? = null,
+    val selectedCredentialSetId: String? = null,
+    val selectedCredentialIds: List<String> = emptyList(),
+) {
+    override fun toString(): String =
+        "CapturedDigitalCredentialsPayload(protocol=[redacted], data=[redacted], platformVerifierOrigin=[redacted], " +
+            "selectedEntryId=${selectedEntryId != null}, selectedCredentialSetId=${selectedCredentialSetId != null}, " +
+            "selectedCredentialCount=${selectedCredentialIds.size})"
 }
 
 /** Non-secret protocol preferences that a policy-locked captured interaction may carry. */
@@ -117,6 +145,8 @@ data class CapturedInteractionInput(
     val idempotencyKey: String,
     /** Allowlisted non-secret protocol preferences; identity, key and secret overrides are excluded. */
     val launchAttributes: Map<String, String> = emptyMap(),
+    /** Versioned interpretation of [rawPayload]; defaults to the existing opaque-byte contract. */
+    val payloadFormat: CapturedInteractionPayloadFormat = CapturedInteractionPayloadFormat.OPAQUE_BYTES,
 ) {
     init {
         require(walletProfileRef.isNotBlank()) { "wallet_interaction_profile_ref_blank" }
@@ -148,7 +178,8 @@ data class CapturedInteractionInput(
             captureBinding == other.captureBinding &&
             expectedPolicyRevision == other.expectedPolicyRevision &&
             idempotencyKey == other.idempotencyKey &&
-            launchAttributes == other.launchAttributes
+            launchAttributes == other.launchAttributes &&
+            payloadFormat == other.payloadFormat
     }
 
     override fun hashCode(): Int {
@@ -161,8 +192,15 @@ data class CapturedInteractionInput(
         result = 31 * result + expectedPolicyRevision.hashCode()
         result = 31 * result + idempotencyKey.hashCode()
         result = 31 * result + launchAttributes.hashCode()
+        result = 31 * result + payloadFormat.hashCode()
         return result
     }
+
+    override fun toString(): String =
+        "CapturedInteractionInput(source=$source, walletProfileRef=[redacted], appRegistrationRef=[redacted], " +
+            "rawPayload=[redacted], payloadDigest=[redacted], captureBinding=[redacted], " +
+            "expectedPolicyRevision=$expectedPolicyRevision, idempotencyKey=[redacted], " +
+            "launchAttributes=${launchAttributes.keys}, payloadFormat=$payloadFormat)"
 }
 
 /**

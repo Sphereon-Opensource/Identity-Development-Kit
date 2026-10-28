@@ -124,6 +124,31 @@ class NoOpKeyReferenceStoreTest {
                 KeyReferenceStoreErrorCodes.DURABLE_HISTORY_UNSUPPORTED,
                 legacyStore.findAllByKidIncludingDeleted("tenant", "kid").error.code,
             )
+            assertEquals(
+                ManagedKeyReferencePublicationErrorCodes.UNSUPPORTED,
+                legacyStore.findManagedPublication("tenant", "logical-id").error.code,
+            )
+        }
+
+    @Test
+    fun noOpStoreFailsClosedForManagedPublication() =
+        runTest {
+            val read = store.findManagedPublication("tenant", "logical-id")
+            val write = store.bindManagedPublicationIfAbsent(
+                ManagedKeyReferencePublication(
+                    tenantId = "tenant",
+                    logicalResourceId = "logical-id",
+                    resourceHandle = "resource-handle",
+                    logicalAlias = "alias",
+                    providerId = "provider",
+                    keyReferenceId = "00000000-0000-0000-0000-000000000000",
+                    publicKeyThumbprint = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+                ),
+            )
+            assertTrue(read.isErr)
+            assertTrue(write.isErr)
+            assertEquals(ManagedKeyReferencePublicationErrorCodes.UNSUPPORTED, read.error.code)
+            assertEquals(ManagedKeyReferencePublicationErrorCodes.UNSUPPORTED, write.error.code)
         }
 
     @Test

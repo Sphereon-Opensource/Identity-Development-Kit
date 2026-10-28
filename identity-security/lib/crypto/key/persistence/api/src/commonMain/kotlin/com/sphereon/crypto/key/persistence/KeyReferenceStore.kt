@@ -85,6 +85,28 @@ interface KeyReferenceStore {
         id: String,
     ): IdkResult<KeyReferenceRecord?, IdkError>
 
+    /**
+     * Resolve a stable logical KMS resource ID to an explicitly published existing key reference.
+     * This is separate from [findById], which remains a strict lookup by physical row UUID.
+     * Implementations must validate that the publication still targets its active managed key
+     * reference and that the stored public JWK has the recorded RFC 7638 thumbprint.
+     */
+    suspend fun findManagedPublication(
+        tenantId: String,
+        logicalResourceId: String,
+    ): IdkResult<ManagedKeyReferencePublication?, IdkError> = unsupportedManagedKeyPublicationResult()
+
+    /**
+     * Bind a logical resource ID once to an existing active managed key-reference UUID. A repeated
+     * identical request returns [ManagedKeyReferencePublicationBindResult.IdenticalExisting]; a
+     * different existing binding returns [ManagedKeyReferencePublicationBindResult.Conflict].
+     * Implementations must atomically validate tenant, UUID, alias, provider, MANAGED origin and
+     * public-key thumbprint before inserting. This API never creates or changes key material.
+     */
+    suspend fun bindManagedPublicationIfAbsent(
+        publication: ManagedKeyReferencePublication,
+    ): IdkResult<ManagedKeyReferencePublicationBindResult, IdkError> = unsupportedManagedKeyPublicationResult()
+
     /** Find a key reference by its key identifier within a tenant. Optionally scoped to a specific provider. */
     suspend fun findByKid(
         tenantId: String,

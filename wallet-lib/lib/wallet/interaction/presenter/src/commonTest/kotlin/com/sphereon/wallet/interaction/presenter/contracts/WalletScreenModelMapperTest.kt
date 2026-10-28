@@ -10,6 +10,7 @@ import com.sphereon.wallet.interaction.presenter.WalletScreenModelMapper
 import com.sphereon.wallet.interaction.WalletDisplayMessage
 import com.sphereon.wallet.interaction.WalletInteractionActivitySummary
 import com.sphereon.wallet.interaction.WalletInteractionActivityType
+import com.sphereon.wallet.interaction.WalletInteractionFlowKind
 import com.sphereon.wallet.interaction.WalletInteractionError
 import com.sphereon.wallet.interaction.WalletInteractionSessionId
 import com.sphereon.wallet.interaction.WalletInteractionState
@@ -23,6 +24,7 @@ import com.sphereon.wallet.interaction.WalletCounterpartySummary
 import com.sphereon.wallet.interaction.WalletCounterpartyTrustSummary
 import com.sphereon.wallet.interaction.WalletTrustPolicyAction
 import com.sphereon.wallet.interaction.WalletTrustStatus
+import com.sphereon.wallet.interaction.WalletTxCodeSpec
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -338,6 +340,55 @@ class WalletScreenModelMapperTest {
         assertEquals("party-issuer", context.offer.issuer?.partyId)
         assertEquals(listOf("pid"), context.offer.offeredCredentials.map { it.configurationId })
         assertEquals(0, context.encounter.previousInteractionCount)
+    }
+
+    @Test
+    fun transactionCodeRequiredRetainsSafeReceiveContextForRouteReattachment() {
+        val issuer =
+            WalletCounterpartySummary(
+                role = WalletCounterpartyRole.ISSUER,
+                identifier = "https://issuer.example",
+                partyId = "party-issuer",
+                displayName = "Example issuer",
+            )
+        val trust =
+            WalletCounterpartyTrustSummary(
+                counterparty = issuer,
+                status = WalletTrustStatus.TRUSTED,
+                policyAction = WalletTrustPolicyAction.ALLOW,
+            )
+        val encounter =
+            WalletCounterpartyEncounterResult(
+                counterparty = issuer,
+                resolved = true,
+                organizationCreated = true,
+                firstInteraction = true,
+            )
+        val txCodeState =
+            state(WalletInteractionStatus.TxCodeRequired).copy(
+                flowKind = WalletInteractionFlowKind.CredentialReceive,
+                counterparty = issuer,
+                trust = trust,
+                counterpartyEncounter = encounter,
+                credentialOffer =
+                    WalletCredentialOfferSummary(
+                        issuer = issuer,
+                        credentialConfigurationIds = listOf("pid"),
+                        preAuthorizedCodeAvailable = true,
+                        txCodeRequired = true,
+                        branding = listOf(WalletCredentialBranding(credentialConfigurationId = "pid", name = "Person identification data")),
+                    ),
+                txCode = WalletTxCodeSpec(inputMode = "numeric", length = 6),
+            )
+
+        val model = WalletScreenModelMapper.map(txCodeState)
+        val context = requireNotNull(model.receiveContext)
+        val projection = assertIs<WalletInteractionScreenProjection.TransactionCode>(model.projection)
+
+        assertEquals("party-issuer", context.issuer.partyId)
+        assertEquals(listOf("pid"), context.offer.offeredCredentials.map { it.configurationId })
+        assertEquals(0, context.encounter.previousInteractionCount)
+        assertEquals(6, projection.expectedLength)
     }
 
     @Test

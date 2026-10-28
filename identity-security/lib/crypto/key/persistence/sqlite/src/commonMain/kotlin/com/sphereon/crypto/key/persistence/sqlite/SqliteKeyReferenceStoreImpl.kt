@@ -32,6 +32,10 @@ import com.sphereon.crypto.key.persistence.KeyReferenceRecord
 import com.sphereon.crypto.key.persistence.KeyReferenceHistoryCapability
 import com.sphereon.crypto.key.persistence.KeyReferenceStore
 import com.sphereon.crypto.key.persistence.KeyReferenceStoreErrorCodes
+import com.sphereon.crypto.key.persistence.ManagedKeyReferencePublication
+import com.sphereon.crypto.key.persistence.ManagedKeyReferencePublicationBindResult
+import com.sphereon.crypto.key.persistence.ManagedKeyReferencePublicationErrorCodes
+import com.sphereon.crypto.key.persistence.matchesManagedPublicationTarget
 import dev.zacsweers.metro.Inject
 import kotlinx.coroutines.Dispatchers.IO
 import kotlinx.coroutines.withContext
@@ -378,6 +382,119 @@ class SqliteKeyReferenceStoreImpl(
         }
     }
 
+    override suspend fun findManagedPublication(
+        tenantId: String,
+        logicalResourceId: String,
+    ): IdkResult<ManagedKeyReferencePublication?, IdkError> =
+        withContext(IO) {
+            try {
+                val state: Pair<ManagedKeyReferencePublication, KeyReferenceRecord?>? = database.transactionWithResult {
+                    val row = queries.findManagedPublication(tenantId, logicalResourceId).executeAsOneOrNull()
+                        ?: return@transactionWithResult null
+                    val publication = ManagedKeyReferencePublication(
+                        tenantId = row.tenant_id,
+                        logicalResourceId = row.logical_resource_id,
+                        resourceHandle = row.resource_handle,
+                        logicalAlias = row.logical_alias,
+                        providerId = row.provider_id,
+                        keyReferenceId = row.key_reference_id,
+                        publicKeyThumbprint = row.public_key_thumbprint,
+                    )
+                    val target = queries.findActiveReferenceForManagedPublication(tenantId, row.key_reference_id)
+                        .executeAsOneOrNull()?.toKeyReferenceRecord()
+                    publication to target
+                } ?: return@withContext Ok(null)
+                val (publication, target) = state ?: return@withContext Ok(null)
+                if (target == null || !target.matchesManagedPublicationTarget(publication)) {
+                    publicationIntegrityFailure()
+                } else {
+                    Ok(publication)
+                }
+            } catch (expected: Exception) {
+                Err(IdkError.UNKNOWN_ERROR(message = "Failed to find managed key publication", exception = expected))
+            }
+        }
+
+    override suspend fun bindManagedPublicationIfAbsent(
+        publication: ManagedKeyReferencePublication,
+    ): IdkResult<ManagedKeyReferencePublicationBindResult, IdkError> =
+        withContext(IO) {
+            try {
+                val result = database.transactionWithResult {
+                    val current = queries.findManagedPublication(
+                        publication.tenantId,
+                        publication.logicalResourceId,
+                    ).executeAsOneOrNull()
+                    if (current != null) {
+                        val currentPublication = ManagedKeyReferencePublication(
+                            tenantId = current.tenant_id,
+                            logicalResourceId = current.logical_resource_id,
+                            resourceHandle = current.resource_handle,
+                            logicalAlias = current.logical_alias,
+                            providerId = current.provider_id,
+                            keyReferenceId = current.key_reference_id,
+                            publicKeyThumbprint = current.public_key_thumbprint,
+                        )
+                        if (currentPublication != publication) {
+                            return@transactionWithResult ManagedPublicationWrite.Conflict
+                        }
+                        val target = queries.findActiveReferenceForManagedPublication(
+                            publication.tenantId,
+                            publication.keyReferenceId,
+                        ).executeAsOneOrNull()?.toKeyReferenceRecord()
+                        return@transactionWithResult if (target?.matchesManagedPublicationTarget(publication) == true) {
+                            ManagedPublicationWrite.Identical
+                        } else {
+                            ManagedPublicationWrite.InvalidTarget
+                        }
+                    }
+                    val target = queries.findActiveReferenceForManagedPublication(
+                        publication.tenantId,
+                        publication.keyReferenceId,
+                    ).executeAsOneOrNull()?.toKeyReferenceRecord()
+                    if (target?.matchesManagedPublicationTarget(publication) != true) {
+                        return@transactionWithResult ManagedPublicationWrite.InvalidTarget
+                    }
+                    queries.insertManagedPublication(
+                        tenantId = publication.tenantId,
+                        logicalResourceId = publication.logicalResourceId,
+                        resourceHandle = publication.resourceHandle,
+                        logicalAlias = publication.logicalAlias,
+                        providerId = publication.providerId,
+                        keyReferenceId = publication.keyReferenceId,
+                        publicKeyThumbprint = publication.publicKeyThumbprint,
+                    )
+                    ManagedPublicationWrite.Created
+                }
+                when (result) {
+                    ManagedPublicationWrite.Created -> Ok(ManagedKeyReferencePublicationBindResult.Created(publication))
+                    ManagedPublicationWrite.Identical -> Ok(ManagedKeyReferencePublicationBindResult.IdenticalExisting(publication))
+                    ManagedPublicationWrite.Conflict -> Ok(ManagedKeyReferencePublicationBindResult.Conflict)
+                    ManagedPublicationWrite.InvalidTarget -> publicationTargetFailure()
+                }
+            } catch (expected: Exception) {
+                val existing = findManagedPublication(publication.tenantId, publication.logicalResourceId)
+                val current = existing.getOrElse { return@withContext Err(it) }
+                when {
+                    current == publication -> Ok(ManagedKeyReferencePublicationBindResult.IdenticalExisting(publication))
+                    current != null -> Ok(ManagedKeyReferencePublicationBindResult.Conflict)
+                    else -> Err(IdkError.UNKNOWN_ERROR(message = "Failed to bind managed key publication", exception = expected))
+                }
+            }
+        }
+
+    private fun publicationIntegrityFailure(): IdkResult<ManagedKeyReferencePublication?, IdkError> =
+        Err(IdkError.fromString(
+            code = ManagedKeyReferencePublicationErrorCodes.INTEGRITY_FAILURE,
+            message = "Managed publication no longer matches its active key reference",
+        ))
+
+    private fun publicationTargetFailure(): IdkResult<ManagedKeyReferencePublicationBindResult, IdkError> =
+        Err(IdkError.fromString(
+            code = ManagedKeyReferencePublicationErrorCodes.INVALID_TARGET,
+            message = "Managed publication target is missing or does not match the requested identity",
+        ))
+
     /**
      * Maps a raw DB row to a [KeyReferenceRecord].
      *
@@ -425,4 +542,11 @@ class SqliteKeyReferenceStoreImpl(
             "externally_managed" -> ResourceControlMode.EXTERNALLY_MANAGED
             else -> throw IllegalArgumentException("Unknown key reference control_mode: $this")
         }
+}
+
+private enum class ManagedPublicationWrite {
+    Created,
+    Identical,
+    Conflict,
+    InvalidTarget,
 }

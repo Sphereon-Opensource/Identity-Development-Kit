@@ -147,6 +147,17 @@ class SelectingKeyReferenceStore(
         id: String,
     ): IdkResult<KeyReferenceRecord?, IdkError> = delegate.findById(tenantId, id)
 
+    override suspend fun findManagedPublication(
+        tenantId: String,
+        logicalResourceId: String,
+    ): IdkResult<ManagedKeyReferencePublication?, IdkError> =
+        delegate.findManagedPublication(tenantId, logicalResourceId)
+
+    override suspend fun bindManagedPublicationIfAbsent(
+        publication: ManagedKeyReferencePublication,
+    ): IdkResult<ManagedKeyReferencePublicationBindResult, IdkError> =
+        delegate.bindManagedPublicationIfAbsent(publication)
+
     override suspend fun findByKid(
         tenantId: String,
         kid: String,

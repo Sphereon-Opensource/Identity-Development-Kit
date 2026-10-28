@@ -79,6 +79,7 @@ import kotlin.time.Clock
 class CertificatesRestServiceImpl(
     private val kms: KeyManagerService,
     private val certificateService: CertificateService,
+    private val certificateIssuanceExecutor: CertificateIssuanceExecutor,
     private val certificateReferenceRegistrar: CertificateReferenceRegistrar,
     private val platformManagedCertificateAliasLister: PlatformManagedCertificateAliasLister,
 ) : CertificatesRestService {
@@ -137,15 +138,17 @@ class CertificatesRestServiceImpl(
             requireManagedSubjectKey(subjectKeyInfo)
         }
         val result =
-            certificateService.createCertificate(
-                issuerKeyInfo = issuerKeyInfo,
-                issuer = request.issuer.toSdk(),
-                subjectKeyInfo = subjectKeyInfo,
-                subject = request.subject.toSdk(),
-                serialNumber = request.serialNumber,
-                extensions = extensions,
-                notBefore = request.notBefore?.let { LocalDateTimeKMP.fromString(it) } ?: LocalDateTimeKMP.now(),
-                notAfter = request.notAfter?.let { LocalDateTimeKMP.fromString(it) } ?: defaultNotAfter(),
+            certificateIssuanceExecutor.issue(
+                CertificateIssuanceRequest(
+                    issuerKeyInfo = issuerKeyInfo,
+                    issuer = request.issuer.toSdk(),
+                    subjectKeyInfo = subjectKeyInfo,
+                    subject = request.subject.toSdk(),
+                    serialNumber = request.serialNumber,
+                    extensions = extensions,
+                    notBefore = request.notBefore?.let { LocalDateTimeKMP.fromString(it) } ?: LocalDateTimeKMP.now(),
+                    notAfter = request.notAfter?.let { LocalDateTimeKMP.fromString(it) } ?: defaultNotAfter(),
+                ),
             )
         return CertificateResponse(
             certificate = Base64ByteArray(result.certificate.der),
@@ -175,14 +178,16 @@ class CertificatesRestServiceImpl(
     override suspend fun issueCertificateFromCsr(request: IssueCertificateFromCsrRequest): CertificateResponse {
         val csr = request.csr.toSdk()
         val result =
-            certificateService.createCertificateFromCSR(
-                issuerKeyInfo = request.issuerKeyInfo.toSdk() as KeyInfoType<KeyType>,
-                issuer = request.issuer.toSdk(),
-                subjectKeyInfo = request.subjectKeyInfo.toSdk() as ResolvedKeyInfoType<KeyType>,
-                csr = csr,
-                serialNumber = request.serialNumber ?: csr.serialNumber,
-                notBefore = request.notBefore?.let { LocalDateTimeKMP.fromString(it) } ?: LocalDateTimeKMP.now(),
-                notAfter = request.notAfter?.let { LocalDateTimeKMP.fromString(it) } ?: defaultNotAfter(),
+            certificateIssuanceExecutor.issueFromCsr(
+                CertificateCsrIssuanceRequest(
+                    issuerKeyInfo = request.issuerKeyInfo.toSdk() as KeyInfoType<KeyType>,
+                    issuer = request.issuer.toSdk(),
+                    subjectKeyInfo = request.subjectKeyInfo.toSdk() as ResolvedKeyInfoType<KeyType>,
+                    csr = csr,
+                    serialNumber = request.serialNumber ?: csr.serialNumber,
+                    notBefore = request.notBefore?.let { LocalDateTimeKMP.fromString(it) } ?: LocalDateTimeKMP.now(),
+                    notAfter = request.notAfter?.let { LocalDateTimeKMP.fromString(it) } ?: defaultNotAfter(),
+                ),
             )
         return CertificateResponse(
             certificate = Base64ByteArray(result.certificate.der),

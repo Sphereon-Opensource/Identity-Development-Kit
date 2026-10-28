@@ -22,6 +22,8 @@ import com.sphereon.core.api.http.describe.HttpAdapterMount
 import com.sphereon.core.api.http.describe.HttpEndpointDescriptor
 import com.sphereon.core.api.http.describe.HttpMethod
 import com.sphereon.core.api.http.describe.MediaType
+import com.sphereon.crypto.kms.rest.api.command.IssueCertificateFromCsrServiceCommand
+import com.sphereon.crypto.kms.rest.api.command.IssueCertificateServiceCommand
 import com.sphereon.crypto.kms.rest.server.adapter.CapabilitiesHttpAdapter
 import com.sphereon.crypto.kms.rest.server.adapter.CertificatesHttpAdapter
 import com.sphereon.crypto.kms.rest.server.adapter.EncryptionHttpAdapter
@@ -340,8 +342,8 @@ class CertificatesHttpAdapterDescriptorProvider : HttpAdapterDescriptorProvider 
                         consumes = setOf(MediaType.ApplicationJson),
                         produces = setOf(MediaType.ApplicationJson),
                         operationId = "issueCertificate",
-                        commandId = "kms.certificates.issue",
-                        handlerCommandId = "kms.certificates.issue",
+                        commandId = IssueCertificateServiceCommand.COMMAND_ID,
+                        handlerCommandId = IssueCertificateServiceCommand.COMMAND_ID,
                     ),
                     HttpEndpointDescriptor(
                         method = HttpMethod.POST,
@@ -349,8 +351,8 @@ class CertificatesHttpAdapterDescriptorProvider : HttpAdapterDescriptorProvider 
                         consumes = setOf(MediaType.ApplicationJson),
                         produces = setOf(MediaType.ApplicationJson),
                         operationId = "issueCertificateFromCsr",
-                        commandId = "kms.certificates.issue-from-csr",
-                        handlerCommandId = "kms.certificates.issue-from-csr",
+                        commandId = IssueCertificateFromCsrServiceCommand.COMMAND_ID,
+                        handlerCommandId = IssueCertificateFromCsrServiceCommand.COMMAND_ID,
                     ),
                     HttpEndpointDescriptor(
                         method = HttpMethod.POST,

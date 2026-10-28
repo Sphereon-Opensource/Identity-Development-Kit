@@ -6,6 +6,8 @@ import com.sphereon.crypto.kms.rest.api.command.DeleteKeyServiceCommand
 import com.sphereon.crypto.kms.rest.api.command.GenerateKeyServiceCommand
 import com.sphereon.crypto.kms.rest.api.command.GetKeyServiceCommand
 import com.sphereon.crypto.kms.rest.api.command.ImportKeyServiceCommand
+import com.sphereon.crypto.kms.rest.api.command.IssueCertificateFromCsrServiceCommand
+import com.sphereon.crypto.kms.rest.api.command.IssueCertificateServiceCommand
 import com.sphereon.crypto.kms.rest.api.command.ListKeysServiceCommand
 import com.sphereon.crypto.kms.rest.api.command.RegisterKeyReferenceServiceCommand
 import com.sphereon.crypto.kms.rest.api.command.RegisterCertificateReferenceServiceCommand
@@ -38,6 +40,14 @@ interface KmsCommandDescriptors {
     @Provides @IntoMap
     @StringKey(DeleteKeyServiceCommand.COMMAND_ID)
     fun deleteKeyService(impl: DeleteKeyServiceCommandImpl): ServiceCommand<*, *, *> = impl
+
+    @Provides @IntoMap
+    @StringKey(IssueCertificateServiceCommand.COMMAND_ID)
+    fun issueCertificateService(impl: IssueCertificateServiceCommandImpl): ServiceCommand<*, *, *> = impl
+
+    @Provides @IntoMap
+    @StringKey(IssueCertificateFromCsrServiceCommand.COMMAND_ID)
+    fun issueCertificateFromCsrService(impl: IssueCertificateFromCsrServiceCommandImpl): ServiceCommand<*, *, *> = impl
 
     @Provides @IntoMap
     @StringKey(RegisterKeyReferenceServiceCommand.COMMAND_ID)

@@ -108,3 +108,20 @@ interface CredentialClaimResolver {
      */
     fun supports(format: CredentialFormat): Boolean = format in supportedFormats
 }
+
+/** A claim value paired with its unambiguous, format-native path components. */
+data class TypedCredentialClaim(
+    val path: List<String>,
+    val value: JsonElement,
+)
+
+/** Optional resolver capability for consumers that need format-native paths rather than the legacy flattened keys. */
+@JsExportCompat
+interface TypedCredentialClaimResolver : CredentialClaimResolver {
+    @JsExportIgnoreCompat
+    suspend fun extractAllClaimsWithPaths(
+        credential: String,
+        format: CredentialFormat,
+        disclosedClaims: JsonObject? = null,
+    ): IdkResult<List<TypedCredentialClaim>, IdkError>
+}

@@ -1145,6 +1145,319 @@ class Oid4vciWalletInteractionProtocolAdapterTest {
         }
 
     @Test
+    fun expiredAccessTokenIsRefreshedBeforePendingProofApprovalContinues() =
+        runTest {
+            val holder = RecordingOid4vciHolderService(tokenRefreshToken = "refresh-token-secret", tokenExpiresInSeconds = 900)
+            val refreshProvider =
+                FixedOid4vciRefreshTokenGrantProvider(
+                    Ok(
+                        TokenResponseWithContext(
+                            accessToken = "refreshed-access-token-secret",
+                            tokenType = "DPoP",
+                            expiresIn = 900,
+                            refreshToken = "rotated-refresh-token-secret",
+                            cNonce = "nonce",
+                        ),
+                    ),
+                )
+            val privateStore = RecordingPrivateSessionStore()
+            val adapter = lazyKeyAdapter(holder, LazyHolderKeyOptionsProvider(), refreshProvider)
+            var securityChallengeCount = 0
+            val context =
+                WalletInteractionContext(
+                    sessionId = WalletInteractionSessionId("expired-issued-token"),
+                    walletUnitId = "wallet",
+                    executionOwner = ProtocolExecutionOwner.WALLET_APP,
+                    privateSessionStore = privateStore,
+                    securityGate = object : WalletSecurityGate {
+                        override suspend fun authorize(request: WalletSecurityGateRequest): WalletSecurityGateResult {
+                            securityChallengeCount += 1
+                            return WalletSecurityGateResult.ChallengeRequired(
+                                WalletSecurityChallenge(
+                                    challengeId = "${request.operationId}-$securityChallengeCount",
+                                    kind = WalletSecurityChallengeKind.PASSKEY,
+                                    reasonKey = "wallet.interaction.security.authorization_required",
+                                ),
+                            )
+                        }
+                    },
+                )
+            val session = adapter.start(context, WalletEntryPoint.rawQr("openid-credential-offer://?credential_offer=secret-offer"))
+
+            val waiting = adapter.handle(context, session.state, session.state.acceptOfferAction())
+
+            assertEquals(WalletInteractionStatus.SecurityUnlockRequired, waiting.status)
+            assertEquals("access-token-secret", context.oid4vciState().tokens?.accessToken)
+            assertEquals(null, refreshProvider.lastRequest)
+            context.updateOid4vciState {
+                it.copy(tokens = it.tokens?.copy(accessTokenReceivedAtEpochSeconds = Clock.System.now().epochSeconds - 901))
+            }
+            val challenge = requireNotNull(waiting.securityChallenge)
+            val firstProofAliases = context.oid4vciState().pendingProofs?.holderKeyAliases
+            val grantRef =
+                context.sensitiveInputAuthority.registerSecurityGrant(
+                    context.sessionId,
+                    WalletSecurityGrant(
+                        grantId = challenge.challengeId,
+                        assurance = challenge.requiredAssurance,
+                        expiresAtEpochSeconds = Clock.System.now().epochSeconds + 60,
+                        evidence = mapOf("challenge_id" to challenge.challengeId),
+                    ),
+                )
+
+            val resumed = adapter.handle(context, waiting, WalletInteractionAction.approveSecurityChallenge(grantRef))
+
+            assertEquals(WalletInteractionStatus.SecurityUnlockRequired, resumed.status)
+            assertEquals("refresh-token-secret", refreshProvider.lastRequest?.refreshToken)
+            assertEquals(1, refreshProvider.callCount)
+            assertEquals(null, holder.requestedAccessToken, "a proof approved before refresh must not be signed with the refreshed token")
+            assertEquals(0, holder.finalizeProofCallCount, "proof finalization waits for approval of the refreshed batch")
+            assertEquals(false, context.oid4vciState().pendingProofs?.approved, "refresh requires a fresh proof approval")
+            assertEquals(2, securityChallengeCount, "the refreshed proof batch gets its own authorization challenge")
+            assertEquals(firstProofAliases, context.oid4vciState().pendingProofs?.holderKeyAliases, "refresh preserves the selected holder keys")
+            assertEquals("refreshed-access-token-secret", context.oid4vciState().tokens?.accessToken)
+            assertEquals("rotated-refresh-token-secret", context.oid4vciState().tokens?.refreshToken)
+            val refreshedChallenge = requireNotNull(resumed.securityChallenge)
+            val refreshedGrantRef =
+                context.sensitiveInputAuthority.registerSecurityGrant(
+                    context.sessionId,
+                    WalletSecurityGrant(
+                        grantId = refreshedChallenge.challengeId,
+                        assurance = refreshedChallenge.requiredAssurance,
+                        expiresAtEpochSeconds = Clock.System.now().epochSeconds + 60,
+                        evidence = mapOf("challenge_id" to refreshedChallenge.challengeId),
+                    ),
+                )
+
+            val completed = adapter.handle(context, resumed, WalletInteractionAction.approveSecurityChallenge(refreshedGrantRef))
+
+            assertEquals(WalletInteractionStatus.Completed, completed.status)
+            assertEquals(1, refreshProvider.callCount)
+            assertEquals("refreshed-access-token-secret", holder.requestedAccessToken)
+            assertEquals(1, holder.exchangedDpopProofJwtHistory.size, "the consumed pre-authorized code is not replayed")
+        }
+
+    @Test
+    fun legacyTokenWithoutLifetimeMetadataRefreshesOnceBeforeFreshApproval() =
+        runTest {
+            val holder = RecordingOid4vciHolderService(tokenRefreshToken = "legacy-refresh-token", tokenExpiresInSeconds = 900)
+            val refreshProvider =
+                FixedOid4vciRefreshTokenGrantProvider(
+                    Ok(
+                        TokenResponseWithContext(
+                            accessToken = "legacy-refreshed-access",
+                            tokenType = "DPoP",
+                            expiresIn = 900,
+                            refreshToken = null,
+                            cNonce = "nonce",
+                        ),
+                    ),
+                )
+            val privateStore = RecordingPrivateSessionStore()
+            val adapter = lazyKeyAdapter(holder, LazyHolderKeyOptionsProvider(), refreshProvider)
+            var challengeCount = 0
+            val context =
+                WalletInteractionContext(
+                    sessionId = WalletInteractionSessionId("legacy-issued-token"),
+                    walletUnitId = "wallet",
+                    executionOwner = ProtocolExecutionOwner.WALLET_APP,
+                    privateSessionStore = privateStore,
+                    securityGate = object : WalletSecurityGate {
+                        override suspend fun authorize(request: WalletSecurityGateRequest): WalletSecurityGateResult {
+                            challengeCount += 1
+                            return WalletSecurityGateResult.ChallengeRequired(
+                                WalletSecurityChallenge(
+                                    challengeId = "${request.operationId}-$challengeCount",
+                                    kind = WalletSecurityChallengeKind.PASSKEY,
+                                    reasonKey = "wallet.interaction.security.authorization_required",
+                                ),
+                            )
+                        }
+                    },
+                )
+            val session = adapter.start(context, WalletEntryPoint.rawQr("openid-credential-offer://?credential_offer=secret-offer"))
+            val waiting = adapter.handle(context, session.state, session.state.acceptOfferAction())
+
+            context.updateOid4vciState {
+                it.copy(tokens = it.tokens?.copy(accessTokenReceivedAtEpochSeconds = null, accessTokenExpiresInSeconds = null))
+            }
+            holder.failProofPreparationOnce = true
+            val firstChallenge = requireNotNull(waiting.securityChallenge)
+            val firstGrant =
+                context.sensitiveInputAuthority.registerSecurityGrant(
+                    context.sessionId,
+                    WalletSecurityGrant(
+                        grantId = firstChallenge.challengeId,
+                        assurance = firstChallenge.requiredAssurance,
+                        expiresAtEpochSeconds = Clock.System.now().epochSeconds + 60,
+                        evidence = mapOf("challenge_id" to firstChallenge.challengeId),
+                    ),
+                )
+
+            val prepareFailed = adapter.handle(context, waiting, WalletInteractionAction.approveSecurityChallenge(firstGrant))
+
+            assertEquals(WalletInteractionStatus.Failed, prepareFailed.status)
+            assertEquals(WalletInteractionFailureCodes.OID4VCI_HOLDER_KEY_PROVISIONING_FAILED, prepareFailed.error?.code)
+            assertEquals(1, refreshProvider.callCount)
+            assertEquals("legacy-refresh-token", refreshProvider.lastRequest?.refreshToken)
+            assertEquals("legacy-refreshed-access", context.oid4vciState().tokens?.accessToken)
+            assertEquals("legacy-refresh-token", context.oid4vciState().tokens?.refreshToken, "an omitted replacement token retains the stored refresh token")
+            assertEquals(false, context.oid4vciState().pendingProofs?.approved)
+            assertEquals(true, context.oid4vciState().pendingProofs?.requiresRepreparation)
+            assertEquals(0, holder.finalizeProofCallCount)
+            assertEquals(null, holder.requestedAccessToken)
+
+            val refreshedApproval = adapter.handle(context, prepareFailed, WalletInteractionAction.continueFlow())
+
+            assertEquals(WalletInteractionStatus.SecurityUnlockRequired, refreshedApproval.status)
+            assertEquals(false, context.oid4vciState().pendingProofs?.requiresRepreparation)
+            assertEquals(false, context.oid4vciState().pendingProofs?.approved)
+            assertEquals(1, refreshProvider.callCount, "retry reuses the refreshed token")
+            assertEquals(listOf(listOf("lazy-key-1"), listOf("lazy-key-1")), holder.requestedCredentialProofKeyIds)
+            assertEquals(1, holder.exchangedDpopProofJwtHistory.size, "retry does not replay the consumed pre-authorized grant")
+
+            val secondChallenge = requireNotNull(refreshedApproval.securityChallenge)
+            val secondGrant =
+                context.sensitiveInputAuthority.registerSecurityGrant(
+                    context.sessionId,
+                    WalletSecurityGrant(
+                        grantId = secondChallenge.challengeId,
+                        assurance = secondChallenge.requiredAssurance,
+                        expiresAtEpochSeconds = Clock.System.now().epochSeconds + 60,
+                        evidence = mapOf("challenge_id" to secondChallenge.challengeId),
+                    ),
+                )
+            val completed = adapter.handle(context, refreshedApproval, WalletInteractionAction.approveSecurityChallenge(secondGrant))
+
+            assertEquals(WalletInteractionStatus.Completed, completed.status)
+            assertEquals("legacy-refreshed-access", holder.requestedAccessToken)
+            assertEquals(1, refreshProvider.callCount)
+            assertEquals(1, holder.exchangedDpopProofJwtHistory.size, "the spent issuance grant is not replayed")
+        }
+
+    @Test
+    fun expiredTokenRefreshRefusalNeverFinalizesProofsOrRequestsCredential() =
+        runTest {
+            suspend fun assertRefused(
+                sessionId: String,
+                refreshToken: String?,
+                response: IdkResult<TokenResponseWithContext, IdkError>,
+                expectedCode: String,
+                expectedRefreshCalls: Int,
+            ) {
+                val holder = RecordingOid4vciHolderService(tokenRefreshToken = refreshToken, tokenExpiresInSeconds = 0)
+                val refreshProvider = FixedOid4vciRefreshTokenGrantProvider(response)
+                val adapter = lazyKeyAdapter(holder, LazyHolderKeyOptionsProvider(), refreshProvider)
+                val context =
+                    WalletInteractionContext(
+                        sessionId = WalletInteractionSessionId(sessionId),
+                        walletUnitId = "wallet",
+                        executionOwner = ProtocolExecutionOwner.WALLET_APP,
+                        privateSessionStore = RecordingPrivateSessionStore(),
+                        securityGate = object : WalletSecurityGate {
+                            override suspend fun authorize(request: WalletSecurityGateRequest): WalletSecurityGateResult =
+                                WalletSecurityGateResult.ChallengeRequired(
+                                    WalletSecurityChallenge(
+                                        challengeId = request.operationId,
+                                        kind = WalletSecurityChallengeKind.PASSKEY,
+                                        reasonKey = "wallet.interaction.security.authorization_required",
+                                    ),
+                                )
+                        },
+                    )
+                val started = adapter.start(context, WalletEntryPoint.rawQr("openid-credential-offer://?credential_offer=secret-offer"))
+                val waiting = adapter.handle(context, started.state, started.state.acceptOfferAction())
+                val challenge = requireNotNull(waiting.securityChallenge)
+                val grantRef =
+                    context.sensitiveInputAuthority.registerSecurityGrant(
+                        context.sessionId,
+                        WalletSecurityGrant(
+                            grantId = challenge.challengeId,
+                            assurance = challenge.requiredAssurance,
+                            expiresAtEpochSeconds = Clock.System.now().epochSeconds + 60,
+                            evidence = mapOf("challenge_id" to challenge.challengeId),
+                        ),
+                    )
+
+                val refused = adapter.handle(context, waiting, WalletInteractionAction.approveSecurityChallenge(grantRef))
+
+                assertEquals(WalletInteractionStatus.Failed, refused.status)
+                assertEquals(expectedCode, refused.error?.code)
+                assertEquals(expectedRefreshCalls, refreshProvider.callCount)
+                assertEquals(0, holder.finalizeProofCallCount, "proof finalization is unreachable when refresh is refused")
+                assertEquals(null, holder.requestedAccessToken, "credential request is unreachable when refresh is refused")
+            }
+
+            assertRefused(
+                sessionId = "expired-token-without-refresh-token",
+                refreshToken = null,
+                response = Ok(TokenResponseWithContext(accessToken = "unused", tokenType = "DPoP")),
+                expectedCode = WalletInteractionFailureCodes.OID4VCI_REFRESH_TOKEN_MISSING,
+                expectedRefreshCalls = 0,
+            )
+            assertRefused(
+                sessionId = "expired-token-refresh-fails",
+                refreshToken = "refresh-token-secret",
+                response = Err(IdkError.fromString(code = "test.refresh_denied", message = "refresh refused")),
+                expectedCode = WalletInteractionFailureCodes.OID4VCI_REFRESH_TOKEN_EXCHANGE_FAILED,
+                expectedRefreshCalls = 1,
+            )
+        }
+
+    @Test
+    fun freshOrLifetimeUnknownTokenDoesNotEnterRefreshLoop() =
+        runTest {
+            suspend fun assertNoRefresh(sessionId: String, expiresInSeconds: Int?) {
+                val holder = RecordingOid4vciHolderService(tokenRefreshToken = "refresh-token-secret", tokenExpiresInSeconds = expiresInSeconds)
+                val refreshProvider =
+                    FixedOid4vciRefreshTokenGrantProvider(
+                        Ok(TokenResponseWithContext(accessToken = "unused-refreshed-token", tokenType = "DPoP")),
+                    )
+                val adapter = lazyKeyAdapter(holder, LazyHolderKeyOptionsProvider(), refreshProvider)
+                val context =
+                    WalletInteractionContext(
+                        sessionId = WalletInteractionSessionId(sessionId),
+                        walletUnitId = "wallet",
+                        executionOwner = ProtocolExecutionOwner.WALLET_APP,
+                        privateSessionStore = RecordingPrivateSessionStore(),
+                        securityGate = object : WalletSecurityGate {
+                            override suspend fun authorize(request: WalletSecurityGateRequest): WalletSecurityGateResult =
+                                WalletSecurityGateResult.ChallengeRequired(
+                                    WalletSecurityChallenge(
+                                        challengeId = request.operationId,
+                                        kind = WalletSecurityChallengeKind.PASSKEY,
+                                        reasonKey = "wallet.interaction.security.authorization_required",
+                                    ),
+                                )
+                        },
+                    )
+                val started = adapter.start(context, WalletEntryPoint.rawQr("openid-credential-offer://?credential_offer=secret-offer"))
+                val waiting = adapter.handle(context, started.state, started.state.acceptOfferAction())
+                val challenge = requireNotNull(waiting.securityChallenge)
+                val grantRef =
+                    context.sensitiveInputAuthority.registerSecurityGrant(
+                        context.sessionId,
+                        WalletSecurityGrant(
+                            grantId = challenge.challengeId,
+                            assurance = challenge.requiredAssurance,
+                            expiresAtEpochSeconds = Clock.System.now().epochSeconds + 60,
+                            evidence = mapOf("challenge_id" to challenge.challengeId),
+                        ),
+                    )
+
+                val completed = adapter.handle(context, waiting, WalletInteractionAction.approveSecurityChallenge(grantRef))
+
+                assertEquals(WalletInteractionStatus.Completed, completed.status)
+                assertEquals(0, refreshProvider.callCount)
+                assertEquals(1, holder.finalizeProofCallCount)
+                assertEquals("access-token-secret", holder.requestedAccessToken)
+            }
+
+            assertNoRefresh("fresh-token-positive-expiry", expiresInSeconds = 900)
+            assertNoRefresh("fresh-token-unknown-expiry", expiresInSeconds = null)
+        }
+
+    @Test
     fun holderKeyProvisioningFailureIsRepeatableAndLoggedWithItsCause() =
         runTest {
             val holder = RecordingOid4vciHolderService()
@@ -1312,6 +1625,7 @@ class Oid4vciWalletInteractionProtocolAdapterTest {
     private fun lazyKeyAdapter(
         holder: RecordingOid4vciHolderService,
         provider: LazyHolderKeyOptionsProvider,
+        refreshTokenGrantProvider: Oid4vciRefreshTokenGrantProvider = Oid4vciRefreshTokenGrantProvider.unsupported,
     ) = Oid4vciWalletInteractionProtocolAdapter(
         holder = holder,
         issuanceExecutor =
@@ -1323,7 +1637,7 @@ class Oid4vciWalletInteractionProtocolAdapterTest {
                 nestedPresentationExecutor = WalletNestedPresentationExecutor.notConfigured,
                 credentialStore = RecordingWalletCredentialStore(existingRecord = null),
                 issuanceSessionStore = RecordingWalletIssuanceSessionStore(refreshToken = null),
-                refreshTokenGrantProvider = Oid4vciRefreshTokenGrantProvider.unsupported,
+                refreshTokenGrantProvider = refreshTokenGrantProvider,
                 keyAttestationProvider = Oid4vciKeyAttestationProvider.unsupported,
                 tokenEndpointProofsProvider = RecordingDeferredDpopProofsProvider(),
             ),
@@ -2733,8 +3047,10 @@ private class FixedOid4vciRefreshTokenGrantProvider(
     private val response: IdkResult<TokenResponseWithContext, IdkError>,
 ) : Oid4vciRefreshTokenGrantProvider {
     var lastRequest: Oid4vciRefreshTokenGrantRequest? = null
+    var callCount: Int = 0
 
     override suspend fun exchangeRefreshToken(request: Oid4vciRefreshTokenGrantRequest): IdkResult<TokenResponseWithContext, IdkError> {
+        callCount += 1
         lastRequest = request
         return response
     }
@@ -3014,6 +3330,7 @@ private class RecordingOid4vciHolderService(
         ),
     /** Refresh token the token endpoint returns with the access token. */
     private val tokenRefreshToken: String? = null,
+    private val tokenExpiresInSeconds: Int? = null,
     /** The deferred endpoint answers `invalid_token` to the first request (an expired access token). */
     private val deferredInvalidTokenOnce: Boolean = false,
 ) : Oid4vciHolderService {
@@ -3033,6 +3350,8 @@ private class RecordingOid4vciHolderService(
     var requestedCredentialConfigurationId: String? = null
     var requestedCredentialIdentifier: String? = null
     val requestedCredentialProofKeyIds = mutableListOf<List<String>>()
+    var finalizeProofCallCount: Int = 0
+    var failProofPreparationOnce: Boolean = false
     var deferredAccessToken: String? = null
     var deferredTransactionId: String? = null
     val deferredDpopProofJwtHistory = mutableListOf<String?>()
@@ -3120,6 +3439,7 @@ private class RecordingOid4vciHolderService(
             TokenResponseWithContext(
                 accessToken = "access-token-secret",
                 tokenType = "Bearer",
+                expiresIn = tokenExpiresInSeconds,
                 cNonce = "nonce",
                 refreshToken = tokenRefreshToken,
             ),
@@ -3167,6 +3487,15 @@ private class RecordingOid4vciHolderService(
     override suspend fun prepareCredentialRequestProofs(
         request: CredentialRequestProofPreparationRequest,
     ): IdkResult<PreparedCredentialRequestProofBatch, IdkError> {
+        if (failProofPreparationOnce) {
+            failProofPreparationOnce = false
+            return Err(
+                IdkError.fromString(
+                    code = WalletInteractionFailureCodes.OID4VCI_HOLDER_KEY_PROVISIONING_FAILED,
+                    message = "synthetic transient holder proof preparation refusal",
+                ),
+            )
+        }
         receivedCredentialProofIssuerUrl = request.issuerUrl
         receivedKeyAttestationJwt = request.keyAttestationJwt
         requestedCredentialProofKeyIds += request.signingKeyIds
@@ -3201,8 +3530,10 @@ private class RecordingOid4vciHolderService(
 
     override suspend fun finalizeCredentialRequestProofs(
         prepared: PreparedCredentialRequestProofBatch,
-    ): IdkResult<CreatedProof, IdkError> =
-        Ok(CreatedProof(CredentialRequestProofs.jwt(prepared.proofs.map { "proof-secret" }))).asResult()
+    ): IdkResult<CreatedProof, IdkError> {
+        finalizeProofCallCount += 1
+        return Ok(CreatedProof(CredentialRequestProofs.jwt(prepared.proofs.map { "proof-secret" }))).asResult()
+    }
 
     override suspend fun requestCredential(
         credentialEndpoint: String,

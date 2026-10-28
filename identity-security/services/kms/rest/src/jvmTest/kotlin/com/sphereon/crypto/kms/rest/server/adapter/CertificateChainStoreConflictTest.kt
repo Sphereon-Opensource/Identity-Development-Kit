@@ -14,6 +14,8 @@ import com.sphereon.crypto.kms.rest.api.command.ListCertificateReferencesService
 import com.sphereon.crypto.kms.rest.api.command.RegisterCertificateReferenceServiceCommand
 import com.sphereon.crypto.kms.rest.api.generated.models.CertificateChainResponse
 import com.sphereon.crypto.kms.rest.api.generated.models.StoreCertificateChainRequest
+import com.sphereon.crypto.kms.rest.api.command.IssueCertificateFromCsrServiceCommand
+import com.sphereon.crypto.kms.rest.api.command.IssueCertificateServiceCommand
 import com.sphereon.crypto.kms.rest.server.service.CertificateReferenceResolutionException
 import com.sphereon.crypto.kms.rest.server.service.CertificatesRestService
 import com.sphereon.crypto.kms.rest.server.service.INVALID_CERTIFICATE_CHAIN
@@ -46,6 +48,8 @@ class CertificateChainStoreConflictTest {
     private fun adapter(service: CertificatesRestService) =
         CertificatesHttpAdapter(
             certificatesService = service,
+            issueCertificateCommand = unused(IssueCertificateServiceCommand::class.java),
+            issueCertificateFromCsrCommand = unused(IssueCertificateFromCsrServiceCommand::class.java),
             registerCommand = unused(RegisterCertificateReferenceServiceCommand::class.java),
             listCertificateReferencesCommand = unused(ListCertificateReferencesServiceCommand::class.java),
             getCertificateReferenceCommand = unused(GetCertificateReferenceServiceCommand::class.java),

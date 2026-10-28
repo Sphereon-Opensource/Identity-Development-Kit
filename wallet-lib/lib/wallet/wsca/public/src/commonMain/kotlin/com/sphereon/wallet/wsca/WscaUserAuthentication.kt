@@ -38,8 +38,8 @@ import kotlinx.serialization.Serializable
  *   sub-operation covered by one passkey assertion carries this same value; another interaction
  *   cannot reuse that assertion.
  * @property operationKeyRef exact WSCD key reference authorized by this operation when the
- *   ceremony is remote and key-scoped. Local-only ceremonies may leave it absent because they do
- *   not cross a routed WSCD boundary; remote implementations fail closed when it is absent.
+ *   ceremony is remote and single-key scoped. For a listed approval, leave this null and provide
+ *   every prepared key/hash pair in [operations].
  * @property walletAccountId the wallet account performing the operation, when the ceremony backend
  *   is account-scoped.
  * @property digestBinding `"<digest-alg>:<hex-digest>"` of the exact bytes the resulting
@@ -47,6 +47,8 @@ import kotlinx.serialization.Serializable
  *   digest.
  * @property nonce one-time value the ceremony backend should bind into the resulting
  *   [ActivationProof.nonce], when applicable.
+ * @property operations exact prepared key/hash pairs for one server-bound listed approval. This
+ *   cannot be combined with [operationKeyRef].
  * @property audience the intended relying party / resource for the authorized operation, when the
  *   ceremony backend requires one.
  */
@@ -59,10 +61,23 @@ data class WscaUserAuthRequest(
     val digestBinding: String? = null,
     val nonce: String? = null,
     val audience: String? = null,
+    val operations: List<WscaUserAuthOperation> = emptyList(),
 ) {
     init {
         require(operationBinding.isNotBlank()) { "wallet_user_authentication_operation_binding_blank" }
         require(operationKeyRef == null || operationKeyRef.isNotBlank()) { "wallet_user_authentication_operation_key_ref_blank" }
+    }
+}
+
+/** One exact key and digest in a server-prepared list authorization. */
+@Serializable
+data class WscaUserAuthOperation(
+    val keyRef: String,
+    val operationHash: String,
+) {
+    init {
+        require(keyRef.isNotBlank()) { "wallet_user_authentication_operation_key_ref_blank" }
+        require(operationHash.isNotBlank()) { "wallet_user_authentication_operation_hash_blank" }
     }
 }
 

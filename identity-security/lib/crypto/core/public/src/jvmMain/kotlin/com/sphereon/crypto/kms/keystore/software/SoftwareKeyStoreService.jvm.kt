@@ -1325,6 +1325,11 @@ actual class SoftwareKeyStoreService actual constructor(
             // whenever a key is reloaded from disk (cold keystore cache). `jwk.kty` is the
             // same value already used above to repair EC public coordinates, so it is reliable.
             keyType = KeyTypeMapping.tryFromJose(jwk.kty).let { if (it.isOk) it.value else KeyTypeMapping.fromValue(entry.privateKey.algorithm) },
+            // Private-key DER does not carry JOSE `kid`. Our storage-wrapper certificate does:
+            // recover the caller's explicit identifier when present, otherwise use the same JWK
+            // thumbprint convention used by key-pair materialization. Older wrappers only have
+            // the NULL marker and safely fall back to the public JWK thumbprint.
+            kid = storageWrapperKid(entry.certificateChain) ?: jwk.getKeyId(true) ?: alias,
             x5c = certChainOrNull,
             signatureAlgorithm = jwaAlgorithm?.let { SignatureAlgorithm.fromJose(it) },
         )
@@ -1428,7 +1433,7 @@ actual class SoftwareKeyStoreService actual constructor(
                 subjectKeyInfo = signingKeyInfo,
                 subject = subject,
                 serialNumber = 1,
-                extensions = listOf(X509CertificateExtensionSpec(STORAGE_WRAPPER_EXTENSION_OID, valueDer = STORAGE_WRAPPER_EXTENSION_VALUE)),
+                extensions = listOf(X509CertificateExtensionSpec(STORAGE_WRAPPER_EXTENSION_OID, valueDer = storageWrapperExtensionValue(keyInfo, jwk, alias))),
                 notBefore = notBefore,
                 notAfter = notAfter,
                 signatureFunction = { tbs -> signer.generateSignature(tbs) },
@@ -1469,7 +1474,7 @@ actual class SoftwareKeyStoreService actual constructor(
             subjectKeyInfo = signingKeyInfo,
             subject = subject,
             serialNumber = 1,
-            extensions = listOf(X509CertificateExtensionSpec(STORAGE_WRAPPER_EXTENSION_OID, valueDer = STORAGE_WRAPPER_EXTENSION_VALUE)),
+            extensions = listOf(X509CertificateExtensionSpec(STORAGE_WRAPPER_EXTENSION_OID, valueDer = storageWrapperExtensionValue(keyInfo, jwk, alias))),
             notBefore = notBefore,
             notAfter = notAfter,
             signatureFunction = { tbs -> signer.generateSignature(tbs) },
@@ -1516,7 +1521,7 @@ actual class SoftwareKeyStoreService actual constructor(
             subjectKeyInfo = signingKeyInfo,
             subject = subject,
             serialNumber = 1,
-            extensions = listOf(X509CertificateExtensionSpec(STORAGE_WRAPPER_EXTENSION_OID, valueDer = STORAGE_WRAPPER_EXTENSION_VALUE)),
+            extensions = listOf(X509CertificateExtensionSpec(STORAGE_WRAPPER_EXTENSION_OID, valueDer = storageWrapperExtensionValue(keyInfo, jwk, alias))),
             notBefore = notBefore,
             notAfter = notAfter,
             signatureFunction = { tbs -> signer.generateSignature(tbs) },
@@ -1526,10 +1531,56 @@ actual class SoftwareKeyStoreService actual constructor(
     private fun isStorageWrapperChain(chain: Array<java.security.cert.Certificate>): Boolean =
         chain.size == 1 && (chain.singleOrNull() as? X509Certificate)?.getExtensionValue(STORAGE_WRAPPER_EXTENSION_OID) != null
 
+    private fun storageWrapperExtensionValue(keyInfo: ResolvedKeyInfoType<*>, jwk: Jwk, alias: String): ByteArray {
+        val kid = keyInfo.kid?.takeIf(String::isNotBlank) ?: jwk.getKeyId(true) ?: alias
+        return derValue(UTF8_STRING_TAG, kid.encodeToByteArray())
+    }
+
+    private fun storageWrapperKid(chain: Array<java.security.cert.Certificate>): String? {
+        if (!isStorageWrapperChain(chain)) return null
+        val extension = (chain.single() as X509Certificate).getExtensionValue(STORAGE_WRAPPER_EXTENSION_OID)
+            ?: return null
+        val encodedValue = derContent(extension, OCTET_STRING_TAG)
+        if (encodedValue.contentEquals(LEGACY_STORAGE_WRAPPER_EXTENSION_VALUE)) return null
+        return derContent(encodedValue, UTF8_STRING_TAG).decodeToString().takeIf(String::isNotBlank)
+    }
+
+    private fun derContent(encoded: ByteArray, expectedTag: Int): ByteArray {
+        require(encoded.size >= 2 && (encoded[0].toInt() and 0xff) == expectedTag) { "Invalid storage-wrapper extension" }
+        val firstLength = encoded[1].toInt() and 0xff
+        val (contentOffset, contentLength) =
+            if (firstLength < 0x80) {
+                2 to firstLength
+            } else {
+                val lengthOctets = firstLength and 0x7f
+                require(lengthOctets in 1..4 && encoded.size >= 2 + lengthOctets) { "Invalid storage-wrapper extension length" }
+                var length = 0
+                repeat(lengthOctets) { index -> length = (length shl 8) or (encoded[2 + index].toInt() and 0xff) }
+                require(length >= 0x80) { "Non-canonical storage-wrapper extension length" }
+                2 + lengthOctets to length
+            }
+        require(contentLength == encoded.size - contentOffset) { "Invalid storage-wrapper extension size" }
+        return encoded.copyOfRange(contentOffset, encoded.size)
+    }
+
+    private fun derValue(tag: Int, content: ByteArray): ByteArray {
+        val lengthBytes =
+            when {
+                content.size < 0x80 -> byteArrayOf(content.size.toByte())
+                content.size <= 0xff -> byteArrayOf(0x81.toByte(), content.size.toByte())
+                content.size <= 0xffff -> byteArrayOf(0x82.toByte(), (content.size ushr 8).toByte(), content.size.toByte())
+                content.size <= 0xffffff -> byteArrayOf(0x83.toByte(), (content.size ushr 16).toByte(), (content.size ushr 8).toByte(), content.size.toByte())
+                else -> throw IllegalArgumentException("Storage-wrapper key identifier is too long")
+            }
+        return byteArrayOf(tag.toByte()) + lengthBytes + content
+    }
+
     private companion object {
         /** Private extension marking a keystore-only wrapper, never a tenant certificate. */
         const val STORAGE_WRAPPER_EXTENSION_OID = "1.3.6.1.4.1.61026.1.1"
-        val STORAGE_WRAPPER_EXTENSION_VALUE = byteArrayOf(0x05, 0x00)
+        const val OCTET_STRING_TAG = 0x04
+        const val UTF8_STRING_TAG = 0x0c
+        val LEGACY_STORAGE_WRAPPER_EXTENSION_VALUE = byteArrayOf(0x05, 0x00)
     }
 
     /**

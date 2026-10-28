@@ -1281,6 +1281,7 @@ class CertificateReferenceLifecycleTest {
                 providerStores[providerId] ?: throw PKIException("unknown provider")
             }),
             certificateService = unusedProxy(CertificateService::class.java),
+            certificateIssuanceExecutor = unusedProxy(CertificateIssuanceExecutor::class.java),
             certificateReferenceRegistrar = registrar,
             platformManagedCertificateAliasLister = platformAliasLister,
         )

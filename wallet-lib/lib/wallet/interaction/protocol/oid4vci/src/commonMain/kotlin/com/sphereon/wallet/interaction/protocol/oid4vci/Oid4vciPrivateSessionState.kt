@@ -61,6 +61,7 @@ data class Oid4vciPrivateSessionState(
         val holderKeyAliases: List<String>,
         val credentialConfigurationId: String? = null,
         val approved: Boolean = false,
+        val requiresRepreparation: Boolean = false,
     )
 
     @Serializable
@@ -95,6 +96,9 @@ data class Oid4vciPrivateSessionState(
         // Kept so a retry after a post-exchange failure can continue without spending the grant again.
         val cNonce: String? = null,
         val authorizationDetails: List<JsonElement>? = null,
+        // Null received-at identifies private state written before token lifetime tracking was added.
+        val accessTokenReceivedAtEpochSeconds: Long? = null,
+        val accessTokenExpiresInSeconds: Int? = null,
     )
 
     @Serializable

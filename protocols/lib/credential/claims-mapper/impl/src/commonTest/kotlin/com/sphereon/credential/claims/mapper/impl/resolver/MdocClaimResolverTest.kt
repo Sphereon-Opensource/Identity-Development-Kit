@@ -68,6 +68,31 @@ class MdocClaimResolverTest {
     }
 
     @Test
+    fun returnsTypedPathsWhenNamespaceAndElementContainDots() = runTest {
+        val signed =
+            testIssuerSigned().copy(
+                nameSpaces =
+                    mapOf(
+                        NameSpace("org.with.dot") to arrayOf(issuerSignedItem(3u, "field.with.dot", "first")),
+                        NameSpace("org.with") to arrayOf(issuerSignedItem(4u, "dot.field.with.dot", "second")),
+                    ),
+            )
+        val credential = issuerSignedCodec.encode(signed).getOrThrow().encodeToBase64Url()
+
+        val result = resolver.extractAllClaimsWithPaths(credential, CredentialFormat.MSO_MDOC)
+
+        assertTrue(result.isOk)
+        assertEquals(
+            listOf(
+                listOf("org.with.dot", "field.with.dot"),
+                listOf("org.with", "dot.field.with.dot"),
+            ),
+            result.value.map { it.path },
+        )
+        assertEquals(listOf(JsonPrimitive("first"), JsonPrimitive("second")), result.value.map { it.value })
+    }
+
+    @Test
     fun rejectsNonMdocInputWithoutReturningRawContent() = runTest {
         val result = resolver.extractAllClaims("not-an-mdoc", CredentialFormat.MSO_MDOC)
 

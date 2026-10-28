@@ -25,6 +25,8 @@ import com.sphereon.crypto.certificate.persistence.CertificateReferenceKind
 import com.sphereon.crypto.certificate.persistence.CertificateReferenceSource
 import com.sphereon.crypto.kms.rest.api.command.GetCertificateReferenceInput
 import com.sphereon.crypto.kms.rest.api.command.GetCertificateReferenceServiceCommand
+import com.sphereon.crypto.kms.rest.api.command.IssueCertificateFromCsrServiceCommand
+import com.sphereon.crypto.kms.rest.api.command.IssueCertificateServiceCommand
 import com.sphereon.crypto.kms.rest.api.command.ListCertificateReferencesInput
 import com.sphereon.crypto.kms.rest.api.command.ListCertificateReferencesServiceCommand
 import com.sphereon.crypto.kms.rest.api.command.RegisterCertificateReferenceInput
@@ -59,6 +61,8 @@ import dev.zacsweers.metro.ExposeImplBinding
 @ExposeImplBinding
 class CertificatesHttpAdapter(
     private val certificatesService: CertificatesRestService,
+    private val issueCertificateCommand: IssueCertificateServiceCommand,
+    private val issueCertificateFromCsrCommand: IssueCertificateFromCsrServiceCommand,
     private val registerCommand: RegisterCertificateReferenceServiceCommand,
     private val listCertificateReferencesCommand: ListCertificateReferencesServiceCommand,
     private val getCertificateReferenceCommand: GetCertificateReferenceServiceCommand,
@@ -82,14 +86,14 @@ class CertificatesHttpAdapter(
             }
             post("/certificates/issue") {
                 operationId("issueCertificate")
-                handlerCommandId("kms.certificates.issue")
+                handlerCommandId(IssueCertificateServiceCommand.COMMAND_ID)
                 consumes(MediaType.ApplicationJson)
                 produces(MediaType.ApplicationJson)
                 handle { req -> handleIssueCertificate(req) }
             }
             post("/certificates/issue-from-csr") {
                 operationId("issueCertificateFromCsr")
-                handlerCommandId("kms.certificates.issue-from-csr")
+                handlerCommandId(IssueCertificateFromCsrServiceCommand.COMMAND_ID)
                 consumes(MediaType.ApplicationJson)
                 produces(MediaType.ApplicationJson)
                 handle { req -> handleIssueCertificateFromCsr(req) }
@@ -174,10 +178,14 @@ class CertificatesHttpAdapter(
         handleBody<GenerateCertificateSigningRequestRequest, CertificateSigningRequestResponse>(request) { certificatesService.generateCsr(it) }
 
     private suspend fun handleIssueCertificate(request: GenericHttpRequest): GenericHttpResponse =
-        handleBody<IssueCertificateRequest, CertificateResponse>(request) { certificatesService.issueCertificate(it) }
+        handleCommandBody<IssueCertificateRequest, CertificateResponse>(request, "Certificate issuance failed") {
+            issueCertificateCommand.execute(it)
+        }
 
     private suspend fun handleIssueCertificateFromCsr(request: GenericHttpRequest): GenericHttpResponse =
-        handleBody<IssueCertificateFromCsrRequest, CertificateResponse>(request) { certificatesService.issueCertificateFromCsr(it) }
+        handleCommandBody<IssueCertificateFromCsrRequest, CertificateResponse>(request, "Certificate issuance failed") {
+            issueCertificateFromCsrCommand.execute(it)
+        }
 
     private suspend fun handleRegisterCertificateReference(request: GenericHttpRequest): GenericHttpResponse {
         val body = request.body ?: return errorResponse(400, "Missing request body")
@@ -306,6 +314,31 @@ class CertificatesHttpAdapter(
             }
         return try {
             jsonResponse(200, json.encodeToString(handler(input)))
+        } catch (expected: Exception) {
+            certificateReferenceErrorResponse(expected)
+        }
+    }
+
+    private suspend inline fun <reified T, reified O> handleCommandBody(
+        request: GenericHttpRequest,
+        failureMessage: String,
+        crossinline handler: suspend (T) -> com.sphereon.core.api.IdkResult<O, IdkError>,
+    ): GenericHttpResponse {
+        val body = request.body ?: return errorResponse(400, "Missing request body")
+        val input =
+            try {
+                json.decodeFromString<T>(body)
+            } catch (expected: Exception) {
+                return errorResponse(400, "Invalid request body: ${expected.message}")
+            }
+        return try {
+            val output = handler(input).getOrElse { error ->
+                return errorResponse(
+                    certificateReferenceRegistrationHttpStatus(error),
+                    error.message.defaultMessage?.takeIf { it.isNotBlank() } ?: failureMessage,
+                )
+            }
+            jsonResponse(200, json.encodeToString(output))
         } catch (expected: Exception) {
             certificateReferenceErrorResponse(expected)
         }

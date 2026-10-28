@@ -16,6 +16,8 @@ import com.sphereon.core.api.encodeToBase64
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.credential.claims.mapper.api.error.ClaimMappingErrors
 import com.sphereon.credential.claims.mapper.api.resolver.CredentialClaimResolver
+import com.sphereon.credential.claims.mapper.api.resolver.TypedCredentialClaim
+import com.sphereon.credential.claims.mapper.api.resolver.TypedCredentialClaimResolver
 import com.sphereon.mdoc.data.device.DataElementIdentifier
 import com.sphereon.mdoc.data.device.IssuerSigned
 import com.sphereon.mdoc.data.device.IssuerSignedCborCodec
@@ -36,7 +38,7 @@ import kotlinx.serialization.json.JsonPrimitive
 @ContributesIntoSet(AppScope::class, binding = binding<CredentialClaimResolver>())
 class MdocClaimResolver(
     private val issuerSignedCborCodec: IssuerSignedCborCodec,
-) : CredentialClaimResolver {
+) : TypedCredentialClaimResolver {
     override val supportedFormats: Set<CredentialFormat> = setOf(CredentialFormat.MSO_MDOC)
 
     override suspend fun extractAllClaims(
@@ -45,6 +47,16 @@ class MdocClaimResolver(
         disclosedClaims: JsonObject?,
     ): IdkResult<Map<String, JsonElement>, IdkError> =
         decodeClaims(credential, format)
+
+    override suspend fun extractAllClaimsWithPaths(
+        credential: String,
+        format: CredentialFormat,
+        disclosedClaims: JsonObject?,
+    ): IdkResult<List<TypedCredentialClaim>, IdkError> {
+        val decoded = decodeIssuerSigned(credential, format)
+        if (decoded.isErr) return Err(decoded.error)
+        return Ok(decoded.value.toTypedClaims())
+    }
 
     override suspend fun extractClaims(
         credential: String,
@@ -98,13 +110,20 @@ class MdocClaimResolver(
     }
 
     private fun IssuerSigned.toClaims(): Map<String, JsonElement> =
+        toTypedClaims()
+            .associateTo(linkedMapOf()) { claim -> claimPathKey(claim.path) to claim.value }
+
+    private fun IssuerSigned.toTypedClaims(): List<TypedCredentialClaim> =
         getAllIssuerSignedItems()
             .orEmpty()
             .flatMap { (namespace, items) ->
                 items.map { item ->
-                    claimPathKey(listOf(namespace.toString(), item.elementIdentifier.toString())) to item.elementValue.toJsonElement()
+                    TypedCredentialClaim(
+                        path = listOf(namespace.toString(), item.elementIdentifier.toString()),
+                        value = item.elementValue.toJsonElement(),
+                    )
                 }
-            }.toMap(linkedMapOf())
+            }
 
     private fun <T> extractionFailure(
         reason: String,

@@ -68,6 +68,18 @@ class Oid4vciPrivateSessionStateTest {
     }
 
     @Test
+    fun legacyTokenLegWithoutLifetimeFieldsDecodesAsRefreshRequired() {
+        val legacy = """{"accessToken":"legacy-access","refreshToken":"legacy-refresh","tokenEndpoint":"https://as.example/token"}"""
+
+        val decoded = Json.decodeFromString(Oid4vciPrivateSessionState.TokenLeg.serializer(), legacy)
+
+        assertEquals("legacy-access", decoded.accessToken)
+        assertEquals("legacy-refresh", decoded.refreshToken)
+        assertNull(decoded.accessTokenReceivedAtEpochSeconds)
+        assertNull(decoded.accessTokenExpiresInSeconds)
+    }
+
+    @Test
     fun updateOid4vciStateRoundTripsThroughSingleStateKeyInPrivateSessionStore() =
         runTest {
             val store = InMemoryPrivateSessionStore()
@@ -136,6 +148,8 @@ private fun fullyPopulatedState(): Oid4vciPrivateSessionState =
                 accessToken = "access-token-secret",
                 refreshToken = "refresh-token-secret",
                 tokenEndpoint = "https://as.example/token",
+                accessTokenReceivedAtEpochSeconds = 1_800_000_000,
+                accessTokenExpiresInSeconds = 900,
             ),
         deferred =
             Oid4vciPrivateSessionState.DeferredLeg(

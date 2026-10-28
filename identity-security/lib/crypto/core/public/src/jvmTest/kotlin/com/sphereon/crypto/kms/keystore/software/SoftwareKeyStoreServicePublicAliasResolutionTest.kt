@@ -149,6 +149,95 @@ class SoftwareKeyStoreServicePublicAliasResolutionTest {
         }
 
     @Test
+    fun pkcs12ColdReloadPreservesExplicitKidAndPublicKeyIdentity() =
+        runTest {
+            val alias = "managed-signing-allocation"
+            val customKid = "federation-signing-key-v1"
+            val directory = Files.createTempDirectory("sks-custom-kid-reload").toFile().also { it.deleteOnExit() }
+            val path = directory.resolve("software.p12").absolutePath
+            val config =
+                Pkcs12KeyStoreConfig(
+                    id = providerId,
+                    password = storePassword,
+                    path = path,
+                    persist = true,
+                    overwriteAlias = true,
+                    keyVisibility = KeyVisibility.PRIVATE.keyVisibility,
+                )
+            val original = ecPrivateKey(alias)
+            val withCustomKid = original.copy(kid = customKid, key = original.key.copy(kid = customKid))
+
+            KeyStoreLoaderFactory.clearCache()
+            SoftwareKeyStoreStateCache.clear()
+            try {
+                val writer = SoftwareKeyStoreService(config)
+                writer.storeKey(withCustomKid, providerId, alias)
+                writer.awaitPendingPersistenceCompletion()
+                val warm = writer.getKey(KeyInfo<Jwk>(alias = alias, keyVisibility = KeyVisibility.PRIVATE))
+                val warmPublic = writer.resolvePublicKeyByAlias(alias).key as JwkType
+                assertEquals(customKid, warm.kid)
+
+                // Force a real reload: neither the loaded KeyStore nor its resolved-key cache
+                // may supply the identifier or public material.
+                KeyStoreLoaderFactory.clearCache()
+                SoftwareKeyStoreStateCache.clear()
+                val reader = SoftwareKeyStoreService(config)
+                val cold = reader.getKey(KeyInfo<Jwk>(alias = alias, keyVisibility = KeyVisibility.PRIVATE))
+                val coldPublic = reader.resolvePublicKeyByAlias(alias).key as JwkType
+
+                assertEquals(warm.kid, cold.kid)
+                assertEquals(customKid, cold.kid)
+                assertEquals(warmPublic, coldPublic)
+            } finally {
+                KeyStoreLoaderFactory.clearCache()
+                SoftwareKeyStoreStateCache.clear()
+            }
+        }
+
+    @Test
+    fun pkcs12ColdReloadUsesStableJwkThumbprintWhenKidWasNotExplicit() =
+        runTest {
+            val alias = "managed-signing-thumbprint"
+            val directory = Files.createTempDirectory("sks-thumbprint-kid-reload").toFile().also { it.deleteOnExit() }
+            val path = directory.resolve("software.p12").absolutePath
+            val config =
+                Pkcs12KeyStoreConfig(
+                    id = providerId,
+                    password = storePassword,
+                    path = path,
+                    persist = true,
+                    overwriteAlias = true,
+                    keyVisibility = KeyVisibility.PRIVATE.keyVisibility,
+                )
+            val original = ecPrivateKey(alias)
+            val withoutKid = original.copy(kid = null, key = original.key.copy(kid = null))
+            val expectedKid = requireNotNull(withoutKid.key.getKeyId(true))
+
+            KeyStoreLoaderFactory.clearCache()
+            SoftwareKeyStoreStateCache.clear()
+            try {
+                val writer = SoftwareKeyStoreService(config)
+                writer.storeKey(withoutKid, providerId, alias)
+                writer.awaitPendingPersistenceCompletion()
+                val warm = writer.getKey(KeyInfo<Jwk>(alias = alias, keyVisibility = KeyVisibility.PRIVATE))
+                val warmPublic = writer.resolvePublicKeyByAlias(alias).key as JwkType
+
+                KeyStoreLoaderFactory.clearCache()
+                SoftwareKeyStoreStateCache.clear()
+                val reader = SoftwareKeyStoreService(config)
+                val cold = reader.getKey(KeyInfo<Jwk>(alias = alias, keyVisibility = KeyVisibility.PRIVATE))
+                val coldPublic = reader.resolvePublicKeyByAlias(alias).key as JwkType
+
+                assertEquals(expectedKid, warm.kid)
+                assertEquals(warm.kid, cold.kid)
+                assertEquals(warmPublic, coldPublic)
+            } finally {
+                KeyStoreLoaderFactory.clearCache()
+                SoftwareKeyStoreStateCache.clear()
+            }
+        }
+
+    @Test
     fun missingAliasFailsWithTheExactAliasInTheMessage() =
         runTest {
             val directory = Files.createTempDirectory("sks-public-missing").toFile().also { it.deleteOnExit() }

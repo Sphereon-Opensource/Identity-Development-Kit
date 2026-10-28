@@ -52,6 +52,7 @@ import com.sphereon.ktor.http.client.provider.HttpClientOptions
 import com.sphereon.ktor.http.client.provider.counterpartyEgress
 import com.sphereon.oauth2.client.JarService
 import com.sphereon.oauth2.client.command.MergeRequestObjectArgs
+import com.sphereon.oauth2.client.command.MergedRequestObjectResult
 import com.sphereon.oauth2.common.model.AuthorizationRequest
 import com.sphereon.openid.oid4vp.common.ClientIdScheme
 import com.sphereon.openid.oid4vp.common.ClientMetadata
@@ -74,6 +75,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
@@ -152,6 +154,8 @@ class ParseAuthorizationRequestCommandImpl(
     private suspend fun parseAuthorizationRequestUri(
         requestUri: String,
         walletConfig: WalletConfig?,
+        preserveVerifiedDcaExpectedOrigins: Boolean = false,
+        verifiedDcaRequestClaims: Map<String, Any?>? = null,
     ): IdkResult<AuthorizationRequest, IdkError> {
 
         // Parse URI using dedicated command
@@ -237,13 +241,14 @@ class ParseAuthorizationRequestCommandImpl(
             }
 
         // Merge Request Object parameters with query parameters if present
-        val mergedParams =
+        val mergedRequestObject =
             if (requestObjectJwt != null) {
                 mergeRequestObject(requestObjectJwt, parsedUri.parameters, walletConfig)
                     .getOrElse { return Err(it) }
             } else {
-                parsedUri.parameters
+                null
             }
+        val mergedParams = mergedRequestObject?.mergedParameters ?: parsedUri.parameters
 
         // Note: dcql_query is extracted into additionalParameters below (non-standard params)
         // Actual DCQL parsing and validation happens in ResolveAuthorizationRequestCommand
@@ -298,6 +303,16 @@ class ParseAuthorizationRequestCommandImpl(
         }
 
         val jarParams = requestObjectJwt?.let { extractJarContextParams(it) } ?: emptyMap()
+        val verifiedClaims = mergedRequestObject?.claims ?: verifiedDcaRequestClaims
+        val verifiedExpectedOrigins = verifiedExpectedOriginsClaim(verifiedClaims)
+        val requestParameters =
+            if (preserveVerifiedDcaExpectedOrigins) {
+                additionalParamsFromRequest +
+                    jarParams +
+                    mapOf("expected_origins" to (verifiedExpectedOrigins ?: JsonNull))
+            } else {
+                additionalParamsFromRequest + jarParams
+            }
 
         // Create AuthorizationRequest from merged parameters
         val authRequest =
@@ -314,7 +329,7 @@ class ParseAuthorizationRequestCommandImpl(
                 resource = mergedParams.getOptional("resource"),
                 issuerState = mergedParams.getOptional("issuer_state"),
                 dpopJkt = mergedParams.getOptional("dpop_jkt"),
-                additionalParameters = additionalParamsFromRequest + jarParams,
+                additionalParameters = requestParameters,
             )
 
         // Semantic validation runs after client authentication in the resolver, so a trusted
@@ -354,6 +369,7 @@ class ParseAuthorizationRequestCommandImpl(
                     parseAuthorizationRequestUri(
                         requestUri = "openid4vp://?request=${compact.encodeUrlGraph()}",
                         walletConfig = walletConfig,
+                        preserveVerifiedDcaExpectedOrigins = true,
                     ).getOrElse { return Err(it) }
                 }
 
@@ -378,6 +394,8 @@ class ParseAuthorizationRequestCommandImpl(
                                     verified.payload + ("client_id" to JsonPrimitive(verified.clientId)),
                                 ),
                             walletConfig = walletConfig,
+                            preserveVerifiedDcaExpectedOrigins = true,
+                            verifiedDcaRequestClaims = verified.payload,
                         ).getOrElse { return Err(it) }
                     parsedPayload.copy(
                         additionalParameters = parsedPayload.additionalParameters.orEmpty() + jarContextParams(verified.protectedHeader),
@@ -428,11 +446,10 @@ class ParseAuthorizationRequestCommandImpl(
             }
             return null
         }
-        val expectedOrigins = parsed.additionalParameters.orEmpty()["expected_origins"].asStringList()
-        if (transport.origin !in expectedOrigins) {
-            return IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Digital Credentials expected_origins does not contain the calling browser origin")
-        }
-        return null
+        return validateSignedDigitalCredentialsExpectedOrigins(
+            expectedOrigins = parsed.additionalParameters.orEmpty()["expected_origins"],
+            origin = transport.origin,
+        )
     }
 
     private fun validateDigitalCredentialsOrigin(origin: String): IdkError? {
@@ -479,7 +496,7 @@ class ParseAuthorizationRequestCommandImpl(
         requestObjectJwt: String,
         queryParameters: io.ktor.http.Parameters,
         walletConfig: WalletConfig?,
-    ): IdkResult<io.ktor.http.Parameters, IdkError> {
+    ): IdkResult<MergedRequestObjectResult, IdkError> {
         val header = extractJwtHeader(requestObjectJwt)
         val typ = (header["typ"] as? JsonPrimitive)?.takeIf { it.isString }?.contentOrNull
         if (typ != JarConstants.JAR_JWT_TYP) {
@@ -548,7 +565,7 @@ class ParseAuthorizationRequestCommandImpl(
                     message = "Failed to merge request object: ${error.message}",
                     throwable = error.exception,
                 )
-            }.map { it.mergedParameters }
+            }
     }
 
     private fun extractJarContextParams(jwt: String): Map<String, JsonElement> {
@@ -896,6 +913,33 @@ private fun JsonElement?.asStringList(): List<String> {
             else -> this
         }
     return (normalized as? JsonArray)?.mapNotNull { (it as? JsonPrimitive)?.contentOrNull }.orEmpty()
+}
+
+/** Preserve the verified claim's JSON shape; a scalar is not an origin array. */
+internal fun verifiedExpectedOriginsClaim(claims: Map<String, Any?>?): JsonElement? {
+    if (claims == null || "expected_origins" !in claims) return null
+    return claims["expected_origins"] as? JsonElement ?: JsonNull
+}
+
+/** Validates the signed DC API origin array without coercing scalar or malformed claim values. */
+internal fun validateSignedDigitalCredentialsExpectedOrigins(expectedOrigins: JsonElement?, origin: String): IdkError? {
+    val array = expectedOrigins as? JsonArray
+        ?: return IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Digital Credentials expected_origins must be a JSON array of origins")
+    if (array.isEmpty()) {
+        return IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Digital Credentials expected_origins must contain at least one origin")
+    }
+    val origins =
+        array.map { element ->
+            val primitive = element as? JsonPrimitive
+            if (primitive == null || !primitive.isString || primitive.contentOrNull.isNullOrBlank()) {
+                return IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Digital Credentials expected_origins entries must be non-empty strings")
+            }
+            requireNotNull(primitive.contentOrNull)
+        }
+    if (origin !in origins) {
+        return IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Digital Credentials expected_origins does not contain the calling browser origin")
+    }
+    return null
 }
 
 /** The generic SIOPv2/OID4VP wallet audience verifiers use when the wallet is not pre-registered. */

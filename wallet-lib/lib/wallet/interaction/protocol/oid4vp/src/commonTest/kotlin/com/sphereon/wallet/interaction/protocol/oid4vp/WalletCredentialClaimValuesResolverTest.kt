@@ -52,6 +52,18 @@ class WalletCredentialClaimValuesResolverTest {
     }
 
     @Test
+    fun typedMdocResolutionFailsClosedWithoutTheFormatNativeResolver() = kotlinx.coroutines.test.runTest {
+        val mapping = RecordingClaimsMappingService()
+        val resolver = WalletCredentialClaimValuesResolver(mapping)
+        val record = record(CredentialFormat.MSO_MDOC, mdocCredential("2020-01-20T12:00:00Z", "2099-12-31T23:59:59Z"))
+
+        val result = resolver.resolveMdocClaims(record)
+
+        assertTrue(result.isErr)
+        assertEquals(null, mapping.credential)
+    }
+
+    @Test
     fun projectsTheSameFreshMdocInstanceSelectedForPresentation() = kotlinx.coroutines.test.runTest {
         val mapping = RecordingClaimsMappingService()
         val resolver = WalletCredentialClaimValuesResolver(mapping)

@@ -18,6 +18,7 @@ package com.sphereon.openid.oid4vp.holder.impl
 
 import com.sphereon.core.api.Err
 import com.sphereon.core.api.IdkResult
+import com.sphereon.core.api.Ok
 import com.sphereon.core.api.asErrorResult
 import com.sphereon.core.api.encodeToBase64Url
 import com.sphereon.core.api.error.IdkError
@@ -37,7 +38,9 @@ import com.sphereon.crypto.resolution.extern.ExternalIdentifierOptsOrResult
 import com.sphereon.crypto.resolution.extern.ExternalIdentifierResult
 import com.sphereon.crypto.resolution.extern.MultiExternalIdentifierService
 import com.sphereon.ktor.http.client.FetchRequestUriCommandImpl
+import com.sphereon.ktor.http.client.ParseUriQueryCommand
 import com.sphereon.ktor.http.client.ParseUriQueryCommandImpl
+import com.sphereon.ktor.http.client.ParsedUri
 import com.sphereon.ktor.http.client.provider.HttpClientEngineType
 import com.sphereon.ktor.http.client.provider.HttpClientFactory
 import com.sphereon.ktor.http.client.provider.HttpClientOptions
@@ -45,12 +48,19 @@ import com.sphereon.oauth2.client.JarService
 import com.sphereon.oauth2.client.command.CreateEncryptedJarArgs
 import com.sphereon.oauth2.client.command.CreateSignedJarArgs
 import com.sphereon.oauth2.client.command.MergeRequestObjectArgs
+import com.sphereon.oauth2.client.command.MergedRequestObjectResult
 import com.sphereon.oauth2.client.command.ParseJarArgs
+import com.sphereon.openid.oid4vp.holder.DigitalCredentialsAuthorizationRequest
 import com.sphereon.openid.oid4vp.common.impl.UnavailableOid4vpRequestTrustMaterialProvider
 import io.ktor.client.HttpClient
 import io.ktor.http.encodeURLParameter
+import io.ktor.http.Parameters
+import io.ktor.http.parametersOf
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -66,6 +76,76 @@ import kotlin.test.assertTrue
  * otherwise any key can sign a Request Object that claims a trusted X.509 or DID client identifier.
  */
 class RequestObjectVerificationKeyTest {
+    @Test
+    fun signedDigitalCredentialsRequestPreservesVerifiedExpectedOriginsAfterJarParameterFlattening() =
+        runTest {
+            val origin = "https://wallet.example"
+            val secondOrigin = "https://other.example"
+            val acceptedClaims = signedDcaClaims(JsonArray(listOf(JsonPrimitive(secondOrigin), JsonPrimitive(origin))))
+            val accepted = parseSignedDca(acceptedClaims, listOf(secondOrigin, origin), origin)
+            assertTrue(accepted.first.isOk, "verified array including its second origin should survive JAR merge flattening")
+            assertEquals(acceptedClaims["expected_origins"], (accepted.first as Ok).value.additionalParameters?.get("expected_origins"))
+            assertEquals(1, accepted.second.mergeCalls)
+
+            val mismatchedClaims = signedDcaClaims(JsonArray(listOf(JsonPrimitive(secondOrigin))))
+            assertTrue(parseSignedDca(mismatchedClaims, listOf(secondOrigin), origin).first.isErr)
+
+            val missingClaim = signedDcaClaims(expectedOrigins = null)
+            assertTrue(parseSignedDca(missingClaim, listOf(origin), origin).first.isErr)
+
+            val malformedClaim = signedDcaClaims(JsonPrimitive(origin))
+            assertTrue(parseSignedDca(malformedClaim, listOf(origin), origin).first.isErr)
+        }
+
+    private suspend fun parseSignedDca(
+        claims: JsonObject,
+        flattenedOrigins: List<String>,
+        transportOrigin: String,
+    ): Pair<IdkResult<com.sphereon.oauth2.common.model.AuthorizationRequest, IdkError>, RecordingJarService> {
+        val mergedParameters =
+            parametersOf(
+                "client_id" to listOf("verifier.example"),
+                "response_type" to listOf("vp_token"),
+                "response_mode" to listOf("dc_api.jwt"),
+                "nonce" to listOf("nonce-12345678"),
+                // Mirrors production JAR merge flattening: the first-value consumer sees a scalar.
+                "expected_origins" to flattenedOrigins,
+            )
+        val jarService =
+            RecordingJarService(
+                mergedResult = MergedRequestObjectResult(mergedParameters, isEncrypted = false, claims = claims),
+            )
+        val request =
+            DigitalCredentialsAuthorizationRequest(
+                protocol = "openid4vp-v1-signed",
+                origin = transportOrigin,
+                data =
+                    buildJsonObject {
+                        put(
+                            "request",
+                            compactJws(
+                                header = buildJsonObject {
+                                    put("alg", "ES256")
+                                    put("typ", "oauth-authz-req+jwt")
+                                },
+                                payload = claims,
+                            ),
+                        )
+                    },
+            )
+        return parseCommand(jarService, injectClientMetadata = true)
+            .parseDigitalCredentialsAuthorizationRequest(request, walletConfig = null) to jarService
+    }
+
+    private fun signedDcaClaims(expectedOrigins: JsonElement?): JsonObject =
+        buildJsonObject {
+            put("client_id", "verifier.example")
+            put("response_type", "vp_token")
+            put("response_mode", "dc_api.jwt")
+            put("nonce", "nonce-12345678")
+            expectedOrigins?.let { put("expected_origins", it) }
+        }
+
     @Test
     fun requestObjectWithoutRequiredTypIsRejectedBeforeVerificationKeySelection() =
         runTest {
@@ -147,11 +227,34 @@ class RequestObjectVerificationKeyTest {
             assertEquals(0, jarService.mergeCalls, "the request-supplied client_metadata key must never verify the Request Object")
         }
 
-    private fun parseCommand(jarService: JarService): ParseAuthorizationRequestCommandImpl {
+    private fun parseCommand(
+        jarService: JarService,
+        injectClientMetadata: Boolean = false,
+    ): ParseAuthorizationRequestCommandImpl {
         val execution = TestExecutionContext.createExecution()
+        val uriParser = ParseUriQueryCommandImpl(execution)
+        val parseUriCommand =
+            if (injectClientMetadata) {
+                object : ParseUriQueryCommand by uriParser {
+                    override suspend fun execute(args: String): IdkResult<ParsedUri, IdkError> =
+                        uriParser.execute(args).map { parsed ->
+                            parsed.copy(
+                                queryParameters =
+                                    Parameters.build {
+                                        parsed.queryParameters.names().forEach { name ->
+                                            parsed.queryParameters.getAll(name).orEmpty().forEach { value -> append(name, value) }
+                                        }
+                                        append("client_metadata", attackerClientMetadata(kid = null))
+                                    },
+                            )
+                        }
+                }
+            } else {
+                uriParser
+            }
         return ParseAuthorizationRequestCommandImpl(
             execution = execution,
-            parseUriQueryCommand = ParseUriQueryCommandImpl(execution),
+            parseUriQueryCommand = parseUriCommand,
             fetchRequestUriCommand = FetchRequestUriCommandImpl(execution, NoNetworkHttpClientFactory),
             jarService = jarService,
             httpClientFactory = NoNetworkHttpClientFactory,
@@ -208,7 +311,9 @@ class RequestObjectVerificationKeyTest {
         listOf(header.toString(), payload.toString(), "not-a-signature")
             .joinToString(".") { it.encodeToByteArray().encodeToBase64Url().trimEnd('=') }
 
-    private class RecordingJarService : JarService {
+    private class RecordingJarService(
+        private val mergedResult: MergedRequestObjectResult? = null,
+    ) : JarService {
         var mergeCalls = 0
 
         override suspend fun createSignedJar(args: CreateSignedJarArgs) = Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "not used"))
@@ -217,8 +322,11 @@ class RequestObjectVerificationKeyTest {
 
         override suspend fun parseJar(args: ParseJarArgs) = Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "not used"))
 
-        override suspend fun mergeRequestObject(args: MergeRequestObjectArgs) =
-            Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "request object verified with ${args.verificationKey}")).also { mergeCalls++ }
+        override suspend fun mergeRequestObject(args: MergeRequestObjectArgs): IdkResult<MergedRequestObjectResult, IdkError> {
+            mergeCalls++
+            return mergedResult?.let { Ok(it) }
+                ?: Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "request object verified with ${args.verificationKey}"))
+        }
 
         override val commands: JarService.Commands
             get() = error("JAR commands are not used by request object key selection")

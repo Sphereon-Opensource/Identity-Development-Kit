@@ -54,6 +54,7 @@ object WalletScreenModelMapper {
             primaryAction = primaryAction(state, loginPresentation),
             secondaryAction = secondaryAction(state),
             projection = projection(state),
+            receiveContext = state.receiveContext(),
         )
     }
 
@@ -272,7 +273,7 @@ private fun projection(state: WalletInteractionState): WalletInteractionScreenPr
                 },
                 receivedCredentials = state.receivedCredentialPreview.map { it.toPresentation() },
                 completionHandoffRef = state.completionHandoffRef?.let { WalletSensitiveInputRefPresentation(it.value) },
-                receiveContext = state.receiveTerminalContext(),
+                receiveContext = state.receiveContext(),
             )
         WalletInteractionStatus.ResolvingEntryPoint,
         WalletInteractionStatus.Sharing,
@@ -347,7 +348,7 @@ private fun WalletCounterpartySummary?.toPresentation(trust: com.sphereon.wallet
         )
     }
 
-private fun WalletInteractionState.receiveTerminalContext(): WalletReceiveTerminalContextPresentation? {
+private fun WalletInteractionState.receiveContext(): WalletReceiveTerminalContextPresentation? {
     val offer = offerPresentation() ?: return null
     val issuer = offer.issuer ?: counterparty.toPresentation(trust) ?: return null
     val encounter = counterpartyEncounter.toPresentation() ?: return null

@@ -25,6 +25,9 @@ import com.sphereon.crypto.core.ResourceControlMode
 import com.sphereon.crypto.key.persistence.KeyReferenceRecord
 import com.sphereon.crypto.key.persistence.KeyReferenceHistoryCapability
 import com.sphereon.crypto.key.persistence.KeyReferenceStoreErrorCodes
+import com.sphereon.crypto.key.persistence.ManagedKeyReferencePublication
+import com.sphereon.crypto.key.persistence.ManagedKeyReferencePublicationBindResult
+import com.sphereon.crypto.key.persistence.managedKeyReferencePublicJwkThumbprint
 import com.zaxxer.hikari.HikariConfig
 import com.zaxxer.hikari.HikariDataSource
 import kotlinx.coroutines.Dispatchers
@@ -49,6 +52,8 @@ import kotlin.uuid.Uuid
 
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class SqliteKeyReferenceStoreImplTest {
+    private val publicationJwk = """{"kty":"EC","crv":"P-256","x":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA","y":"AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}"""
+    private val changedPublicationJwk = """{"kty":"EC","crv":"P-256","x":"BAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA","y":"AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}"""
     private lateinit var store: SqliteKeyReferenceStoreImpl
     private lateinit var dataSource: HikariDataSource
     private lateinit var driver: SqlDriver
@@ -89,6 +94,43 @@ class SqliteKeyReferenceStoreImplTest {
         createdAt = Clock.System.now(),
         updatedAt = Clock.System.now(),
     )
+
+    private fun publicationFor(record: KeyReferenceRecord, logicalId: String = "kma-test-publication") =
+        ManagedKeyReferencePublication(
+            tenantId = record.tenantId,
+            logicalResourceId = logicalId,
+            resourceHandle = "opaque-test-resource-handle",
+            logicalAlias = record.alias,
+            providerId = record.providerId,
+            keyReferenceId = record.id,
+            publicKeyThumbprint = managedKeyReferencePublicJwkThumbprint(record.publicKeyJwk)!!,
+        )
+
+    @Test
+    fun managedPublicationIsImmutableTenantScopedAndBoundToCurrentPublicMaterial() =
+        runTest {
+            val record = testRecord(tenantId = "publication-${Uuid.random()}").copy(publicKeyJwk = publicationJwk)
+            assertTrue(store.save(record).isOk)
+            val publication = publicationFor(record)
+
+            assertEquals(ManagedKeyReferencePublicationBindResult.Created(publication), store.bindManagedPublicationIfAbsent(publication).value)
+            assertEquals(ManagedKeyReferencePublicationBindResult.IdenticalExisting(publication), store.bindManagedPublicationIfAbsent(publication).value)
+            assertEquals(publication, store.findManagedPublication(record.tenantId, publication.logicalResourceId).value)
+            assertTrue(store.bindManagedPublicationIfAbsent(publication.copy(tenantId = "other-${Uuid.random()}")).isErr)
+
+            val other = testRecord(tenantId = record.tenantId, alias = "other-${Uuid.random()}", kid = "kid-other-${Uuid.random()}").copy(publicKeyJwk = publicationJwk)
+            assertTrue(store.save(other).isOk)
+            assertEquals(
+                ManagedKeyReferencePublicationBindResult.Conflict,
+                store.bindManagedPublicationIfAbsent(publicationFor(other, publication.logicalResourceId)).value,
+            )
+
+            assertTrue(store.upsert(record.copy(publicKeyJwk = changedPublicationJwk)).isOk)
+            assertTrue(store.findManagedPublication(record.tenantId, publication.logicalResourceId).isErr)
+
+            assertTrue(store.delete(record.tenantId, record.alias, record.providerId).value)
+            assertTrue(store.findManagedPublication(record.tenantId, publication.logicalResourceId).isErr)
+        }
 
     @Test
     fun supportsDurableAllMatchOwnershipHistoryAcrossProviders() =

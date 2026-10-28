@@ -731,6 +731,8 @@ class Oid4vciHolderIssuanceExecutor(
                 tokenEndpoint = tokenEndpoint,
                 cNonce = token.value.cNonce,
                 authorizationDetails = token.value.authorizationDetails,
+                accessTokenReceivedAtEpochSeconds = Clock.System.now().epochSeconds,
+                accessTokenExpiresInSeconds = token.value.expiresIn,
             )
         context.updateOid4vciState { it.copy(txCodeRejections = 0, tokens = issuedToken) }
         return requestCredentialWithIssuedToken(
@@ -774,7 +776,47 @@ class Oid4vciHolderIssuanceExecutor(
         if (pending == null) {
             return prepareProofsForApproval(context, state, resolvedOffer, options, clientId, token)
         }
+        if (pending.requiresRepreparation) {
+            return prepareProofsForApproval(
+                context = context,
+                state = state,
+                resolvedOffer = resolvedOffer,
+                options = options.copy(signingKeyIds = pending.holderKeyAliases),
+                clientId = clientId,
+                token = token,
+            )
+        }
         if (!pending.approved) return pending.approvalRequired(options)
+
+        val refreshedTokenResult = refreshExpiredIssuedToken(context, state, resolvedOffer, options, token)
+        if (refreshedTokenResult.isErr) {
+            val refreshError = refreshedTokenResult.error
+            return failed(
+                code = if (refreshError.code == WalletInteractionFailureCodes.OID4VCI_REFRESH_TOKEN_MISSING) {
+                    WalletInteractionFailureCodes.OID4VCI_REFRESH_TOKEN_MISSING
+                } else {
+                    WalletInteractionFailureCodes.OID4VCI_REFRESH_TOKEN_EXCHANGE_FAILED
+                },
+                messageKey = if (refreshError.code == WalletInteractionFailureCodes.OID4VCI_REFRESH_TOKEN_MISSING) {
+                    "wallet.interaction.error.oid4vci_refresh_token_missing"
+                } else {
+                    "wallet.interaction.error.oid4vci_refresh_token_exchange_failed"
+                },
+                error = refreshError,
+                retryable = refreshError.code != WalletInteractionFailureCodes.OID4VCI_REFRESH_TOKEN_MISSING,
+            )
+        }
+        val activeToken = refreshedTokenResult.value.token
+        if (refreshedTokenResult.value.refreshed) {
+            return prepareProofsForApproval(
+                context = context,
+                state = state,
+                resolvedOffer = resolvedOffer,
+                options = options.copy(signingKeyIds = pending.holderKeyAliases),
+                clientId = clientId,
+                token = activeToken,
+            )
+        }
 
         val createdProof = credentialRequestProofProvider.finalizeProofs(pending.prepared).getOrElse { return credentialRequestProofFailure(it) }
         if (createdProof.proofs.proofValues.size != pending.prepared.proofs.size) {
@@ -792,7 +834,7 @@ class Oid4vciHolderIssuanceExecutor(
                 pendingProofs = null,
             )
         }
-        val credentialDpopProof = credentialEndpointDpopProof(context, state, resolvedOffer, options, token.accessToken).getOrElse {
+        val credentialDpopProof = credentialEndpointDpopProof(context, state, resolvedOffer, options, activeToken.accessToken).getOrElse {
             return failed(
                 WalletInteractionFailureCodes.OID4VCI_CREDENTIAL_DPOP_PROOF_FAILED,
                 "wallet.interaction.error.oid4vci_credential_dpop_proof_failed",
@@ -806,23 +848,95 @@ class Oid4vciHolderIssuanceExecutor(
                 state = state,
                 resolvedOffer = resolvedOffer,
                 options = options,
-                accessToken = token.accessToken,
+                accessToken = activeToken.accessToken,
                 dpopProofJwt = credentialDpopProof,
                 credentialConfigurationId = pending.credentialConfigurationId,
                 proofs = createdProof.proofs,
-                tokenAuthorizationDetails = token.authorizationDetails,
+                tokenAuthorizationDetails = activeToken.authorizationDetails,
             )
         if (credential.isErr) {
             if (credential.error.code == OID4VCI_INVALID_NONCE) {
                 // The c_nonce expired while the holder was approving. The same holder keys sign
                 // freshly prepared proofs once the holder approves those.
                 context.updateOid4vciState { it.copy(holderKeyAliases = emptyList()) }
-                return prepareProofsForApproval(context, state, resolvedOffer, options.copy(signingKeyIds = pending.holderKeyAliases), clientId, token)
+                return prepareProofsForApproval(context, state, resolvedOffer, options.copy(signingKeyIds = pending.holderKeyAliases), clientId, activeToken)
             }
             return failed(WalletInteractionFailureCodes.OID4VCI_CREDENTIAL_REQUEST_FAILED, "wallet.interaction.error.oid4vci_credential_request_failed", credential.error)
         }
         return handleCredentialResponse(context, state, resolvedOffer, credential.value, options.isDpopBound())
     }
+
+    /**
+     * Refreshes an issued token before a previously approved proof batch is signed if the token is
+     * known expired, or if this is a legacy private-session token with no receipt timestamp.
+     * Newly received tokens without expires_in remain expiry-unknown and are not refreshed in a
+     * loop. A missing refresh token is a typed refusal; the consumed issuance grant is never replayed.
+     */
+    private suspend fun refreshExpiredIssuedToken(
+        context: WalletInteractionContext,
+        state: WalletInteractionState,
+        resolvedOffer: ResolvedCredentialOffer,
+        options: Oid4vciHolderIssuanceOptions,
+        token: Oid4vciPrivateSessionState.TokenLeg,
+    ): IdkResult<IssuedTokenRefreshResult, IdkError> {
+        val receivedAt = token.accessTokenReceivedAtEpochSeconds
+        val expired =
+            receivedAt == null ||
+                token.accessTokenExpiresInSeconds?.let { expiresIn ->
+                    expiresIn <= 0 || Clock.System.now().epochSeconds >= receivedAt + expiresIn
+                } == true
+        if (!expired) return Ok(IssuedTokenRefreshResult(token = token, refreshed = false))
+
+        val refreshToken = token.refreshToken?.takeIf(String::isNotBlank)
+            ?: return Err(IdkError.fromString(
+                code = WalletInteractionFailureCodes.OID4VCI_REFRESH_TOKEN_MISSING,
+                message = "An expired or legacy access token has no refresh token",
+            ))
+        val sessionState = context.oid4vciState()
+        val preferredAuthorizationServer =
+            sessionState.authorization?.authorizationServerIssuer
+                ?: sessionState.iae?.authorizationServerIssuer
+                ?: resolvedOffer.offer.grants?.preAuthorizedCode?.authorizationServer
+        val authorizationServer = holder.selectAuthorizationServer(resolvedOffer.issuerMetadata, preferredAuthorizationServer)
+        if (authorizationServer.isErr) return Err(authorizationServer.error)
+        val challengedOptions = options.withAttestationChallenge(authorizationServer.value).getOrElse { return Err(it) }
+        val tokenEndpoint = authorizationServer.value.tokenEndpoint
+        val refreshed =
+            exchangeRefreshTokenWithDpopNonceRetry(
+                context = context,
+                state = state,
+                resolvedOffer = resolvedOffer,
+                options = challengedOptions,
+                tokenEndpoint = tokenEndpoint,
+                authorizationServerIssuer = authorizationServer.value.issuer,
+                refreshToken = refreshToken,
+            )
+        if (refreshed.isErr) return Err(refreshed.error)
+
+        val response = refreshed.value
+        val active =
+            Oid4vciPrivateSessionState.TokenLeg(
+                accessToken = response.accessToken,
+                // RFC 6749 Section 6: retain the old refresh token when the server does not rotate it.
+                refreshToken = response.refreshToken ?: refreshToken,
+                tokenEndpoint = tokenEndpoint,
+                cNonce = response.cNonce ?: token.cNonce,
+                authorizationDetails = response.authorizationDetails ?: token.authorizationDetails,
+                accessTokenReceivedAtEpochSeconds = Clock.System.now().epochSeconds,
+                accessTokenExpiresInSeconds = response.expiresIn,
+            )
+        context.updateOid4vciState { current ->
+            val invalidatedPending =
+                current.pendingProofs?.takeIf { it.approved }?.copy(approved = false, requiresRepreparation = true)
+            current.copy(tokens = active, pendingProofs = invalidatedPending ?: current.pendingProofs)
+        }
+        return Ok(IssuedTokenRefreshResult(token = active, refreshed = true))
+    }
+
+    private data class IssuedTokenRefreshResult(
+        val token: Oid4vciPrivateSessionState.TokenLeg,
+        val refreshed: Boolean,
+    )
 
     private suspend fun prepareProofsForApproval(
         context: WalletInteractionContext,
@@ -1042,6 +1156,10 @@ class Oid4vciHolderIssuanceExecutor(
                         // refresh token.
                         refreshToken = token.refreshToken ?: refreshToken,
                         tokenEndpoint = tokenEndpoint,
+                        cNonce = token.cNonce,
+                        authorizationDetails = token.authorizationDetails,
+                        accessTokenReceivedAtEpochSeconds = Clock.System.now().epochSeconds,
+                        accessTokenExpiresInSeconds = token.expiresIn,
                     ),
             )
         }
@@ -1286,6 +1404,10 @@ class Oid4vciHolderIssuanceExecutor(
                         // RFC 6749 Section 6: keep the presented refresh token when the AS does not rotate it.
                         refreshToken = token.refreshToken ?: refreshToken,
                         tokenEndpoint = tokenEndpoint,
+                        cNonce = token.cNonce,
+                        authorizationDetails = token.authorizationDetails,
+                        accessTokenReceivedAtEpochSeconds = Clock.System.now().epochSeconds,
+                        accessTokenExpiresInSeconds = token.expiresIn,
                     ),
             )
         }
@@ -1697,6 +1819,8 @@ class Oid4vciHolderIssuanceExecutor(
                 tokenEndpoint = tokenEndpoint,
                 cNonce = token.value.cNonce,
                 authorizationDetails = token.value.authorizationDetails,
+                accessTokenReceivedAtEpochSeconds = Clock.System.now().epochSeconds,
+                accessTokenExpiresInSeconds = token.value.expiresIn,
             )
         context.updateOid4vciState { it.copy(tokens = issuedToken, iae = it.iae?.copy(pending = false)) }
         return requestCredentialWithIssuedToken(
@@ -2109,6 +2233,8 @@ class Oid4vciHolderIssuanceExecutor(
                 tokenEndpoint = tokenEndpoint,
                 cNonce = token.value.cNonce,
                 authorizationDetails = token.value.authorizationDetails,
+                accessTokenReceivedAtEpochSeconds = Clock.System.now().epochSeconds,
+                accessTokenExpiresInSeconds = token.value.expiresIn,
             )
         context.updateOid4vciState { it.copy(tokens = issuedToken) }
         return requestCredentialWithIssuedToken(

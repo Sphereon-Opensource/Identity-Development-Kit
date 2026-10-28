@@ -41,6 +41,25 @@ CREATE INDEX IF NOT EXISTS idx_key_ref_tenant_kid ON key_reference(tenant_id, ki
 CREATE INDEX IF NOT EXISTS idx_key_ref_tenant_provider ON key_reference(tenant_id, provider_id);
 CREATE INDEX IF NOT EXISTS idx_key_ref_origin ON key_reference(origin);
 
+-- Stable logical KMS publications are immutable pointers to existing physical key-reference UUIDs.
+CREATE TABLE IF NOT EXISTS managed_key_reference_publication (
+    tenant_id TEXT NOT NULL,
+    logical_resource_id TEXT NOT NULL,
+    resource_handle TEXT NOT NULL,
+    logical_alias TEXT NOT NULL,
+    provider_id TEXT NOT NULL,
+    key_reference_id TEXT NOT NULL REFERENCES key_reference(id) ON DELETE RESTRICT,
+    public_key_thumbprint TEXT NOT NULL,
+    PRIMARY KEY (tenant_id, logical_resource_id),
+    CHECK (length(tenant_id) BETWEEN 1 AND 255),
+    CHECK (length(logical_resource_id) BETWEEN 1 AND 255),
+    CHECK (length(resource_handle) BETWEEN 1 AND 255),
+    CHECK (length(logical_alias) BETWEEN 1 AND 255),
+    CHECK (length(provider_id) BETWEEN 1 AND 255),
+    CHECK (length(key_reference_id) BETWEEN 1 AND 36),
+    CHECK (length(public_key_thumbprint) = 43 AND public_key_thumbprint NOT GLOB '*[^A-Za-z0-9_-]*')
+);
+
 -- =====================
 -- Queries
 -- =====================
@@ -48,6 +67,23 @@ CREATE INDEX IF NOT EXISTS idx_key_ref_origin ON key_reference(origin);
 findById:
 SELECT * FROM key_reference
 WHERE tenant_id = :tenantId AND id = :id AND deleted_at IS NULL;
+
+findManagedPublication:
+SELECT * FROM managed_key_reference_publication
+WHERE tenant_id = :tenantId AND logical_resource_id = :logicalResourceId;
+
+findActiveReferenceForManagedPublication:
+SELECT * FROM key_reference
+WHERE tenant_id = :tenantId AND id = :id AND deleted_at IS NULL;
+
+insertManagedPublication:
+INSERT INTO managed_key_reference_publication(
+    tenant_id, logical_resource_id, resource_handle, logical_alias, provider_id,
+    key_reference_id, public_key_thumbprint
+) VALUES (
+    :tenantId, :logicalResourceId, :resourceHandle, :logicalAlias, :providerId,
+    :keyReferenceId, :publicKeyThumbprint
+);
 
 findByKid:
 SELECT * FROM key_reference

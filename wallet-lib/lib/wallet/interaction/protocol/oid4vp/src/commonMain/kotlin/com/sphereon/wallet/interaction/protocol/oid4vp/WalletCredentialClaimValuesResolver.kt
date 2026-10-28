@@ -13,6 +13,8 @@ import com.sphereon.credential.claims.mapper.api.error.ClaimMappingErrors
 import com.sphereon.credential.claims.mapper.api.mapper.ClaimsMappingService
 import com.sphereon.credential.claims.mapper.api.model.CredentialWithId
 import com.sphereon.credential.claims.mapper.api.resolver.CredentialClaimResolver
+import com.sphereon.credential.claims.mapper.api.resolver.TypedCredentialClaim
+import com.sphereon.credential.claims.mapper.api.resolver.TypedCredentialClaimResolver
 import com.sphereon.sdjwt.SdJwtCodec
 import com.sphereon.wallet.credential.CredentialInstance
 import com.sphereon.wallet.credential.CredentialRecord
@@ -32,6 +34,32 @@ class WalletCredentialClaimValuesResolver(
     private val clock: Clock = Clock.System,
     private val credentialClaimResolvers: Set<CredentialClaimResolver> = emptySet(),
 ) {
+    /** Resolve mdoc values together with their typed namespace/element paths. */
+    suspend fun resolveMdocClaims(
+        record: CredentialRecord,
+        credentialInstanceId: String? = null,
+    ): IdkResult<List<TypedCredentialClaim>, IdkError> {
+        val now = clock.now()
+        val instance =
+            if (credentialInstanceId == null) {
+                record.presentableOid4vpInstance(now)
+            } else {
+                record.instances.firstOrNull { it.id == credentialInstanceId }
+            } ?: return extractionError(record.id, "No presentable credential instance was found")
+
+        if (record.deletedAt != null || !instance.isPresentableOid4vpInstance(now)) {
+            return extractionError(record.id, "The selected credential instance is not active and valid")
+        }
+        if (!instance.format.isMdoc) {
+            return extractionError(record.id, "Typed namespace/element paths are only available for mdoc credentials")
+        }
+        val raw = instance.raw ?: return extractionError(record.id, "The credential body is not loaded")
+        val resolver = credentialClaimResolvers.singleOrNull { it.supports(instance.format) } as? TypedCredentialClaimResolver
+            ?: return extractionError(record.id, "No typed claim resolver is available for the mdoc format")
+
+        return resolver.extractAllClaimsWithPaths(raw, instance.format)
+    }
+
     /**
      * Resolve values from the record's currently presentable active instance, or from the exact
      * [credentialInstanceId] when supplied. An explicit instance must still be active and valid.
@@ -96,9 +124,9 @@ class WalletCredentialClaimValuesResolver(
         return result.isOk && result.value != null
     }
 
-    private fun extractionError(
+    private fun <T> extractionError(
         credentialId: String,
         reason: String,
-    ): IdkResult<Map<String, JsonElement>, IdkError> =
+    ): IdkResult<T, IdkError> =
         Err(ClaimMappingErrors.claimExtractionFailed(credentialId, reason))
 }

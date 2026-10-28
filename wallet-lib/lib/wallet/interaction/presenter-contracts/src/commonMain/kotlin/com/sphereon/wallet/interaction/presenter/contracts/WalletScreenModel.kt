@@ -27,6 +27,12 @@ data class WalletScreenModel(
     val primaryAction: WalletScreenAction? = null,
     val secondaryAction: WalletScreenAction? = null,
     val projection: WalletInteractionScreenProjection,
+    /**
+     * Safe issuer, trust, encounter, and offer facts retained so receive routes can reattach after
+     * an interaction advances beyond its initial review screen. Contains no payload, credential
+     * values, tokens, or authorization URLs.
+     */
+    val receiveContext: WalletReceiveTerminalContextPresentation? = null,
 ) {
     init {
         requireScreenLocalizationKey("titleKey", titleKey)
