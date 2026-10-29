@@ -137,6 +137,18 @@ class JwtProofVerifierF1Test {
     }
 
     @Test
+    fun issuerSettingIgnoresAnUnboundIssuerClaim() = runTest {
+        val relaxed = verifier(issuerConfigProvider = IgnoreUnboundIssIssuerConfigProvider)
+        val unbound = relaxed.verify(proof(validHeader(), issuer = JsonPrimitive(CLIENT_ID)), ISSUER, null, CONFIG_ID, null, null, NONCE, consumeNonce = false)
+        assertTrue(unbound.isOk, "With the setting on, an iss the token cannot bind is ignored")
+        assertEquals(null, unbound.value.holderIdentifier, "An ignored iss is not reported as the holder identifier")
+
+        val mismatched = relaxed.verify(proof(validHeader(), issuer = JsonPrimitive("someone-else")), ISSUER, CLIENT_ID, CONFIG_ID, null, null, NONCE, consumeNonce = false)
+        assertTrue(mismatched.isErr, "The setting never accepts an iss that differs from a token-bound client_id")
+        assertTrue(mismatched.error.message.defaultMessage.contains("does not match access-token client_id"))
+    }
+
+    @Test
     fun identifiedProofAllowsOptionalIssuerOnlyWhenItMatchesTokenClient() = runTest {
         val absent = verifier().verify(proof(validHeader()), ISSUER, CLIENT_ID, CONFIG_ID, null, null, NONCE, consumeNonce = false)
         assertTrue(absent.isOk, "Appendix F.1 makes iss optional outside anonymous pre-authorized access")
@@ -336,6 +348,10 @@ private object UnusedExternalIdentifierResolver : MultiExternalIdentifierService
 private object DidSigningIssuerConfigProvider : Oid4vciIssuerConfigProvider by TestIssuerConfigProvider {
     override suspend fun credentialSigningConfigs(): Map<String, CredentialSigningConfig> =
         mapOf("eupid" to CredentialSigningConfig(signingKeyMode = SigningKeyMode.Did("web")))
+}
+
+private object IgnoreUnboundIssIssuerConfigProvider : Oid4vciIssuerConfigProvider by TestIssuerConfigProvider {
+    override val ignoreUnboundProofIssuer: Boolean = true
 }
 
 private object TestIssuerConfigProvider : Oid4vciIssuerConfigProvider {

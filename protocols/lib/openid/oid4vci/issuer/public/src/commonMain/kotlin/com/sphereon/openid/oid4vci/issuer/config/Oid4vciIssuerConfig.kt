@@ -63,6 +63,16 @@ interface Oid4vciIssuerConfigProvider {
         get() = Oid4vciIssuerSpecProfile.forVersion(oid4vciSpecVersion)
 
     /**
+     * Whether a JWT key proof may carry an `iss` claim when the access token has no client_id to match it
+     * against, as after anonymous pre-authorized access. OID4VCI 1.0 Appendix F.1 requires the wallet to omit
+     * `iss` there. By default the issuer rejects such a proof; when enabled it ignores the unverifiable claim
+     * instead, for wallets that send it anyway. An `iss` that differs from a token-bound client_id is always
+     * rejected.
+     */
+    val ignoreUnboundProofIssuer: Boolean
+        get() = false
+
+    /**
      * Hook called by the metadata endpoint (and any other read-path that needs a fully-built
      * view) **before** reading [credentialConfigurations]. The default is a no-op so existing
      * providers that never needed a build step require no change. Providers that build their

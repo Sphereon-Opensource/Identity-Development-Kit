@@ -173,6 +173,9 @@ abstract class AbstractConfigOid4vciIssuerConfigProvider(
                     ?: namespaceProperty("specVersion"),
             )
 
+    override val ignoreUnboundProofIssuer: Boolean
+        get() = namespaceProperty("proof.jwt.ignore-unbound-iss")?.trim()?.equals("true", ignoreCase = true) == true
+
     override val authorizationServers: List<String>?
         get() =
             namespaceProperty("authorizationServers")

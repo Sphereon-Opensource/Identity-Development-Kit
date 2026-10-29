@@ -89,6 +89,24 @@ class InstanceNamespaceOid4vciIssuerConfigProviderTest {
     }
 
     @Test
+    fun unboundProofIssuerToleranceIsAnInstanceSettingThatDefaultsToStrict() = runTest {
+        val namespace = "oid4vci.issuers.00000000-0000-4000-8000-000000000031"
+        val (strict, strictHolder) = newRegistryProvider(mapOf<String, Any>("$namespace.identifier" to "https://acme.example.com"))
+        strictHolder.setCurrentInstanceId("00000000-0000-4000-8000-000000000031")
+        assertEquals(false, strict.ignoreUnboundProofIssuer)
+
+        val (relaxed, relaxedHolder) =
+            newRegistryProvider(
+                mapOf<String, Any>(
+                    "$namespace.identifier" to "https://acme.example.com",
+                    "$namespace.proof.jwt.ignore-unbound-iss" to "true",
+                ),
+            )
+        relaxedHolder.setCurrentInstanceId("00000000-0000-4000-8000-000000000031")
+        assertEquals(true, relaxed.ignoreUnboundProofIssuer)
+    }
+
+    @Test
     fun registryProviderResolvesCanonicalPartyIdThroughDurableConfigBindingProjection() = runTest {
         val partyId = "00000000-0000-4000-8000-000000000031"
         val logicalInstanceId = "acme-issuer"

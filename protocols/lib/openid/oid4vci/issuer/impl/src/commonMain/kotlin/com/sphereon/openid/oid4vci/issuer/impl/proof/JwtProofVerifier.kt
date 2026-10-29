@@ -167,8 +167,10 @@ class JwtProofVerifier(
 
         // Appendix F.1 makes iss optional, but when present it must match the token-bound
         // client_id. An absent client id does not prove which grant was used; fail closed because
-        // the claim cannot be matched. This also enforces omission for anonymous pre-authorized access.
-        if (expectedClientId == null && holderIdentifier != null) {
+        // the claim cannot be matched. This also enforces omission for anonymous pre-authorized access,
+        // unless the issuer is configured to ignore the unverifiable claim for wallets that send it anyway.
+        // The ignored claim takes no part in holder binding, which rests on the proof key, nonce and aud.
+        if (expectedClientId == null && holderIdentifier != null && !issuerConfigProvider.ignoreUnboundProofIssuer) {
             return Err(
                 IdkError.fromString(
                     code = "invalid_proof",
@@ -316,7 +318,8 @@ class JwtProofVerifier(
         return Ok(
             VerifiedProof(
                 holderBindingKey = holderBindingKey,
-                holderIdentifier = holderIdentifier,
+                // An ignored, unverifiable iss is not reported as the holder's identifier.
+                holderIdentifier = holderIdentifier.takeIf { expectedClientId != null },
                 keyId = effectiveKid ?: kid?.takeIf { isDidKid },
                 algorithm = alg,
                 keyAttestation = keyAttestationEvidence,
