@@ -10,6 +10,8 @@ import com.sphereon.di.session.SessionScope
 import dev.zacsweers.metro.ContributesTo
 import dev.zacsweers.metro.Provides
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.EncodeDefault
+import kotlinx.serialization.ExperimentalSerializationApi
 
 /**
  * Minimized app-owned terminal outcome. It deliberately excludes raw protocol messages,
@@ -94,6 +96,10 @@ data class RecordWalletAppOutcomeEvidenceArgs(
     val backupEligible: Boolean? = null,
     val backupState: Boolean? = null,
     val transport: String? = null,
+    /** Preserve existing null-handle receipt serialization while binding non-null returned handles. */
+    @OptIn(ExperimentalSerializationApi::class)
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    val userHandle: String? = null,
 ) {
     init {
         require(
