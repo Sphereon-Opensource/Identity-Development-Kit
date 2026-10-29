@@ -56,6 +56,12 @@ data class BinaryRequest(
     val multiValueHeaders: Map<String, List<String>> = emptyMap(),
     val pathParams: Map<String, String> = emptyMap(),
     val queryParams: Map<String, String> = emptyMap(),
+    /**
+     * Raw multi-value query view, one entry per name with every decoded occurrence in arrival
+     * order. [queryParams] keeps a single scalar per name. Empty by default — only HTTP-origin
+     * requests populate it.
+     */
+    val multiValueQueryParams: Map<String, List<String>> = emptyMap(),
     val metadata: Map<String, String> = emptyMap(),
     val body: StreamingBody = StreamingBody.Empty,
 ) {
@@ -93,6 +99,7 @@ data class BinaryRequest(
             path = headers["X-HTTP-Path"] ?: "/$commandId",
             pathParameters = pathParams,
             queryParameters = queryParams,
+            multiValueQueryParameters = multiValueQueryParams,
             headers = headers,
             resolvedTenantId = resolvedTenantId,
             multiValueHeaders = multiValueHeaders,
@@ -120,6 +127,7 @@ data class BinaryRequest(
                 multiValueHeaders = request.multiValueHeaders,
                 pathParams = request.pathParameters,
                 queryParams = request.queryParameters.mapValues { it.value ?: "" },
+                multiValueQueryParams = request.multiValueQueryParameters,
                 body = StreamingBody.fromGenericHttpBody(request.bodyContent),
             )
     }

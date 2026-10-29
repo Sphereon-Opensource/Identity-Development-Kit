@@ -178,6 +178,12 @@ suspend fun ApplicationRequest.toGenericHttpRequest(call: ApplicationCall, maxBo
                 }
                 queryMap
             },
+        // Keep decoded occurrences separate: a delimiter can be part of an individual value, so
+        // `?state=A&state=B` must not reach commands only as the joined scalar "A,B".
+        multiValueQueryParameters =
+            request.queryParameters
+                .names()
+                .associateWith { name -> request.queryParameters.getAll(name)?.toList() ?: emptyList() },
         bodyContent = bodyContent,
     )
 }
