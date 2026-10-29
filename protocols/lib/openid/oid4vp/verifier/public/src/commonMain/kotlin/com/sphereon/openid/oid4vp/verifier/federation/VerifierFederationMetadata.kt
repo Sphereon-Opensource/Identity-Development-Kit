@@ -41,12 +41,24 @@ object VerifierFederationMetadata {
     /** The Response URI of an instance whose deployment configures none: its external base URL plus `/response`. */
     fun defaultResponseUri(externalBaseUrl: String): String = "${externalBaseUrl.trimEnd('/')}/response"
 
-    /** OpenID4VP 1.0 §11.1 `vp_formats_supported` of the verifier, in requests and in its federation metadata alike. */
+    /**
+     * OpenID4VP 1.0 §11.1 `vp_formats_supported` of the verifier: the federation metadata, and requests whose query
+     * names no format. Keys are limited to the Credential Format Identifiers OpenID4VP 1.0 Appendix B defines
+     * (`jwt_vc_json`, `ldp_vc`, `mso_mdoc`, `dc+sd-jwt`); wallets validate this object strictly, so an identifier such as
+     * the OID4VCI-only `jwt_vc_json-ld` makes them reject the whole request.
+     */
     val VP_FORMATS_SUPPORTED: Map<String, VpFormatInfo> = mapOf(
         "dc+sd-jwt" to VpFormatInfo(sdJwtAlgValuesSupported = listOf("ES256"), kbJwtAlgValuesSupported = listOf("ES256")),
         // -7 = ES256 in IANA COSE Algorithms (RFC 8152).
         "mso_mdoc" to VpFormatInfo(issuerAuthAlgValuesSupported = listOf(-7), deviceAuthAlgValuesSupported = listOf(-7)),
         "jwt_vc_json" to VpFormatInfo(algValuesSupported = listOf("ES256")),
-        "jwt_vc_json-ld" to VpFormatInfo(algValuesSupported = listOf("ES256")),
     )
+
+    /**
+     * `vp_formats_supported` for one request: the verifier's entries for the formats its query asks for, so the
+     * wallet sees exactly what it may answer with. Falls back to [VP_FORMATS_SUPPORTED] when none are known.
+     */
+    fun vpFormatsFor(requestedFormats: Collection<String>): Map<String, VpFormatInfo> =
+        requestedFormats.distinct().mapNotNull { format -> VP_FORMATS_SUPPORTED[format]?.let { format to it } }.toMap()
+            .ifEmpty { VP_FORMATS_SUPPORTED }
 }

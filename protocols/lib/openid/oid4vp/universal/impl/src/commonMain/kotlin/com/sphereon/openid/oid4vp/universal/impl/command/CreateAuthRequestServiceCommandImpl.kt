@@ -436,7 +436,7 @@ class CreateAuthRequestServiceCommandImpl(
         // wins; otherwise emit the spec-defined default (vp_formats_supported + jwks +
         // encrypted_response_enc_values_supported when encryption is in play).
         val effectiveClientMetadata =
-            clientMetadataConfig?.clientMetadata ?: buildOid4vpClientMetadata(jarmKey)
+            clientMetadataConfig?.clientMetadata ?: buildOid4vpClientMetadata(jarmKey, dcqlQuery.credentials.map { it.format })
 
         val createArgs =
             CreateAuthorizationRequestArgs(
@@ -656,8 +656,11 @@ class CreateAuthRequestServiceCommandImpl(
      * ClientRegistration fields (the wallet "MUST ignore unrecognized parameters", but
      * emitting them is non-canonical noise that confuses conformance and pollutes the JAR).
      */
-    private fun buildOid4vpClientMetadata(jarmKey: JarmEncryptionKey?): com.sphereon.openid.oid4vp.common.ClientMetadata {
-        val vpFormats = VerifierFederationMetadata.VP_FORMATS_SUPPORTED
+    private fun buildOid4vpClientMetadata(
+        jarmKey: JarmEncryptionKey?,
+        requestedFormats: List<String>,
+    ): com.sphereon.openid.oid4vp.common.ClientMetadata {
+        val vpFormats = VerifierFederationMetadata.vpFormatsFor(requestedFormats)
         return com.sphereon.openid.oid4vp.common.ClientMetadata(
             jwks =
                 jarmKey?.let {
