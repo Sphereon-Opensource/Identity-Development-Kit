@@ -75,19 +75,19 @@ object SystemDefaults {
         color(TokenKeyConstants.PALETTE_BRAND_800, "#320E72")
         color(TokenKeyConstants.PALETTE_BRAND_900, "#1C0840")
 
-        // Secondary — amber counterweight to the brand violet, used for accents,
-        // highlights and tinted callouts. Generated as an OKLCH sibling of the brand
-        // ramp: same per-stop lightness and chroma, hue rotated to 75 degrees.
-        color(TokenKeyConstants.PALETTE_SECONDARY_50, "#F6E6D1")
-        color(TokenKeyConstants.PALETTE_SECONDARY_100, "#F0D5B1")
-        color(TokenKeyConstants.PALETTE_SECONDARY_200, "#E3B36E")
-        color(TokenKeyConstants.PALETTE_SECONDARY_300, "#D69100")
-        color(TokenKeyConstants.PALETTE_SECONDARY_400, "#B37900")
-        color(TokenKeyConstants.PALETTE_SECONDARY_500, "#966400")
-        color(TokenKeyConstants.PALETTE_SECONDARY_600, "#774F00")
-        color(TokenKeyConstants.PALETTE_SECONDARY_700, "#5B3B00")
-        color(TokenKeyConstants.PALETTE_SECONDARY_800, "#402800")
-        color(TokenKeyConstants.PALETTE_SECONDARY_900, "#241500")
+        // Secondary — teal counterweight to the brand violet, used for accents,
+        // highlights and tinted callouts. Same ramp as the design system's default
+        // secondary scale, so server-resolved themes match the client default.
+        color(TokenKeyConstants.PALETTE_SECONDARY_50, "#D9F2EF")
+        color(TokenKeyConstants.PALETTE_SECONDARY_100, "#B3E5DF")
+        color(TokenKeyConstants.PALETTE_SECONDARY_200, "#6FCBC1")
+        color(TokenKeyConstants.PALETTE_SECONDARY_300, "#2BB0A3")
+        color(TokenKeyConstants.PALETTE_SECONDARY_400, "#1A9488")
+        color(TokenKeyConstants.PALETTE_SECONDARY_500, "#0F7A70")
+        color(TokenKeyConstants.PALETTE_SECONDARY_600, "#0B6159")
+        color(TokenKeyConstants.PALETTE_SECONDARY_700, "#084A44")
+        color(TokenKeyConstants.PALETTE_SECONDARY_800, "#05332F")
+        color(TokenKeyConstants.PALETTE_SECONDARY_900, "#031E1B")
 
         // Gray — neutral foundation
         color(TokenKeyConstants.PALETTE_GRAY_50, "#FBFBFB")
