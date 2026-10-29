@@ -37,7 +37,9 @@ import com.sphereon.crypto.resolution.extern.MultiExternalIdentifierService
 import com.sphereon.crypto.resolution.IIdentifierMethod
 import com.sphereon.crypto.resolution.extern.ExternalIdentifierOpts
 import com.sphereon.openid.oid4vci.common.model.CredentialConfigurationSupported
+import com.sphereon.openid.oid4vci.issuer.config.CredentialSigningConfig
 import com.sphereon.openid.oid4vci.issuer.config.Oid4vciIssuerConfigProvider
+import com.sphereon.openid.oid4vci.issuer.format.SigningKeyMode
 import com.sphereon.openid.oid4vci.issuer.impl.nonce.NonceManager
 import com.sphereon.openid.oid4vci.issuer.store.CredentialNonceStore
 import com.sphereon.openid.oid4vci.issuer.store.NonceEntry
@@ -75,6 +77,52 @@ class JwtProofVerifierF1Test {
             assertTrue(result.error.message.defaultMessage.contains("mutually exclusive"))
         }
         assertEquals(0, nonceStore.consumeCalls, "conflicting key selectors must be rejected before nonce consumption")
+    }
+
+    @Test
+    fun didKidWithItsOwnKeyAsJwkIsToleratedWhenTheIssuerSignsWithADid() = runTest {
+        val result = verifier(issuerConfigProvider = DidSigningIssuerConfigProvider)
+            .verify(proof(didKidHeader(holderJwk())), ISSUER, CLIENT_ID, CONFIG_ID, null, null, NONCE, consumeNonce = false)
+
+        assertTrue(result.isOk, "a DID kid with its own key as jwk is accepted for a DID-signing issuer")
+        assertEquals(DID_KID, result.value.keyId)
+        assertEquals(holderJwk(), result.value.holderBindingKey)
+    }
+
+    @Test
+    fun didKidWithJwkStaysExclusiveUnlessEveryToleranceConditionHolds() = runTest {
+        val didSigning = verifier(issuerConfigProvider = DidSigningIssuerConfigProvider)
+        val cases =
+            listOf(
+                Triple("issuer does not sign with a DID", verifier(), didKidHeader(holderJwk())),
+                Triple(
+                    "x5c is also present",
+                    didSigning,
+                    buildJsonObject { putBaseHeader(); put("kid", DID_KID); put("jwk", holderJwk()); put("x5c", "certificate") },
+                ),
+                Triple(
+                    "kid is a DID without a verification method",
+                    didSigning,
+                    buildJsonObject { putBaseHeader(); put("kid", DID_KID.substringBefore('#')); put("jwk", holderJwk()) },
+                ),
+            )
+        cases.forEach { (case, verifier, header) ->
+            val result = verifier.verify(proof(header), ISSUER, CLIENT_ID, CONFIG_ID, null, null, NONCE, consumeNonce = false)
+            assertTrue(result.isErr, case)
+            assertEquals("invalid_proof", result.error.code, case)
+            assertTrue(result.error.message.defaultMessage.contains("mutually exclusive"), case)
+        }
+    }
+
+    @Test
+    fun didKidWithADifferentJwkIsRejected() = runTest {
+        val otherKey = buildJsonObject { put("kty", "EC"); put("crv", "P-256"); put("x", OTHER_X); put("y", OTHER_Y) }
+        val result = verifier(issuerConfigProvider = DidSigningIssuerConfigProvider)
+            .verify(proof(didKidHeader(otherKey)), ISSUER, CLIENT_ID, CONFIG_ID, null, null, NONCE, consumeNonce = false)
+
+        assertTrue(result.isErr)
+        assertEquals("invalid_proof", result.error.code)
+        assertTrue(result.error.message.defaultMessage.contains("does not match the key of DID kid"))
     }
 
     @Test
@@ -118,14 +166,17 @@ class JwtProofVerifierF1Test {
         }
     }
 
-    private fun verifier(nonceStore: CredentialNonceStore = CountingNonceStore()): JwtProofVerifier {
+    private fun verifier(
+        nonceStore: CredentialNonceStore = CountingNonceStore(),
+        issuerConfigProvider: Oid4vciIssuerConfigProvider = TestIssuerConfigProvider,
+    ): JwtProofVerifier {
         val resolver = UnusedExternalIdentifierResolver
         return JwtProofVerifier(
             nonceManager = NonceManager(nonceStore),
             verifyJwsCommand = VerifiedJwsBoundaryCommand,
             externalIdentifierResolver = resolver,
             keyAttestationVerifier = KeyAttestationVerifier(VerifiedJwsBoundaryCommand, resolver),
-            issuerConfigProvider = TestIssuerConfigProvider,
+            issuerConfigProvider = issuerConfigProvider,
         )
     }
 
@@ -197,6 +248,20 @@ class JwtProofVerifierF1Test {
         put("alg", "ES256")
     }
 
+    private fun didKidHeader(jwk: JsonObject): JsonObject = buildJsonObject {
+        putBaseHeader()
+        put("kid", DID_KID)
+        put("jwk", jwk)
+    }
+
+    /** The key embedded in [DID_KID]; a real P-256 point so its RFC 7638 thumbprint is computable. */
+    private fun holderJwk(): JsonObject = buildJsonObject {
+        put("kty", "EC")
+        put("crv", "P-256")
+        put("x", HOLDER_X)
+        put("y", HOLDER_Y)
+    }
+
     private fun publicJwk(): JsonObject = buildJsonObject {
         put("kty", "EC")
         put("crv", "P-256")
@@ -209,6 +274,14 @@ class JwtProofVerifierF1Test {
         const val CLIENT_ID = "wallet-client"
         const val CONFIG_ID = "eupid"
         const val NONCE = "test-c-nonce"
+        const val HOLDER_X = "nUWAoAv3XZith8E7i19OdaxOLYFOwM-Z2EuM02TirT4"
+        const val HOLDER_Y = "HskHU8BjUi1U9Xqi7Swmj8gwAK_0xkcDjEW_71SosEY"
+        const val OTHER_X = "f83OJ3D2xF1Bg8vub9tLe1gHMzV76e8Tus9uPHvRVEU"
+        const val OTHER_Y = "x_FEzRu9m36HLN_tue659LNpXW6pCyStikYjKIWI5a0"
+        val DID_KID: String =
+            "did:jwk:" +
+                """{"kty":"EC","crv":"P-256","x":"$HOLDER_X","y":"$HOLDER_Y"}""".encodeToByteArray().encodeToBase64Url() +
+                "#0"
     }
 }
 
@@ -258,6 +331,11 @@ private object UnusedExternalIdentifierResolver : MultiExternalIdentifierService
         Err(IdkError.fromString(code = "unused_test_operation", message = "External identifier resolution is not used in these tests"))
     override suspend fun resolve(opts: ExternalIdentifierOptsOrResult): IdkResult<ExternalIdentifierResult, IdkErrorType> =
         Err(IdkError.fromString(code = "unused_test_operation", message = "External identifier resolution is not used in these tests"))
+}
+
+private object DidSigningIssuerConfigProvider : Oid4vciIssuerConfigProvider by TestIssuerConfigProvider {
+    override suspend fun credentialSigningConfigs(): Map<String, CredentialSigningConfig> =
+        mapOf("eupid" to CredentialSigningConfig(signingKeyMode = SigningKeyMode.Did("web")))
 }
 
 private object TestIssuerConfigProvider : Oid4vciIssuerConfigProvider {

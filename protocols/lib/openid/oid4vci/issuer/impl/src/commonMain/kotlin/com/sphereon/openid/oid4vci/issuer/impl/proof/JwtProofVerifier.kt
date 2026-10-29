@@ -30,6 +30,7 @@ import com.sphereon.di.session.SessionScope
 import com.sphereon.openid.oid4vci.common.model.Oid4vciErrors
 import com.sphereon.openid.oid4vci.common.model.ProofTypeSupported
 import com.sphereon.openid.oid4vci.issuer.config.Oid4vciIssuerConfigProvider
+import com.sphereon.openid.oid4vci.issuer.format.SigningKeyMode
 import com.sphereon.openid.oid4vci.issuer.impl.nonce.NonceManager
 import com.sphereon.openid.oid4vci.issuer.proof.VerifiedProof
 import dev.zacsweers.metro.ContributesIntoSet
@@ -126,8 +127,9 @@ class JwtProofVerifier(
         // Appendix F.1 requires kid, jwk, and x5c to be mutually exclusive. JWS verification
         // above already resolved/validated the signature key; reject before nonce consumption
         // or the subsequent holder-binding-key resolution so malformed proofs have no effects.
+        // The single tolerated exception is a DID kid with its own key as jwk (see below).
         val keySelectorCount = listOf("kid", "jwk", "x5c").count(protectedHeader::containsKey)
-        if (keySelectorCount > 1) {
+        if (keySelectorCount > 1 && !isToleratedDidKidWithJwk(protectedHeader, credentialConfigId)) {
             return Err(
                 IdkError.fromString(
                     code = "invalid_proof",
@@ -371,8 +373,44 @@ class JwtProofVerifier(
         kid: String,
         jwkIfPresent: JsonElement?,
     ): IdkResult<Pair<JsonElement, String?>, IdkError> {
-        // §F.1 conflict — when both DID kid and jwk are present, trust the DID and ignore jwk.
+        // A jwk next to a DID kid is only reached through isToleratedDidKidWithJwk; it must be
+        // the key the DID URL resolves to, so the DID stays the single source of the binding key.
+        val resolved = resolveDidKidKey(kid).getOrElse { return Err(it) }
+        if (jwkIfPresent != null && !sameJwk(jwkIfPresent, resolved.first)) {
+            return Err(IdkError.fromString(code = "invalid_proof", message = "Invalid JWT proof: jwk does not match the key of DID kid '$kid'"))
+        }
+        return Ok(resolved)
+    }
 
+    /**
+     * Appendix F.1 forbids `kid` together with `jwk`. Wallets that bind to a DID often include
+     * the DID key as `jwk` as well, so that one combination is tolerated when the issuer itself
+     * signs with a DID, `kid` is a DID verification-method URL and no `x5c` is present.
+     * [resolveViaDidKid] then requires the `jwk` to equal the resolved DID key.
+     */
+    private suspend fun isToleratedDidKidWithJwk(
+        protectedHeader: JsonObject,
+        credentialConfigId: String,
+    ): Boolean {
+        if ("x5c" in protectedHeader || "jwk" !in protectedHeader) return false
+        val kid = (protectedHeader["kid"] as? JsonPrimitive)?.takeIf { it.isString }?.content ?: return false
+        if (!kid.startsWith("did:") || '#' !in kid) return false
+        return issuerConfigProvider.credentialSigningConfigs()[credentialConfigId]?.signingKeyMode is SigningKeyMode.Did
+    }
+
+    private fun sameJwk(
+        left: JsonElement,
+        right: JsonElement,
+    ): Boolean {
+        fun thumbprint(jwk: JsonElement): String? =
+            runCatching { Jwk.fromJsonObject(jwk.jsonObject) }.getOrNull()?.let { parsed ->
+                tryGenerateJwkThumbprint(parsed).getOrElse { return null }
+            }
+        val leftThumbprint = thumbprint(left) ?: return false
+        return leftThumbprint == thumbprint(right)
+    }
+
+    private suspend fun resolveDidKidKey(kid: String): IdkResult<Pair<JsonElement, String?>, IdkError> {
         // For did:jwk, the JWK is base64url-embedded in the DID itself. Decode that JWK
         // VERBATIM (preserving the wallet's exact field order) rather than round-tripping
         // through our Kotlin `Jwk` data class. Some wallets re-derive the did:jwk from
