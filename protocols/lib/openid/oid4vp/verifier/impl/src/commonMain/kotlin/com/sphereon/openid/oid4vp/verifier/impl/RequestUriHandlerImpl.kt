@@ -173,7 +173,7 @@ class RequestUriHandlerImpl(
         // bare identifier — wallets MUST ignore iss (§5.6).
         val jarArgs =
             CreateSignedJarArgs(
-                authorizationRequest = requestForJar,
+                authorizationRequest = requestForJar.withLegacyFederationEntityId(binding),
                 signingKey = signingKey,
                 issuer = binding.requestObjectIssuer(),
                 audience = signingConfig.audience,
@@ -246,6 +246,19 @@ class RequestUriHandlerImpl(
             }
     }
 }
+
+/**
+ * Adds the bare Entity Identifier as `entity_id` to an `openid_federation` Request Object.
+ * OID4VP 1.0 carries the identifier only in the prefixed `client_id`; wallets built on the
+ * earlier `entity_id` client identifier scheme read it from this claim instead, and compliant
+ * wallets ignore it. An explicitly supplied `entity_id` is left untouched.
+ */
+internal fun AuthorizationRequest.withLegacyFederationEntityId(binding: VerifierSignerBinding): AuthorizationRequest {
+    if (binding !is VerifierSignerBinding.Federation || LEGACY_FEDERATION_ENTITY_ID_PARAM in additionalParameters) return this
+    return copy(additionalParameters = additionalParameters + (LEGACY_FEDERATION_ENTITY_ID_PARAM to JsonPrimitive(binding.entityIdentifier)))
+}
+
+internal const val LEGACY_FEDERATION_ENTITY_ID_PARAM = "entity_id"
 
 internal fun VerifierSignerBinding.requestObjectIssuer(): String =
     when (this) {
