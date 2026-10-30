@@ -190,6 +190,9 @@ Pkcs12KeyStoreConfig
         @EncodeDefault(EncodeDefault.Mode.ALWAYS)
         @SerialName("overwriteAlias")
         override val overwriteAlias: Boolean = true,
+        /** Reserve each newly created alias permanently for a durable, retained-key profile. */
+        @EncodeDefault(EncodeDefault.Mode.NEVER)
+        val retainAliases: Boolean = false,
     ) : AbstractSoftwareKeyStoreConfig() {
         @OptIn(InternalSerializationApi::class)
         @EncodeDefault(EncodeDefault.Mode.ALWAYS)
@@ -251,6 +254,9 @@ Pkcs12KeyStoreConfig
             if (overwriteAlias != other.overwriteAlias) {
                 return false
             }
+            if (retainAliases != other.retainAliases) {
+                return false
+            }
             if (type != other.type) {
                 return false
             }
@@ -273,6 +279,7 @@ Pkcs12KeyStoreConfig
             result = 31 * result + keyStoreType.hashCode()
             result = 31 * result + type.hashCode()
             result = 31 * result + overwriteAlias.hashCode()
+            result = 31 * result + retainAliases.hashCode()
             return result
         }
     }

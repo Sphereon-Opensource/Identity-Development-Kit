@@ -72,8 +72,10 @@ import dev.zacsweers.metro.Inject
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
@@ -81,10 +83,19 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.security.KeyStore
 import java.security.cert.X509Certificate
+import java.nio.channels.FileChannel
+import java.nio.channels.OverlappingFileLockException
+import java.nio.file.StandardOpenOption
+import java.security.MessageDigest
+import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
 import javax.net.ssl.KeyManagerFactory
 import com.sphereon.crypto.core.kms.KeyStore as KeyStoreService
+
+private object SoftwareKeyStoreMutationLocks {
+    val paths = ConcurrentHashMap<String, Mutex>()
+}
 
 /**
  * A service class for managing cryptographic keys, certificate chains, and trusted certificates
@@ -98,7 +109,8 @@ import com.sphereon.crypto.core.kms.KeyStore as KeyStoreService
 actual class SoftwareKeyStoreService actual constructor(
     @Assisted config: KeyStoreConfig,
 ) : KeyStoreService,
-    PublicKeyAliasResolver {
+    PublicKeyAliasResolver,
+    RetainedAliasAuthority {
     private val config: SoftwareKeyStoreConfig = config as SoftwareKeyStoreConfig
     actual override val id = config.id
     actual override val keyStoreType = config.keyStoreType
@@ -172,6 +184,80 @@ actual class SoftwareKeyStoreService actual constructor(
 
     // Guards reload-from-disk so concurrent reads do not load the file multiple times in parallel.
     private val reloadMutex = Mutex()
+    private val volatileMutationMutex = Mutex()
+
+    private fun retainedMarker(alias: String): java.nio.file.Path? {
+        val fileSource = source as? KeyStoreLoaderOpts.Source.File ?: return null
+        val file = (PathPlaceholderInterpreter.resolve(fileSource.path) ?: java.io.File(fileSource.path)).canonicalFile
+        val normalized = alias.lowercase(Locale.ROOT).toByteArray(Charsets.UTF_8)
+        val digest = MessageDigest.getInstance("SHA-256").digest(normalized).joinToString("") { "%02x".format(it) }
+        return java.nio.file.Path.of(file.path + ".retained", digest)
+    }
+
+    private fun requireMutableAlias(alias: String) {
+        val marker = retainedMarker(alias) ?: return
+        check(!java.nio.file.Files.exists(marker)) { "The key alias is retained and cannot be replaced or deleted" }
+    }
+
+    override suspend fun isRetainedKeyAlias(alias: String): Boolean {
+        if (alias.isBlank() || (config as? Pkcs12KeyStoreConfig)?.retainAliases != true) return false
+        return withMutationLock {
+            val marker = retainedMarker(alias) ?: return@withMutationLock false
+            if (!java.nio.file.Files.isRegularFile(marker)) return@withMutationLock false
+            val ks = currentKeyStore()
+            ks.containsAlias(alias) && ks.isKeyEntry(alias)
+        }
+    }
+
+    private fun reserveRetainedAlias(alias: String) {
+        if ((config as? Pkcs12KeyStoreConfig)?.retainAliases != true) return
+        val marker = checkNotNull(retainedMarker(alias))
+        java.nio.file.Files.createDirectories(marker.parent)
+        FileChannel.open(marker, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE).use { channel ->
+            channel.write(java.nio.ByteBuffer.wrap(byteArrayOf(1)))
+            channel.force(true)
+        }
+    }
+
+    /** Serialize all file mutations across instances and processes before reloading the latest file. */
+    private suspend fun <T> withMutationLock(block: suspend () -> T): T {
+        val fileSource = source as? KeyStoreLoaderOpts.Source.File
+        if (!config.persist || fileSource == null) return volatileMutationMutex.withLock { block() }
+        val file = (PathPlaceholderInterpreter.resolve(fileSource.path) ?: java.io.File(fileSource.path)).canonicalFile
+        val mutex = SoftwareKeyStoreMutationLocks.paths.computeIfAbsent(file.path) { Mutex() }
+        return mutex.withLock {
+            withContext(Dispatchers.IO) {
+                java.nio.file.Files.createDirectories(file.toPath().parent)
+                val lockPath = java.nio.file.Path.of(file.path + ".lock")
+                FileChannel.open(lockPath, StandardOpenOption.CREATE, StandardOpenOption.WRITE).use { channel ->
+                    var held: java.nio.channels.FileLock? = null
+                    try {
+                        while (held == null) {
+                            held = try { channel.tryLock() } catch (_: OverlappingFileLockException) { null }
+                            if (held == null) delay(10)
+                        }
+                        // Once a file mutation owns the lock, cancellation must not let the
+                        // independent persistence job outlive it. The locked section includes
+                        // the mutation, cache invalidation and its durable flush. Waiting to
+                        // acquire the lock above remains cancellable.
+                        withContext(NonCancellable) {
+                            val resolved = fileSource.copy(path = file.path)
+                            val snapshot = KeyStoreLoaderFactory.loadSnapshot(
+                                KeyStoreLoaderOpts(type = config.keyStoreType, source = resolved, keyStorePassword = String(password)),
+                                forceReload = true,
+                            )
+                            reloadedKeyStore = snapshot.keyStore
+                            loadedFileRevision = snapshot.fileRevision
+                            invalidateCache()
+                            block()
+                        }
+                    } finally {
+                        held?.release()
+                    }
+                }
+            }
+        }
+    }
 
     init {
         with(this.config) {
@@ -191,6 +277,11 @@ actual class SoftwareKeyStoreService actual constructor(
                     providerBytes != null -> KeyStoreLoaderOpts.Source.Bytes(providerBytes)
                     else -> error("Either a keystore 'path' or 'bytes' must be provided in the config")
                 }
+        }
+        if ((this.config as? Pkcs12KeyStoreConfig)?.retainAliases == true) {
+            require(this.config.persist && !this.config.overwriteAlias && source is KeyStoreLoaderOpts.Source.File) {
+                "Retained aliases require a persistent file and overwriteAlias=false"
+            }
         }
     }
 
@@ -508,12 +599,22 @@ actual class SoftwareKeyStoreService actual constructor(
         providerId: String,
         alias: String,
         certChain: Array<Certificate>?,
+    ): ManagedKeyInfoType<*> = withMutationLock { storeKeyLocked(keyInfo, providerId, alias, certChain) }
+
+    private suspend fun storeKeyLocked(
+        keyInfo: ResolvedKeyInfoType<*>, providerId: String, alias: String, certChain: Array<Certificate>?,
     ): ManagedKeyInfoType<*> {
         require(config.accessMode != KeyStoreAccessMode.READ.accessMode) { "Cannot store keys in READ mode" }
+        if ((config as? Pkcs12KeyStoreConfig)?.retainAliases == true) {
+            require(keyInfo.keyType == KeyTypeMapping.Symmetric && certChain.isNullOrEmpty()) {
+                "Retained aliases support symmetric keys only"
+            }
+        }
         // Apply the write against the active keystore (the disk-reloaded overlay when present) so it
         // sits on top of any durable write another instance already made to the same file.
         maybeReloadFromDisk()
         val ks = currentKeyStore()
+        requireMutableAlias(alias)
 
         val visibility = keyInfo.keyVisibility ?: config.keyVisibility
         if (config.keyVisibility === KeyVisibility.PUBLIC.keyVisibility && visibility === KeyVisibility.PRIVATE) {
@@ -523,6 +624,7 @@ actual class SoftwareKeyStoreService actual constructor(
         if (!config.overwriteAlias) {
             check(!ks.containsAlias(alias)) { "Cannot overwrite key alias $alias, as alias already exists in keystore and overwriting is not enabled" }
         }
+        reserveRetainedAlias(alias)
 
         val managedKeyInfo =
             ManagedKeyInfo(
@@ -602,7 +704,9 @@ actual class SoftwareKeyStoreService actual constructor(
      * @throws IllegalStateException If the keystore is in `KeyProviderAccessMode.READ` mode.
      * @throws PKIException If the key cannot be retrieved for deletion.
      */
-    actual override suspend fun deleteKey(keyInfo: KeyInfoType<*>): Boolean {
+    actual override suspend fun deleteKey(keyInfo: KeyInfoType<*>): Boolean = withMutationLock { deleteKeyLocked(keyInfo) }
+
+    private suspend fun deleteKeyLocked(keyInfo: KeyInfoType<*>): Boolean {
         require(config.accessMode != KeyStoreAccessMode.READ.accessMode) { "Cannot delete keys in READ mode" }
 
         // A PKCS12/JKS private-key entry must retain a physical certificate. After logical
@@ -622,6 +726,7 @@ actual class SoftwareKeyStoreService actual constructor(
      * @return `true` if the entry was successfully deleted, `false` otherwise.
      */
     private suspend fun deleteEntry(alias: String): Boolean {
+        requireMutableAlias(alias)
         val ks = currentKeyStore()
         try {
             ks.deleteEntry(alias)
@@ -657,7 +762,13 @@ actual class SoftwareKeyStoreService actual constructor(
         alias: String,
         certificates: Array<Certificate>,
         keyInfo: ResolvedKeyInfoType<*>?,
+    ) = withMutationLock { storeCertificateChainLocked(alias, certificates, keyInfo) }
+
+    private suspend fun storeCertificateChainLocked(
+        alias: String, certificates: Array<Certificate>, keyInfo: ResolvedKeyInfoType<*>?,
     ) {
+        require((config as? Pkcs12KeyStoreConfig)?.retainAliases != true) { "Retained key profiles do not store certificates" }
+        requireMutableAlias(alias)
         require(config.accessMode != KeyStoreAccessMode.READ.accessMode) { "Cannot store certificate chains in READ mode" }
         require(certificates.isNotEmpty()) { "Storing a certificate chain requires certificates to be present" }
         keyInfo?.let { require(alias == it.alias) { "Alias '$alias' need to match key alias '${it.alias}'" } }
@@ -696,10 +807,11 @@ actual class SoftwareKeyStoreService actual constructor(
                 Pair(certChain, resolvedKeyInfo)
             }
 
-        storeKey(
+        storeKeyLocked(
             keyInfo = resolvedKeyInfo,
             providerId = keyInfo.providerId ?: config.id,
             alias = alias,
+            certChain = null,
         )
 
         // storeKey already flushed durably; this extra flush is a no-op when no further
@@ -719,7 +831,11 @@ actual class SoftwareKeyStoreService actual constructor(
     actual override suspend fun storeTrustedCertificate(
         alias: String,
         certificate: Certificate,
-    ) {
+    ) = withMutationLock { storeTrustedCertificateLocked(alias, certificate) }
+
+    private suspend fun storeTrustedCertificateLocked(alias: String, certificate: Certificate) {
+        require((config as? Pkcs12KeyStoreConfig)?.retainAliases != true) { "Retained key profiles do not store certificates" }
+        requireMutableAlias(alias)
         require(config.accessMode != KeyStoreAccessMode.READ.accessMode) { "Cannot store certificates in READ mode" }
         maybeReloadFromDisk()
         val ks = currentKeyStore()
@@ -819,7 +935,10 @@ actual class SoftwareKeyStoreService actual constructor(
      *
      * @throws IllegalStateException If the keystore is in `KeyProviderAccessMode.READ` mode.
      */
-    actual override suspend fun deleteCertificateChain(alias: String): Boolean {
+    actual override suspend fun deleteCertificateChain(alias: String): Boolean = withMutationLock { deleteCertificateChainLocked(alias) }
+
+    private suspend fun deleteCertificateChainLocked(alias: String): Boolean {
+        requireMutableAlias(alias)
         require(config.accessMode != KeyStoreAccessMode.READ.accessMode) { "Cannot delete certificate chains in READ mode" }
         maybeReloadFromDisk()
         val ks = currentKeyStore()
@@ -904,7 +1023,9 @@ actual class SoftwareKeyStoreService actual constructor(
      * @throws IllegalStateException If the keystore is in `KeyProviderAccessMode.READ` mode.
      * @throws IllegalArgumentException If the alias does not exist in the keystore.
      */
-    actual override suspend fun deleteCertificate(alias: String): Boolean {
+    actual override suspend fun deleteCertificate(alias: String): Boolean = withMutationLock { deleteCertificateLocked(alias) }
+
+    private suspend fun deleteCertificateLocked(alias: String): Boolean {
         require(config.accessMode != KeyStoreAccessMode.READ.accessMode) { "Cannot delete certificates in READ mode" }
         maybeReloadFromDisk()
         val ks = currentKeyStore()
@@ -1153,9 +1274,19 @@ actual class SoftwareKeyStoreService actual constructor(
                     fos.flush()
                     try {
                         channel.force(true) // durability
-                    } catch (_: Throwable) {
-                        // Ignored: filesystem may not support force/fsync
+                    } catch (failure: Exception) {
+                        if ((config as? Pkcs12KeyStoreConfig)?.retainAliases == true) throw failure
                     }
+                }
+
+                if ((config as? Pkcs12KeyStoreConfig)?.retainAliases == true) {
+                    // The retained profile cannot silently accept a failed or non-atomic write.
+                    java.nio.file.Files.move(
+                        tmpFile.toPath(), targetFile.toPath(),
+                        java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+                        java.nio.file.StandardCopyOption.ATOMIC_MOVE,
+                    )
+                    return@withContext
                 }
 
                 // Keep a backup of previous good state, then atomically replace

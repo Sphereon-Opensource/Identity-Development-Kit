@@ -32,6 +32,7 @@ import com.sphereon.core.api.http.describe.HttpMethod
 import com.sphereon.core.api.http.describe.MediaType
 import com.sphereon.core.api.http.response.jsonResponse
 import com.sphereon.data.store.credential.design.PublicDesignAssetPaths
+import com.sphereon.data.store.credential.design.PublishedVctReader
 import com.sphereon.di.session.SessionScope
 import com.sphereon.openid.oid4vci.issuer.config.Oid4vciIssuerConfigProvider
 import com.sphereon.openid.oid4vci.issuer.config.SdJwtVcSpecProfile
@@ -89,6 +90,8 @@ class GetVctTypeMetadataEndpointCommandImpl(
     private val configProvider: Oid4vciIssuerConfigProvider,
     private val restConfigProvider: Oid4vciRestConfigProvider,
     private val publicUrlResolver: Oid4vciIssuerPublicUrlResolver,
+    /** The tenant's explicitly published VCT projections, when the assembly hosts them. */
+    private val publishedVctReader: PublishedVctReader?,
 ) : HttpEndpointCommandAdapter(
         id = GetVctTypeMetadataEndpointCommand.COMMAND_ID,
         execution = execution,
@@ -101,6 +104,11 @@ class GetVctTypeMetadataEndpointCommandImpl(
     ): IdkResult<GenericHttpResponse, IdkError> {
         val request = applyDuring(args).withExtractedParams(GetVctTypeMetadataEndpointCommand.ENDPOINT.pathPattern)
         val vctId = request.requirePathParam("vctId").getOrElse { return Err(it) }
+
+        // What the tenant explicitly published is served first and as stored: the projection is immutable and already
+        // absolute. Checking it first keeps metadata-only tenants, which have no issuer configuration, off the issuer
+        // provider, so issuer and metadata-only hosting share this one path.
+        publishedVctReader?.read(vctId)?.let { return Ok(jsonResponse(200, it)) }
 
         val resolved =
             vctTypeMetadataProvider.resolve(vctId)

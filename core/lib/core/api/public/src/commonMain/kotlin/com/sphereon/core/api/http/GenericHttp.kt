@@ -127,6 +127,12 @@ data class GenericHttpRequest(
      */
     val multiValueQueryParameters: Map<String, List<String>> = emptyMap(),
 ) {
+    /** Request metadata is useful for diagnostics; credentials and payloads are not. */
+    override fun toString(): String =
+        "GenericHttpRequest(method=${method.replace("\r", "").replace("\n", "")}, " +
+            "path=${path.substringBefore('?').replace("\r", "").replace("\n", "")}, " +
+            "headers=[REDACTED], query=[REDACTED], body=[REDACTED])"
+
     /**
      * Request body as String - lazily loaded only when accessed.
      * For GET/DELETE requests where body is never accessed, this saves memory and I/O.

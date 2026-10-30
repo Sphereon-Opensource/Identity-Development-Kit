@@ -24,6 +24,28 @@ import kotlin.test.assertTrue
 
 class GenericHttpBodyTest {
     @Test
+    fun requestStringDoesNotExposeCredentialsOrPayload() {
+        val text = GenericHttpRequest(
+            method = "POST", path = "/credentials?path-secret=hidden",
+            headers = mapOf("Authorization" to "bearer-secret", "Cookie" to "cookie-secret"),
+            multiValueHeaders = mapOf("X-Token" to listOf("multi-header-secret")),
+            queryParameters = mapOf("token" to "query-secret"),
+            multiValueQueryParameters = mapOf("token" to listOf("multi-query-secret")),
+            pathParameters = mapOf("id" to "path-parameter-secret"),
+            bodyContent = GenericHttpBody.Text("body-secret"),
+        ).toString()
+        assertTrue(text.contains("POST"))
+        assertTrue(text.contains("/credentials"))
+        for (secret in listOf("path-secret", "bearer-secret", "cookie-secret", "multi-header-secret",
+            "query-secret", "multi-query-secret", "path-parameter-secret", "body-secret")) {
+            assertFalse(text.contains(secret))
+        }
+        val bytes = GenericHttpRequest(method = "POST", path = "/credentials",
+            bodyContent = GenericHttpBody.Bytes(byteArrayOf(101, 102, 103))).toString()
+        assertFalse(bytes.contains("101, 102, 103"))
+    }
+
+    @Test
     fun emptyBodyReportsIsEmptyTrueAndReturnsNullForConversions() {
         val body = GenericHttpBody.Empty
 
