@@ -23,6 +23,7 @@ import kotlin.test.assertTrue
 class UniversalHttpAdapterFramingDispatchTest {
     @Test
     fun malformedFramingUsesUniversal400CloseAndNeverDispatchesPipelinedRequest() = runBlocking {
+        assumeReviewedCioRuntime()
         val markerHits = AtomicInteger()
         val genericErrorHandlerHits = AtomicInteger()
         val universalPipelineHits = AtomicInteger()

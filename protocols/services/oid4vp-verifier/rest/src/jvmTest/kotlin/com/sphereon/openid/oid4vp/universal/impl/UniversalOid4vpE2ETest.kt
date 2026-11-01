@@ -552,7 +552,7 @@ class UniversalOid4vpE2ETest {
             val vcPayload =
                 sdJwtPayload {
                     iss("https://issuer.example.com")
-                    claim("vct", "https://example.com/PersonIdentificationData")
+                    claim("vct", "urn:test:pid")
                     claimSd("given_name", "Alice")
                     claimSd("family_name", "Wonderland")
                     claimSd("birthdate", "1990-01-15")
@@ -847,7 +847,7 @@ class UniversalOid4vpE2ETest {
             val vcPayload =
                 sdJwtPayload {
                     iss("https://issuer.example.com")
-                    claim("vct", "https://example.com/PersonIdentificationData")
+                    claim("vct", "urn:test:pid")
                     claimSd("given_name", "Bob")
                     claimSd("family_name", "Builder")
                     claimSd("birthdate", "1985-03-20")

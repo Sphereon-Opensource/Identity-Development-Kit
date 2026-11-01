@@ -321,7 +321,8 @@ includeProject("tests-oauth2-integration", "tests/oauth2-integration")
 includeProject("tests-oidf-conformance-oidc-op", "tests/oidf/conformance/oidc/op")
 includeProject("tests-oidf-conformance-oid4vc", "tests/oidf/conformance/oid4vc")
 includeProject("tests-oidf-conformance-oid4vc-services", "tests/oidf/conformance/oid4vc-services")
-includeProject("tests-oidf-conformance-oid4vc-wallet", "tests/oidf/conformance/oid4vc-wallet")
+// tests-oidf-conformance-oid4vc-wallet needs the standalone wallet repository's products, which
+// depend on IDK; the conformance build (conformance/settings.gradle.kts) owns that lane.
 
 
 // ===========================================

@@ -765,7 +765,7 @@ class UniversalOid4vpE2ETest {
                             payload =
                                 sdJwtPayload {
                                     iss("https://issuer.example.com")
-                                    claim("vct", "https://example.com/PersonIdentificationData")
+                                    claim("vct", "urn:test:credential")
                                     claimSd("given_name", "Alice")
                                     claim("cnf", cnfValue)
                                 },
@@ -1157,7 +1157,7 @@ class UniversalOid4vpE2ETest {
                             payload =
                                 sdJwtPayload {
                                     iss("https://issuer.example.com")
-                                    claim("vct", "https://example.com/PersonIdentificationData")
+                                    claim("vct", "urn:test:credential")
                                     claimSd("given_name", "Alice")
                                     claim("cnf", cnfValue)
                                 },

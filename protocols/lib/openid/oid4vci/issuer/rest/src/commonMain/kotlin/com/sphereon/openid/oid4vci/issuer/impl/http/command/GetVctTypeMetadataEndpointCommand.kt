@@ -91,7 +91,7 @@ class GetVctTypeMetadataEndpointCommandImpl(
     private val restConfigProvider: Oid4vciRestConfigProvider,
     private val publicUrlResolver: Oid4vciIssuerPublicUrlResolver,
     /** The tenant's explicitly published VCT projections, when the assembly hosts them. */
-    private val publishedVctReader: PublishedVctReader?,
+    private val publishedVctReader: PublishedVctReader? = null,
 ) : HttpEndpointCommandAdapter(
         id = GetVctTypeMetadataEndpointCommand.COMMAND_ID,
         execution = execution,

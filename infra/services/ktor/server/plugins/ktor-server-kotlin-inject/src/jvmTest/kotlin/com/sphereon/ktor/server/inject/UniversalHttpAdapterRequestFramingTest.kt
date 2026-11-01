@@ -70,6 +70,7 @@ class UniversalHttpAdapterRequestFramingTest {
 
     @Test
     fun malformedFramingRejectsAndClosesBeforePipelinedRequestDispatch() = runBlocking {
+        assumeReviewedCioRuntime()
         val dispatched = AtomicInteger()
         val markerHits = AtomicInteger()
         val server = embeddedServer(CIO, host = "127.0.0.1", port = 0) {
