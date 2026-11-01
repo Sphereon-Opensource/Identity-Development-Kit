@@ -72,8 +72,8 @@ class WalletStoreOid4vpCredentialResolver(
             for (credentialRecordId in selectedCredentialIdsByRequirement[query.id].orEmpty().distinct()) {
                 val record = credentialStore.requireCredential(context.walletUnitId, credentialRecordId)
                 val instance =
-                    record.presentableOid4vpInstance(now)
-                        ?: error("Credential record '$credentialRecordId' has no presentable instance")
+                    record.presentableOid4vpInstance(now, query)
+                        ?: error("Credential record '$credentialRecordId' has no presentable instance of the requested type")
                 val holderVerificationMethod =
                     if (
                         instance.format == CredentialFormat.JWT_VC_JSON ||
@@ -236,14 +236,14 @@ class WalletStoreOid4vpCredentialResolver(
             } else {
                 null
             }
-            val presentableInstance = record?.presentableOid4vpInstance(now)
+            val presentableInstance = record?.presentableOid4vpInstance(now, query)
             if (candidate.format.isMdoc) {
                 if (presentableInstance == null) continue
             }
             if (query.claims != null) {
                 val claimResolver = credentialClaimValuesResolver ?: continue
                 val recordValue = requireNotNull(record)
-                val instance = presentableInstance ?: recordValue.presentableOid4vpInstance(now) ?: continue
+                val instance = presentableInstance ?: recordValue.presentableOid4vpInstance(now, query) ?: continue
                 val matchesOption =
                     resolvedRequest.credentialDisclosurePathOptionsOrEmpty(query.id).any { option ->
                         option.all { path -> claimResolver.containsDisclosurePath(recordValue, instance.id, path) }

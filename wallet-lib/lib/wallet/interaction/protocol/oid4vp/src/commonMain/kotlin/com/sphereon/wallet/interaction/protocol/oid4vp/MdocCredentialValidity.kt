@@ -25,9 +25,12 @@ private val mobileSecurityObjectCodec = MobileSecurityObjectCborCodecImpl()
 /**
  * Select from concrete instances, not the record's aggregate validity. Legacy mdoc records may
  * have UNKNOWN persisted validity even though their MSO carries the required signed validityInfo.
+ * The newest presentable instance wins, as it does for a query (see the query-aware overload).
  */
 internal fun CredentialRecord.presentableOid4vpInstance(now: Instant): CredentialInstance? =
-    instances.firstOrNull { it.isPresentableOid4vpInstance(now) }
+    instances
+        .filter { it.isPresentableOid4vpInstance(now) }
+        .maxWithOrNull(compareBy<CredentialInstance>({ it.issuedAt ?: Instant.DISTANT_PAST }, { it.storedAt }))
 
 internal fun CredentialInstance.isPresentableOid4vpInstance(now: Instant): Boolean {
     if (lifecycleState != CredentialLifecycleState.ACTIVE) return false

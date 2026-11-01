@@ -17,7 +17,7 @@
 package com.sphereon.oauth2.oidf.op
 
 import com.sphereon.core.defaults.time.ClockModule
-import com.sphereon.oauth2.server.authorization.impl.time.OAuth2ArtifactClockModule
+import com.sphereon.oauth2.server.authorization.time.OAuth2ArtifactClockModule
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesTo
 import dev.zacsweers.metro.Named

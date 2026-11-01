@@ -5,6 +5,7 @@
 
 package com.sphereon.oauth2.server.authorization.impl.time
 
+import com.sphereon.oauth2.server.authorization.time.MonotonicOAuth2ArtifactClock
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.time.Clock
