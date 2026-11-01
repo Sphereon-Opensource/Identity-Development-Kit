@@ -27,6 +27,8 @@ import com.sphereon.crypto.core.generic.SignatureAlgorithm
 import com.sphereon.crypto.core.jose.JwkUse
 import com.sphereon.crypto.core.kms.KeyManagerService
 import com.sphereon.crypto.core.kms.command.GenerateKeyResult
+import com.sphereon.crypto.core.kms.requireManagedSigningKeySelection
+import com.sphereon.crypto.core.kms.resolveManagedSigningKeySelection
 import com.sphereon.oauth2.server.authorization.command.RotateSigningKeyArgs
 import com.sphereon.oauth2.server.authorization.impl.storage.memory.InMemorySigningKeyStore
 import com.sphereon.oauth2.server.authorization.impl.testutil.OAuth2ServerTestContext
@@ -84,6 +86,31 @@ class RotateSigningKeyCommandImplTest {
             assertNotNull(storedActive, "store must hold the freshly-rotated ACTIVE key")
             assertEquals("kid-bootstrap", storedActive.kid)
             assertEquals(SignatureAlgorithm.RSA_SHA256, storedActive.algorithm)
+        }
+
+    @Test
+    fun rotateWithoutRequestedKidPersistsTheKidTheKmsReportsSoTheKeyCanSign() =
+        runTest {
+            // The software KMS reports a JWK-thumbprint kid for a generated key and refuses to sign the
+            // alias under any other kid. A rotation that published its own planned kid would register a
+            // key that cannot sign; the row must carry the KMS-reported kid.
+            val store: SigningKeyStore = InMemorySigningKeyStore()
+            val command = RotateSigningKeyCommandImpl(ctx.execution, ctx.keyManagerService, store)
+
+            val result = command.execute(RotateSigningKeyArgs(tenantId = tenant, algorithm = SignatureAlgorithm.ECDSA_SHA256))
+
+            assertTrue(result.isOk, "rotation must succeed: ${if (result.isErr) result.error else ""}")
+            val keyInfo = result.value.newActive.keyInfo
+            val provider = ctx.kmsProviderRegistry.getProviderById(assertNotNull(keyInfo.providerId))
+            val canonical =
+                provider.resolveManagedSigningKeySelection(
+                    KeyInfo<KeyType>(alias = assertNotNull(keyInfo.alias), providerId = provider.id),
+                )
+            assertNotNull(canonical.kid, "the software KMS reports a kid for the generated key")
+            assertEquals(canonical.kid, keyInfo.kid, "the registered kid must be the kid the KMS reports")
+            assertEquals(canonical.kid, store.getActive(tenant).value?.kid)
+            // The managed signing selector accepts the registered key, so tokens can be signed with it.
+            provider.requireManagedSigningKeySelection(keyInfo)
         }
 
     @Test

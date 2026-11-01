@@ -73,19 +73,19 @@ object ThemeValidator {
     }
 
     /**
-     * Enforce the key rules per scope: PRODUCT definitions require a productType,
+     * Enforce the key rules per scope: PRODUCT and TENANT_PRODUCT definitions require a productType,
      * APPLICATION definitions require an applicationId, and no other scope carries either key.
      */
     private fun validateScopeKeys(definition: ThemeDefinition): List<String> {
         val errors = mutableListOf<String>()
 
         when (definition.scope) {
-            ThemeScope.PRODUCT -> {
+            ThemeScope.PRODUCT, ThemeScope.TENANT_PRODUCT -> {
                 if (definition.productType == null) {
-                    errors.add("PRODUCT-scoped definitions require a productType")
+                    errors.add("${definition.scope}-scoped definitions require a productType")
                 }
                 if (definition.applicationId != null) {
-                    errors.add("PRODUCT-scoped definitions must not carry an applicationId")
+                    errors.add("${definition.scope}-scoped definitions must not carry an applicationId")
                 }
             }
 

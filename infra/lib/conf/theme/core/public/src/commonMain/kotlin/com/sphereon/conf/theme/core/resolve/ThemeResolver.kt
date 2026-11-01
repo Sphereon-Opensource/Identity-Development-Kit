@@ -22,15 +22,15 @@ import com.sphereon.core.compat.JsExportCompat
 
 /**
  * Resolves a fully flattened theme by merging definition layers
- * in precedence order: SYSTEM < PRODUCT < TENANT < APPLICATION < PRINCIPAL.
+ * in precedence order: SYSTEM < PRODUCT < TENANT < TENANT_PRODUCT < APPLICATION < PRINCIPAL.
  */
 @JsExportCompat
 interface ThemeResolver {
     /**
      * Resolve the effective theme for a tenant.
      *
-     * The PRODUCT and APPLICATION layers apply only when [applicationId] is supplied:
-     * the application's product type selects the PRODUCT layer and the application id
+     * The PRODUCT, TENANT_PRODUCT and APPLICATION layers apply only when [applicationId] is supplied:
+     * the application's product type selects the PRODUCT and TENANT_PRODUCT layers and the application id
      * selects the APPLICATION layer.
      *
      * @param tenant The tenant identifier

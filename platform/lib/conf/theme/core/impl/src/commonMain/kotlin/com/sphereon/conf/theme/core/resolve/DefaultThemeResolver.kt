@@ -37,10 +37,11 @@ import kotlin.time.Clock
  * 1. SYSTEM baseline (dark baseline when the variant is DARK)
  * 2. PRODUCT scope of the application's product type: common (variant null), then variant specific
  * 3. TENANT scope: common, then variant specific
- * 4. APPLICATION scope (applicationId match): common, then variant specific
- * 5. PRINCIPAL scope (authenticated principal only): common, then variant specific
+ * 4. TENANT_PRODUCT scope of the application's product type: common, then variant specific
+ * 5. APPLICATION scope (applicationId match): common, then variant specific
+ * 6. PRINCIPAL scope (authenticated principal only): common, then variant specific
  *
- * Steps 2 and 4 are skipped when no applicationId is supplied; step 2 needs the
+ * Steps 2, 4 and 5 are skipped when no applicationId is supplied; steps 2 and 4 need the
  * application's product type, looked up through the store's application registry.
  */
 @Inject
@@ -78,6 +79,14 @@ class DefaultThemeResolver(
         layers += store.getDefinitionsByScope(tenant, ThemeScope.TENANT, null)
         if (variant != null) {
             layers += store.getDefinitionsByScope(tenant, ThemeScope.TENANT, variant)
+        }
+
+        // TENANT_PRODUCT scope: the tenant's default for the application's product type
+        if (application != null) {
+            layers += store.getDefinitionsByScope(tenant, ThemeScope.TENANT_PRODUCT, null, productType = application.productType)
+            if (variant != null) {
+                layers += store.getDefinitionsByScope(tenant, ThemeScope.TENANT_PRODUCT, variant, productType = application.productType)
+            }
         }
 
         // APPLICATION scope: only when an applicationId is supplied

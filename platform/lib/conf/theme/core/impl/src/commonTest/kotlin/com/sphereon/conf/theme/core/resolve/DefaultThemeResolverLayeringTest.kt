@@ -88,6 +88,24 @@ class DefaultThemeResolverLayeringTest {
         }
 
     @Test
+    fun tenantProductScopeSitsBetweenTenantAndApplication() =
+        runTest {
+            val store = storeWithApplication()
+            store.saveDefinition(tenant, definition("tenant", ThemeScope.TENANT, "#202020"))
+            store.saveDefinition(
+                tenant,
+                definition("tenant-product", ThemeScope.TENANT_PRODUCT, "#252525", productType = ProductType.WEB_WALLET),
+            )
+            val resolver = DefaultThemeResolver(store)
+
+            assertEquals("#252525", resolver.resolve(tenant, applicationId = applicationId).tokens["color.primary"])
+            assertEquals("#202020", resolver.resolve(tenant).tokens["color.primary"])
+
+            store.saveDefinition(tenant, definition("application", ThemeScope.APPLICATION, "#303030", applicationId = applicationId))
+            assertEquals("#303030", resolver.resolve(tenant, applicationId = applicationId).tokens["color.primary"])
+        }
+
+    @Test
     fun applicationScopeBeatsTenantScope() =
         runTest {
             val store = storeWithApplication()

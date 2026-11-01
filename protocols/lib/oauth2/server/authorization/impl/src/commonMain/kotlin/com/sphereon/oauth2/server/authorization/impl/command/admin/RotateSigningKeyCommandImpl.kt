@@ -107,12 +107,15 @@ class RotateSigningKeyCommandImpl(
                 ?: return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "KMS generateKeyResult returned no keyPair for alias $plannedAlias"))
 
         // The wire-visible `kid` MUST match across (a) the JWS header on issued tokens, (b)
-        // the JWKS endpoint entry, and (c) the SigningKeyStore row. Pin them all to
-        // `plannedKid` so the KMS-derived kid (which depends on the key bytes) does not
-        // diverge from what the AS publishes.
+        // the JWKS endpoint entry, and (c) the SigningKeyStore row. When the KMS reports a kid
+        // for the new key (a JWK thumbprint, for instance), that kid is the key's identity on
+        // the signing path: the provider refuses to sign the alias under any other kid. The
+        // row therefore carries the KMS-reported kid, and the planned kid only when the KMS
+        // reports none. A caller-requested kid is kept as requested.
+        val kid = applied.requestedKid ?: keyPair.kid?.takeIf { it.isNotBlank() } ?: plannedKid
         val keyInfo: KeyInfo<KeyType> =
             KeyInfo<KeyType>(
-                kid = plannedKid,
+                kid = kid,
                 alias = keyPair.alias,
                 providerId = keyPair.providerId,
                 signatureAlgorithm = applied.algorithm,
@@ -150,8 +153,8 @@ class RotateSigningKeyCommandImpl(
     }
 
     /**
-     * Generate a CSPRNG-derived `kid` scoped per tenant + millis-since-epoch so the value
-     * is unique across the deployment lifetime AND human-debuggable (operators reading the
+     * Generate a CSPRNG-derived `kid` scoped per tenant + millis-since-epoch. It names the KMS alias, and it is the
+     * published kid only when the KMS reports none for the generated key. The value is unique across the deployment lifetime AND human-debuggable (operators reading the
      * audit log can tell which rotation produced the kid). Length is bounded so JWS headers
      * stay compact.
      */

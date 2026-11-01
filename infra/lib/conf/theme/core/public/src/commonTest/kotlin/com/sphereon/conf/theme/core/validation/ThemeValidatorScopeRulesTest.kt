@@ -61,6 +61,22 @@ class ThemeValidatorScopeRulesTest {
     }
 
     @Test
+    fun tenantProductScopeRequiresProductTypeAndRejectsApplicationId() {
+        val valid = ThemeValidator.validate(definition(ThemeScope.TENANT_PRODUCT, productType = ProductType.MOBILE_WALLET))
+        assertTrue(valid.valid, "TENANT_PRODUCT definition with productType should be valid: ${valid.errors}")
+
+        val missing = ThemeValidator.validate(definition(ThemeScope.TENANT_PRODUCT))
+        assertFalse(missing.valid, "TENANT_PRODUCT definition without productType should be invalid")
+        assertTrue(missing.errors.any { it.contains("productType") }, "Errors should mention productType: ${missing.errors}")
+
+        val withApplication =
+            ThemeValidator.validate(
+                definition(ThemeScope.TENANT_PRODUCT, productType = ProductType.WEB_WALLET, applicationId = "app-1"),
+            )
+        assertFalse(withApplication.valid, "TENANT_PRODUCT definition carrying an applicationId should be invalid")
+    }
+
+    @Test
     fun applicationScopeWithApplicationIdIsValid() {
         val result = ThemeValidator.validate(definition(ThemeScope.APPLICATION, applicationId = "app-1"))
         assertTrue(result.valid, "APPLICATION definition with applicationId should be valid: ${result.errors}")
