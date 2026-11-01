@@ -8,7 +8,9 @@ name: Private CI
 # top-level repository gate makes it a no-op there.
 
 on:
+  # Pull requests run on open, new commits, reopen and when marked ready for review; drafts are skipped.
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
   workflow_dispatch:
     inputs:
       publish:
@@ -43,7 +45,7 @@ env:
 jobs:
   jvm:
     name: JVM Build & Test
-    if: github.repository == 'Sphereon-Opensource/Identity-Development-Kit-private'
+    if: github.repository == 'Sphereon-Opensource/Identity-Development-Kit-private' && (github.event_name != 'pull_request' || !github.event.pull_request.draft)
 #    runs-on: ubuntu-latest
     runs-on: linux-x64
     # Initial checked SNAPSHOT uploads exceed the ordinary verification budget.
