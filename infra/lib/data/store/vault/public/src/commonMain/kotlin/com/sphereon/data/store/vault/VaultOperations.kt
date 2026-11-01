@@ -63,10 +63,19 @@ data class CreateVaultRequest(
     val providerRef: String,
     val policyRef: VaultPolicyRef? = null,
     val condition: VaultMutationCondition = VaultMutationCondition.CREATE_ONLY,
+    /** The vault's owner. */
+    val owner: VaultSubject? = null,
+    /**
+     * Grants the vault starts with, committed together with the vault so it never exists without them.
+     * Each grant's `vaultId` must be this vault's id; their revisions are assigned on creation.
+     */
+    val initialGrants: List<VaultGrant> = emptyList(),
 ) {
     init {
         require(repositoryRef.isNotBlank()) { "repositoryRef must not be blank" }
         require(providerRef.isNotBlank()) { "providerRef must not be blank" }
+        require(initialGrants.all { it.vaultId == vaultId }) { "Initial grants must belong to the vault being created" }
+        require(initialGrants.map { it.grantId }.toSet().size == initialGrants.size) { "Initial grant IDs must be unique" }
     }
 }
 

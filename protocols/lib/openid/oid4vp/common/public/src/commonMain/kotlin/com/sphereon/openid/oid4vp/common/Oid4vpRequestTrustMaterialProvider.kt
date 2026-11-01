@@ -21,6 +21,8 @@ interface Oid4vpRequestTrustMaterialProvider {
 @Serializable
 data class Oid4vpRequestTrustMaterial(
     val x509: List<Oid4vpX509TrustAnchor> = emptyList(),
+    /** Entity Identifiers of the OpenID Federation Trust Anchors an `openid_federation` Verifier must chain to. */
+    val federationTrustAnchors: List<String> = emptyList(),
 )
 
 @Serializable

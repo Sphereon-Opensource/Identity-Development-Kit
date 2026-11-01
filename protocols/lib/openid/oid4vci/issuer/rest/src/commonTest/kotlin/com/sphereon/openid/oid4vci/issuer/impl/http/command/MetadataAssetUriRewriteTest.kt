@@ -190,6 +190,26 @@ class MetadataAssetUriRewriteTest {
     }
 
     @Test
+    fun keepsAHostedVctThisIssuerDoesNotServe() {
+        val shared = "https://network.example.com/public/schema/vct/adl-achievement-v2"
+        val metadata =
+            CredentialIssuerMetadata(
+                credentialIssuer = ACME_BASE,
+                credentialEndpoint = "$ACME_BASE/oid4vci/credential",
+                credentialConfigurationsSupported =
+                    mapOf(
+                        "EuPid" to CredentialConfigurationSupported(format = "dc+sd-jwt", vct = "https://platform.example.com/public/schema/vct/EuPid"),
+                        "Adl" to CredentialConfigurationSupported(format = "dc+sd-jwt", vct = shared),
+                    ),
+            )
+
+        val rewritten = metadata.withHostedVctUrls(ACME_BASE, setOf("EuPid")::contains)
+
+        assertEquals("$ACME_BASE/public/schema/vct/EuPid", rewritten.credentialConfigurationsSupported.getValue("EuPid").vct)
+        assertEquals(shared, rewritten.credentialConfigurationsSupported.getValue("Adl").vct, "a type another host publishes stays as issued")
+    }
+
+    @Test
     fun rewritesHostedVctUrlsToOriginWhenIssuerBaseCarriesPath() {
         val metadata =
             CredentialIssuerMetadata(

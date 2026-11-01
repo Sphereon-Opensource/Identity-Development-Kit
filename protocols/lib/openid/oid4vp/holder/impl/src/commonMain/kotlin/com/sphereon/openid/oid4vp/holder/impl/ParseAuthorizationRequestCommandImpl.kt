@@ -35,6 +35,7 @@ import com.sphereon.crypto.jose.jws.command.VerifyJwsArgs
 import com.sphereon.crypto.resolution.AdditionalIdentifierLookup
 import com.sphereon.crypto.resolution.extern.ExternalIdentifierDidOpts
 import com.sphereon.crypto.resolution.extern.ExternalIdentifierJwksUrlOpts
+import com.sphereon.crypto.resolution.extern.ExternalIdentifierOIDFEntityIdOpts
 import com.sphereon.crypto.resolution.extern.ExternalIdentifierResult
 import com.sphereon.crypto.resolution.extern.ExternalIdentifierX5cOpts
 import com.sphereon.crypto.resolution.extern.MultiExternalIdentifierService
@@ -735,6 +736,9 @@ class ParseAuthorizationRequestCommandImpl(
                     ))
                 }
                 val trustAnchors = trustMaterial.x509.map { it.certificatePem }
+                if (trustAnchors.isEmpty()) {
+                    return Err(IdkError.fromString(message = "No governed X.509 request trust anchors", code = "X5C_TRUST_MATERIAL_UNAVAILABLE"))
+                }
                 val resolved =
                     externalIdentifierService
                         .resolve(ExternalIdentifierX5cOpts(identifier = chain, verify = true, trustAnchors = trustAnchors))
@@ -761,6 +765,47 @@ class ParseAuthorizationRequestCommandImpl(
                     )
                 }
                 return Ok(x5cResolved.keyInfo)
+            }
+
+            // OpenID Federation for Wallet Architectures 1.0 section 6.3.1: the openid_credential_verifier keys of the
+            // Verifier's federation metadata are authoritative and any jwks in client_metadata is ignored. The Trust
+            // Chain must end in a governed federation Trust Anchor; the Entity's federation keys are never JAR keys.
+            ClientIdScheme.OPENID_FEDERATION -> {
+                val entityId =
+                    clientId?.let(ClientIdScheme::extractClientIdWithoutScheme)?.takeIf { it.isNotBlank() }
+                        ?: return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Federation-bound JAR requires an openid_federation client_id"))
+                val trustMaterial = requestTrustMaterialProvider.resolve().getOrElse {
+                    return Err(IdkError.fromString(message = "Governed federation request trust is unavailable", code = "OIDF_TRUST_MATERIAL_UNAVAILABLE"))
+                }
+                if (trustMaterial.federationTrustAnchors.isEmpty()) {
+                    return Err(IdkError.fromString(message = "No governed OpenID Federation Trust Anchors", code = "OIDF_TRUST_MATERIAL_UNAVAILABLE"))
+                }
+                val resolved =
+                    externalIdentifierService
+                        .resolve(
+                            ExternalIdentifierOIDFEntityIdOpts(
+                                identifier = entityId,
+                                trustAnchors = trustMaterial.federationTrustAnchors,
+                                entityType = OPENID_CREDENTIAL_VERIFIER_ENTITY_TYPE,
+                            ),
+                        ).getOrElse { err ->
+                            return Err(IdkError.fromString(message = err.message.defaultMessage, code = "OIDF_ENTITY_RESOLUTION_FAILED"))
+                        }
+                val federated = resolved as? ExternalIdentifierResult.OIDFEntityId ?: return Err(
+                    IdkError.fromString(message = "OpenID Federation resolution returned an unexpected result type", code = "OIDF_ENTITY_RESOLUTION_FAILED"),
+                )
+                if (!federated.trustEstablished) {
+                    return Err(IdkError.fromString(message = "No valid Trust Chain from $entityId to a governed Trust Anchor", code = "OIDF_TRUST_VALIDATION_FAILED"))
+                }
+                val selected =
+                    when {
+                        !requestedKid.isNullOrBlank() -> federated.jwks.firstOrNull { it.key.kid?.toString() == requestedKid }
+                        federated.jwks.size == 1 -> federated.jwks.single()
+                        else -> null
+                    } ?: return Err(
+                        IdkError.NOT_FOUND_ERROR(message = "No openid_credential_verifier key of $entityId matches the Request Object kid '$requestedKid'"),
+                    )
+                return Ok(selected)
             }
 
             else -> Unit
@@ -825,6 +870,7 @@ private const val DIGITAL_CREDENTIAL_PROTOCOL_UNSIGNED: String = "openid4vp-v1-u
 private const val DIGITAL_CREDENTIAL_PROTOCOL_SIGNED: String = "openid4vp-v1-signed"
 private const val DIGITAL_CREDENTIAL_PROTOCOL_MULTI_SIGNED: String = "openid4vp-v1-multisigned"
 private const val OAUTH_AUTHORIZATION_REQUEST_JWT_TYPE: String = "oauth-authz-req+jwt"
+private const val OPENID_CREDENTIAL_VERIFIER_ENTITY_TYPE: String = "openid_credential_verifier"
 
 internal data class VerifiedDigitalCredentialsSignature(
     val payload: JsonObject,

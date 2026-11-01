@@ -282,14 +282,10 @@ class ResolveAuthorizationRequestCommandImpl(
             processedArgs.additionalParameters["__idk_jar_x5c"]?.let { el ->
                 (el as? JsonArray)?.mapNotNull { it.jsonPrimitive.contentOrNull }
             }
-        val jarSignerMethod =
-            if (jarUsed) {
-                JarSignerMethod.detect(x5c = jarX5c, jwk = null, kid = jarKid)
-            } else {
-                null
-            }
+        val jarSignerMethod = requestObjectSignerMethod(parsedClientId.clientIdScheme, jarUsed, jarX5c, jarKid)
         val jarSignerCertificates =
             jarX5c
+                ?.takeUnless { jarSignerMethod == JarSignerMethod.FEDERATION }
                 ?.mapNotNull { derOrPem ->
                     try {
                         certificateFromPem(x509DerOrPemToPem(derOrPem))
@@ -483,4 +479,20 @@ internal fun presentationDefinitionToDcql(definitionElement: JsonElement): IdkRe
                 throwable = expected,
             ),
         )
+    }
+
+/**
+ * The JAR signer method checked against the client_id prefix. An openid_federation Request Object was verified with a
+ * key from the Verifier's federation metadata while parsing, so header material such as x5c takes no part in its trust.
+ */
+internal fun requestObjectSignerMethod(
+    scheme: ClientIdScheme,
+    jarUsed: Boolean,
+    x5c: List<String>?,
+    kid: String?,
+): JarSignerMethod? =
+    when {
+        !jarUsed -> null
+        scheme == ClientIdScheme.OPENID_FEDERATION -> JarSignerMethod.FEDERATION
+        else -> JarSignerMethod.detect(x5c = x5c, jwk = null, kid = kid)
     }

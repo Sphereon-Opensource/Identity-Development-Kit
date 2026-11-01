@@ -23,6 +23,10 @@ import com.sphereon.core.api.asErrorResult
 import com.sphereon.core.api.encodeToBase64Url
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.error.IdkErrorType
+import com.sphereon.crypto.core.ResolvedKeyInfo
+import com.sphereon.crypto.core.jose.JwaCurve
+import com.sphereon.crypto.core.jose.JwaKeyType
+import com.sphereon.crypto.core.jose.Jwk
 import com.sphereon.crypto.jose.jws.JwsJsonFlattened
 import com.sphereon.crypto.jose.jws.JwsJsonGeneral
 import com.sphereon.crypto.jose.jws.JwsValidationResult
@@ -33,9 +37,11 @@ import com.sphereon.crypto.jose.jws.command.CreateJwsArgs
 import com.sphereon.crypto.jose.jws.command.CreateJwsJsonArgs
 import com.sphereon.crypto.jose.jws.command.VerifyJwsArgs
 import com.sphereon.crypto.resolution.IIdentifierMethod
+import com.sphereon.crypto.resolution.extern.ExternalIdentifierOIDFEntityIdOpts
 import com.sphereon.crypto.resolution.extern.ExternalIdentifierOpts
 import com.sphereon.crypto.resolution.extern.ExternalIdentifierOptsOrResult
 import com.sphereon.crypto.resolution.extern.ExternalIdentifierResult
+import com.sphereon.crypto.resolution.extern.ExternalJwkInfo
 import com.sphereon.crypto.resolution.extern.MultiExternalIdentifierService
 import com.sphereon.ktor.http.client.FetchRequestUriCommandImpl
 import com.sphereon.ktor.http.client.ParseUriQueryCommand
@@ -50,6 +56,8 @@ import com.sphereon.oauth2.client.command.CreateSignedJarArgs
 import com.sphereon.oauth2.client.command.MergeRequestObjectArgs
 import com.sphereon.oauth2.client.command.MergedRequestObjectResult
 import com.sphereon.oauth2.client.command.ParseJarArgs
+import com.sphereon.openid.oid4vp.common.Oid4vpRequestTrustMaterial
+import com.sphereon.openid.oid4vp.common.Oid4vpRequestTrustMaterialProvider
 import com.sphereon.openid.oid4vp.holder.DigitalCredentialsAuthorizationRequest
 import com.sphereon.openid.oid4vp.common.impl.UnavailableOid4vpRequestTrustMaterialProvider
 import io.ktor.client.HttpClient
@@ -227,9 +235,112 @@ class RequestObjectVerificationKeyTest {
             assertEquals(0, jarService.mergeCalls, "the request-supplied client_metadata key must never verify the Request Object")
         }
 
+    @Test
+    fun requestObjectOfAFederationVerifierIsVerifiedWithItsResolvedVerifierKeyNotClientMetadata() =
+        runTest {
+            val jarService = RecordingJarService()
+            val federation = RecordingFederationResolution(trustEstablished = true)
+            val result = parseFederationRequest(jarService, federation, FederationTrust(listOf(FEDERATION_TRUST_ANCHOR)))
+
+            assertTrue(result.isErr, "the recording JAR service reports the key it was given")
+            assertEquals(1, jarService.mergeCalls)
+            assertTrue(jarService.lastVerificationKey.toString().contains(VERIFIER_REQUEST_KID), "the openid_credential_verifier key named by kid")
+            val opts = federation.lastOpts
+            assertEquals(FEDERATION_VERIFIER, opts?.identifier)
+            assertEquals(listOf(FEDERATION_TRUST_ANCHOR), opts?.trustAnchors)
+            assertEquals("openid_credential_verifier", opts?.entityType)
+        }
+
+    @Test
+    fun requestObjectOfAFederationVerifierWithoutAValidTrustChainIsRefused() =
+        runTest {
+            val jarService = RecordingJarService()
+            val result =
+                parseFederationRequest(jarService, RecordingFederationResolution(trustEstablished = false), FederationTrust(listOf(FEDERATION_TRUST_ANCHOR)))
+
+            assertTrue(result.isErr)
+            assertEquals("OIDF_TRUST_VALIDATION_FAILED", result.error.code)
+            assertEquals(0, jarService.mergeCalls, "neither the untrusted Entity key nor client_metadata may verify the Request Object")
+        }
+
+    @Test
+    fun requestObjectOfAFederationVerifierWithoutGovernedTrustAnchorsIsRefused() =
+        runTest {
+            val jarService = RecordingJarService()
+            val federation = RecordingFederationResolution(trustEstablished = true)
+            val result = parseFederationRequest(jarService, federation, FederationTrust(emptyList()))
+
+            assertTrue(result.isErr)
+            assertEquals("OIDF_TRUST_MATERIAL_UNAVAILABLE", result.error.code)
+            assertEquals(null, federation.lastOpts, "without a governed Trust Anchor the Entity is not resolved at all")
+            assertEquals(0, jarService.mergeCalls)
+        }
+
+    private suspend fun parseFederationRequest(
+        jarService: RecordingJarService,
+        federation: MultiExternalIdentifierService,
+        trust: Oid4vpRequestTrustMaterialProvider,
+    ): IdkResult<com.sphereon.oauth2.common.model.AuthorizationRequest, IdkError> {
+        val requestObject =
+            compactJws(
+                header =
+                    buildJsonObject {
+                        put("alg", "ES256")
+                        put("typ", "oauth-authz-req+jwt")
+                        put("kid", VERIFIER_REQUEST_KID)
+                    },
+                payload = authorizationRequestClaims(clientId = "openid_federation:$FEDERATION_VERIFIER"),
+            )
+        val metadata = attackerClientMetadata(kid = VERIFIER_REQUEST_KID).encodeURLParameter()
+        return parseCommand(jarService, externalIdentifierService = federation, requestTrustMaterialProvider = trust).parseAuthorizationRequest(
+            requestUri = "openid4vp://?request=$requestObject&client_metadata=$metadata",
+            walletConfig = null,
+        )
+    }
+
+    private class FederationTrust(private val anchors: List<String>) : Oid4vpRequestTrustMaterialProvider {
+        override suspend fun resolve(): IdkResult<Oid4vpRequestTrustMaterial, IdkError> = Ok(Oid4vpRequestTrustMaterial(federationTrustAnchors = anchors))
+    }
+
+    /** Stands in for the OpenID Federation Entity Identifier resolution and records what it was asked. */
+    private class RecordingFederationResolution(private val trustEstablished: Boolean) : MultiExternalIdentifierService {
+        var lastOpts: ExternalIdentifierOIDFEntityIdOpts? = null
+
+        override val supportedIdentifierMethods: List<IIdentifierMethod> = emptyList()
+
+        override suspend fun isSupportedIdentifier(identifier: Any): Boolean = true
+
+        override suspend fun isSupportedIdentifierMethod(identifierMethod: IIdentifierMethod): Boolean = true
+
+        override suspend fun isSupportedOpts(opts: ExternalIdentifierOptsOrResult): Boolean = opts is ExternalIdentifierOIDFEntityIdOpts
+
+        override suspend fun asSupportedOpts(opts: ExternalIdentifierOptsOrResult): IdkResult<ExternalIdentifierOpts, IdkErrorType> =
+            Ok(opts as ExternalIdentifierOpts)
+
+        override suspend fun resolve(opts: ExternalIdentifierOptsOrResult): IdkResult<ExternalIdentifierResult, IdkErrorType> {
+            val entityIdOpts = opts as ExternalIdentifierOIDFEntityIdOpts
+            lastOpts = entityIdOpts
+            val keys = arrayOf<ExternalJwkInfo>(verifierKey("another-request-key", "AAAA"), verifierKey(VERIFIER_REQUEST_KID, "BBBB"))
+            return Ok(
+                ExternalIdentifierResult.OIDFEntityId(
+                    identifierOpts = entityIdOpts,
+                    jwks = keys,
+                    keyInfo = keys.first(),
+                    trustedAnchors = listOf(FEDERATION_TRUST_ANCHOR),
+                    trustEstablished = trustEstablished,
+                ),
+            )
+        }
+
+        private fun verifierKey(kid: String, x: String) =
+            ResolvedKeyInfo.fromKey(Jwk(kty = JwaKeyType.EC, crv = JwaCurve.P_256, kid = kid, x = x, y = x))
+    }
+
     private fun parseCommand(
         jarService: JarService,
         injectClientMetadata: Boolean = false,
+        externalIdentifierService: MultiExternalIdentifierService = UnresolvableIdentifierService,
+        requestTrustMaterialProvider: Oid4vpRequestTrustMaterialProvider = UnavailableOid4vpRequestTrustMaterialProvider(),
     ): ParseAuthorizationRequestCommandImpl {
         val execution = TestExecutionContext.createExecution()
         val uriParser = ParseUriQueryCommandImpl(execution)
@@ -258,9 +369,9 @@ class RequestObjectVerificationKeyTest {
             fetchRequestUriCommand = FetchRequestUriCommandImpl(execution, NoNetworkHttpClientFactory),
             jarService = jarService,
             httpClientFactory = NoNetworkHttpClientFactory,
-            externalIdentifierService = UnresolvableIdentifierService,
+            externalIdentifierService = externalIdentifierService,
             jwtService = UnusedJwtService,
-            requestTrustMaterialProvider = UnavailableOid4vpRequestTrustMaterialProvider(),
+            requestTrustMaterialProvider = requestTrustMaterialProvider,
         )
     }
 
@@ -315,6 +426,7 @@ class RequestObjectVerificationKeyTest {
         private val mergedResult: MergedRequestObjectResult? = null,
     ) : JarService {
         var mergeCalls = 0
+        var lastVerificationKey: Any? = null
 
         override suspend fun createSignedJar(args: CreateSignedJarArgs) = Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "not used"))
 
@@ -324,6 +436,7 @@ class RequestObjectVerificationKeyTest {
 
         override suspend fun mergeRequestObject(args: MergeRequestObjectArgs): IdkResult<MergedRequestObjectResult, IdkError> {
             mergeCalls++
+            lastVerificationKey = args.verificationKey
             return mergedResult?.let { Ok(it) }
                 ?: Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "request object verified with ${args.verificationKey}"))
         }
@@ -394,6 +507,9 @@ class RequestObjectVerificationKeyTest {
     }
 
     private companion object {
+        const val FEDERATION_VERIFIER = "https://verifier.example/oid4vp/verifier"
+        const val FEDERATION_TRUST_ANCHOR = "https://anchor.example/federation"
+        const val VERIFIER_REQUEST_KID = "verifier-request-key"
         const val TRUSTED_VERIFIER_LEAF_CERTIFICATE =
             "MIIBtDCCAVqgAwIBAgICB9IwCgYIKoZIzj0EAwIwKjEoMCYGA1UEAwwfUmVxdWVzdCBPYmplY3QgVGVzdCBWZXJpZmllciBDQTAgFw0y" +
                 "NTAxMDEwMDAwMDBaGA8yMTI1MDEwMTAwMDAwMFowGzEZMBcGA1UEAwwQdmVyaWZpZXIuZXhhbXBsZTBZMBMGByqGSM49AgEGCCqGSM49" +

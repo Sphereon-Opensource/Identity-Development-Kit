@@ -22,12 +22,14 @@ import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 
 /**
- * Configuration-backed X.509 roots for request-object and client identifier validation.
+ * Configuration-backed X.509 roots and OpenID Federation Trust Anchors for request-object and
+ * client identifier validation.
  *
- * Anchors are read from `oid4vp.request.trust-anchors`, either as one value or as indexed
+ * X.509 anchors are read from `oid4vp.request.trust-anchors`, either as one value or as indexed
  * sub-keys (`oid4vp.request.trust-anchors.0`, `.1`, ...). A value may hold several concatenated
- * PEM certificates. With no anchors configured the provider fails closed, so an x5c chain can
- * never be accepted against its own leaf.
+ * PEM certificates. Federation Trust Anchor Entity Identifiers are read the same way from
+ * `oid4vp.request.federation-trust-anchors`. With neither configured the provider fails closed, so
+ * an x5c chain can never be accepted against its own leaf.
  */
 @SingleIn(SessionScope::class)
 @ContributesBinding(SessionScope::class)
@@ -43,30 +45,34 @@ class ConfiguredOid4vpRequestTrustMaterialProvider private constructor(
 
     override suspend fun resolve(): IdkResult<Oid4vpRequestTrustMaterial, IdkError> {
         val resolver = resolverProvider() ?: return Err(unavailable())
-        val values = buildList {
-            resolver.getPropertyAsString(TRUST_ANCHORS_KEY)?.let(::add)
+        val anchors = configuredValues(resolver, TRUST_ANCHORS_KEY).flatMap(::splitPemCertificates).distinct().map(::Oid4vpX509TrustAnchor)
+        val federationTrustAnchors = configuredValues(resolver, FEDERATION_TRUST_ANCHORS_KEY).map(String::trim).filter(String::isNotEmpty).distinct()
+        if (anchors.isEmpty() && federationTrustAnchors.isEmpty()) return Err(unavailable())
+        return Ok(Oid4vpRequestTrustMaterial(x509 = anchors, federationTrustAnchors = federationTrustAnchors))
+    }
+
+    private fun configuredValues(resolver: PropertyResolver, key: String): List<String> =
+        buildList {
+            resolver.getPropertyAsString(key)?.let(::add)
             addAll(
                 // Sorted by key so the anchor order is the same on every run and every platform.
-                resolver.getSubPropertiesAsString(setOf(TRUST_ANCHORS_KEY), stripPrefix = true, redact = false)
+                resolver.getSubPropertiesAsString(setOf(key), stripPrefix = true, redact = false)
                     .entries
                     .sortedBy { it.key }
                     .map { it.value },
             )
         }
-        val anchors = values.flatMap(::splitPemCertificates).distinct().map(::Oid4vpX509TrustAnchor)
-        if (anchors.isEmpty()) return Err(unavailable())
-        return Ok(Oid4vpRequestTrustMaterial(x509 = anchors))
-    }
 
     private fun unavailable(): IdkError =
         IdkError.fromString(
-            message = "No governed X.509 request trust anchors are configured under $TRUST_ANCHORS_KEY",
+            message = "No governed request trust anchors are configured under $TRUST_ANCHORS_KEY or $FEDERATION_TRUST_ANCHORS_KEY",
             code = "X5C_TRUST_MATERIAL_UNAVAILABLE",
             category = ErrorCategory.UNAVAILABLE,
         )
 
     companion object {
         const val TRUST_ANCHORS_KEY = "oid4vp.request.trust-anchors"
+        const val FEDERATION_TRUST_ANCHORS_KEY = "oid4vp.request.federation-trust-anchors"
         private const val PEM_BEGIN = "-----BEGIN CERTIFICATE-----"
         private const val PEM_END = "-----END CERTIFICATE-----"
 

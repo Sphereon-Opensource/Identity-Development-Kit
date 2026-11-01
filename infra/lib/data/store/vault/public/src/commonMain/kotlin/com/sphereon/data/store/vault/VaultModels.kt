@@ -16,6 +16,7 @@
 
 package com.sphereon.data.store.vault
 
+import kotlinx.serialization.EncodeDefault
 import kotlinx.serialization.Serializable
 import kotlin.time.Instant
 
@@ -23,6 +24,29 @@ import kotlin.time.Instant
 enum class VaultKind {
     GENERIC,
     WALLET,
+}
+
+/**
+ * The kind of subject that owns a vault or receives a grant. A principal is one user or workload; a group
+ * and an organization unit stand for their members; a tenant stands for the organization as a whole.
+ */
+@Serializable
+enum class VaultSubjectKind {
+    PRINCIPAL,
+    GROUP,
+    ORGANIZATION_UNIT,
+    TENANT,
+}
+
+/** A vault owner or grantee: what kind of subject it is and the platform's identifier for it. */
+@Serializable
+data class VaultSubject(
+    val kind: VaultSubjectKind,
+    val ref: String,
+) {
+    init {
+        require(ref.isNotBlank()) { "VaultSubject ref must not be blank" }
+    }
 }
 
 @Serializable
@@ -93,6 +117,13 @@ data class VaultDescriptor(
     val lifecycleState: VaultLifecycleState,
     val createdAt: Instant,
     val updatedAt: Instant,
+    /**
+     * Who the vault belongs to, fixed at creation. Absent only on vaults created before ownership existed;
+     * an authorization provider decides what an unowned vault permits. Left out of the encoding when absent,
+     * so manifests signed before this field existed still verify.
+     */
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    val owner: VaultSubject? = null,
 ) {
     init {
         require(repositoryRef.isNotBlank()) { "repositoryRef must not be blank" }

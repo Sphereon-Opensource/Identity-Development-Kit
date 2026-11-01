@@ -47,6 +47,9 @@ import com.sphereon.openid.oid4vci.issuer.command.BuildIssuerMetadataCommand
 import com.sphereon.openid.oid4vci.issuer.command.BuildSignedIssuerMetadataArgs
 import com.sphereon.openid.oid4vci.issuer.command.BuildSignedIssuerMetadataCommand
 import com.sphereon.openid.oid4vci.issuer.config.Oid4vciIssuerConfigProvider
+import com.sphereon.openid.oid4vci.issuer.config.NoOpVctTypeMetadataProvider
+import com.sphereon.openid.oid4vci.issuer.config.VctTypeMetadataProvider
+import com.sphereon.data.store.credential.design.PublishedVctReader
 import com.sphereon.openid.oid4vci.issuer.impl.signing.IssuerKeyIdResolver
 import com.sphereon.openid.oid4vci.rest.Oid4vciRestConfigProvider
 import dev.zacsweers.metro.ContributesBinding
@@ -244,12 +247,23 @@ class GetIssuerMetadataEndpointCommandImpl(
     private val multiManagedIdentifierService: MultiManagedIdentifierService,
     private val publicUrlResolver: Oid4vciIssuerPublicUrlResolver,
     private val issuerKeyIdResolver: IssuerKeyIdResolver? = null,
+    /** What `/public/schema/vct/{id}` serves for this tenant, the same sources as [GetVctTypeMetadataEndpointCommandImpl]. */
+    private val vctTypeMetadataProvider: VctTypeMetadataProvider = NoOpVctTypeMetadataProvider,
+    private val publishedVctReader: PublishedVctReader? = null,
 ) : HttpEndpointCommandAdapter(
         id = GetIssuerMetadataEndpointCommand.COMMAND_ID,
         execution = execution,
         endpoint = GetIssuerMetadataEndpointCommand.descriptorFor(configProvider),
     ),
     GetIssuerMetadataEndpointCommand {
+    /** The advertised hosted type ids this tenant actually serves; other `vct`s keep their own origin. */
+    private suspend fun servedVctIds(metadata: CredentialIssuerMetadata): Set<String> {
+        val candidates = metadata.credentialConfigurationsSupported.values.mapNotNull { it.vct?.hostedVctId() }.toSet()
+        if (candidates.isEmpty()) return emptySet()
+        val provided = vctTypeMetadataProvider.listVcts().toSet()
+        return candidates.filterTo(mutableSetOf()) { id -> id in provided || publishedVctReader?.read(id) != null }
+    }
+
     override suspend fun doExecute(
         args: GenericHttpRequest,
         applyDuring: (GenericHttpRequest) -> GenericHttpRequest,
@@ -329,7 +343,7 @@ class GetIssuerMetadataEndpointCommandImpl(
                 // stored RELATIVE so that in multi-tenant gateway mode each tenant's logo carries
                 // that tenant's host. Done BEFORE signing + JSON encode so both surfaces agree.
                 .withAbsoluteAssetUris(publicUrls.endpointBaseUrl)
-                .withHostedVctUrls(publicUrls.issuerIdentifier)
+                .let { metadata -> metadata.withHostedVctUrls(publicUrls.issuerIdentifier, servedVctIds(metadata)::contains) }
                 .let { metadata ->
                     if (signingJwks == null) metadata
                     else metadata.copy(additionalMetadata = metadata.additionalMetadata + ("jwks" to signingJwks))
@@ -477,13 +491,25 @@ private fun DisplayProperties.withAbsoluteAssetUris(externalBaseUrl: String?): D
             backgroundImage?.let { it.copy(uri = PublicDesignAssetPaths.toAbsolute(it.uri, externalBaseUrl)) },
     )
 
-internal fun CredentialIssuerMetadata.withHostedVctUrls(externalBaseUrl: String?): CredentialIssuerMetadata =
+/**
+ * Moves each hosted `vct` onto this issuer's public origin. Only a type this issuer serves at `/public/schema/vct/{id}`
+ * ([isHosted] on the id) moves: the `vct` is the credential's type identifier, so a type another host publishes (a shared
+ * type, say) stays exactly as issued instead of turning into an URL this issuer cannot serve.
+ */
+internal fun CredentialIssuerMetadata.withHostedVctUrls(
+    externalBaseUrl: String?,
+    isHosted: (String) -> Boolean = { true },
+): CredentialIssuerMetadata =
     copy(
         credentialConfigurationsSupported =
             credentialConfigurationsSupported.mapValues { (_, config) ->
-                config.copy(vct = config.vct?.toHostedVctUrl(externalBaseUrl))
+                config.copy(vct = config.vct?.let { vct -> if (vct.hostedVctId()?.let(isHosted) == true) vct.toHostedVctUrl(externalBaseUrl) else vct })
             },
     )
+
+/** The `{id}` of a `.../public/schema/vct/{id}` URL, or null for any other `vct`. */
+internal fun String.hostedVctId(): String? =
+    indexOf(HOSTED_VCT_PATH_MARKER).takeIf { it >= 0 }?.let { substring(it + HOSTED_VCT_PATH_MARKER.length) }?.takeIf { it.isNotBlank() }
 
 fun String.toHostedVctUrl(externalBaseUrl: String?): String {
     val base = externalBaseUrl?.publicOrigin()?.takeIf { it.isNotBlank() } ?: return this

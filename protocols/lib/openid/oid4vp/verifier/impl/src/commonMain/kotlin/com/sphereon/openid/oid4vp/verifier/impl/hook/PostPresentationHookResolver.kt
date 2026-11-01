@@ -37,6 +37,7 @@ internal object PostPresentationHookResolver {
         discovery: ServiceCommandRegistry,
         propertyResolver: PropertyResolver?,
         sessionAllowList: List<String>?,
+        sessionCommandIds: Collection<String> = emptyList(),
     ): Set<String> {
         val explicitIds =
             propertyResolver
@@ -51,7 +52,9 @@ internal object PostPresentationHookResolver {
                 ?.mapNotNull { it.trim().takeIf(String::isNotEmpty) }
                 ?: listOf(DEFAULT_HOOK_PATTERN)
 
-        val allIds = discovery.listCommandIds()
+        // Session-scoped hooks count too: a service that registers its commands per session (as VDX services
+        // do) lists them only in the session registry, so app-scope discovery alone would never fire them.
+        val allIds = (discovery.listCommandIds() + sessionCommandIds).toSet()
         val deploymentResolved =
             buildSet {
                 explicitIds.filterTo(this) { it in allIds }

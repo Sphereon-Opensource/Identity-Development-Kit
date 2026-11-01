@@ -22,7 +22,11 @@ import com.sphereon.data.store.blob.ByteArrayBlobSource
 import com.sphereon.data.store.blob.ListOptions
 import com.sphereon.data.store.blob.PutOptions
 import com.sphereon.data.store.blob.testing.BlobStoreContract
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
 import okio.Path.Companion.toPath
 import okio.fakefilesystem.FakeFileSystem
 import kotlin.test.AfterTest
@@ -112,6 +116,49 @@ class FileSystemBlobStoreTest {
                 offset += chunk.size
             }
             assertTrue(data.contentEquals(roundtrip))
+        }
+
+    @Test
+    fun storesOverOneRootShareTheConditionalWriteLock() =
+        runTest {
+            val target = info("shared/manifest.json")
+            val initial = store.put(target, "rev-1".encodeToByteArray()).value
+            // The factory creates a store per session; two of them racing one revision may not both commit.
+            val stores = List(8) { FileSystemBlobStore(rootDir = rootDir, autoCreateDirs = true, fileSystem = fakeFs) }
+            val results =
+                withContext(Dispatchers.Default) {
+                    stores.mapIndexed { index, other ->
+                        async { other.put(target, "writer-$index".encodeToByteArray(), PutOptions(expectedRevision = initial.revision)) }
+                    }.awaitAll()
+                }
+
+            assertEquals(1, results.count { it.isOk })
+            assertEquals(2L, store.get(target).value.descriptor.revision)
+        }
+
+    @Test
+    fun storesInDifferentProcessesShareTheWriteLockFileOverOneDirectory() =
+        runTest {
+            // A second root reaching the same directory through a symlink has its own in-process lock, as a second
+            // process over a shared volume would; only the lock file beside the blob orders the two.
+            fakeFs.allowSymlinks = true
+            fakeFs.createSymlink("/blob-other-process".toPath(), rootDir.toPath())
+            val target = info("shared/manifest.json")
+            val initial = store.put(target, "rev-1".encodeToByteArray()).value
+            val stores = List(8) { index ->
+                FileSystemBlobStore(rootDir = if (index % 2 == 0) rootDir else "/blob-other-process", autoCreateDirs = true, fileSystem = fakeFs)
+            }
+            val results =
+                withContext(Dispatchers.Default) {
+                    stores.mapIndexed { index, other ->
+                        async { other.put(target, "writer-$index".encodeToByteArray(), PutOptions(expectedRevision = initial.revision)) }
+                    }.awaitAll()
+                }
+
+            assertEquals(1, results.count { it.isOk })
+            assertEquals(2L, store.get(target).value.descriptor.revision)
+            assertTrue(fakeFs.list("$rootDir/shared".toPath()).none { it.name.endsWith(".write-lock") || it.name.endsWith(".tmp") })
+            assertTrue(store.list(BlobInfo()).value.descriptors.none { it.path.endsWith(".write-lock") || it.path.endsWith(".tmp") })
         }
 
     @Test

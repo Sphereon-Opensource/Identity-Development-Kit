@@ -158,6 +158,10 @@ data class HttpClientRequestContext(
             followRedirects = false,
             additionalConfig = { followRedirects = false },
             urlValidation = UrlValidationPolicy.exactTarget(destinationUri),
+            // A governed connector request carries lookup keys and business data in its path and query, so
+            // request-line logging would copy them into service logs. Connector telemetry records outcomes
+            // without values instead.
+            enableLogging = false,
         )
     }
 }

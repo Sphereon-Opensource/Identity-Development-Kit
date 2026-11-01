@@ -16,6 +16,7 @@
 
 package com.sphereon.data.store.vault
 
+import kotlinx.serialization.EncodeDefault
 import kotlinx.serialization.Serializable
 import kotlin.time.Instant
 
@@ -48,6 +49,10 @@ data class VaultGrantScope(
     val objectKinds: Set<VaultObjectKind> = emptySet(),
 )
 
+/**
+ * Permits or refuses [actions] on a vault to one subject. The subject is [subjectKind] with reference
+ * [principalRef]; a grant without a kind names a principal, as grants did before subject kinds existed.
+ */
 @Serializable
 data class VaultGrant(
     val grantId: String,
@@ -60,7 +65,13 @@ data class VaultGrant(
     val notBefore: Instant? = null,
     val expiresAt: Instant? = null,
     val revision: VaultRevision,
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    val subjectKind: VaultSubjectKind = VaultSubjectKind.PRINCIPAL,
 ) {
+    /** The grantee as a typed subject. */
+    val subject: VaultSubject
+        get() = VaultSubject(subjectKind, principalRef)
+
     init {
         require(grantId.isNotBlank()) { "grantId must not be blank" }
         require(principalRef.isNotBlank()) { "principalRef must not be blank" }

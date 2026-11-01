@@ -34,6 +34,7 @@ import com.sphereon.did.models.VerificationPurpose
 import com.sphereon.did.resolver.DidResolutionOptions
 import com.sphereon.did.resolver.DidResolverRegistry
 import com.sphereon.openid.oid4vp.common.ClientIdScheme
+import com.sphereon.openid.oid4vp.common.JarSignerMethod
 import com.sphereon.openid.oid4vp.common.Oid4vpRequestTrustMaterialProvider
 import com.sphereon.openid.oid4vp.common.qualifyDidJarVerificationMethodId
 import com.sphereon.openid.oid4vp.common.ClientIdValidationError
@@ -62,7 +63,7 @@ import dev.zacsweers.metro.ExposeImplBinding
  * - X509_SAN_URI: JAR required with x5c, SAN URI matches client_id
  * - X509_HASH: JAR required with x5c, certificate SHA-256 hash matches client_id
  * - VERIFIER_ATTESTATION: Not yet implemented
- * - OPENID_FEDERATION: Not supported (out of scope)
+ * - OPENID_FEDERATION: JAR signed with a key of the Verifier's federation-resolved openid_credential_verifier metadata
  * - DECENTRALIZED_IDENTIFIER: Not supported (out of scope)
  * - ORIGIN: Not allowed (reserved for Digital Credentials API)
  */
@@ -135,7 +136,7 @@ class ValidateClientIdCommandImpl(
             ClientIdScheme.X509_SAN_URI -> validateX509SanUri(processedArgs)
             ClientIdScheme.X509_HASH -> validateX509Hash(processedArgs)
             ClientIdScheme.VERIFIER_ATTESTATION -> validateVerifierAttestation(processedArgs)
-            ClientIdScheme.OPENID_FEDERATION -> notSupported(processedArgs, "OpenID Federation is not yet supported")
+            ClientIdScheme.OPENID_FEDERATION -> validateOpenIdFederation(processedArgs)
             ClientIdScheme.DECENTRALIZED_IDENTIFIER -> validateDecentralizedIdentifier(processedArgs)
             ClientIdScheme.ORIGIN -> notAllowed(processedArgs)
         }
@@ -842,7 +843,28 @@ class ValidateClientIdCommandImpl(
     }
 
     /**
-     * Scheme not supported (OPENID_FEDERATION).
+     * OPENID_FEDERATION: the client_id is the Verifier's Entity Identifier.
+     *
+     * OpenID4VP 1.0 Section 5.9.3 and OpenID Federation for Wallet Architectures 1.0 Section 6.3.1: the Request Object
+     * is signed with a key from the openid_credential_verifier metadata of a Trust Chain that ends in a governed Trust
+     * Anchor. The holder establishes that chain and verifies the signature with it while parsing the request
+     * ([JarSignerMethod.FEDERATION]); this check requires that binding and a valid https Entity Identifier.
+     */
+    private fun validateOpenIdFederation(args: ValidateClientIdArgs): IdkResult<ValidateClientIdResult, IdkError> {
+        val clientId = args.parsedClientId.clientId
+        val errors = openIdFederationClientIdErrors(clientId, args.jarUsed, args.jarSignerMethod)
+        return Ok(
+            ValidateClientIdResult(
+                valid = errors.isEmpty(),
+                scheme = ClientIdScheme.OPENID_FEDERATION,
+                clientId = clientId,
+                errors = errors,
+            ),
+        )
+    }
+
+    /**
+     * Scheme not supported.
      */
     private fun notSupported(
         args: ValidateClientIdArgs,
@@ -1009,3 +1031,30 @@ class ValidateClientIdCommandImpl(
         )
     }
 }
+
+/** Errors for an openid_federation client_id: a federation-signed Request Object and an https Entity Identifier. */
+internal fun openIdFederationClientIdErrors(
+    clientId: String,
+    jarUsed: Boolean,
+    jarSignerMethod: JarSignerMethod?,
+): List<ClientIdValidationError> =
+    buildList {
+        if (!jarUsed || jarSignerMethod != JarSignerMethod.FEDERATION) {
+            add(
+                ClientIdValidationError(
+                    type = ClientIdValidationErrorType.JAR_REQUIRED,
+                    message = "OpenID Federation client_id requires a Request Object signed with a federation-resolved key",
+                ),
+            )
+        }
+        val host = clientId.removePrefix("https://").substringBefore('/')
+        if (!clientId.startsWith("https://") || host.isBlank() || '?' in clientId || '#' in clientId) {
+            add(
+                ClientIdValidationError(
+                    type = ClientIdValidationErrorType.VALIDATION_ERROR,
+                    message = "OpenID Federation client_id must be an https Entity Identifier",
+                    details = "client_id='$clientId'",
+                ),
+            )
+        }
+    }

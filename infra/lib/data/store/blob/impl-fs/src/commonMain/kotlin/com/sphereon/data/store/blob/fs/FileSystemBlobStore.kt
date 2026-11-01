@@ -36,6 +36,7 @@ import com.sphereon.data.store.blob.ListResult
 import com.sphereon.data.store.blob.PutOptions
 import com.sphereon.data.store.blob.ResolvedBlobInfo
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.Serializable
@@ -47,6 +48,7 @@ import okio.Path
 import okio.Path.Companion.toPath
 import okio.buffer
 import okio.use
+import kotlin.time.Clock
 import kotlin.time.Instant
 import kotlin.uuid.ExperimentalUuidApi
 import kotlin.uuid.Uuid
@@ -62,7 +64,12 @@ class FileSystemBlobStore(
     private val autoCreateDirs: Boolean = true,
     private val fileSystem: FileSystem = defaultFileSystem(),
 ) : BlobStore {
-    private val mutex = Mutex()
+    /**
+     * The lock for this store's root directory. The factory creates a store per session, so the lock is
+     * shared by every instance over the same root in this process; a per-instance lock would let two
+     * sessions pass the same conditional-write check and both commit.
+     */
+    private suspend fun rootLock(): Mutex = rootLocksGuard.withLock { rootLocks.getOrPut(rootDir.toPath().normalized().toString()) { Mutex() } }
 
     override val schemeId: String = BlobStoreSchemes.FILESYSTEM
 
@@ -92,7 +99,8 @@ class FileSystemBlobStore(
         data: ByteArray,
         options: PutOptions,
     ): IdkResult<BlobDescriptor, IdkError> =
-        mutex.withLock {
+        rootLock().withLock {
+            var writeLock: Path? = null
             try {
                 val effectiveInfo =
                     if (target.path == null) {
@@ -101,6 +109,7 @@ class FileSystemBlobStore(
                         target
                     }
                 val path = resolvePath(effectiveInfo)
+                writeLock = acquireWriteLock(path, options)
                 val currentRevision = validateConditionalPut(path, options)
                 val nextRevision = if (currentRevision == null) 1L else currentRevision + 1L
 
@@ -114,8 +123,13 @@ class FileSystemBlobStore(
                     }
                 }
 
-                fileSystem.sink(path).buffer().use { sink ->
-                    sink.write(data)
+                // Written beside the blob and moved over it, so no reader in any process sees a partial blob.
+                val temporary = (path.toString() + ".put-${Uuid.random()}.tmp").toPath()
+                try {
+                    fileSystem.sink(temporary).buffer().use { sink -> sink.write(data) }
+                    fileSystem.atomicMove(temporary, path)
+                } finally {
+                    if (fileSystem.exists(temporary)) fileSystem.delete(temporary)
                 }
 
                 val metadata = effectiveInfo.toBlobMetadata()
@@ -129,6 +143,8 @@ class FileSystemBlobStore(
                 Err(BlobStoreError.PreconditionFailed("conditional filesystem write precondition failed").toIdkError())
             } catch (expected: Exception) {
                 Err(IdkError.fromString(message = "Failed to put blob '${target.path}': ${expected.message}", exception = expected, code = "BLOB_PUT_FAILED"))
+            } finally {
+                writeLock?.let(::releaseWriteLock)
             }
         }
 
@@ -138,11 +154,13 @@ class FileSystemBlobStore(
         source: BlobByteSource,
         options: PutOptions,
     ): IdkResult<BlobDescriptor, IdkError> =
-        mutex.withLock {
+        rootLock().withLock {
             var temporaryPath: Path? = null
+            var writeLock: Path? = null
             try {
                 val effectiveInfo = target.copy(path = target.path ?: Uuid.random().toString())
                 val path = resolvePath(effectiveInfo)
+                writeLock = acquireWriteLock(path, options)
                 val currentRevision = validateConditionalPut(path, options)
                 val nextRevision = if (currentRevision == null) 1L else currentRevision + 1L
                 if (!options.overwrite && fileSystem.exists(path)) {
@@ -192,6 +210,7 @@ class FileSystemBlobStore(
                     ),
                 )
             } finally {
+                writeLock?.let(::releaseWriteLock)
                 try {
                     source.close()
                 } catch (_: Exception) {
@@ -206,7 +225,7 @@ class FileSystemBlobStore(
         }
 
     override suspend fun get(info: BlobInfo): IdkResult<ResolvedBlobInfo, IdkError> =
-        mutex.withLock {
+        rootLock().withLock {
             try {
                 val path = resolvePath(info)
                 if (!fileSystem.exists(path)) {
@@ -229,7 +248,7 @@ class FileSystemBlobStore(
         }
 
     override suspend fun openRead(info: BlobInfo): IdkResult<BlobReadStream, IdkError> =
-        mutex.withLock {
+        rootLock().withLock {
             try {
                 val path = resolvePath(info)
                 if (!fileSystem.exists(path)) {
@@ -251,7 +270,7 @@ class FileSystemBlobStore(
         info: BlobInfo,
         range: BlobReadRange,
     ): IdkResult<BlobReadStream, IdkError> =
-        mutex.withLock {
+        rootLock().withLock {
             try {
                 val path = resolvePath(info)
                 if (!fileSystem.exists(path)) return@withLock Err(BlobStoreError.NotFound(info.path!!).toIdkError())
@@ -277,7 +296,7 @@ class FileSystemBlobStore(
         }
 
     override suspend fun delete(info: BlobInfo): IdkResult<Boolean, IdkError> =
-        mutex.withLock {
+        rootLock().withLock {
             try {
                 val path = resolvePath(info)
                 if (!fileSystem.exists(path)) {
@@ -295,7 +314,7 @@ class FileSystemBlobStore(
         }
 
     override suspend fun exists(info: BlobInfo): IdkResult<Boolean, IdkError> =
-        mutex.withLock {
+        rootLock().withLock {
             try {
                 Ok(fileSystem.exists(resolvePath(info)))
             } catch (expected: Exception) {
@@ -304,7 +323,7 @@ class FileSystemBlobStore(
         }
 
     override suspend fun stat(info: BlobInfo): IdkResult<BlobDescriptor, IdkError> =
-        mutex.withLock {
+        rootLock().withLock {
             try {
                 val path = resolvePath(info)
                 if (!fileSystem.exists(path)) {
@@ -324,7 +343,7 @@ class FileSystemBlobStore(
         info: BlobInfo,
         options: ListOptions,
     ): IdkResult<ListResult, IdkError> =
-        mutex.withLock {
+        rootLock().withLock {
             try {
                 val basePath = rootDir.toPath()
                 val optPrefix = options.prefix ?: info.path ?: ""
@@ -356,7 +375,7 @@ class FileSystemBlobStore(
                 val descriptors =
                     entries
                         .filter { path ->
-                            !path.name.endsWith(".meta.json") &&
+                            !path.name.endsWith(".meta.json") && !path.name.endsWith(WRITE_LOCK_SUFFIX) && !path.name.endsWith(".tmp") &&
                                 fileSystem.metadata(path).isRegularFile &&
                                 (optPrefix.isEmpty() || relativePathString(path, basePath).startsWith(optPrefix))
                         }.take(options.maxResults)
@@ -375,7 +394,7 @@ class FileSystemBlobStore(
         source: BlobInfo,
         destination: BlobInfo,
     ): IdkResult<BlobDescriptor, IdkError> =
-        mutex.withLock {
+        rootLock().withLock {
             try {
                 val srcPath = resolvePath(source)
                 val dstPath = resolvePath(destination)
@@ -405,7 +424,7 @@ class FileSystemBlobStore(
         source: BlobInfo,
         destination: BlobInfo,
     ): IdkResult<BlobDescriptor, IdkError> =
-        mutex.withLock {
+        rootLock().withLock {
             try {
                 val srcPath = resolvePath(source)
                 val dstPath = resolvePath(destination)
@@ -432,7 +451,7 @@ class FileSystemBlobStore(
         }
 
     override suspend fun deletePrefix(info: BlobInfo): IdkResult<Int, IdkError> =
-        mutex.withLock {
+        rootLock().withLock {
             try {
                 val prefix =
                     info.path ?: return@withLock Err(
@@ -490,8 +509,44 @@ class FileSystemBlobStore(
     }
 
     /**
-     * Checks all conditional preconditions while holding the store mutex and returns the current
-     * revision for an existing blob. The filesystem backend has one process-local store instance;
+     * Takes the cross-process lock for a conditional write of [path]: a lock file beside the blob, created
+     * exclusively, so two processes over one directory (a shared volume) never both pass the same check. The
+     * process-wide root lock already orders writers inside this process. A lock older than [WRITE_LOCK_STALE_MILLIS]
+     * is from a process that died mid-write and is broken. After [WRITE_LOCK_WAIT_MILLIS] the write is refused as a
+     * failed precondition, which callers already retry. Unconditional writes take no lock.
+     */
+    @OptIn(ExperimentalUuidApi::class)
+    private suspend fun acquireWriteLock(path: Path, options: PutOptions): Path? {
+        if (options.ifMatch == null && options.ifNoneMatch == null && options.expectedRevision == null) return null
+        val lock = (path.toString() + WRITE_LOCK_SUFFIX).toPath()
+        path.parent?.let { if (autoCreateDirs) fileSystem.createDirectories(it) }
+        val deadline = Clock.System.now().toEpochMilliseconds() + WRITE_LOCK_WAIT_MILLIS
+        var pause = 5L
+        while (true) {
+            try {
+                fileSystem.sink(lock, mustCreate = true).buffer().use { it.writeUtf8(Uuid.random().toString()) }
+                return lock
+            } catch (_: okio.IOException) {
+                val now = Clock.System.now().toEpochMilliseconds()
+                val held = runCatching { fileSystem.metadataOrNull(lock)?.lastModifiedAtMillis }.getOrNull()
+                if (held != null && now - held > WRITE_LOCK_STALE_MILLIS) {
+                    runCatching { fileSystem.delete(lock) }
+                    continue
+                }
+                if (now >= deadline) throw ConditionalWritePreconditionFailed()
+                delay(pause)
+                pause = (pause * 2).coerceAtMost(100L)
+            }
+        }
+    }
+
+    private fun releaseWriteLock(lock: Path) {
+        runCatching { fileSystem.delete(lock) }
+    }
+
+    /**
+     * Checks all conditional preconditions while holding the root directory's lock and returns the
+     * current revision for an existing blob. Every store over one root in this process shares that lock;
      * the atomic move of the sidecar makes the revision update indivisible for readers.
      */
     private fun validateConditionalPut(
@@ -550,6 +605,14 @@ class FileSystemBlobStore(
 
     companion object {
         private val json = Json { ignoreUnknownKeys = true }
+
+        private const val WRITE_LOCK_SUFFIX = ".write-lock"
+        private const val WRITE_LOCK_STALE_MILLIS = 30_000L
+        private const val WRITE_LOCK_WAIT_MILLIS = 10_000L
+
+        /** One lock per normalized root directory, shared by every store instance in this process. */
+        private val rootLocks = mutableMapOf<String, Mutex>()
+        private val rootLocksGuard = Mutex()
     }
 }
 

@@ -160,7 +160,11 @@ ExternalIdentifierJwksUrlOpts
     ) : ExternalIdentifierOpts(method = IdentifierMethodDefaults.JWKS_URL, identifier = identifier, context = context, lookup = lookup)
 
 /**
- * Options for external OIDF Entity ID identifiers
+ * Options for external OIDF Entity ID identifiers.
+ *
+ * Without [entityType] the result holds the Entity's federation keys (its Entity Configuration `jwks`), which sign
+ * federation statements only. With [entityType], e.g. `openid_credential_verifier`, the result holds the protocol keys
+ * of that Entity Type: the `jwks` of its Resolved Metadata under the Trust Chain's metadata policies.
  */
 @JsExportCompat
 data class
@@ -169,6 +173,7 @@ ExternalIdentifierOIDFEntityIdOpts
     constructor(
         override val identifier: String,
         val trustAnchors: List<String>? = null,
+        val entityType: String? = null,
     ) : ExternalIdentifierOpts(method = IdentifierMethodDefaults.ENTITY_ID, identifier = identifier)
 
 /**

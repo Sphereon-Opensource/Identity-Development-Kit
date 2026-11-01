@@ -54,6 +54,7 @@ class PostPresentationHookDispatcher(
                 discovery = resolver,
                 propertyResolver = propertyResolver,
                 sessionAllowList = sessionAllowList,
+                sessionCommandIds = sessionCommands.listCommandIds(),
             )
         if (ids.isEmpty()) return
 
