@@ -194,13 +194,17 @@ def exclusions(mode: str, registered: set[str]) -> list[str]:
     return [task for task in candidates if not task.startswith(":") or task.split(":")[1] in registered]
 
 
-def preparation_stages(ordered: list[str], mode: str) -> list[dict]:
+def preparation_stages(ordered: list[str], mode: str, publish: bool = False) -> list[dict]:
     stages = []
     for pack in ordered:
         tasks = ["publishAllPublicationsToCiPrerequisitesRepository"]
         if mode == "public":
             tasks[:0] = ["kotlinUpgradePackageLock", "kotlinWasmUpgradePackageLock"]
-        stages.append({"phase": "prepare", "pack": pack, "tasks": tasks, "exclusions": []})
+        stage = {"phase": "prepare", "pack": pack, "tasks": tasks, "exclusions": []}
+        if publish:
+            # Later publish stages compile every public target against these prerequisites.
+            stage["publication_inputs"] = True
+        stages.append(stage)
     return stages
 
 
@@ -244,8 +248,8 @@ def plan(root: Path, mode: str, publish: bool, environment: dict, remote_only: b
                          "tasks": [f":{name}:publishAllPublicationsToSphereon-opensourceRepository"
                                    for name in selected if modules[name]["pack"] == pack],
                          "exclusions": [], "selected_publication": True} for pack in packs]
-        return preparation_stages(ordered, mode) + checks + publications
-    stages = preparation_stages([] if remote_only else ordered, mode)
+        return preparation_stages(ordered, mode, publish) + checks + publications
+    stages = preparation_stages([] if remote_only else ordered, mode, publish)
     # Test dependencies may point back to a later production pack. Run checks only
     # after every pack has produced its Maven artifacts; do not turn those edges
     # into source composites or weaken the checks to break the test cycle.
@@ -275,8 +279,11 @@ PUBLIC_TARGETS = "jvm,js,wasmjs,linuxx64"
 def stage_targets(stage: dict, mode: str) -> str:
     """Kotlin targets of one stage. Private checks stay JVM-only for speed, but every publication uses the
     public target set: a snapshot replaces the Gradle module metadata of its coordinates, so a JVM-only
-    publish would drop the JS and wasm variants an earlier publish carried."""
-    return PUBLIC_TARGETS if mode == "public" or stage["phase"] == "publish" else "jvm"
+    publish would drop the JS and wasm variants an earlier publish carried. Preparation for a publishing run
+    uses the same set, because each publish stage resolves its peer packs from the prepared repository."""
+    if mode == "public" or stage["phase"] == "publish" or stage.get("publication_inputs"):
+        return PUBLIC_TARGETS
+    return "jvm"
 
 
 def command(root: Path, stage: dict, mode: str, repository: Path, remote_only: bool = False, refresh_dependencies: bool = False) -> list[str]:

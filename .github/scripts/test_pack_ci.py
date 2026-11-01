@@ -424,6 +424,15 @@ class PackCiTests(unittest.TestCase):
         self.assertIn("-Dkmp.targets=jvm,js,wasmjs,linuxx64", ci.command(root, publish, "private", repo))
         self.assertIn("-Dkmp.targets=jvm", ci.command(root, check, "private", repo))
 
+    def testPublishingPreparationBuildsThePublicTargetSet(self):
+        root, repo = Path("checkout").resolve(), Path("prerequisites").resolve()
+        publishing = ci.preparation_stages(["core", "infra"], "private", publish=True)
+        checking = ci.preparation_stages(["core", "infra"], "private")
+        for stage in publishing:
+            self.assertIn("-Dkmp.targets=jvm,js,wasmjs,linuxx64", ci.command(root, stage, "private", repo))
+        for stage in checking:
+            self.assertIn("-Dkmp.targets=jvm", ci.command(root, stage, "private", repo))
+
     def testExactCommandsUseOnlyCheckoutAndPrivateMaven(self):
         root, repo = Path("checkout").resolve(), Path("prerequisites").resolve()
         stage = {"phase": "check", "pack": "identity-security", "tasks": ["build"],
