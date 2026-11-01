@@ -24,6 +24,7 @@ import com.sphereon.trust.etsi.testutil.ensureDomAvailable
 import com.sphereon.trust.etsi.testutil.readTestResource
 import com.sphereon.trust.core.TrustDiagnosticReasonCodes
 import kotlinx.coroutines.test.runTest
+import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -32,6 +33,11 @@ import kotlin.test.assertTrue
 
 class XAdESValidatorTest {
     private val testContext = EtsiTestContext("xades-test", this)
+
+    @AfterTest
+    fun closeContext() {
+        testContext.close()
+    }
     private val validator: XAdESValidator = testContext.xadesValidator
 
     @Test

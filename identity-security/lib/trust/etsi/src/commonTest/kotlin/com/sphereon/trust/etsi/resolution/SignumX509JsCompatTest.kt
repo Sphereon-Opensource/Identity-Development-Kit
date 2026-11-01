@@ -13,6 +13,7 @@ import com.sphereon.crypto.core.x509.x509DerOrPemToPem
 import com.sphereon.trust.etsi.testutil.EtsiTestContext
 import com.sphereon.trust.etsi.testutil.FIDES_TL_URL
 import kotlinx.coroutines.test.runTest
+import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -29,6 +30,11 @@ import kotlin.test.assertTrue
  */
 class SignumX509JsCompatTest {
     private val ctx = EtsiTestContext("signum-x509-compat-test", this)
+
+    @AfterTest
+    fun closeContext() {
+        ctx.close()
+    }
 
     private suspend fun extractCertBase64(): String {
         val tlXml = ctx.fetchUrl(FIDES_TL_URL)

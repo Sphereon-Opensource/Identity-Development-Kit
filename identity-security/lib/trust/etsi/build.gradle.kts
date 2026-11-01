@@ -111,6 +111,10 @@ kotlin {
             implementation(sphereonlib.io.kotest.property)
             implementation(npm("jsdom", "~25.0.1"))
         }
+        // The wasmJs test utilities build their XML DOM through jsdom as well.
+        findByName("wasmJsTest")?.dependencies {
+            implementation(npm("jsdom", "~25.0.1"))
+        }
         findByName("appleMain")?.dependencies {
             api(sphereonlib.io.ktor.client.darwin)
         }

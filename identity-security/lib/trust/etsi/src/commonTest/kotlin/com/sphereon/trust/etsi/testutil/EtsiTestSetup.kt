@@ -45,7 +45,7 @@ expect fun createEtsiTestAppGraph(testInstance: Any): AppGraph
 class EtsiTestContext(
     sessionId: String,
     testInstance: Any,
-) {
+) : AutoCloseable {
     val app: AppGraph = createEtsiTestAppGraph(testInstance)
     private val context = app.userContextManager.getAnonymous()
     val session: SessionInstance = context.sessionContextManager.createOrGetFromId(sessionId, principalType = com.sphereon.di.context.PrincipalType.USER)
@@ -87,5 +87,10 @@ class EtsiTestContext(
                 .softwareKmsProvider
                 .create(config, session.asCoreApiServiceGraph().serviceExecution)
         keyManagerService.registerProvider(softwareKmsProvider, makeDefaultKms = true)
+    }
+
+    /** Destroys the app graph so its root-scope coroutines stop and Node-based test runners can exit. */
+    override fun close() {
+        app.destroy()
     }
 }

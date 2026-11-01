@@ -22,12 +22,18 @@ import com.sphereon.trust.etsi.testutil.EtsiTestContext
 import com.sphereon.trust.etsi.testutil.ensureDomAvailable
 import com.sphereon.trust.etsi.testutil.readTestResource
 import kotlinx.coroutines.test.runTest
+import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class XmlSignatureVerifierTest {
     private val testContext = EtsiTestContext("xml-signature-test", this)
+
+    @AfterTest
+    fun closeContext() {
+        testContext.close()
+    }
 
     @Test
     fun explicitlyPinnedEmbeddedSignerIsNotRejectedByChainPolicy() =

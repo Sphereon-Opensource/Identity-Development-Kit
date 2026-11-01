@@ -56,6 +56,7 @@ import com.sphereon.trust.etsi.testutil.EtsiTestContext
 import com.sphereon.trust.etsi.testutil.FIDES_LOTL_URL
 import com.sphereon.trust.etsi.testutil.FIDES_TL_URL
 import kotlinx.coroutines.test.runTest
+import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -73,6 +74,11 @@ import kotlin.time.Clock
  */
 class FidesIntegrationTest {
     private val ctx = EtsiTestContext("fides-integration-test", this)
+
+    @AfterTest
+    fun closeContext() {
+        ctx.close()
+    }
     private val parser = StreamingETSITrustListParser()
 
     // -- Parsing integration tests --

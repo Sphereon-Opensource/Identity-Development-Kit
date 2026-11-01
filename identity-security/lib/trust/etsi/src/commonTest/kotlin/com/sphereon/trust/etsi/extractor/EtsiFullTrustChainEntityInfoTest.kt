@@ -43,6 +43,7 @@ import com.sphereon.trust.etsi.testutil.EtsiTestContext
 import com.sphereon.trust.etsi.testutil.FIDES_LOTL_URL
 import com.sphereon.trust.etsi.testutil.FIDES_TL_URL
 import kotlinx.coroutines.test.runTest
+import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -58,6 +59,11 @@ import kotlin.time.Clock
  */
 class EtsiFullTrustChainEntityInfoTest {
     private val ctx = EtsiTestContext("full-chain-test", this)
+
+    @AfterTest
+    fun closeContext() {
+        ctx.close()
+    }
     private val parser = StreamingETSITrustListParser()
 
     @Test

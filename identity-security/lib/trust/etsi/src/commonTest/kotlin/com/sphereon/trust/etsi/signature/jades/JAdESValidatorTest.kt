@@ -21,6 +21,7 @@ import com.sphereon.core.api.encodeTo
 import com.sphereon.trust.core.TrustDiagnosticReasonCodes
 import com.sphereon.trust.etsi.testutil.EtsiTestContext
 import kotlinx.coroutines.test.runTest
+import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
@@ -40,6 +41,11 @@ import kotlin.test.assertTrue
  */
 class JAdESValidatorTest {
     private val testContext = EtsiTestContext("jades-test", this)
+
+    @AfterTest
+    fun closeContext() {
+        testContext.close()
+    }
     private val validator: JAdESValidator = testContext.jadesValidator
 
     // Dummy certificate (Base64 "AAAA" decodes to 3 zero bytes)
