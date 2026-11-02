@@ -67,10 +67,14 @@ class EtsiTestContext(
 
     private val fetchCache = mutableMapOf<String, String>()
 
-    /** Fetch a URL as text using the DI-managed HTTP client, caching results */
+    /**
+     * Fetch a URL as text, caching results. The FIDES trust lists are served from pinned test
+     * resources: Kotlin/Native has no TLS client and the lists change upstream, so every target
+     * parses the same bytes without network access. Other URLs use the DI-managed HTTP client.
+     */
     suspend fun fetchUrl(url: String): String {
         fetchCache[url]?.let { return it }
-        val body = httpClient.get(url).bodyAsText()
+        val body = FIDES_FIXTURES[url.trim()]?.let(::readTestResource) ?: httpClient.get(url).bodyAsText()
         require(body.isNotEmpty()) { "Empty response from $url" }
         fetchCache[url] = body
         return body

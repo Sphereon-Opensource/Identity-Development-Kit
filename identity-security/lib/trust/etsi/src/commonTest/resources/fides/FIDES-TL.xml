@@ -1,0 +1,339 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?><!--
+  FIDES Open Sandbox Trust List (TLv6 skeleton) - SECOND DRAFT
+--><TrustServiceStatusList xmlns="http://uri.etsi.org/02231/v2#" xmlns:ds="http://www.w3.org/2000/09/xmldsig#" TSLTag="http://uri.etsi.org/19612/TSLTag">
+  <SchemeInformation>
+    <TSLVersionIdentifier>6</TSLVersionIdentifier>
+    <TSLSequenceNumber>4</TSLSequenceNumber>
+    <TSLType>http://uri.etsi.org/TrstSvc/TrustedList/TSLType/EUgeneric</TSLType>
+    <SchemeOperatorName>
+      <Name xml:lang="en">FIDES Labs</Name>
+    </SchemeOperatorName>
+    <SchemeOperatorAddress>
+      <PostalAddresses>
+        <PostalAddress xml:lang="nl">
+          <StreetAddress>Vredenburg 40</StreetAddress>
+          <Locality>Utrecht</Locality>
+          <StateOrProvince>Utrecht</StateOrProvince>
+          <PostalCode>3511 BD</PostalCode>
+          <CountryName>NL</CountryName>
+        </PostalAddress>
+      </PostalAddresses>
+      <ElectronicAddress>
+        <URI xml:lang="en">mailto:info@fides.community</URI>
+      </ElectronicAddress>
+    </SchemeOperatorAddress>
+    <SchemeName>
+      <Name xml:lang="en">FIDES Open Sandbox Trust List</Name>
+    </SchemeName>
+
+    <SchemeInformationURI>
+      <URI xml:lang="en">https://github.com/FIDEScommunity/fides-trust-list</URI>
+    </SchemeInformationURI>
+    <StatusDeterminationApproach>http://uri.etsi.org/TrstSvc/TrustedList/TrustedListStatusDetermination/Approach/assessment</StatusDeterminationApproach>
+    <SchemeTypeCommunityRules>
+      <URI xml:lang="en">https://github.com/FIDEScommunity/fides-trust-list#schemerules</URI>
+    </SchemeTypeCommunityRules>
+    <SchemeTerritory>NL</SchemeTerritory>
+    <PolicyOrLegalNotice>
+      <TSLPolicy xml:lang="en">https://github.com/FIDEScommunity/fides-trust-list#policy</TSLPolicy>
+    </PolicyOrLegalNotice>
+    <HistoricalInformationPeriod>65535</HistoricalInformationPeriod>
+    <ListIssueDateTime>2025-11-29T08:36:11Z</ListIssueDateTime>
+    <NextUpdate>
+      <dateTime>2025-12-30T05:36:11Z</dateTime>
+    </NextUpdate>
+    <DistributionPoints>
+      <URI>https://github.com/FIDEScommunity/fides-trust-list/FIDES-TL.xml</URI>
+      <URI>https://raw.githubusercontent.com/FIDEScommunity/fides-trust-list/main/FIDES-TL.xml</URI>
+    </DistributionPoints>
+  </SchemeInformation>
+
+  <!-- Provider 1: FIDES Labs -->
+  <TrustServiceProviderList>
+    <TrustServiceProvider>
+      <TSPInformation>
+        <TSPName>
+          <Name xml:lang="en">FIDES Labs</Name>
+        </TSPName>
+        <TSPTradeName>
+          <Name xml:lang="en">FIDES Community</Name>
+        </TSPTradeName>
+        <TSPAddress>
+          <PostalAddresses>
+            <PostalAddress xml:lang="en">
+              <StreetAddress>Vredenburg 40</StreetAddress>
+              <Locality>Utrecht</Locality>
+              <StateOrProvince>Utrecht</StateOrProvince>
+              <PostalCode>3511 BD</PostalCode>
+              <CountryName>NL</CountryName>
+            </PostalAddress>
+          </PostalAddresses>
+          <ElectronicAddress>
+            <URI xml:lang="en">mailto:info@fides.community</URI>
+          </ElectronicAddress>
+        </TSPAddress>
+        <TSPInformationURI>
+          <URI xml:lang="en">https://fides.community/</URI>
+        </TSPInformationURI>
+      </TSPInformation>
+
+      <TSPServices>
+
+        <TSPService>
+          <ServiceInformation>
+            <ServiceTypeIdentifier>http://uri.etsi.org/TrstSvc/Svctype/EAA</ServiceTypeIdentifier>
+            <ServiceName>
+              <Name xml:lang="en">FIDES Sandbox (Q)EAA</Name>
+            </ServiceName>
+            <ServiceDigitalIdentity>
+              <DigitalId>
+                <X509Certificate>
+                  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
+                </X509Certificate>
+              </DigitalId>
+              <DigitalId>
+                <X509SubjectName>CN=FIDES Labs B.V., O=FIDES Labs B.V., OID.2.5.4.97=NTRNL-97159174, C=NL</X509SubjectName>
+              </DigitalId>
+              <DigitalId>
+                <X509SKI>PG9XbVPGqR26v6t6AiPO2hJIBNE=</X509SKI>
+              </DigitalId>
+            </ServiceDigitalIdentity>
+            <ServiceStatus>http://uri.etsi.org/TrstSvc/TrustedList/Svcstatus/granted</ServiceStatus>
+            <StatusStartingTime>2025-11-29T08:00:00Z</StatusStartingTime>
+          </ServiceInformation>
+        </TSPService>
+
+      </TSPServices>
+    </TrustServiceProvider>
+
+    <!-- Provider 2: Kamer van Koophandel -->
+    <TrustServiceProvider>
+      <TSPInformation>
+        <TSPName>
+          <Name xml:lang="en">Kamer van Koophandel</Name>
+        </TSPName>
+        <TSPTradeName>
+          <Name xml:lang="en">KVK</Name>
+        </TSPTradeName>
+        <TSPAddress>
+          <PostalAddresses>
+            <PostalAddress xml:lang="en">
+              <StreetAddress>Postbus 48</StreetAddress>
+              <Locality>Utrecht</Locality>
+              <StateOrProvince>Utrecht</StateOrProvince>
+              <PostalCode>3500 AA</PostalCode>
+              <CountryName>NL</CountryName>
+            </PostalAddress>
+          </PostalAddresses>
+          <ElectronicAddress>
+            <URI xml:lang="en">mailto:info@kvk.nl</URI>
+          </ElectronicAddress>
+        </TSPAddress>
+        <TSPInformationURI>
+          <URI xml:lang="en">https://www.kvk.nl/</URI>
+        </TSPInformationURI>
+      </TSPInformation>
+
+      <TSPServices>
+
+        <TSPService>
+          <ServiceInformation>
+            <ServiceTypeIdentifier>http://uri.etsi.org/TrstSvc/Svctype/EAA</ServiceTypeIdentifier>
+            <ServiceName>
+              <Name xml:lang="en">KVK Sandbox (Q)EAA</Name>
+            </ServiceName>
+            <ServiceDigitalIdentity>
+              <DigitalId>
+                <X509Certificate>
+                  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
+                </X509Certificate>
+              </DigitalId>
+              <DigitalId>
+                <X509SubjectName>CN=Kamer van Koophandel, O=Kamer van Koophandel, OID.2.5.4.97=NTRNL-59581883, C=NL</X509SubjectName>
+              </DigitalId>
+              <DigitalId>
+                <X509SKI>VWOztC7PksSYaEBJ4PP6GRWr_dI=</X509SKI>
+              </DigitalId>
+            </ServiceDigitalIdentity>
+            <ServiceStatus>http://uri.etsi.org/TrstSvc/TrustedList/Svcstatus/granted</ServiceStatus>
+            <StatusStartingTime>2025-11-29T08:00:00Z</StatusStartingTime>
+          </ServiceInformation>
+        </TSPService>
+
+      </TSPServices>
+    </TrustServiceProvider>
+
+    <!-- Provider 3: Belastingdienst -->
+    <TrustServiceProvider>
+      <TSPInformation>
+        <TSPName>
+          <Name xml:lang="en">Belastingdienst</Name>
+        </TSPName>
+        <TSPTradeName>
+          <Name xml:lang="en">Belastingdienst</Name>
+        </TSPTradeName>
+        <TSPAddress>
+          <PostalAddresses>
+            <PostalAddress xml:lang="en">
+              <StreetAddress>Postbus 9048</StreetAddress>
+              <Locality>Apeldoorn</Locality>
+              <StateOrProvince>Gelderland</StateOrProvince>
+              <PostalCode>7300 GK</PostalCode>
+              <CountryName>NL</CountryName>
+            </PostalAddress>
+          </PostalAddresses>
+          <ElectronicAddress>
+            <URI xml:lang="en">mailto:info@belastingdienst.nl</URI>
+          </ElectronicAddress>
+        </TSPAddress>
+        <TSPInformationURI>
+          <URI xml:lang="en">https://www.belastingdienst.nl/</URI>
+        </TSPInformationURI>
+      </TSPInformation>
+
+      <TSPServices>
+
+        <TSPService>
+          <ServiceInformation>
+            <ServiceTypeIdentifier>http://uri.etsi.org/TrstSvc/Svctype/EAA</ServiceTypeIdentifier>
+            <ServiceName>
+              <Name xml:lang="en">Belastingdienst Sandbox (Q)EAA</Name>
+            </ServiceName>
+            <ServiceDigitalIdentity>
+              <DigitalId>
+                <X509Certificate>
+                  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
+                </X509Certificate>
+              </DigitalId>
+              <DigitalId>
+                <X509SubjectName>subject=C=NL,O=Ministerie van Financi\C3\ABn,organizationIdentifier=NTRNL-27365323,CN=Ministerie van Financien</X509SubjectName>
+              </DigitalId>
+              <DigitalId>
+                <X509SKI>Zjl3lzoE8BOfyyy6kH3mirGoZO4=</X509SKI>
+              </DigitalId>
+            </ServiceDigitalIdentity>
+            <ServiceStatus>http://uri.etsi.org/TrstSvc/TrustedList/Svcstatus/granted</ServiceStatus>
+            <StatusStartingTime>2025-11-29T08:00:00Z</StatusStartingTime>
+          </ServiceInformation>
+        </TSPService>
+
+      </TSPServices>
+    </TrustServiceProvider>
+
+    <!-- Provider 4: Tulip Bank -->
+    <TrustServiceProvider>
+      <TSPInformation>
+        <TSPName>
+          <Name xml:lang="en">Tulip Bank</Name>
+        </TSPName>
+        <TSPTradeName>
+          <Name xml:lang="en">Tulip Bank</Name>
+        </TSPTradeName>
+        <TSPAddress>
+          <PostalAddresses>
+            <PostalAddress xml:lang="en">
+              <StreetAddress>Vredenburg 40</StreetAddress>
+              <Locality>Utrecht</Locality>
+              <StateOrProvince>Utrecht</StateOrProvince>
+              <PostalCode>3511 BD</PostalCode>
+              <CountryName>NL</CountryName>
+            </PostalAddress>
+          </PostalAddresses>
+          <ElectronicAddress>
+            <URI xml:lang="en">mailto:info@TulipBank.nl</URI>
+          </ElectronicAddress>
+        </TSPAddress>
+        <TSPInformationURI>
+          <URI xml:lang="en">https://www.tulipbank.nl/</URI>
+        </TSPInformationURI>
+      </TSPInformation>
+
+      <TSPServices>
+
+        <TSPService>
+          <ServiceInformation>
+            <ServiceTypeIdentifier>http://uri.etsi.org/TrstSvc/Svctype/EAA</ServiceTypeIdentifier>
+            <ServiceName>
+              <Name xml:lang="en">TulipBank Sandbox (Q)EAA</Name>
+            </ServiceName>
+            <ServiceDigitalIdentity>
+              <DigitalId>
+                <X509Certificate>
+                  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
+                </X509Certificate>
+              </DigitalId>
+              <DigitalId>
+                <X509SubjectName>subject=C=NL,O=Tulip Bank,organizationIdentifier=NTRNL-90599408,CN=Tulip Bank</X509SubjectName>
+              </DigitalId>
+              <DigitalId>
+                <X509SKI>1r3i8v+v3oIpzbevspTub1Ami2A=</X509SKI>
+              </DigitalId>
+            </ServiceDigitalIdentity>
+            <ServiceStatus>http://uri.etsi.org/TrstSvc/TrustedList/Svcstatus/granted</ServiceStatus>
+            <StatusStartingTime>2025-11-29T08:00:00Z</StatusStartingTime>
+          </ServiceInformation>
+        </TSPService>
+
+      </TSPServices>
+    </TrustServiceProvider>
+
+    <!-- Provider 5: MijnOverheid -->
+    <TrustServiceProvider>
+      <TSPInformation>
+        <TSPName>
+          <Name xml:lang="en">MijnOverheid</Name>
+        </TSPName>
+        <TSPTradeName>
+          <Name xml:lang="en">MijnOverheid</Name>
+        </TSPTradeName>
+        <TSPAddress>
+          <PostalAddresses>
+            <PostalAddress xml:lang="en">
+              <StreetAddress>Wilhelmina van Pruisenweg 52</StreetAddress>
+              <Locality>Den Haag</Locality>
+              <StateOrProvince>Zuid-Holland</StateOrProvince>
+              <PostalCode>2595 AN</PostalCode>
+              <CountryName>NL</CountryName>
+            </PostalAddress>
+          </PostalAddresses>
+          <ElectronicAddress>
+            <URI xml:lang="en">mailto:info@logius.nl</URI>
+          </ElectronicAddress>
+        </TSPAddress>
+        <TSPInformationURI>
+          <URI xml:lang="en">https://mijnoverheid.fides.community/</URI>
+        </TSPInformationURI>
+      </TSPInformation>
+
+      <TSPServices>
+
+        <TSPService>
+          <ServiceInformation>
+            <ServiceTypeIdentifier>http://uri.etsi.org/TrstSvc/Svctype/EAA</ServiceTypeIdentifier>
+            <ServiceName>
+              <Name xml:lang="en">MijnOverheid Sandbox (Q)EAA</Name>
+            </ServiceName>
+            <ServiceDigitalIdentity>
+              <DigitalId>
+                <X509Certificate>
+                  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
+                </X509Certificate>
+              </DigitalId>
+              <DigitalId>
+                <X509SubjectName>CN=Ministerie van Binnenlandse Zaken en Koninkrijksrelaties, O=Ministerie van Binnenlandse Zaken en Koninkrijksrelaties, OID.2.5.4.97=NTRNL-50200097, C=NL</X509SubjectName>
+              </DigitalId>
+              <DigitalId>
+                <X509SKI>Kl64M3jSCdvHW4GmO2ysNVL6EqU=</X509SKI>
+              </DigitalId>
+            </ServiceDigitalIdentity>
+            <ServiceStatus>http://uri.etsi.org/TrstSvc/TrustedList/Svcstatus/granted</ServiceStatus>
+            <StatusStartingTime>2025-11-29T08:00:00Z</StatusStartingTime>
+          </ServiceInformation>
+        </TSPService>
+
+      </TSPServices>
+    </TrustServiceProvider>
+
+
+  </TrustServiceProviderList>
+  <ds:Signature Id="id-a66bb2dbfd015374727a496685e493ba"><ds:SignedInfo><ds:CanonicalizationMethod Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/><ds:SignatureMethod Algorithm="http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"/><ds:Reference Id="r-id-a66bb2dbfd015374727a496685e493ba-1" URI=""><ds:Transforms><ds:Transform Algorithm="http://www.w3.org/2002/06/xmldsig-filter2"><dsig-filter2:XPath xmlns:dsig-filter2="http://www.w3.org/2002/06/xmldsig-filter2" Filter="subtract">/descendant::ds:Signature</dsig-filter2:XPath></ds:Transform><ds:Transform Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/></ds:Transforms><ds:DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"/><ds:DigestValue>Pvlbu8EGFi41YbQ0b1PmEvwNdOdwb42fd31V/Vr3wj0=</ds:DigestValue></ds:Reference><ds:Reference Type="http://uri.etsi.org/01903#SignedProperties" URI="#xades-id-a66bb2dbfd015374727a496685e493ba"><ds:Transforms><ds:Transform Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/></ds:Transforms><ds:DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"/><ds:DigestValue>DjLS7ImSN/Pdndc2lRGuTvtKFq2zaygH+dbAHyK9GeU=</ds:DigestValue></ds:Reference></ds:SignedInfo><ds:SignatureValue Id="value-id-a66bb2dbfd015374727a496685e493ba">kZ8tT/TITmEhcioLlYLeijSBJbT3KQHHBq8NngzzDTTUPj19WpknYl6dPAuAkaQTuDXI5jGPGkcvwbuSVjJUPRPsrAciYR2IGPLeEXjpqz73FAC1w5jeNxw6MhASZQphUexjXHVDHqAys3b+4OUee0pZZmwtO9vALWnmYq6Qfr3hrhKEgYtW0oFc42SF6nJkGBPq7WduDQEAbP3vcgbWiIvKIlQ/xxyGA9uu444FlzOPdsBn5eJri2eOcl8aBN+32/36rJz2+eHKBt+0V/vFcy0NkMqtQqY0rHAmg0wTdC8fdswKSrf9uOvX8cm+dMC8qaQVEGvx/Nihoqvx8Jnwzw==</ds:SignatureValue><ds:KeyInfo><ds:X509Data><ds:X509Certificate>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</ds:X509Certificate></ds:X509Data></ds:KeyInfo><ds:Object><xades:QualifyingProperties xmlns:xades="http://uri.etsi.org/01903/v1.3.2#" Target="#id-a66bb2dbfd015374727a496685e493ba"><xades:SignedProperties Id="xades-id-a66bb2dbfd015374727a496685e493ba"><xades:SignedSignatureProperties><xades:SigningTime>2026-07-02T20:06:46Z</xades:SigningTime><xades:SigningCertificateV2><xades:Cert><xades:CertDigest><ds:DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha512"/><ds:DigestValue>/PRL8MBricN7zE5Kdh2D8vxEhYbDeZ/HXS5FLrkkd4Drqj8nkMgELwcLQ38yTYlRti0gVPpts2Eq4h1iJTnncQ==</ds:DigestValue></xades:CertDigest><xades:IssuerSerialV2>MIGFMHGkbzBtMSowKAYDVQQDEyFEaWdpZGVudGl0eSBCdXNpbmVzcyBRdWFsaWZpZWQgQ0ExFzAVBgNVBGETDk5UUk5MLTI3MzIyNjMxMRkwFwYDVQQKExBEaWdpZGVudGl0eSBCLlYuMQswCQYDVQQGEwJOTAIQQkyW2zzBTwm5HAeeDDAk4w==</xades:IssuerSerialV2></xades:Cert></xades:SigningCertificateV2></xades:SignedSignatureProperties><xades:SignedDataObjectProperties><xades:DataObjectFormat ObjectReference="#r-id-a66bb2dbfd015374727a496685e493ba-1"><xades:MimeType>application/octet-stream</xades:MimeType></xades:DataObjectFormat></xades:SignedDataObjectProperties></xades:SignedProperties></xades:QualifyingProperties></ds:Object></ds:Signature></TrustServiceStatusList>

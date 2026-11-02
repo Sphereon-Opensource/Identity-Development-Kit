@@ -1,0 +1,114 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?><!-- FIDES Sandbox List of Trusted Lists (LOTL) — DRAFT --><TrustServiceStatusList xmlns="http://uri.etsi.org/02231/v2#" xmlns:ds="http://www.w3.org/2000/09/xmldsig#" xmlns:tslx="http://uri.etsi.org/02231/v2/additionaltypes#" TSLTag="http://uri.etsi.org/19612/TSLTag">
+  <SchemeInformation>
+    <TSLVersionIdentifier>6</TSLVersionIdentifier>
+    <TSLSequenceNumber>1</TSLSequenceNumber>
+    <!-- Niet-EU list-of-lists -->
+    <TSLType>http://uri.etsi.org/TrstSvc/TrustedList/TSLType/NLlistofthelists</TSLType>
+
+    <SchemeOperatorName>
+      <Name xml:lang="en">FIDES Labs</Name>
+    </SchemeOperatorName>
+
+    <SchemeOperatorAddress>
+      <PostalAddresses>
+        <PostalAddress xml:lang="nl">
+          <StreetAddress>Vredenburg 40</StreetAddress>
+          <Locality>Utrecht</Locality>
+          <StateOrProvince>Utrecht</StateOrProvince>
+          <PostalCode>3511 BD</PostalCode>
+          <CountryName>NL</CountryName>
+        </PostalAddress>
+      </PostalAddresses>
+      <ElectronicAddress>
+        <URI xml:lang="en">mailto:info@fides.community</URI>
+        <URI xml:lang="en">https://github.com/FIDEScommunity/fides-trust-list</URI>
+      </ElectronicAddress>
+    </SchemeOperatorAddress>
+
+    <SchemeName>
+      <Name xml:lang="en">FIDES Sandbox List of Trusted Lists</Name>
+    </SchemeName>
+
+    <SchemeInformationURI>
+      <URI xml:lang="en">https://github.com/FIDEScommunity/fides-trust-list</URI>
+    </SchemeInformationURI>
+
+    <StatusDeterminationApproach>
+      http://uri.etsi.org/TrstSvc/TrustedList/StatusDetn/EUappropriate
+    </StatusDeterminationApproach>
+
+    <SchemeTypeCommunityRules>
+      <URI xml:lang="en">https://github.com/FIDEScommunity/fides-trust-list#scheme-rules</URI>
+    </SchemeTypeCommunityRules>
+
+    <SchemeTerritory>NL</SchemeTerritory>
+
+    <PolicyOrLegalNotice>
+      <TSLPolicy xml:lang="en">https://github.com/FIDEScommunity/fides-trust-list#policy</TSLPolicy>
+    </PolicyOrLegalNotice>
+
+    <HistoricalInformationPeriod>24</HistoricalInformationPeriod>
+    <ListIssueDateTime>2025-11-13T06:00:00Z</ListIssueDateTime>
+    <NextUpdate>
+      <dateTime>2025-12-13T06:00:00Z</dateTime>
+    </NextUpdate>
+
+    <DistributionPoints>
+      <URI>https://github.com/FIDEScommunity/fides-trust-list/FIDES-LOTL.xml</URI>
+      <URI>https://raw.githubusercontent.com/FIDEScommunity/fides-trust-list/main/FIDES-LOTL.xml</URI>
+    </DistributionPoints>
+
+    <!-- ===== Pointers to Member/Community TLs ===== -->
+    <PointersToOtherTSL>
+
+      <!-- NL → FIDES Sandbox TL -->
+      <OtherTSLPointer>
+        <ServiceDigitalIdentities>
+          <ServiceDigitalIdentity>
+            <DigitalId>
+              <X509Certificate>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
+              </X509Certificate>
+            </DigitalId>
+          </ServiceDigitalIdentity>
+        </ServiceDigitalIdentities>
+
+        <TSLLocation>
+          https://raw.githubusercontent.com/FIDEScommunity/fides-trust-list/main/FIDES-TL.xml
+        </TSLLocation>
+
+        <MimeType>application/vnd.etsi.tsl+xml</MimeType>
+
+        <AdditionalInformation>
+          <OtherInformation>
+            <tslx:TSLType>http://uri.etsi.org/TrstSvc/TrustedList/TSLType/EUgeneric</tslx:TSLType>
+          </OtherInformation>
+          <OtherInformation>
+            <tslx:SchemeOperatorName>
+              <Name xml:lang="en">FIDES Labs</Name>
+            </tslx:SchemeOperatorName>
+          </OtherInformation>
+          <OtherInformation>
+            <tslx:SchemeTypeCommunityRules>
+              <URI xml:lang="en">https://github.com/FIDEScommunity/fides-trust-list#scheme-rules</URI>
+            </tslx:SchemeTypeCommunityRules>
+          </OtherInformation>
+          <OtherInformation>
+            <tslx:SchemeTerritory>NL</tslx:SchemeTerritory>
+          </OtherInformation>
+          <OtherInformation>
+            <tslx:SchemeInformationURI>
+              <URI xml:lang="en">https://github.com/FIDEScommunity/fides-trust-list</URI>
+              <URI xml:lang="en">https://raw.githubusercontent.com/FIDEScommunity/fides-trust-list/main/FIDES-TL.xml</URI>
+            </tslx:SchemeInformationURI>
+          </OtherInformation>
+          <OtherInformation>
+            <tslx:StatusDeterminationApproach>
+              http://uri.etsi.org/TrstSvc/TrustedList/StatusDetn/EUappropriate
+            </tslx:StatusDeterminationApproach>
+          </OtherInformation>
+        </AdditionalInformation>
+      </OtherTSLPointer>
+
+    </PointersToOtherTSL>
+  </SchemeInformation>
+  <ds:Signature Id="id-8b46b15f693089237d542444ddcf4562"><ds:SignedInfo><ds:CanonicalizationMethod Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/><ds:SignatureMethod Algorithm="http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"/><ds:Reference Id="r-id-8b46b15f693089237d542444ddcf4562-1" URI=""><ds:Transforms><ds:Transform Algorithm="http://www.w3.org/2002/06/xmldsig-filter2"><dsig-filter2:XPath xmlns:dsig-filter2="http://www.w3.org/2002/06/xmldsig-filter2" Filter="subtract">/descendant::ds:Signature</dsig-filter2:XPath></ds:Transform><ds:Transform Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/></ds:Transforms><ds:DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"/><ds:DigestValue>2RVE4031XcxOrPcEU6fc+g3wRPddmqXqF+RnZfw+Ua4=</ds:DigestValue></ds:Reference><ds:Reference Type="http://uri.etsi.org/01903#SignedProperties" URI="#xades-id-8b46b15f693089237d542444ddcf4562"><ds:Transforms><ds:Transform Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/></ds:Transforms><ds:DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"/><ds:DigestValue>w9fl0tdYFe0sGbxOHYpq5/bSO/3k7A05Hc1kcX5236Y=</ds:DigestValue></ds:Reference></ds:SignedInfo><ds:SignatureValue Id="value-id-8b46b15f693089237d542444ddcf4562">Q9rZMiS46Ok2u6WxqJWunm2752n2VzghXQGXWWjDYqFPmnraTP7E0M3RF+ICnzQAgrpjoQJW1pOH46oOZqwhx8SLngi44WMqqJY/5ZSVSdByqN0ACAuAJasXhrdyEjX4vxScu3OhpTM3t5gn/yErN++W//svBbUrkNG8R/VJRf1dvIaOu6XVZKNp8xf9J/P/JBDf9+Ld7Flq2LgwzCJGVZRS7NBSFxV5ki/lwv+9/5ZXE6Lpb0TDyttXUX977ONZZzdTmOxiRE+cNt0ongQ9QRxcr2c1RCgNGHb6grN18zBuZ3Y4wclWGPAjOa1GRc9mpfVUCr0h7o+UdbDJTl9R3w==</ds:SignatureValue><ds:KeyInfo><ds:X509Data><ds:X509Certificate>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</ds:X509Certificate></ds:X509Data></ds:KeyInfo><ds:Object><xades:QualifyingProperties xmlns:xades="http://uri.etsi.org/01903/v1.3.2#" Target="#id-8b46b15f693089237d542444ddcf4562"><xades:SignedProperties Id="xades-id-8b46b15f693089237d542444ddcf4562"><xades:SignedSignatureProperties><xades:SigningTime>2026-03-01T19:20:11Z</xades:SigningTime><xades:SigningCertificateV2><xades:Cert><xades:CertDigest><ds:DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha512"/><ds:DigestValue>0+iLClfQwu9P8eOKLc/I2fWQS+/3Sx4vuGu26eMakX2kf0auy1+oA5dzV46mmbdU9BKOOiLDR/bAxplxDe3c/w==</ds:DigestValue></xades:CertDigest><xades:IssuerSerialV2>MIGKMHakdDByMS8wLQYDVQQDEyZURVNUIERpZ2lkZW50aXR5IEJ1c2luZXNzIFF1YWxpZmllZCBDQTEXMBUGA1UEYRMOTlRSTkwtMjczMjI2MzExGTAXBgNVBAoTEERpZ2lkZW50aXR5IEIuVi4xCzAJBgNVBAYTAk5MAhAC5RRURdVds+3lRAfobY2S</xades:IssuerSerialV2></xades:Cert></xades:SigningCertificateV2></xades:SignedSignatureProperties><xades:SignedDataObjectProperties><xades:DataObjectFormat ObjectReference="#r-id-8b46b15f693089237d542444ddcf4562-1"><xades:MimeType>application/octet-stream</xades:MimeType></xades:DataObjectFormat></xades:SignedDataObjectProperties></xades:SignedProperties></xades:QualifyingProperties></ds:Object></ds:Signature></TrustServiceStatusList>
