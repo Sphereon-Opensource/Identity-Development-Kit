@@ -17,6 +17,7 @@
 package com.sphereon.openid.oid4vci.issuer.impl.command
 
 import com.sphereon.data.store.credential.design.CredentialDesignService
+import com.sphereon.data.store.credential.design.IssuanceDesignVersionSelector
 import com.sphereon.di.session.SessionScope
 import com.sphereon.openid.oid4vci.issuer.attribute.CredentialAttributeContributor
 import com.sphereon.openid.oid4vci.issuer.config.Oid4vciIssuerConfigProvider
@@ -63,6 +64,8 @@ class DeferredPipelineReExecutorFactory(
         val credentialDesignService: CredentialDesignService? = null,
         /** OpenID Federation membership of the issuer; null when the deployment hosts no federation entities. */
         val federationEntityResolver: IssuerFederationEntityResolver? = null,
+        /** The design version issuance uses; null for an unversioned design store. */
+        val issuanceDesignVersionSelector: IssuanceDesignVersionSelector? = null,
     )
 
     /**
@@ -84,6 +87,7 @@ class DeferredPipelineReExecutorFactory(
             formatHandlers = formatDispatch.formatHandlers,
             credentialDesignService = formatDispatch.credentialDesignService,
             federationEntityResolver = formatDispatch.federationEntityResolver,
+            issuanceDesignVersionSelector = formatDispatch.issuanceDesignVersionSelector,
             tenantIdProvider = tenantIdProvider,
             businessModeProvider = businessModeProvider,
         )

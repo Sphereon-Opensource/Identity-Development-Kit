@@ -21,10 +21,9 @@ import com.sphereon.core.api.Ok
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.Err
 import com.sphereon.data.store.credential.design.CredentialDesignService
+import com.sphereon.data.store.credential.design.IssuanceDesignVersionSelector
 import com.sphereon.data.store.credential.design.impl.mapper.Oid4vciDesignMapper
 import com.sphereon.data.store.credential.design.model.ClaimPresentation
-import com.sphereon.data.store.credential.design.model.DesignBindingKey
-import com.sphereon.data.store.credential.design.model.ResolveCredentialDesignInput
 import com.sphereon.openid.oid4vci.common.model.CredentialConfigurationSupported
 import com.sphereon.openid.oid4vci.common.model.CredentialRequest
 import com.sphereon.openid.oid4vci.common.model.CredentialResponse
@@ -69,6 +68,7 @@ class DeferredPipelineReExecutor(
     private val tenantIdProvider: () -> String?,
     private val businessModeProvider: () -> String? = { null },
     private val federationEntityResolver: IssuerFederationEntityResolver? = null,
+    private val issuanceDesignVersionSelector: IssuanceDesignVersionSelector? = null,
 ) {
     /**
      * Run the DEFERRED pipeline phase, re-check completeness, and if every binding is complete
@@ -273,7 +273,8 @@ class DeferredPipelineReExecutor(
     ): IssuanceContext? {
         val signingConfig = issuerConfigProvider.signingConfigReloadingOnMiss(inputs.configId) ?: return null
         val expirationInDays = signingConfig.expirationInDays ?: return null
-        val designContext = resolveDesignContext(inputs.configId)
+        // A design without a version issuance may use keeps the transaction pending instead of issuing without it.
+        val designContext = resolveDesignContext(inputs.configId) ?: return null
         // DIIP v5 Appendix B, as on the immediate path. A membership that cannot be determined
         // keeps the transaction pending, like every other re-execution failure, so the next poll
         // retries instead of issuing a credential without the required federation content.
@@ -334,32 +335,16 @@ class DeferredPipelineReExecutor(
      * the default [IssuanceContext] values [HandleCredentialRequestCommandImpl] uses for the
      * same fallback path.
      */
-    private suspend fun resolveDesignContext(configId: String): DesignContext {
-        val service = credentialDesignService
-        val tenantId = service?.let { tenantIdProvider() }
-        val resolved = tenantId?.let { resolveDesign(service, it, configId) }
-        return resolved?.let { mapDesignToContext(it.design.claims) } ?: DesignContext.EMPTY
-    }
-
-    private suspend fun resolveDesign(
-        service: CredentialDesignService,
-        tenantId: String,
-        configId: String,
-    ): com.sphereon.data.store.credential.design.model.ResolvedCredentialDesign? {
-        val designs =
-            service
-                .findCredentialDesignByBindingKey(
-                    tenantId,
-                    DesignBindingKey.CREDENTIAL_CONFIGURATION_ID,
-                    configId,
-                ).getOrElse { emptyList() }
-        return designs.firstOrNull()?.let { record ->
-            service
-                .resolveCredentialDesign(
-                    tenantId,
-                    ResolveCredentialDesignInput(designId = record.id),
-                ).getOrNull()
+    private suspend fun resolveDesignContext(configId: String): DesignContext? {
+        val service = credentialDesignService ?: return DesignContext.EMPTY
+        val tenantId = tenantIdProvider() ?: return DesignContext.EMPTY
+        val resolved = resolveIssuanceDesign(service, issuanceDesignVersionSelector, tenantId, configId)
+        if (resolved.isErr) {
+            // Without a selector a failed lookup issues with the empty context, as before. With one, the design of the
+            // configuration has no version issuance may use, and nothing is issued.
+            return if (issuanceDesignVersionSelector == null) DesignContext.EMPTY else null
         }
+        return resolved.value?.let { mapDesignToContext(it.design.claims) } ?: DesignContext.EMPTY
     }
 
     private fun mapDesignToContext(claims: List<ClaimPresentation>): DesignContext {

@@ -30,10 +30,9 @@ import com.sphereon.core.api.service.SessionScopedCommandRegistry
 import com.sphereon.core.api.service.TypedServiceCommandAdapter
 import com.sphereon.core.events.SessionEventService
 import com.sphereon.data.store.credential.design.CredentialDesignService
+import com.sphereon.data.store.credential.design.IssuanceDesignVersionSelector
 import com.sphereon.data.store.credential.design.impl.mapper.Oid4vciDesignMapper
 import com.sphereon.data.store.credential.design.model.ClaimPathSegment
-import com.sphereon.data.store.credential.design.model.DesignBindingKey
-import com.sphereon.data.store.credential.design.model.ResolveCredentialDesignInput
 import com.sphereon.di.session.SessionScope
 import com.sphereon.oauth2.common.config.OAuth2ServersConfigProvider
 import com.sphereon.oauth2.server.authorization.signing.CapturedAsServerConfig
@@ -210,6 +209,12 @@ class HandleCredentialRequestCommandImpl(
      * issued without federation content.
      */
     private val federationEntityResolver: IssuerFederationEntityResolver? = null,
+    /**
+     * Optional selection of the design version issuance uses. When bound (a design store that publishes versions) the
+     * credential renders from that version whoever the holder is, and a configuration whose design has no such version
+     * is refused. Null for an unversioned design store: the design bound to the configuration is used as stored.
+     */
+    private val issuanceDesignVersionSelector: IssuanceDesignVersionSelector? = null,
 ) : TypedServiceCommandAdapter<HandleCredentialRequestArgs, CredentialResponse, IdkError>(
         commandId = HandleCredentialRequestCommand.COMMAND_ID,
         execution = execution,
@@ -810,21 +815,7 @@ class HandleCredentialRequestCommandImpl(
         val tenantId = execution.sessionContext.context.tenant.tenantId
         val resolvedDesign =
             credentialDesignService?.let { service ->
-                val designs =
-                    service
-                        .findCredentialDesignByBindingKey(
-                            tenantId,
-                            DesignBindingKey.CREDENTIAL_CONFIGURATION_ID,
-                            configId,
-                        ).getOrElse { return Err(it) }
-
-                designs.firstOrNull()?.let { designRecord ->
-                    service
-                        .resolveCredentialDesign(
-                            tenantId,
-                            ResolveCredentialDesignInput(designId = designRecord.id),
-                        ).getOrElse { return Err(it) }
-                }
+                resolveIssuanceDesign(service, issuanceDesignVersionSelector, tenantId, configId).getOrElse { return Err(it) }
             }
 
         val sdPolicies: Map<String, SdPolicy> =
