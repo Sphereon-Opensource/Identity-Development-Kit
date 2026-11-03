@@ -20,6 +20,7 @@ import com.sphereon.data.store.credential.design.command.CreateCredentialDesignA
 import com.sphereon.data.store.credential.design.command.CreateIssuerDesignArgs
 import com.sphereon.data.store.credential.design.command.CreateRenderVariantArgs
 import com.sphereon.data.store.credential.design.command.ResolveCredentialDesignArgs
+import com.sphereon.data.store.credential.design.model.ClaimLabel
 import com.sphereon.data.store.credential.design.model.ClaimPathSegment
 import com.sphereon.data.store.credential.design.model.ClaimPresentation
 import com.sphereon.data.store.credential.design.model.CreateCredentialDesignInput
@@ -82,6 +83,39 @@ class CredentialDesignValidatorTest {
                     ),
             )
         assertTrue(validator(args) is Valid)
+    }
+
+    private fun claim(vararg labels: ClaimLabel) =
+        ClaimPresentation(path = listOf(ClaimPathSegment.Property("address"), ClaimPathSegment.Property("street")), labels = labels.toList())
+
+    @Test
+    fun credentialDesignRecordWithWellFormedOrNoClaimLabelsPasses() {
+        val record =
+            credentialDesignRecord().copy(
+                claims = listOf(claim(ClaimLabel("en", "Street", entryValues = mapOf("main" to "Main street"))), claim()),
+            )
+
+        assertTrue(credentialDesignRecordValidator(record) is Valid)
+    }
+
+    @Test
+    fun credentialDesignRecordRejectsClaimLabelsWithoutALanguageOrTextAndNamesTheClaim() {
+        val malformed =
+            listOf(
+                ClaimLabel("", "Street"),
+                ClaimLabel(" ", "Street"),
+                ClaimLabel("en", " "),
+                ClaimLabel("en", "Street", entryValues = mapOf("main" to "")),
+                ClaimLabel("en", "Street", entryValues = mapOf(" " to "Main street")),
+            )
+        for (label in malformed) {
+            val result = credentialDesignRecordValidator(credentialDesignRecord().copy(claims = listOf(claim(ClaimLabel("nl", "Straat"), label))))
+
+            assertTrue(result is Invalid, "$label must be rejected")
+            val error = result.errors.single()
+            assertTrue(error.message.contains("Claim 'address.street'"), error.message)
+            assertTrue(error.dataPath.contains("claims"), error.dataPath)
+        }
     }
 
     @Test

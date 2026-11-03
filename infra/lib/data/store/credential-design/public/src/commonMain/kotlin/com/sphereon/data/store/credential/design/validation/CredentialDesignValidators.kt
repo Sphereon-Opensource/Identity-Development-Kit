@@ -22,6 +22,7 @@ import com.sphereon.data.store.credential.design.command.CreateRenderVariantArgs
 import com.sphereon.data.store.credential.design.command.CreateVerifierDesignArgs
 import com.sphereon.data.store.credential.design.command.ImportExternalDesignArgs
 import com.sphereon.data.store.credential.design.command.ResolveCredentialDesignArgs
+import com.sphereon.data.store.credential.design.model.ClaimPathSegment
 import com.sphereon.data.store.credential.design.model.ClaimPresentation
 import com.sphereon.data.store.credential.design.model.CreateCredentialDesignInput
 import com.sphereon.data.store.credential.design.model.CreateIssuerDesignInput
@@ -198,7 +199,36 @@ val credentialDesignRecordValidator =
             LocalizedCredentialDisplay::locale { minLength(2) }
             LocalizedCredentialDisplay::name { minLength(1) }
         }
+        CredentialDesignRecord::claims onEach {
+            dynamic { claim ->
+                constrain(claimLabelProblemMessage(claim)) { hasWellFormedLabels(it) }
+            }
+        }
     }
+
+/**
+ * Whether every label of [claim] names its language and carries text, and so does every entry value label it holds. A
+ * claim without any labels is shown under its own name and passes.
+ */
+fun hasWellFormedLabels(claim: ClaimPresentation): Boolean =
+    claim.labels.all { label ->
+        label.locale.isNotBlank() && label.label.isNotBlank() &&
+            label.entryValues.orEmpty().all { (code, value) -> code.isNotBlank() && value.isNotBlank() }
+    }
+
+/** The claim path as an author reads it, for example `address.street` or `nationalities[0]`. */
+fun claimPathLabel(claim: ClaimPresentation): String =
+    claim.path.joinToString(separator = "") { segment ->
+        when (segment) {
+            is ClaimPathSegment.Property -> ".${segment.name}"
+            is ClaimPathSegment.Index -> "[${segment.index}]"
+            ClaimPathSegment.AnyArrayElement -> "[*]"
+        }
+    }.removePrefix(".")
+
+private fun claimLabelProblemMessage(claim: ClaimPresentation): String =
+    "Claim '${claimPathLabel(claim)}' has a label or entry value label without a language or text. " +
+        "Every claim label needs a nonblank locale and label"
 
 val renderVariantRecordValidator =
     Validation<RenderVariantRecord> {
