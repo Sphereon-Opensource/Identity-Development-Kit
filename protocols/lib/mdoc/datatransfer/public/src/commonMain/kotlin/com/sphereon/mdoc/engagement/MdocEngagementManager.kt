@@ -276,192 +276,7 @@ interface MdocEngagementManager : MdocEngagementFactory.Holder {
         mdocUri: String,
         autoStart: Boolean = true,
         trustedOriginDomain: String? = null,
-    ): IdkResult<EngagementInstance, IdkError> {
-        fun parseReaderEngagementOrError(): IdkResult<com.sphereon.mdoc.transfer.reader.ReaderEngagement, IdkError> =
-            IdkErrorResult(
-                IdkError.ILLEGAL_ARGUMENT_ERROR(
-                    message = "Default MdocEngagementManager.toApp(...) no longer parses ReaderEngagement URIs. Use a codec-aware implementation.",
-                    arg = mdocUri,
-                ),
-            )
-
-        // Detect protocol by URI scheme
-        val engagementResult =
-            when {
-                // OID4VP protocol (ISO 18013-7 Annex B)
-                mdocUri.startsWith("mdoc-openid4vp://") -> {
-                    val engagementResult =
-                        createEngagement {
-                            engagement {
-                                oid4vp {
-                                    fromUri(mdocUri)
-                                }
-                            }
-                            // Configure OID4VP retrieval method
-                            // The retrieval options are auto-extracted from the URI
-                            // by the Oid4vpRetrievalBuilder via fromOid4vpEngagement()
-                            retrieval {
-                                oid4vp {
-                                    // Parameters will be auto-extracted from engagement method
-                                }
-                            }
-                        }
-
-                    engagementResult
-                }
-
-                // Classic reverse engagement (ISO 18013-5)
-                // Uses opaque scheme without slashes: mdoc:
-                mdocUri.startsWith("mdoc:") && !mdocUri.startsWith("mdoc://") -> {
-                    // Parse the ReaderEngagement to extract retrieval methods
-                    val readerEngagement = parseReaderEngagementOrError().getOrElse { return IdkErrorResult(it) }
-                    val readerBleOptions = readerEngagement.getBleRetrievalOptions()
-                    val readerNfcOptions = readerEngagement.getNfcRetrievalOptions()
-
-                    val engagementResult =
-                        createEngagement {
-                            engagement {
-                                reader {
-                                    withReaderEngagement(readerEngagement)
-                                }
-                            }
-
-                            // Configure BLE if the reader supports BLE
-                            // If reader is peripheral server (advertises), holder should be central client (connects)
-                            // If reader is central client (connects), holder should be peripheral server (advertises)
-                            readerBleOptions?.let { bleOptions ->
-                                retrieval {
-                                    ble {
-                                        // Reader is peripheral server -> holder becomes central client
-                                        if (bleOptions.peripheralServerMode == true) {
-                                            centralClientMode = true
-                                            peripheralServerMode = false
-                                            // Use the same UUID that the reader advertised
-                                            centralClientUuid = bleOptions.peripheralServerModeUuid
-                                        } else if (bleOptions.centralClientMode == true) {
-                                            // Reader is central client -> holder becomes peripheral server
-                                            peripheralServerMode = true
-                                            centralClientMode = false
-                                            // Use the same UUID that the reader will connect to
-                                            peripheralServerUuid = bleOptions.centralClientModeUuid
-                                        }
-                                    }
-                                }
-                            }
-
-                            // Configure NFC if the reader supports NFC
-                            readerNfcOptions?.let { nfcOptions ->
-                                retrieval {
-                                    nfc {
-                                        maxCommandDataFieldLength = nfcOptions.maxCommandDataFieldLength
-                                        maxResponseDataFieldLength = nfcOptions.maxResponseDataFieldLength
-                                    }
-                                }
-                            }
-                        }
-
-                    engagementResult
-                }
-
-                // REST API / Website protocol (ISO 18013-7 Annex A)
-                // Uses hierarchical scheme with slashes: mdoc://
-                mdocUri.startsWith("mdoc://") -> {
-                    // Parse the ReaderEngagement to extract retrieval methods
-                    val readerEngagement = parseReaderEngagementOrError().getOrElse { return IdkErrorResult(it) }
-//                val readerBleOptions = readerEngagement.getBleRetrievalOptions()
-                    val readerRestApiOptions = readerEngagement.getWebsiteRetrievalOptions()
-
-                    val engagementResult =
-                        createEngagement {
-                            this.trustedOriginDomain = trustedOriginDomain
-                            engagement {
-                                reader {
-                                    withReaderEngagement(readerEngagement)
-                                }
-                            }
-
-                            /*
-                            // Configure holder's retrieval methods based on what the reader advertised
-                            // The holder needs to specify how they will communicate back to the reader
-                    // Configure BLE if the reader supports BLE
-                    // If reader is peripheral server (advertises), holder should be central client (connects)
-                    // If reader is central client (connects), holder should be peripheral server (advertises)
-                    readerBleOptions?.let { bleOptions ->
-                        retrieval {
-                            ble {
-                                // Reader is peripheral server → holder becomes central client
-                                if (bleOptions.peripheralServerMode == true) {
-                                    centralClientMode = true
-                                    peripheralServerMode = false
-                                    // Use the same UUID that the reader advertised
-                                    centralClientUuid = bleOptions.peripheralServerModeUuid
-                                }
-                                // Reader is central client → holder becomes peripheral server
-                                else if (bleOptions.centralClientMode == true) {
-                                    peripheralServerMode = true
-                                    centralClientMode = false
-                                    // Use the same UUID that the reader will connect to
-                                    peripheralServerUuid = bleOptions.centralClientModeUuid
-                                }
-                            }
-                        }
-                    }*/
-
-                            // Configure REST API if the reader supports REST API
-                            // For REST API, the holder POSTs directly to the reader's endpoint
-                            readerRestApiOptions?.let { restApiOpts ->
-                                retrieval {
-                                    website {
-                                        uri = restApiOpts.uri
-                                    }
-                                }
-                            }
-                        }
-
-                    engagementResult
-                }
-
-                // Unknown protocol
-                else -> {
-                    val scheme =
-                        when {
-                            mdocUri.contains("://") -> mdocUri.substringBefore("://")
-                            mdocUri.contains(":") -> mdocUri.substringBefore(":")
-                            else -> "unknown"
-                        }
-
-                    com.sphereon.core.api.IdkErrorResult(
-                        com.sphereon.core.api.error.IdkError.ILLEGAL_ARGUMENT_ERROR(
-                            message =
-                                "Unsupported URI scheme for toApp. Expected:\n" +
-                                    "  - 'mdoc:' (ISO 18013-5 reverse engagement)\n" +
-                                    "  - 'mdoc://' (ISO 18013-7 website retrieval)\n" +
-                                    "  - 'mdoc-openid4vp://' (ISO 18013-7 OID4VP with OAuth)\n" +
-                                    "Got: $scheme\n\n",
-                            arg = mdocUri,
-                        ),
-                    )
-                }
-            }
-
-        engagementResult.onSuccess {
-            // For OID4VP, automatically start the engagement if requested
-            // This fetches the Authorization Request Object from request_uri
-            if (autoStart && engagementResult.isOk) {
-                val engagement = engagementResult.value
-                val startResult = engagement.tryOps().start()
-                if (!startResult.isOk) {
-                    // If starting failed, close the engagement and return the error
-                    closeEngagementByInstance(engagement)
-                    return IdkErrorResult(
-                        IdkError.fromDTO(startResult.error),
-                    )
-                }
-            }
-        }
-
-        return engagementResult
-    }
+    ): IdkResult<EngagementInstance, IdkError> = defaultToApp(mdocUri, autoStart, trustedOriginDomain)
 
     /**
      * Close NFC engagement if it exists.
@@ -504,4 +319,200 @@ interface MdocEngagementManager : MdocEngagementFactory.Holder {
      * Closes the engagement manager and cleans up resources.
      */
     fun close()
+}
+
+/**
+ * Default [MdocEngagementManager.toApp] behaviour. It lives outside the interface so classes that override
+ * [MdocEngagementManager.toApp] can still reach it: Kotlin/JS does not generate working super calls or
+ * suspend bridges for inherited suspend defaults of this exported interface.
+ */
+internal suspend fun MdocEngagementManager.defaultToApp(
+    mdocUri: String,
+    autoStart: Boolean,
+    trustedOriginDomain: String?,
+): IdkResult<EngagementInstance, IdkError> {
+    fun parseReaderEngagementOrError(): IdkResult<com.sphereon.mdoc.transfer.reader.ReaderEngagement, IdkError> =
+        IdkErrorResult(
+            IdkError.ILLEGAL_ARGUMENT_ERROR(
+                message = "Default MdocEngagementManager.toApp(...) no longer parses ReaderEngagement URIs. Use a codec-aware implementation.",
+                arg = mdocUri,
+            ),
+        )
+
+    // Detect protocol by URI scheme
+    val engagementResult =
+        when {
+            // OID4VP protocol (ISO 18013-7 Annex B)
+            mdocUri.startsWith("mdoc-openid4vp://") -> {
+                val engagementResult =
+                    createEngagement {
+                        engagement {
+                            oid4vp {
+                                fromUri(mdocUri)
+                            }
+                        }
+                        // Configure OID4VP retrieval method
+                        // The retrieval options are auto-extracted from the URI
+                        // by the Oid4vpRetrievalBuilder via fromOid4vpEngagement()
+                        retrieval {
+                            oid4vp {
+                                // Parameters will be auto-extracted from engagement method
+                            }
+                        }
+                    }
+
+                engagementResult
+            }
+
+            // Classic reverse engagement (ISO 18013-5)
+            // Uses opaque scheme without slashes: mdoc:
+            mdocUri.startsWith("mdoc:") && !mdocUri.startsWith("mdoc://") -> {
+                // Parse the ReaderEngagement to extract retrieval methods
+                val readerEngagement = parseReaderEngagementOrError().getOrElse { return IdkErrorResult(it) }
+                val readerBleOptions = readerEngagement.getBleRetrievalOptions()
+                val readerNfcOptions = readerEngagement.getNfcRetrievalOptions()
+
+                val engagementResult =
+                    createEngagement {
+                        engagement {
+                            reader {
+                                withReaderEngagement(readerEngagement)
+                            }
+                        }
+
+                        // Configure BLE if the reader supports BLE
+                        // If reader is peripheral server (advertises), holder should be central client (connects)
+                        // If reader is central client (connects), holder should be peripheral server (advertises)
+                        readerBleOptions?.let { bleOptions ->
+                            retrieval {
+                                ble {
+                                    // Reader is peripheral server -> holder becomes central client
+                                    if (bleOptions.peripheralServerMode == true) {
+                                        centralClientMode = true
+                                        peripheralServerMode = false
+                                        // Use the same UUID that the reader advertised
+                                        centralClientUuid = bleOptions.peripheralServerModeUuid
+                                    } else if (bleOptions.centralClientMode == true) {
+                                        // Reader is central client -> holder becomes peripheral server
+                                        peripheralServerMode = true
+                                        centralClientMode = false
+                                        // Use the same UUID that the reader will connect to
+                                        peripheralServerUuid = bleOptions.centralClientModeUuid
+                                    }
+                                }
+                            }
+                        }
+
+                        // Configure NFC if the reader supports NFC
+                        readerNfcOptions?.let { nfcOptions ->
+                            retrieval {
+                                nfc {
+                                    maxCommandDataFieldLength = nfcOptions.maxCommandDataFieldLength
+                                    maxResponseDataFieldLength = nfcOptions.maxResponseDataFieldLength
+                                }
+                            }
+                        }
+                    }
+
+                engagementResult
+            }
+
+            // REST API / Website protocol (ISO 18013-7 Annex A)
+            // Uses hierarchical scheme with slashes: mdoc://
+            mdocUri.startsWith("mdoc://") -> {
+                // Parse the ReaderEngagement to extract retrieval methods
+                val readerEngagement = parseReaderEngagementOrError().getOrElse { return IdkErrorResult(it) }
+//                val readerBleOptions = readerEngagement.getBleRetrievalOptions()
+                val readerRestApiOptions = readerEngagement.getWebsiteRetrievalOptions()
+
+                val engagementResult =
+                    createEngagement {
+                        this.trustedOriginDomain = trustedOriginDomain
+                        engagement {
+                            reader {
+                                withReaderEngagement(readerEngagement)
+                            }
+                        }
+
+                        /*
+                        // Configure holder's retrieval methods based on what the reader advertised
+                        // The holder needs to specify how they will communicate back to the reader
+                // Configure BLE if the reader supports BLE
+                // If reader is peripheral server (advertises), holder should be central client (connects)
+                // If reader is central client (connects), holder should be peripheral server (advertises)
+                readerBleOptions?.let { bleOptions ->
+                    retrieval {
+                        ble {
+                            // Reader is peripheral server → holder becomes central client
+                            if (bleOptions.peripheralServerMode == true) {
+                                centralClientMode = true
+                                peripheralServerMode = false
+                                // Use the same UUID that the reader advertised
+                                centralClientUuid = bleOptions.peripheralServerModeUuid
+                            }
+                            // Reader is central client → holder becomes peripheral server
+                            else if (bleOptions.centralClientMode == true) {
+                                peripheralServerMode = true
+                                centralClientMode = false
+                                // Use the same UUID that the reader will connect to
+                                peripheralServerUuid = bleOptions.centralClientModeUuid
+                            }
+                        }
+                    }
+                }*/
+
+                        // Configure REST API if the reader supports REST API
+                        // For REST API, the holder POSTs directly to the reader's endpoint
+                        readerRestApiOptions?.let { restApiOpts ->
+                            retrieval {
+                                website {
+                                    uri = restApiOpts.uri
+                                }
+                            }
+                        }
+                    }
+
+                engagementResult
+            }
+
+            // Unknown protocol
+            else -> {
+                val scheme =
+                    when {
+                        mdocUri.contains("://") -> mdocUri.substringBefore("://")
+                        mdocUri.contains(":") -> mdocUri.substringBefore(":")
+                        else -> "unknown"
+                    }
+
+                com.sphereon.core.api.IdkErrorResult(
+                    com.sphereon.core.api.error.IdkError.ILLEGAL_ARGUMENT_ERROR(
+                        message =
+                            "Unsupported URI scheme for toApp. Expected:\n" +
+                                "  - 'mdoc:' (ISO 18013-5 reverse engagement)\n" +
+                                "  - 'mdoc://' (ISO 18013-7 website retrieval)\n" +
+                                "  - 'mdoc-openid4vp://' (ISO 18013-7 OID4VP with OAuth)\n" +
+                                "Got: $scheme\n\n",
+                        arg = mdocUri,
+                    ),
+                )
+            }
+        }
+
+    engagementResult.onSuccess {
+        // For OID4VP, automatically start the engagement if requested
+        // This fetches the Authorization Request Object from request_uri
+        if (autoStart && engagementResult.isOk) {
+            val engagement = engagementResult.value
+            val startResult = engagement.tryOps().start()
+            if (!startResult.isOk) {
+                // If starting failed, close the engagement and return the error
+                closeEngagementByInstance(engagement)
+                return IdkErrorResult(
+                    IdkError.fromDTO(startResult.error),
+                )
+            }
+        }
+    }
+
+    return engagementResult
 }

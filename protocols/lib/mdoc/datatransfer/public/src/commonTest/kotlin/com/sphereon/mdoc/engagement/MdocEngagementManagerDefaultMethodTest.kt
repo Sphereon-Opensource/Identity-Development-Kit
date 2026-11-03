@@ -97,6 +97,14 @@ private class UnusedMdocEngagementManager : MdocEngagementManager {
 
     override fun close() = Unit
 
+    // Kotlin/JS cannot call an inherited suspend default of this exported interface, so override it
+    // with the same default behaviour.
+    override suspend fun toApp(
+        mdocUri: String,
+        autoStart: Boolean,
+        trustedOriginDomain: String?,
+    ): IdkResult<EngagementInstance, IdkError> = defaultToApp(mdocUri, autoStart, trustedOriginDomain)
+
     override suspend fun createFromBuilder(builder: EngagementData.HolderBuilder): IdkResult<EngagementInstance, IdkError> = error("createFromBuilder should not be called for invalid toApp input")
 
     override suspend fun createFromEphemeralKey(
