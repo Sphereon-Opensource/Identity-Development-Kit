@@ -100,6 +100,26 @@ data class DidDocument
              * The JSON-LD context for Multikey.
              */
             const val MULTIKEY_CONTEXT: String = "https://w3id.org/security/multikey/v1"
+
+            /** The JSON-LD context that defines each verification method type this library writes. */
+            private val VERIFICATION_METHOD_TYPE_CONTEXTS: Map<String, String> =
+                mapOf(
+                    "JsonWebKey2020" to JWK_2020_CONTEXT,
+                    "Ed25519VerificationKey2020" to ED25519_2020_CONTEXT,
+                    "Multikey" to MULTIKEY_CONTEXT,
+                )
+        }
+
+        /**
+         * This document with the `@context` a JSON-LD consumer needs to read it: the W3C DID context first, then the
+         * context of every verification method type the document uses (`JsonWebKey2020` is defined by the jws-2020
+         * suite), then any other context it already carried. The did:web method examples publish exactly this shape.
+         */
+        fun withRequiredContexts(): DidDocument {
+            val methods = verificationMethod.orEmpty() + VerificationPurpose.entries.flatMap { getVerificationMethodsForPurpose(it) }
+            val required = listOf(DEFAULT_CONTEXT) + methods.mapNotNull { VERIFICATION_METHOD_TYPE_CONTEXTS[it.type] }.distinct()
+            val merged = (required + context).distinct()
+            return if (merged == context) this else copy(context = merged)
         }
 
         /**

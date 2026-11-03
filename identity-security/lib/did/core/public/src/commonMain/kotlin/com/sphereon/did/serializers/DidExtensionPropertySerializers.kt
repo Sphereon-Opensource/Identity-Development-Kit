@@ -22,6 +22,7 @@ import com.sphereon.did.models.DidDocument
 import com.sphereon.did.models.DidService
 import com.sphereon.did.models.VerificationMethod
 import com.sphereon.did.models.VerificationMethodOrReference
+import kotlinx.serialization.EncodeDefault
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerialName
@@ -227,8 +228,11 @@ object DidServiceWithExtensionsSerializer : KSerializer<DidService> {
  * outer serializer only has to worry about overlaying / harvesting the extension keys.
  * Private — never leaks outside this file.
  */
+@OptIn(ExperimentalSerializationApi::class)
 @Serializable
 private data class DidDocumentSurrogate(
+    // A DID document always carries its @context, also from an encoder that leaves out default values.
+    @EncodeDefault(EncodeDefault.Mode.ALWAYS)
     @SerialName("@context")
     val context: List<String> = listOf(DidDocument.DEFAULT_CONTEXT),
     val id: String,

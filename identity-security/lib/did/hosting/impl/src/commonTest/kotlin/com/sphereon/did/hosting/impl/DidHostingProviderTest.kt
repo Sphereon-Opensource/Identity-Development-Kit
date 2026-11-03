@@ -26,6 +26,9 @@ import com.sphereon.did.persistence.DidRepository
 import com.sphereon.did.persistence.memory.MemoryDidRepositoryImpl
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
@@ -74,6 +77,18 @@ class DidHostingProviderTest {
             val doc = parser.decodeFromString(DidDocument.serializer(), hosted.json)
             assertEquals("did:web:web.example.com", doc.id)
             assertEquals(300L, hosted.cacheMaxAgeSeconds)
+        }
+
+    @Test
+    fun webProviderWritesTheDidContextIntoTheHostedDocument() =
+        runTest {
+            val repo = MemoryDidRepositoryImpl()
+            repo.put(did = "did:web:ctx.example.com", method = "web", webLocation = "ctx.example.com")
+
+            val hosted = (WebDidHostingProvider(repo).resolveDidJson(tenant, "ctx.example.com") as Ok).value!!
+
+            val context = Json.parseToJsonElement(hosted.json).jsonObject.getValue("@context").jsonArray.map { it.jsonPrimitive.content }
+            assertEquals(DidDocument.DEFAULT_CONTEXT, context.first())
         }
 
     @Test

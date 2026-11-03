@@ -72,7 +72,7 @@ class WebvhDidHostingProvider(
         val companion = WebvhDidWebCompanion.build(webvhDid, webvhDocument).getOrElse { return Err(it) }
         return Ok(
             HostedDid(
-                json = json.encodeToString(DidDocument.serializer(), companion),
+                json = json.encodeToString(DidDocument.serializer(), companion.withRequiredContexts()),
                 method = method,
                 deactivated = detail.record.deactivated,
                 cacheMaxAgeSeconds = WebvhDidCapabilities.DEFAULT_TTL_SECONDS,

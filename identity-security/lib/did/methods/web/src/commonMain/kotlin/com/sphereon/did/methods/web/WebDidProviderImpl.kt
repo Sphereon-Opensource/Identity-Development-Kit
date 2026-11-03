@@ -171,7 +171,7 @@ class WebDidProviderImpl : DidProvider {
                 capabilityInvocation = capabilityInvocationRefs.takeIf { it.isNotEmpty() },
                 capabilityDelegation = capabilityDelegationRefs.takeIf { it.isNotEmpty() },
                 service = options.services,
-            )
+            ).withRequiredContexts()
 
         val vmByPurpose = document.getVerificationMethodsByPurpose()
 

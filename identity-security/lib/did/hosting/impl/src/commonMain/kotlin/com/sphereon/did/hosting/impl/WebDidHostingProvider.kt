@@ -62,7 +62,8 @@ class WebDidHostingProvider(
         if (detail.record.method != method) {
             return Ok(null)
         }
-        val document = detail.toDidDocument()
+        // The hosted did.json names the JSON-LD contexts of the DID and of its verification method types.
+        val document = detail.toDidDocument().withRequiredContexts()
         return Ok(
             HostedDid(
                 json = json.encodeToString(DidDocument.serializer(), document),
