@@ -292,6 +292,14 @@ class VerifiedDataBuilderTest {
     }
 
     @Test
+    fun verifiedClaimsLeaveOutTheIssuersFederationEntityClaim() {
+        val values = claimsFor(matched(CredentialFormat.SD_JWT_VC, "urn:test:achievement").copy(
+            disclosedClaims = mapOf("given_name" to "Ada", FederatedCredentialIssuer.FED_CLAIM to "https://issuer.example.com"),
+        ))
+        assertEquals(setOf("given_name"), values.claims?.keys)
+    }
+
+    @Test
     fun shouldRefuseAClaimValueThatCannotBeRepresentedAsJson() {
         assertFailsWith<IllegalArgumentException> {
             claimsFor(matched(CredentialFormat.SD_JWT_VC, credentialType = null).copy(disclosedClaims = mapOf("opaque" to Any())))

@@ -40,6 +40,7 @@ private val verifiedDataJson = Json { ignoreUnknownKeys = true }
  *   - JWT registered claims (RFC 7519 §4.1): iss, sub, aud, exp, nbf, iat, jti
  *   - SD-JWT VC registered claims (draft-ietf-oauth-sd-jwt-vc §4): cnf, vct, status
  *   - SD-JWT internals (RFC 9901): _sd, _sd_alg, `...` (decoy element)
+ *   - the federation entity claim this library's issuer adds and its verifier reads: [FederatedCredentialIssuer.FED_CLAIM]
  *
  * `sub` is explicitly included — when the holder is DID-bound, `sub` holds the DID and
  * is a binding artefact, not a user-facing identity claim.
@@ -58,6 +59,8 @@ private val PROTECTED_CLAIMS =
         "cnf",
         "vct",
         "status",
+        // The issuer's federation entity identifier, read by the federated issuer check.
+        FederatedCredentialIssuer.FED_CLAIM,
         // SD-JWT internals
         "_sd",
         "_sd_alg",
