@@ -11,6 +11,7 @@ data class VerifiedCredentialEvidence(
     val presentationSha256: String,
     val verifiedAtEpochMillis: Long,
     val issuer: CredentialIssuerRef? = null,
+    @kotlinx.serialization.EncodeDefault(kotlinx.serialization.EncodeDefault.Mode.NEVER)
     val trust: CredentialTrustValidation? = null,
     val status: VerifiedCredentialStatus,
     @kotlinx.serialization.EncodeDefault(kotlinx.serialization.EncodeDefault.Mode.NEVER)

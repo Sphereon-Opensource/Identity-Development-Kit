@@ -7,6 +7,7 @@
 package com.sphereon.openid.oid4vp.verifier
 
 import com.sphereon.core.api.IdkResult
+import com.sphereon.catalog.model.AttestationTypeKey
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.di.session.SessionScope
@@ -56,6 +57,64 @@ data class CredentialTrustValidation(
     val status: String? = null,
     val details: String? = null,
     val diagnostics: List<String> = emptyList(),
+    val policyDigest: String? = null,
+    val decisionDigest: String? = null,
+    val scopedTrustMark: ScopedTrustMarkValidation? = null,
+)
+
+/** Facts retained from a trust decision for one credential candidate. */
+@JsExportCompat
+@Serializable
+data class CredentialTrustDecision(
+    val credentialQueryId: String,
+    val presentationSha256: String,
+    val issuer: CredentialIssuerRef? = null,
+    val trust: CredentialTrustValidation,
+)
+
+/** Outcome of the scoped mark check. */
+@JsExportCompat
+@Serializable
+@OptIn(ExperimentalObjCName::class)
+@ObjCName("ScopedTrustMarkOutcome", exact = true)
+enum class ScopedTrustMarkOutcome {
+    VERIFIED,
+    REJECTED,
+    UNAVAILABLE;
+
+    companion object {
+        fun fromValue(value: String): ScopedTrustMarkOutcome = entries.find { it.name.equals(value, ignoreCase = true) }
+            ?: throw IllegalArgumentException("Unknown ScopedTrustMarkOutcome: $value")
+    }
+}
+
+/** Scoped mark facts supplied by the trust authority, without the raw mark or credential. */
+@JsExportCompat
+@Serializable
+data class ScopedTrustMarkValidation(
+    val outcome: ScopedTrustMarkOutcome,
+    val policyDigest: String,
+    val issuer: String,
+    val trustMarkType: String,
+    val scopePolicyId: String,
+    val scopePolicyDigest: String,
+    val authorityDomainId: String,
+    val authorityAnchorId: String,
+    val checkedAtEpochMillis: Long,
+    val reasonCode: String? = null,
+    @kotlinx.serialization.EncodeDefault(kotlinx.serialization.EncodeDefault.Mode.NEVER)
+    val credentialType: AttestationTypeKey? = null,
+    val markIssuer: String? = null,
+    val authorityEntityId: String? = null,
+    val authorityAnchorVersion: Long? = null,
+    val markDigest: String? = null,
+    val criteriaReference: String? = null,
+    val delegationIssuer: String? = null,
+    val delegationDigest: String? = null,
+    val markExpiresAtEpochMillis: Long? = null,
+    val statusIssuedAtEpochMillis: Long? = null,
+    val statusValidUntilEpochMillis: Long? = null,
+    val issuerDecisionDigest: String? = null,
 )
 
 @JsExportCompat

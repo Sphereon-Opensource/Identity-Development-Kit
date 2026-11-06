@@ -64,5 +64,6 @@ internal fun authorizationValidationSummaryOf(session: AuthorizationSession): Au
         AuthorizationValidationSummary(
             valid = validationResult.valid,
             rejections = validationResult.rejections,
+            trustDecisions = validationResult.trustDecisions,
         )
     }

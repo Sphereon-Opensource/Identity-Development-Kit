@@ -343,6 +343,7 @@ data class ValidationResult(
     val matchedCredentials: List<MatchedCredential> = emptyList(),
     val errors: List<String> = emptyList(),
     val rejections: List<CredentialValidationRejection> = emptyList(),
+    val trustDecisions: List<CredentialTrustDecision> = emptyList(),
 )
 
 /**

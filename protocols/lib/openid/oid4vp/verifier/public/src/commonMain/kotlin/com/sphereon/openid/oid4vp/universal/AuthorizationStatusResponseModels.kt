@@ -92,8 +92,8 @@ data class GetAuthorizationRequestStatusOutput(
  *
  * Present whenever a validation has run - valid or not - so that a relying party can tell a session
  * that was rejected apart from one that has not been validated yet. It deliberately carries no
- * claims, presentation or issuer: a rejected verification records no credential content, and the
- * verified content of a successful one travels on [VerifiedData] instead.
+ * claims or raw presentations. Trust decisions carry stable issuer references and digests; the
+ * verified content of a successful credential travels on [VerifiedData] instead.
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("AuthorizationValidationSummary", exact = true)
@@ -106,6 +106,7 @@ data class AuthorizationValidationSummary(
      * empty on an invalid one whose failure had nothing to do with credential status.
      */
     val rejections: List<CredentialValidationRejection> = emptyList(),
+    val trustDecisions: List<com.sphereon.openid.oid4vp.verifier.CredentialTrustDecision> = emptyList(),
 )
 
 /**

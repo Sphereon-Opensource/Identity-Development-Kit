@@ -69,6 +69,8 @@ import com.sphereon.openid.oid4vp.verifier.CredentialIssuerControllerClaim
 import com.sphereon.openid.oid4vp.verifier.CredentialTypeMatcher
 import com.sphereon.sdjwt.vc.SdJwtVcClaims
 import com.sphereon.openid.oid4vp.verifier.CredentialTrustValidation
+import com.sphereon.openid.oid4vp.verifier.CredentialTrustDecision
+import kotlinx.coroutines.CancellationException
 import com.sphereon.openid.oid4vp.verifier.CredentialTrustValidationMode
 import com.sphereon.openid.oid4vp.verifier.TrustedAuthenticationResolution
 import com.sphereon.crypto.resolution.extern.ExternalIdentifierX5cOpts
@@ -367,6 +369,7 @@ class ValidateAuthorizationResponseCommandImpl(
         errors: MutableList<String>,
         accepted: MutableList<AcceptedCredential>,
         rejections: MutableList<CredentialValidationRejection>,
+        trustDecisions: MutableList<CredentialTrustDecision>,
     ) {
         // OID4VP ldp_vc values are JSON objects. The value can be either a credential or
         // a holder-bound presentation, so classify the VCDM document itself before
@@ -411,6 +414,8 @@ class ValidateAuthorizationResponseCommandImpl(
                 )
             val diResult = try {
                 vcdmDataIntegrityVerifier.verify(diArgs)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (expected: Exception) {
                 errors.add(
                     "Data Integrity verification failed for query '$queryId' at index $presentationIndex: " +
@@ -442,7 +447,7 @@ class ValidateAuthorizationResponseCommandImpl(
             val verifiedDocument = diResult.value.verifiedDocument
             val renderedPresentation = JSON_LENIENT.encodeToString(JsonElement.serializer(), presentationElement)
             if (documentKind == VcdmDocumentKind.PRESENTATION) {
-                val dataIntegrityRecursionState = VcdmRecursionState(matchingQuery)
+                val dataIntegrityRecursionState = VcdmRecursionState(matchingQuery, renderedPresentation)
                 if (matchingQuery.require_cryptographic_holder_binding) {
                     dataIntegrityRecursionState.boundHolder = boundDidHolder(
                         declaredDataIntegrityController ?: diResult.value.authenticatedControllers.singleOrNull(),
@@ -467,6 +472,7 @@ class ValidateAuthorizationResponseCommandImpl(
                 // A nested credential is discarded under its parent's query identity; collect its typed
                 // rejections before the failure return discards the presentation.
                 rejections.addAll(dataIntegrityRecursionState.rejections)
+                trustDecisions.addAll(dataIntegrityRecursionState.trustDecisions)
                 if (childFailure != null) {
                     errors.add(
                         "Data Integrity presentation for query '$queryId' at index $presentationIndex rejected at " +
@@ -501,6 +507,7 @@ class ValidateAuthorizationResponseCommandImpl(
                 format = LDP_VC_FORMAT,
                 issuer = objectIssuer,
             )
+            trustDecisions.recordTrustDecision(queryId, renderedPresentation, objectIssuer, objectTrust)
             if (objectTrust.enabled && objectTrust.mode == CredentialTrustValidationMode.DEFAULT_ENFORCE && objectTrust.trusted != true) {
                 errors.add(
                     "Credential trust validation failed for query '$queryId' at index $presentationIndex: " +
@@ -796,6 +803,7 @@ class ValidateAuthorizationResponseCommandImpl(
                     matchingQuery = matchingQuery,
                 )
             rejections.addAll(recursiveResult.rejections)
+            trustDecisions.addAll(recursiveResult.trustDecisions)
             if (recursiveResult.error != null) {
                 errors.add(
                     "VCDM presentation for query '$queryId' at index $presentationIndex rejected at " +
@@ -863,6 +871,7 @@ class ValidateAuthorizationResponseCommandImpl(
             presentation,
             processedArgs.trustedAuthentications,
         )
+        val decisionStart = trustDecisions.size
         val resolvedTrust =
             trust
                 ?: if (detectedCredentialFormat == CredentialFormat.MSO_MDOC) {
@@ -873,6 +882,7 @@ class ValidateAuthorizationResponseCommandImpl(
                         credentialQueryId = queryId,
                         presentation = presentation,
                         firstIssuer = resolvedIssuer,
+                        trustDecisions = trustDecisions,
                     )
                 } else {
                     validateCredentialTrust(
@@ -885,6 +895,10 @@ class ValidateAuthorizationResponseCommandImpl(
                         issuer = resolvedIssuer,
                     )
                 }
+        val mdocDecisions = if (detectedCredentialFormat == CredentialFormat.MSO_MDOC) trustDecisions.drop(decisionStart) else emptyList()
+        if (detectedCredentialFormat != CredentialFormat.MSO_MDOC) {
+            trustDecisions.recordTrustDecision(queryId, presentation, resolvedIssuer, resolvedTrust)
+        }
         if (resolvedTrust.enabled && resolvedTrust.mode == CredentialTrustValidationMode.DEFAULT_ENFORCE && resolvedTrust.trusted != true) {
             errors.add(
                 "Credential trust validation failed for query '$queryId' at index $presentationIndex: " +
@@ -969,6 +983,9 @@ class ValidateAuthorizationResponseCommandImpl(
             )
         projections.forEachIndexed { index, projection ->
             val entryIssuer = if (documentIssuers.size == projections.size) documentIssuers[index] else resolvedIssuer
+            val entryTrust = if (mdocDecisions.size == projections.size && documentIssuers.size == projections.size) {
+                mdocDecisions[index].trust
+            } else resolvedTrust
             accepted.add(
                 AcceptedCredential(
                     MatchedCredential(
@@ -978,8 +995,8 @@ class ValidateAuthorizationResponseCommandImpl(
                         presentation = presentation,
                         disclosedClaims = projection.claims.toClaimValues(),
                         issuer = entryIssuer,
-                        trust = resolvedTrust.takeIf { it.enabled || it.trustDomainIds.isNotEmpty() },
-                        verificationEvidence = verificationEvidence(presentation, entryIssuer, resolvedTrust, statusPolicy, statusEvaluation, temporalFacts),
+                        trust = entryTrust.takeIf { it.enabled || it.trustDomainIds.isNotEmpty() },
+                        verificationEvidence = verificationEvidence(presentation, entryIssuer, entryTrust, statusPolicy, statusEvaluation, temporalFacts),
                         credentialType = projection.credentialType,
                     ),
                     projection.queryRoot,
@@ -1076,6 +1093,7 @@ class ValidateAuthorizationResponseCommandImpl(
         val errors = mutableListOf<String>()
         val accepted = mutableListOf<AcceptedCredential>()
         val rejections = mutableListOf<CredentialValidationRejection>()
+        val trustDecisions = mutableListOf<CredentialTrustDecision>()
         // Query IDs the wallet actually submitted a presentation for. A required credential that WAS
         // submitted but then discarded (status rejection, holder-binding failure, ...) must not also be
         // reported as "not found" — the specific discard reason is already in `errors`.
@@ -1196,6 +1214,7 @@ class ValidateAuthorizationResponseCommandImpl(
                     errors = errors,
                     accepted = presented,
                     rejections = rejections,
+                    trustDecisions = trustDecisions,
                 )
                 if (errors.size > errorsBefore) continue
                 // Every credential of the presentation must hold the claims the query asks for on its own,
@@ -1251,6 +1270,7 @@ class ValidateAuthorizationResponseCommandImpl(
                 matchedCredentials = matchedCredentials,
                 errors = errors,
                 rejections = rejections,
+                trustDecisions = trustDecisions,
             )
 
         return Ok(result)
@@ -1424,6 +1444,8 @@ class ValidateAuthorizationResponseCommandImpl(
                         verificationMethodResolutionPolicy = verificationMethodResolutionPolicy,
                     ),
                 )
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (expected: Exception) {
                 return "verifiableCredential child[$index] Data Integrity verification failed: ${expected.message ?: "unexpected verifier error"}"
             }
@@ -1468,6 +1490,7 @@ class ValidateAuthorizationResponseCommandImpl(
                     format = LDP_VC_FORMAT,
                     issuer = issuer,
                 )
+                state.trustDecisions.recordTrustDecision(queryId, state.presentation, issuer, trust)
                 if (trust.enabled && trust.mode == CredentialTrustValidationMode.DEFAULT_ENFORCE && trust.trusted != true) {
                     return "verifiableCredential child[$index] trust validation failed: ${trust.details ?: trust.status ?: "issuer is not trusted"}"
                 }
@@ -1735,6 +1758,8 @@ class ValidateAuthorizationResponseCommandImpl(
                             ?: trustedJwks.takeUnless { configuredIssuerAuthentication != null },
                     ),
                 )
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (expected: Exception) {
                 return "VCDM credential issuer JWS verification failed: ${expected.message ?: "unexpected verifier error"}"
             }
@@ -1772,7 +1797,7 @@ class ValidateAuthorizationResponseCommandImpl(
         boundHolder: String?,
         matchingQuery: DcqlCredentialQuery,
     ): VcdmVerifiedChildren {
-        val state = VcdmRecursionState(matchingQuery)
+        val state = VcdmRecursionState(matchingQuery, artifact)
         state.boundHolder = boundHolder
         state.artifacts += artifact
         state.decodedBytes = artifact.encodeToByteArray().size.toLong()
@@ -1784,7 +1809,7 @@ class ValidateAuthorizationResponseCommandImpl(
             verifierId, dcqlQueryId, templateId, statusPolicy, trustedAuthentications,
             verificationMethodResolutionPolicy, issuerAlgAllowlist, depth = 0, state = state,
         )
-        return VcdmVerifiedChildren(state.credentialFormats, error, state.rejections.toList(), state.credentials.toList())
+        return VcdmVerifiedChildren(state.credentialFormats, error, state.rejections.toList(), state.credentials.toList(), state.trustDecisions.toList())
     }
 
     private suspend fun verifyVcdmPresentationChildrenRecursive(
@@ -1936,6 +1961,8 @@ class ValidateAuthorizationResponseCommandImpl(
                     verificationMethodResolutionPolicy = verificationMethodResolutionPolicy,
                 ),
             )
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (expected: Exception) {
             return "VCDM 1.1 JSON child Data Integrity verification failed: ${expected.message ?: "unexpected verifier error"}"
         }
@@ -1953,6 +1980,7 @@ class ValidateAuthorizationResponseCommandImpl(
             format = LDP_VC_FORMAT,
             issuer = issuer,
         )
+        state.trustDecisions.recordTrustDecision(queryId, state.presentation, issuer, trust)
         if (trust.enabled && trust.mode == CredentialTrustValidationMode.DEFAULT_ENFORCE && trust.trusted != true) {
             return "VCDM 1.1 JSON child trust validation failed: ${trust.details ?: trust.status ?: "issuer is not trusted"}"
         }
@@ -2093,6 +2121,8 @@ class ValidateAuthorizationResponseCommandImpl(
                         verificationMethodResolutionPolicy = verificationMethodResolutionPolicy,
                     ),
                 )
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (expected: Exception) {
                 return "direct Data Integrity child verification failed: ${expected.message ?: "unexpected verifier error"}"
             }
@@ -2148,6 +2178,7 @@ class ValidateAuthorizationResponseCommandImpl(
             format = LDP_VC_FORMAT,
             issuer = issuer,
         )
+        state.trustDecisions.recordTrustDecision(queryId, state.presentation, issuer, trust)
         if (trust.enabled && trust.mode == CredentialTrustValidationMode.DEFAULT_ENFORCE && trust.trusted != true) {
             return "direct Data Integrity child trust validation failed: ${trust.details ?: trust.status ?: "issuer is not trusted"}"
         }
@@ -2215,6 +2246,8 @@ class ValidateAuthorizationResponseCommandImpl(
                         verifierEncryptionJwkThumbprint = verifierEncryptionJwkThumbprint,
                     ),
                 )
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (expected: Exception) {
                 return "nested VCDM presentation holder verification failed: ${expected.message ?: "unexpected verifier error"}"
             }
@@ -2252,6 +2285,7 @@ class ValidateAuthorizationResponseCommandImpl(
         val trust = validateCredentialTrust(
             verifierId, dcqlQueryId, templateId, queryId, compact, format, issuer,
         )
+        state.trustDecisions.recordTrustDecision(queryId, state.presentation, issuer, trust)
         if (trust.enabled && trust.mode == CredentialTrustValidationMode.DEFAULT_ENFORCE && trust.trusted != true) {
             return "child credential trust validation failed: ${trust.details ?: trust.status ?: "issuer is not trusted"}"
         }
@@ -2288,6 +2322,7 @@ class ValidateAuthorizationResponseCommandImpl(
         val rejections: List<CredentialValidationRejection> = emptyList(),
         /** Every child credential that passed all of its own checks, in presentation order. */
         val credentials: List<VerifiedVcdmCredential> = emptyList(),
+        val trustDecisions: List<CredentialTrustDecision> = emptyList(),
     )
 
     /** A credential inside a W3C presentation that passed its own proof, trust and status checks. */
@@ -2303,6 +2338,7 @@ class ValidateAuthorizationResponseCommandImpl(
     private class VcdmRecursionState(
         /** The query every credential in the presentation must satisfy on its own. */
         val credentialQuery: DcqlCredentialQuery,
+        val presentation: String,
     ) {
         /**
          * The DID holder of the presentation whose credentials are being verified, when that
@@ -2311,6 +2347,7 @@ class ValidateAuthorizationResponseCommandImpl(
         var boundHolder: String? = null
         val artifacts: MutableSet<String> = mutableSetOf()
         val rejections: MutableList<CredentialValidationRejection> = mutableListOf()
+        val trustDecisions: MutableList<CredentialTrustDecision> = mutableListOf()
         val credentialFormats: MutableSet<CredentialFormat> = linkedSetOf()
         val credentials: MutableList<VerifiedVcdmCredential> = mutableListOf()
         var nodes: Int = 1
@@ -2677,10 +2714,11 @@ class ValidateAuthorizationResponseCommandImpl(
         credentialQueryId: String,
         presentation: String,
         firstIssuer: CredentialIssuerRef?,
+        trustDecisions: MutableList<CredentialTrustDecision>,
     ): CredentialTrustValidation {
         val issuers = extractMdocIssuers(presentation)
         if (issuers.isEmpty()) {
-            return validateCredentialTrustForFormat(
+            val validation = validateCredentialTrustForFormat(
                 verifierId = verifierId,
                 dcqlQueryId = dcqlQueryId,
                 templateId = templateId,
@@ -2689,6 +2727,8 @@ class ValidateAuthorizationResponseCommandImpl(
                 format = CredentialFormat.MSO_MDOC.value,
                 issuer = firstIssuer,
             )
+            trustDecisions.recordTrustDecision(credentialQueryId, presentation, firstIssuer, validation)
+            return validation
         }
         var firstValidation: CredentialTrustValidation? = null
         for (issuer in issuers) {
@@ -2701,6 +2741,7 @@ class ValidateAuthorizationResponseCommandImpl(
                 format = CredentialFormat.MSO_MDOC.value,
                 issuer = issuer,
             )
+            trustDecisions.recordTrustDecision(credentialQueryId, presentation, issuer, validation)
             firstValidation = firstValidation ?: validation
             if (validation.enabled &&
                 validation.mode == CredentialTrustValidationMode.DEFAULT_ENFORCE &&
@@ -2710,6 +2751,27 @@ class ValidateAuthorizationResponseCommandImpl(
             }
         }
         return requireNotNull(firstValidation)
+    }
+
+    /**
+     * Keeps the decision only when trust was in play for the credential, the same condition under which
+     * a matched credential carries its trust, so a verifier without trust validation records nothing.
+     */
+    private fun MutableList<CredentialTrustDecision>.recordTrustDecision(
+        queryId: String,
+        presentation: String,
+        issuer: CredentialIssuerRef?,
+        trust: CredentialTrustValidation,
+    ) {
+        if (!trust.enabled && trust.trustDomainIds.isEmpty()) return
+        add(
+            CredentialTrustDecision(
+                credentialQueryId = queryId,
+                presentationSha256 = hash(presentation.encodeToByteArray(), DigestAlg.SHA256).encodeToBase64Url(),
+                issuer = issuer,
+                trust = trust,
+            ),
+        )
     }
 
     private suspend fun validateCredentialTrustForFormat(
@@ -2731,23 +2793,7 @@ class ValidateAuthorizationResponseCommandImpl(
                 presentation = presentation,
                 issuer = issuer,
             )
-        val validator =
-            credentialTrustValidators.firstOrNull { it.supports(validationArgs) }
-                ?: return CredentialTrustValidation(
-                    enabled = false,
-                    mode = CredentialTrustValidationMode.DISABLED,
-                    details = "No OID4VP credential trust validator configured",
-                )
-
-        return validator.validate(validationArgs).getOrElse { error ->
-            CredentialTrustValidation(
-                enabled = true,
-                trusted = false,
-                mode = CredentialTrustValidationMode.DEFAULT_ENFORCE,
-                status = "VALIDATION_ERROR",
-                details = error.message.defaultMessage,
-            )
-        }
+        return evaluateCredentialTrustValidators(credentialTrustValidators.toList(), validationArgs)
     }
 
     private fun extractCredentialIssuer(
@@ -2993,6 +3039,55 @@ class ValidateAuthorizationResponseCommandImpl(
                 isLenient = true
             }
     }
+}
+
+/** Evaluate every supporting trust validator so an allowing peer cannot bypass an enforcing denial. */
+internal suspend fun evaluateCredentialTrustValidators(
+    validators: List<Oid4vpCredentialTrustValidator>,
+    args: Oid4vpCredentialTrustValidationArgs,
+): CredentialTrustValidation {
+    var selected: CredentialTrustValidation? = null
+    val diagnostics = mutableListOf<String>()
+    val domains = linkedSetOf<String>()
+    var matchedDomain: String? = null
+    var matchedAnchor: String? = null
+    for (validator in validators) {
+        if (!validator.supports(args)) continue
+        val result = validator.validate(args).getOrElse { error ->
+            CredentialTrustValidation(
+                enabled = true, trusted = false, mode = CredentialTrustValidationMode.DEFAULT_ENFORCE,
+                status = "VALIDATION_ERROR", details = error.message.defaultMessage,
+            )
+        }
+        diagnostics += result.diagnostics
+        domains += result.trustDomainIds
+        matchedDomain = matchedDomain ?: result.matchedTrustDomainId
+        matchedAnchor = matchedAnchor ?: result.matchedAnchorId
+        val enforcing = result.enabled && result.mode == CredentialTrustValidationMode.DEFAULT_ENFORCE
+        if (enforcing && result.trusted != true) {
+            // A denial keeps only its own facts. Carrying a peer's verified mark onto it would show a denied credential as recognised.
+            return result.copy(diagnostics = diagnostics, trustDomainIds = domains.toList())
+        }
+        // Only two enforcing results can contradict each other. An audit-mode peer's mark never decides, whichever validator runs first.
+        val selectedEnforcing = selected != null && selected.enabled && selected.mode == CredentialTrustValidationMode.DEFAULT_ENFORCE
+        if (enforcing && result.scopedTrustMark != null && selectedEnforcing && selected?.scopedTrustMark != null && result.scopedTrustMark != selected.scopedTrustMark) {
+            return CredentialTrustValidation(
+                enabled = true, trusted = false, status = "SCOPED_MARK_AMBIGUOUS",
+                details = "Multiple trust validators returned different scoped mark evidence",
+                diagnostics = diagnostics, trustDomainIds = domains.toList(),
+            )
+        }
+        if (selected == null || (enforcing && (!selected.enabled || selected.mode != CredentialTrustValidationMode.DEFAULT_ENFORCE ||
+                (result.scopedTrustMark != null && selected.scopedTrustMark == null)))) {
+            selected = result
+        }
+    }
+    return selected?.copy(
+        diagnostics = diagnostics, trustDomainIds = domains.toList(),
+        matchedTrustDomainId = selected.matchedTrustDomainId ?: matchedDomain, matchedAnchorId = selected.matchedAnchorId ?: matchedAnchor,
+    )
+        ?: CredentialTrustValidation(enabled = false, mode = CredentialTrustValidationMode.DISABLED,
+            details = "No OID4VP credential trust validator configured")
 }
 
 /**

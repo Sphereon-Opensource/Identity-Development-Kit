@@ -271,6 +271,99 @@ class KvAuthorizationSessionStoreTest {
     }
 
     @Test
+    fun shouldPersistTrustDecisionsAndDecodeHistoricalResults() = runTest {
+        val historical = Json.decodeFromString(
+            KvAuthorizationSessionStore.ValidationResultEntry.serializer(),
+            """{"valid":false,"matchedCredentials":[],"errors":[]}""",
+        )
+        assertEquals(emptyList(), historical.toPublic().trustDecisions)
+
+        for ((trusted, status) in listOf(true to "VERIFIED", false to "REJECTED", false to "UNAVAILABLE")) {
+            val correlation = AuthorizationSessionStore.CLAIMED_CORRELATION_PREFIX + "trust-decision-roundtrip-$status"
+            val manager = KvStoreTestKvStoreManager(Clock.System)
+            val store = createStore(claimed = true, manager = manager)
+            assertEquals(true, store.createClaimedSession(session(null, correlation), "fingerprint", 600).isOk)
+            assertEquals(true, store.storeResponse(correlation, parsedResponse(correlation)).isOk)
+            val scoped = com.sphereon.openid.oid4vp.verifier.ScopedTrustMarkValidation(
+                outcome = com.sphereon.openid.oid4vp.verifier.ScopedTrustMarkOutcome.valueOf(status),
+                policyDigest = "policy-digest",
+                issuer = "https://issuer.example",
+                trustMarkType = "https://authority.example/mark",
+                scopePolicyId = "scope-policy",
+                scopePolicyDigest = "scope-digest",
+                authorityDomainId = "authority-domain",
+                authorityAnchorId = "authority-anchor",
+                checkedAtEpochMillis = 1000L,
+                markDigest = if (trusted) "mark-digest" else null,
+                reasonCode = if (trusted) null else "STATUS_$status",
+            )
+            val decision = com.sphereon.openid.oid4vp.verifier.CredentialTrustDecision(
+                credentialQueryId = "identity_credential",
+                presentationSha256 = "presentation-digest",
+                issuer = com.sphereon.openid.oid4vp.verifier.CredentialIssuerRef(issuer = "https://issuer.example"),
+                trust = com.sphereon.openid.oid4vp.verifier.CredentialTrustValidation(
+                    enabled = true, trusted = trusted, status = status, scopedTrustMark = scoped,
+                ),
+            )
+            val validation = ValidationResult(valid = trusted, trustDecisions = listOf(decision))
+            assertEquals(true, store.storeValidationResultDeferred(correlation, validation).isOk)
+            assertEquals(listOf(decision), store.get(correlation).value?.validationResult?.trustDecisions)
+            val restarted = createStore(claimed = true, manager = manager)
+            assertEquals(listOf(decision), restarted.get(correlation).value?.validationResult?.trustDecisions)
+        }
+    }
+
+    @Test
+    fun shouldDenyOtherTenantsAccessToPersistedTrustDecisions() = runTest {
+        val app = com.sphereon.openid.oid4vp.verifier.impl.testutil.createOid4vpVerifierTestAppGraph(this@KvAuthorizationSessionStoreTest)
+        val factory = InMemoryKvStoreFactoryImpl(InMemoryKvBackingStorageImpl())
+        val manager = object : KvStoreManager {
+            override fun createFromKvStoreConfig(config: KvStoreConfigBase): KvStore = factory.create(config, null)
+            override fun createFromKvStoreConfig(config: KvStoreConfigBase, execution: SessionExecution?): KvStore = factory.create(config, execution)
+            override fun createFromProperties(configService: ConfigService, execution: SessionExecution?): Set<KvStore> = emptySet()
+        }
+        fun tenantStore(tenantId: String): KvAuthorizationSessionStore {
+            val tenant = object : com.sphereon.di.context.TenantContextData { override val tenantId = tenantId }
+            val user = app.userContextManager.createOrGetFromData(tenantData = tenant, principalValue = "principal")
+            val execution = user.createSession(sessionId = "session-$tenantId", makeActive = true).sessionExecution
+            return KvAuthorizationSessionStore(
+                kvStoreManager = manager, kvStoreService = KvStoreTestNoOpKvStoreService(),
+                dcqlQueryConfigurationStore = KvStoreTestNoOpDcqlQueryConfigurationStore(),
+                callbackDispatcher = KvStoreTestNoOpCallbackDispatcher(), statusResponseMapper = AuthorizationSessionStatusResponseMapperImpl(),
+                appLogManager = KvStoreTestAppLogManager(), execution = execution, clock = Clock.System,
+            )
+        }
+        val tenantA = tenantStore("tenant-a")
+        val tenantB = tenantStore("tenant-b")
+        val key = "private-trust-decision"
+        val decision = com.sphereon.openid.oid4vp.verifier.CredentialTrustDecision(
+            credentialQueryId = "identity_credential", presentationSha256 = "presentation-digest",
+            issuer = com.sphereon.openid.oid4vp.verifier.CredentialIssuerRef(issuer = "https://issuer.example"),
+            trust = com.sphereon.openid.oid4vp.verifier.CredentialTrustValidation(enabled = true, trusted = false, status = "UNAVAILABLE"),
+        )
+        assertEquals(true, tenantA.put(key, session(null, key), 600).isOk)
+        assertEquals(true, tenantA.storeValidationResultDeferred(key, ValidationResult(valid = false, trustDecisions = listOf(decision))).isOk)
+        assertEquals(listOf(decision), tenantA.get(key).value?.validationResult?.trustDecisions)
+        assertNull(tenantB.get(key).value)
+    }
+
+    @Test
+    fun shouldPreserveDecisionsAndStatusRejectionsWhenPuttingCompletedSession() = runTest {
+        val store = createStore()
+        val key = "completed-with-decisions"
+        val decision = com.sphereon.openid.oid4vp.verifier.CredentialTrustDecision(
+            credentialQueryId = "identity_credential", presentationSha256 = "digest",
+            trust = com.sphereon.openid.oid4vp.verifier.CredentialTrustValidation(enabled = true, trusted = false),
+        )
+        val rejection = CredentialValidationRejection(
+            credentialQueryId = "other_credential", reason = CredentialValidationRejectionReason.REVOKED, checkedAtEpochMillis = 1,
+        )
+        val validation = ValidationResult(valid = false, rejections = listOf(rejection), trustDecisions = listOf(decision))
+        assertEquals(true, store.put(key, session(null, key).copy(validationResult = validation), 600).isOk)
+        assertEquals(validation, store.get(key).value?.validationResult)
+    }
+
+    @Test
     fun ordinaryVerifiedSessionRejectsResponseReplay() =
         runTest {
             assertOrdinaryTerminalStateIsImmutable(valid = true)

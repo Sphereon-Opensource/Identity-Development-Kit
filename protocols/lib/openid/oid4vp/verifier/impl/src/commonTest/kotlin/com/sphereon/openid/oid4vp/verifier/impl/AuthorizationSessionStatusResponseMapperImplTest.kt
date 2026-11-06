@@ -132,6 +132,25 @@ class AuthorizationSessionStatusResponseMapperImplTest {
     }
 
     @Test
+    fun shouldExposeTrustDecisionsWithoutPromotingDeniedCredentials() {
+        for ((trusted, status) in listOf(true to "VERIFIED", false to "REJECTED", false to "UNAVAILABLE")) {
+            val decision = com.sphereon.openid.oid4vp.verifier.CredentialTrustDecision(
+                credentialQueryId = "identity_credential",
+                presentationSha256 = "presentation-digest",
+                issuer = com.sphereon.openid.oid4vp.verifier.CredentialIssuerRef(issuer = "https://issuer.example"),
+                trust = com.sphereon.openid.oid4vp.verifier.CredentialTrustValidation(enabled = true, trusted = trusted, status = status),
+            )
+            val session = verifiedSession().copy(
+                status = if (trusted) AuthorizationSessionStatus.AUTHORIZATION_RESPONSE_VERIFIED else AuthorizationSessionStatus.ERROR,
+                validationResult = ValidationResult(valid = trusted, trustDecisions = listOf(decision)),
+            )
+            val output = mapper.build(session, VerifiedDataMode.entries.toList())
+            assertEquals(listOf(decision), output.validation?.trustDecisions)
+            if (!trusted) assertNull(output.verifiedData)
+        }
+    }
+
+    @Test
     fun shouldReportNoValidationSummaryBeforeAnyValidationRan() {
         val output = mapper.build(verifiedSession().copy(status = AuthorizationSessionStatus.AUTHORIZATION_REQUEST_CREATED, validationResult = null), emptyList())
 

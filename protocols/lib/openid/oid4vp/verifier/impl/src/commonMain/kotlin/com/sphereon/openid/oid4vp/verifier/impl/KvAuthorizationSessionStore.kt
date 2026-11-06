@@ -44,6 +44,7 @@ import com.sphereon.openid.oid4vp.dcql.DcqlQuery
 import com.sphereon.openid.oid4vp.dcql.store.DcqlQueryConfigurationStore
 import com.sphereon.openid.oid4vp.universal.VerifiedDataOpts
 import com.sphereon.openid.oid4vp.verifier.CredentialIssuerRef
+import com.sphereon.openid.oid4vp.verifier.CredentialTrustDecision
 import com.sphereon.openid.oid4vp.verifier.CredentialTrustValidation
 import com.sphereon.openid.oid4vp.verifier.MatchedCredential
 import com.sphereon.openid.oid4vp.verifier.claimValueToJson
@@ -260,6 +261,7 @@ class KvAuthorizationSessionStore(
          * before rejections existed still decode: their stored JSON carries no `rejections` key.
          */
         val rejections: List<CredentialValidationRejection> = emptyList(),
+        val trustDecisions: List<CredentialTrustDecision> = emptyList(),
     ) {
         fun toPublic(): ValidationResult =
             ValidationResult(
@@ -267,6 +269,7 @@ class KvAuthorizationSessionStore(
                 matchedCredentials = matchedCredentials.map { it.toPublic() },
                 errors = errors,
                 rejections = rejections,
+                trustDecisions = trustDecisions,
             )
     }
 
@@ -485,6 +488,7 @@ class KvAuthorizationSessionStore(
                     matchedCredentials = validationResult.matchedCredentials.map { MatchedCredentialEntry.fromPublic(it) },
                     errors = validationResult.errors,
                     rejections = validationResult.rejections,
+                    trustDecisions = validationResult.trustDecisions,
                 ),
             updatedAt = now,
         )
@@ -588,6 +592,8 @@ class KvAuthorizationSessionStore(
                             valid = it.valid,
                             matchedCredentials = it.matchedCredentials.map(MatchedCredentialEntry::fromPublic),
                             errors = it.errors,
+                            rejections = it.rejections,
+                            trustDecisions = it.trustDecisions,
                         )
                     },
                 callback = value.callback?.let(AuthorizationSessionCallbackEntry::fromPublic),

@@ -216,6 +216,56 @@ class ValidateAuthorizationResponseCommandImplTest {
         }
 
     @Test
+    fun shouldRetainPerCandidateTrustDecisionOnAcceptanceAndDenial() = runTest {
+        val sdJwt = "eyJhbGciOiJFUzI1NiJ9.eyJpc3MiOiJodHRwczovL2lzc3Vlci5leGFtcGxlIiwidmN0IjoidXJuOnRlc3Q6aWRlbnRpdHkifQ.signature~WyJhYmMxMjMiLCJmaXJzdF9uYW1lIiwiSm9obiJd~eyJhbGciOiJFUzI1NiJ9.e30.sig"
+        val args = ValidateAuthorizationResponseArgs(
+            parsedResponse = ParsedAuthorizationResponse(
+                vpToken = vpTokenOf("identity_credential", sdJwt),
+                state = "trust-decision-state",
+                rawVpToken = """{"identity_credential":["$sdJwt"]}""",
+            ),
+            originalRequest = AuthorizationRequest(
+                clientId = "https://verifier.example.com",
+                redirectUri = "https://verifier.example.com/callback",
+                state = "trust-decision-state",
+            ),
+            dcqlQuery = DcqlQuery(credentials = listOf(
+                DcqlCredentialQuery(id = "identity_credential", format = "dc+sd-jwt", meta = sdJwtVcMeta("urn:test:identity")),
+            )),
+            expectedNonce = "nonce123",
+        )
+        for ((trusted, status) in listOf(true to "VERIFIED", false to "REJECTED", false to "UNAVAILABLE")) {
+            val trust = CredentialTrustValidation(enabled = true, trusted = trusted, status = status)
+            val validator = object : Oid4vpCredentialTrustValidator {
+                override suspend fun validate(args: Oid4vpCredentialTrustValidationArgs): IdkResult<CredentialTrustValidation, IdkError> = Ok(trust)
+            }
+            val result = validateWithPersistedSession(args, "trust-decision-$status", credentialTrustValidators = setOf(validator))
+            assertIs<Ok<*>>(result)
+            val decision = result.value.trustDecisions.single()
+            assertEquals("identity_credential", decision.credentialQueryId)
+            assertEquals("https://issuer.example", decision.issuer?.issuer)
+            assertTrue(decision.presentationSha256.isNotBlank())
+            assertFalse(decision.presentationSha256.contains(sdJwt))
+            assertEquals(trust, decision.trust)
+            assertEquals(trusted, result.value.valid)
+            assertEquals(if (trusted) 1 else 0, result.value.matchedCredentials.size)
+            assertTrue(result.value.rejections.isEmpty())
+        }
+        val untrusted = validateWithPersistedSession(args, "trust-decision-disabled", credentialTrustValidators = emptySet())
+        assertIs<Ok<*>>(untrusted)
+        assertTrue(untrusted.value.trustDecisions.isEmpty())
+        val store = TestAuthorizationSessionStore()
+        val cancelled = object : Oid4vpCredentialTrustValidator {
+            override suspend fun validate(args: Oid4vpCredentialTrustValidationArgs): IdkResult<CredentialTrustValidation, IdkError> =
+                throw kotlinx.coroutines.CancellationException("validation cancelled")
+        }
+        kotlin.test.assertFailsWith<kotlinx.coroutines.CancellationException> {
+            validateWithPersistedSession(args, "trust-decision-cancelled", credentialTrustValidators = setOf(cancelled), authorizationSessionStore = store)
+        }
+        assertNull(store.get("trust-decision-state").value?.validationResult)
+    }
+
+    @Test
     fun `https issuer without federation material is presented to trust validation as an issuer uri`() =
         runTest {
             val issuer = validatedSdJwtIssuer(
@@ -2444,6 +2494,32 @@ class ValidateAuthorizationResponseCommandImplTest {
         }
 
     @Test
+    fun shouldPropagateCancellationFromDirectDataIntegrityChild() = runTest {
+        val child = dataIntegrityCredential("cancelled-di")
+        val presentation = validUnsignedVcdm2VpJwt("[$child]")
+        val state = "v2-j4-cancelled-di-child"
+        val cancellation = kotlinx.coroutines.CancellationException("Data Integrity verification cancelled")
+        var calls = 0
+        val verifier = object : VcdmDataIntegrityVerifier {
+            override suspend fun verify(args: VcdmDataIntegrityVerificationArgs): IdkResult<VcdmDataIntegrityVerificationResult, IdkError> {
+                calls += 1
+                throw cancellation
+            }
+        }
+
+        val thrown = kotlin.test.assertFailsWith<kotlinx.coroutines.CancellationException> {
+            validateWithPersistedSession(
+                args = vcdm2PresentationArgs(state, presentation, "ldp_vc"),
+                instanceId = "verifier-instance-$state",
+                verifyHolderBindingCommand = RecordingHolderBindingCommand(),
+                vcdmDataIntegrityVerifier = verifier,
+            )
+        }
+        assertEquals(1, calls)
+        assertEquals(cancellation.message, thrown.message)
+    }
+
+    @Test
     fun `VCDM 2 JOSE presentation dispatches a direct Data Integrity credential child`() =
         runTest {
             val child = dataIntegrityCredential("mixed-jose-di")
@@ -2980,6 +3056,41 @@ class ValidateAuthorizationResponseCommandImplTest {
             assertEquals(1, dataIntegrityVerifier.calls.size, "only the outer DI VP uses the DI verifier")
             assertEquals(1, joseVerifier.calls, "the enveloped credential must use JOSE verification")
         }
+
+    @Test
+    fun shouldPropagateCancellationFromDirectDataIntegrityCredential() = runTest {
+        val state = "ldp-vc-cancelled-credential"
+        val args = ValidateAuthorizationResponseArgs(
+            parsedResponse = ParsedAuthorizationResponse(
+                vpToken = VpToken(mapOf("credential" to listOf(dataIntegrityCredential("bare")))),
+                state = state,
+                rawVpToken = "{}",
+            ),
+            originalRequest = AuthorizationRequest(
+                clientId = "https://verifier.example.com",
+                redirectUri = "https://verifier.example.com/callback",
+                state = state,
+            ),
+            dcqlQuery = DcqlQuery(credentials = listOf(DcqlCredentialQuery(
+                id = "credential", format = "ldp_vc", meta = vcdm11CredentialMeta(),
+                require_cryptographic_holder_binding = false,
+            ))),
+            expectedNonce = "nonce-not-used-for-bare-vc",
+        )
+        var calls = 0
+        val verifier = object : VcdmDataIntegrityVerifier {
+            override suspend fun verify(args: VcdmDataIntegrityVerificationArgs): IdkResult<VcdmDataIntegrityVerificationResult, IdkError> {
+                calls += 1
+                throw kotlinx.coroutines.CancellationException("Direct Data Integrity verification cancelled")
+            }
+        }
+
+        val thrown = kotlin.test.assertFailsWith<kotlinx.coroutines.CancellationException> {
+            validateWithPersistedSession(args, "verifier-instance-$state", vcdmDataIntegrityVerifier = verifier)
+        }
+        assertEquals(1, calls)
+        assertEquals("Direct Data Integrity verification cancelled", thrown.message)
+    }
 
     @Test
     fun `ldp_vc bare credential uses assertion proof semantics when holder binding is not requested`() =
@@ -3675,7 +3786,11 @@ class ValidateAuthorizationResponseCommandImplTest {
             nameSpaces = mapOf(nameSpace to elements.toList().ifEmpty { listOf(FixtureElement("given_name", "Jane")) }),
         )
 
-    private suspend fun validateMdocPresentation(state: String, presentation: String) =
+    private suspend fun validateMdocPresentation(
+        state: String,
+        presentation: String,
+        credentialTrustValidators: Set<Oid4vpCredentialTrustValidator> = emptySet(),
+    ) =
         validateWithPersistedSession(
             args = ValidateAuthorizationResponseArgs(
                 parsedResponse = ParsedAuthorizationResponse(
@@ -3694,7 +3809,13 @@ class ValidateAuthorizationResponseCommandImplTest {
                 expectedNonce = "nonce-mdoc",
             ),
             instanceId = "verifier-instance-$state",
+            credentialTrustValidators = credentialTrustValidators,
         )
+
+    private val trustingValidator = object : Oid4vpCredentialTrustValidator {
+        override suspend fun validate(args: Oid4vpCredentialTrustValidationArgs): IdkResult<CredentialTrustValidation, IdkError> =
+            Ok(CredentialTrustValidation(enabled = true, trusted = true, status = "VERIFIED"))
+    }
 
     @Test
     fun shouldKeepMdocDocumentsApartWhenTheyShareNamespaceAndElementNames() =
@@ -3705,7 +3826,7 @@ class ValidateAuthorizationResponseCommandImplTest {
                     mdlFixtureDocument(FixtureElement("given_name", "Janet")),
                 )
 
-            val result = validateMdocPresentation("mdoc-two-documents", presentation)
+            val result = validateMdocPresentation("mdoc-two-documents", presentation, setOf(trustingValidator))
 
             assertIs<Ok<*>>(result)
             assertTrue(result.value.valid, "${result.value.errors}")
@@ -3713,6 +3834,12 @@ class ValidateAuthorizationResponseCommandImplTest {
             assertEquals(listOf<Any?>("Jane", "Janet"), matches.map { it.disclosedClaims["org.iso.18013.5.1.given_name"] })
             assertEquals(listOf("org.iso.18013.5.1.mDL", "org.iso.18013.5.1.mDL"), matches.map { it.credentialType })
             assertTrue(matches.all { it.disclosedClaims.keys == setOf("org.iso.18013.5.1.given_name") })
+            val decisions = result.value.trustDecisions
+            assertEquals(2, decisions.size)
+            assertEquals(listOf("mdl_credential", "mdl_credential"), decisions.map { it.credentialQueryId })
+            assertEquals(matches.map { it.verificationEvidence?.presentationSha256 }, decisions.map { it.presentationSha256 })
+            assertEquals(matches.map { it.issuer }, decisions.map { it.issuer })
+            assertEquals(matches.map { it.verificationEvidence?.trust }, decisions.map { it.trust })
         }
 
     @Test
@@ -3957,6 +4084,7 @@ class ValidateAuthorizationResponseCommandImplTest {
         alternatives: List<List<String>>,
         instance: String,
         matcher: CredentialTypeMatcher = testCredentialTypeMatcher(),
+        credentialTrustValidators: Set<Oid4vpCredentialTrustValidator> = emptySet(),
     ): com.sphereon.openid.oid4vp.verifier.ValidationResult {
         val presentation = validVcdm11VpJwtWithEmbeddedVc(*children.toTypedArray())
         val state = "state-$instance"
@@ -3983,6 +4111,7 @@ class ValidateAuthorizationResponseCommandImplTest {
                 verifyHolderBindingCommand = RecordingHolderBindingCommand(),
                 verifyJwsCommand = FixedVerifyJwsCommand(valid = true),
                 credentialTypeMatcher = matcher,
+                credentialTrustValidators = credentialTrustValidators,
             )
         assertIs<Ok<*>>(result)
         return result.value
@@ -3998,9 +4127,13 @@ class ValidateAuthorizationResponseCommandImplTest {
                 validVcdm11VcJwt(subjectId = "holder", credentialId = "urn:example:second", credentialType = "IdentityCredential"),
             )
 
-            val validation = validateVcdm11Types(children, listOf(listOf(verifiableCredentialIri, "IdentityCredential")), "w3c-all-match")
+            val validation = validateVcdm11Types(children, listOf(listOf(verifiableCredentialIri, "IdentityCredential")), "w3c-all-match", credentialTrustValidators = setOf(trustingValidator))
 
             assertTrue(validation.valid, validation.errors.toString())
+            assertEquals(2, validation.trustDecisions.size)
+            assertEquals(listOf("presentation", "presentation"), validation.trustDecisions.map { it.credentialQueryId })
+            assertEquals(validation.matchedCredentials.map { it.verificationEvidence?.presentationSha256 }, validation.trustDecisions.map { it.presentationSha256 })
+            assertEquals(validation.matchedCredentials.map { it.issuer }, validation.trustDecisions.map { it.issuer })
         }
 
     @Test
@@ -4569,9 +4702,9 @@ class ValidateAuthorizationResponseCommandImplTest {
         persistedAuthorizationRequest: AuthorizationRequest = args.originalRequest,
         persistedDcqlQuery: DcqlQuery = args.dcqlQuery,
         credentialTypeMatcher: CredentialTypeMatcher = testCredentialTypeMatcher(),
+        authorizationSessionStore: TestAuthorizationSessionStore = TestAuthorizationSessionStore(),
     ): IdkResult<com.sphereon.openid.oid4vp.verifier.ValidationResult, IdkError> {
         val correlationState = requireNotNull(args.originalRequest.state) { "Test authorization request must have correlation state" }
-        val authorizationSessionStore = TestAuthorizationSessionStore()
         val now = Clock.System.now().toEpochMilliseconds()
         val persistedRequestWithJwtVpAlgorithms =
             if ("client_metadata" in persistedAuthorizationRequest.additionalParameters) {

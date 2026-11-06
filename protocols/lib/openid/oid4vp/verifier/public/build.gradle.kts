@@ -62,6 +62,7 @@ kotlin {
 
                 // DCQL (for query creation)
                 api(projects.libOpenidOid4vpDcql)
+                api(if (rootProject.findProperty("idk.consumePlatformAsArtifacts") == "true") "com.sphereon.idk:lib-catalog-ts11-public:$version" else project(":lib-catalog-ts11-public"))
 
                 // Credential status policy (CredentialStatusPolicy on the create-request args + session)
                 api(projects.libStatuslistPublic)
